@@ -18,7 +18,8 @@ type Db = any;
 
 /** email → its organization ids. Empty on a failed read (each rescuer then counts on its own), logged. */
 export async function loadOrgMembership(db: Db, op: string): Promise<Map<string, string[]>> {
-    const rows = await (db.select({ orgId: orgMembers.orgId, userEmail: orgMembers.userEmail }).from(orgMembers).all() as Promise<Array<{ orgId: string; userEmail: string }>>)
+    // Wrapped in an async fn: D1 returns a promise, better-sqlite3 (dev, tests) a value or a sync throw — both land in .catch.
+    const rows = await (async () => db.select({ orgId: orgMembers.orgId, userEmail: orgMembers.userEmail }).from(orgMembers).all() as Array<{ orgId: string; userEmail: string }>)()
         .catch((e: unknown) => {
             logger.warn(`${op}: org membership read failed, rescuers count on their own`, { error: e instanceof Error ? e.message : String(e) });
             return [] as Array<{ orgId: string; userEmail: string }>;
@@ -34,8 +35,8 @@ export async function loadOrgMembership(db: Db, op: string): Promise<Map<string,
 
 /** Admin accounts (bootstrap + role admin): they never link organizations in the count. */
 export async function loadAdminEmails(db: Db, op: string): Promise<Set<string>> {
-    const rows = await (db.select({ email: users.email }).from(userProfiles).innerJoin(users, eq(users.id, userProfiles.userId))
-        .where(eq(userProfiles.role, 'admin')).all() as Promise<Array<{ email: string | null }>>)
+    const rows = await (async () => db.select({ email: users.email }).from(userProfiles).innerJoin(users, eq(users.id, userProfiles.userId))
+        .where(eq(userProfiles.role, 'admin')).all() as Array<{ email: string | null }>)()
         .catch((e: unknown) => {
             logger.warn(`${op}: admin list read failed, only bootstrap admins kept apart`, { error: e instanceof Error ? e.message : String(e) });
             return [] as Array<{ email: string | null }>;

@@ -1449,7 +1449,7 @@ async function runDiscoveryMode(
         }).filter((r): r is DiscoveryMatch => r !== null)
         : list;
 
-    // The household line («Convive con Pedro ★1 · 1 alerta») of the cards
+    // The household line («Vive con 2 personas ★1», when a housemate has a problem) of the cards
     // returned — never of the whole recall set — in one batched read. Only for
     // a signed-in viewer in the app: it names people (a guest's names are
     // masked) and the API's response doesn't carry it.

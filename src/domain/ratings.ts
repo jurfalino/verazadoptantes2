@@ -32,6 +32,20 @@ export function getRatingLabelKey(rating: number): string {
 }
 
 /**
+ * A low rating: one whose pill (RatingBadge) reads «Peligroso» or «Malo» — the
+ * 1★ and 2★ buckets, by RatingBadge's own rounding (2.4 is «Malo», 2.5 is
+ * «Regular»). Unrated (null, 0, outside 1–5) is never low: ratings are never
+ * inferred.
+ */
+export function isLowRating(rating: number | null | undefined): boolean {
+    if (rating == null) return false;
+    const n = Number(rating);
+    if (Number.isNaN(n) || n < 1 || n > 5) return false;
+    const key = getRatingLabelKey(n);
+    return key === RATING_LABEL_KEYS[1] || key === RATING_LABEL_KEYS[2];
+}
+
+/**
  * How many stars to show filled. 0 (or null/NaN/negative) means "not rated
  * yet" and must show NO star and no label — never clamp it up to level 1
  * ("Peligroso").

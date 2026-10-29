@@ -15,8 +15,7 @@ import { computeStats } from '@/domain/stats';
 import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { logger, withTrace } from '@/lib/logger';
 
@@ -164,20 +163,8 @@ async function _enrichAdoptersImpl(
         const requestCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.REQUEST).length;
 
         const flags = buildFlags(adopterFlagRecords, systemDupCount);
-        const adoptionsDensity = computeMaxDensityPeriod(adopterAdoptions as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
-        if (adoptionsDensity.count >= adoptionConfig.threshold) {
-            flags.tooManyAdoptions = {
-                count: adoptionsDensity.count, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays,
-                actualSpanDays: adoptionsDensity.timeSpanDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate,
-            };
-        }
-        const requestsDensity = computeRequestRescueDensity(adopterAdoptions, adoptionConfig.requestsPeriodDays);
-        if (requestsDensity.count >= adoptionConfig.requestsThreshold) {
-            flags.tooManyRequests = {
-                count: requestsDensity.count, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays,
-                actualSpanDays: requestsDensity.timeSpanDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate,
-            };
-        }
+        // The period alerts: one rule (periodAlerts), also on a housemate's household line.
+        Object.assign(flags, periodAlerts(adopterAdoptions, adoptionConfig));
 
         const stats: EnrichmentResult['stats'] = computeStats(adopterStatRecords, adopterAdoptions);
         stats.adoptions = adoptionCount;

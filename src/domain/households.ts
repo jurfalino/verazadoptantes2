@@ -7,6 +7,8 @@
 import type { Relationship } from '@/lib/householdMembers';
 import { realOwner } from './dedupPair';
 import type { OpenAlertKind } from './flags';
+import { isLowRating } from './ratings';
+import type { PeriodAlert, PeriodAlerts } from './periodAlerts';
 
 /** Households read per profile (bounded reads; a person in more is logged). */
 export const MAX_HOUSEHOLDS_PER_PROFILE = 10;
@@ -184,15 +186,17 @@ export function householdNameKey(name: string | null | undefined): string {
 }
 
 /**
- * A housemate on a search / «¿Es este perfil?» card: «Convive con Pedro ★1».
- * Live summary data only (name, rating, open alerts, minor) — never contacts.
+ * A housemate on a search / «¿Es este perfil?» card's household line.
+ * Live summary data only (name, rating, alerts, minor) — never contacts.
  */
 export type HouseholdLine = {
     name: string;
     profileId: string;
     rating: number | null;
-    /** Open alerts, one per kind (openAlertKinds). */
+    /** Open FLAGS, one per kind (openAlertKinds). Not shown on the card line, never decides it. */
     openAlerts: OpenAlertKind[];
+    /** The ALERTS the app computes («N adopciones en N días», «Pidió en N rescates…») — periodAlerts, the search card's own rule. */
+    alerts: PeriodAlerts;
     isMinor: boolean;
     /** Every household the two share is a gift household (never «Convive con»). */
     isGift: boolean;
@@ -213,6 +217,53 @@ export function householdLineGroups(lines: ReadonlyArray<HouseholdLine> | null |
         if (g) g.push(l); else groups.set(l.householdId, [l]);
     }
     return [...groups.values()];
+}
+
+/** Does this housemate have a problem the card line is about: a low rating (1★/2★) or an alert? Flags never count. */
+export function housemateHasProblem(line: Pick<HouseholdLine, 'rating' | 'alerts'>): boolean {
+    return isLowRating(line.rating) || !!line.alerts?.tooManyAdoptions || !!line.alerts?.tooManyRequests;
+}
+
+export type HouseholdLineSummary = {
+    /** False → the card says nothing about the home. */
+    show: boolean;
+    /** «Vive con {n} personas»: distinct housemates across the non-gift homes. */
+    housemateCount: number;
+    /** The lowest LOW rating among them (isLowRating), else null: the collapsed row's rating pill. */
+    worstRating: number | null;
+    /** One alert per kind for the collapsed row: of the housemates with that alert, the highest count. */
+    alerts: PeriodAlerts;
+    /** Everyone, grouped per home (householdLineGroups): the opened line. */
+    homes: HouseholdLine[][];
+};
+
+/**
+ * The card's household line (option B, Jon 2026-10-28): it appears only when a
+ * housemate has a problem — a low rating or an alert (housemateHasProblem);
+ * flags («Inexacto», «Duplicado») never make it appear. Gift-only lines are
+ * left out of everything.
+ */
+export function householdLineSummary(lines: ReadonlyArray<HouseholdLine> | null | undefined): HouseholdLineSummary {
+    const homes = householdLineGroups(lines);
+    const people = homes.flat();
+    const ids = new Set(people.map(p => p.profileId));
+    let worstRating: number | null = null;
+    for (const p of people) {
+        if (isLowRating(p.rating) && (worstRating == null || (p.rating as number) < worstRating)) worstRating = p.rating;
+    }
+    const worst = (pick: (a: PeriodAlerts) => PeriodAlert | null): PeriodAlert | null =>
+        people.reduce<PeriodAlert | null>((best, p) => {
+            const a = p.alerts ? pick(p.alerts) : null;
+            return a && (!best || a.count > best.count) ? a : best;
+        }, null);
+    const alerts: PeriodAlerts = { tooManyAdoptions: worst(a => a.tooManyAdoptions), tooManyRequests: worst(a => a.tooManyRequests) };
+    return {
+        show: people.some(housemateHasProblem),
+        housemateCount: ids.size,
+        worstRating,
+        alerts,
+        homes,
+    };
 }
 
 /**

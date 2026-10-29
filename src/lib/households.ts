@@ -25,7 +25,7 @@
  */
 import { and, asc, eq, isNull, or, sql, type SQLWrapper } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
-import { adopters, duplicateCandidates, householdCorrections, householdMemberships, households } from '@/db/schema';
+import { adopters, adoptions, duplicateCandidates, householdCorrections, householdMemberships, households } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runBatch } from '@/lib/dbBatch';
@@ -47,6 +47,10 @@ import {
     type MembershipLabel,
 } from '@/domain/households';
 import { pairKey } from '@/domain/dedupPair';
+import { RECORD_TYPES } from '@/domain/constants';
+import { NO_PERIOD_ALERTS, periodAlerts, type PeriodAlerts } from '@/domain/periodAlerts';
+import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
+import type { AdoptionConfig } from '@/types/adopter';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export type MembershipRow = typeof householdMemberships.$inferSelect;
@@ -753,8 +757,10 @@ export async function withHouseholdLines<T extends { adopterId: string }>(
 
 /**
  * The household line of each profile in `adopterIds` (search results,
- * «¿Es este perfil?»): every live housemate, once, with their live rating and
- * open alerts. `isGift` when every household the two share is a gift one.
+ * «¿Es este perfil?»): every live housemate, once, with their live rating,
+ * open flags and ALERTS — the period alerts computed exactly as the search
+ * card's own (periodAlerts with getAdoptionConfig, requests per rescue), read
+ * once per housemate. `isGift` when every household the two share is a gift one.
  * Every requested id gets an entry ([] when none). Profiles, households and
  * counts are read once per call however many cards share them. Bounded per
  * card (MAX_HOUSEHOLD_LINES). Never throws: a failed card gets [] (logged).
@@ -773,6 +779,26 @@ export async function householdLinesFor(
     const groupMemo = new Map<string, Promise<MembershipRow[]>>();
     const profileMemo = new Map<string, Promise<ProfileRow | null>>();
     const countMemo = new Map<string, Promise<ProfileCounts>>();
+    const alertMemo = new Map<string, Promise<PeriodAlerts>>();
+    // Read once per call, only when some card has a housemate (most have none).
+    let configP: Promise<AdoptionConfig> | null = null;
+    let rescueKeysP: Promise<Map<string, string>> | null = null;
+    const config = () => (configP ??= import('@/app/actions/config').then(m => m.getAdoptionConfig()));
+    const rescueKeys = () => (rescueKeysP ??= loadRescueKeys(db, 'householdLinesFor'));
+    const alertsOf = (profileId: string, ctx: Record<string, unknown>) => memo(alertMemo, profileId, async () => {
+        try {
+            const rows = await db.select({ recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
+                .from(adoptions)
+                .where(and(eq(adoptions.adopterId, profileId), or(eq(adoptions.recordType, RECORD_TYPES.ADOPTION), eq(adoptions.recordType, RECORD_TYPES.REQUEST))))
+                .all() as Array<{ recordType: string | null; date: number | null; addedBy: string | null }>;
+            if (rows.length === 0) return NO_PERIOD_ALERTS;
+            const keys = rows.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await rescueKeys() : new Map<string, string>();
+            return periodAlerts(withRescueKeys(rows, keys), await config());
+        } catch (e) {
+            logger.warn('households: housemate alerts read failed, none shown for them', { ...ctx, profileId, error: errMsg(e) });
+            return NO_PERIOD_ALERTS;
+        }
+    });
     const today = new Date();
     const ids = [...new Set(adopterIds)];
 
@@ -818,12 +844,16 @@ export async function householdLinesFor(
                 });
             }
             // The card line shows rating and alerts only: no activity read.
-            const counts = await Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx, { activity: false }))));
+            const [counts, alerts] = await Promise.all([
+                Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx, { activity: false })))),
+                Promise.all(shown.map(p => alertsOf(p.id, ctx))),
+            ]);
             return [adopterId, shown.map((p, i) => ({
                 name: p.name,
                 profileId: p.id,
                 rating: counts[i].rating,
                 openAlerts: counts[i].openAlerts,
+                alerts: alerts[i],
                 isMinor: isMinor(p, today),
                 isGift: !!mates.get(p.id),
                 householdId: homeOf.get(p.id) ?? '',

@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { AlertCircle, AlertTriangle, Files, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import type { OpenAlertKind } from '@/domain/flags';
+import { periodAlertDays, type PeriodAlerts } from '@/domain/periodAlerts';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 
 export type AlertKind = 'inaccurate' | 'duplicate' | 'too_many_adoptions' | 'too_many_requests' | 'count';
@@ -78,4 +79,30 @@ export function AlertSummary({ kinds, testId }: { kinds: readonly OpenAlertKind[
         return <AlertPill kind={kind} testId={testId}>{t(`flags.${kind}`)}</AlertPill>;
     }
     return <AlertPill kind="count" testId={testId}>{t('adopter.hh_link_alerts_many').replace('{n}', String(kinds.length))}</AlertPill>;
+}
+
+/**
+ * A person's ALERTS — «{count} adopciones en {days} días» and «Pidió en {count}
+ * rescates en {days} días» (periodAlerts) — one pill each, as the search card
+ * draws its own; a card's household line draws a housemate's the same way.
+ * Never a summary: the «N alertas» pill is for flags (AlertSummary). Nothing
+ * when there are none.
+ */
+export function PeriodAlertPills({ alerts, testId }: { alerts: PeriodAlerts | null | undefined; testId?: string }) {
+    const { t } = useLanguage();
+    const a = alerts?.tooManyAdoptions, r = alerts?.tooManyRequests;
+    return (
+        <>
+            {a && (
+                <AlertPill kind="too_many_adoptions" testId={testId}>
+                    {t('flags.too_many_adoptions').replace('{count}', String(a.count)).replace('{days}', String(periodAlertDays(a)))}
+                </AlertPill>
+            )}
+            {r && (
+                <AlertPill kind="too_many_requests" testId={testId}>
+                    {t('flags.too_many_requests').replace('{count}', String(r.count)).replace('{days}', String(periodAlertDays(r)))}
+                </AlertPill>
+            )}
+        </>
+    );
 }

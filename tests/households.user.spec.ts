@@ -12,7 +12,7 @@ import {
  *   1. A non-owner adds «Marta Paez» with a phone to Pedro's household: Marta's
  *      profile exists (owned by Pedro's owner, the add credited to the viewer)
  *      and her profile shows Pedro.
- *   2. Searching Marta's phone shows only Marta's card, with Pedro's rating line.
+ *   2. Searching Marta's phone shows only Marta's card, with the household line (Pedro is 1★): closed, then opened.
  *   3. Adding a person whose phone matches an existing profile offers
  *      «¿Es este perfil?»; «Sí» links that profile (no new one), and its row
  *      counts its active foster as «Actividad» does. On that profile's page
@@ -115,7 +115,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await page.mouse.click(5, 300);
     });
 
-    test('2. searching Marta\'s phone shows only Marta\'s card, with Pedro\'s rating line', async ({ page }) => {
+    test('2. searching Marta\'s phone shows only Marta\'s card, with the household line because Pedro is 1★', async ({ page }) => {
         test.setTimeout(120_000);
         const marta = String(profileNamed(MARTA_NAME)!.id);
         await page.goto('/');
@@ -128,9 +128,25 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         const martaCard = results.locator(`a[href^="/adopter/${marta}"]`);
         await expect(martaCard).toHaveCount(1, { timeout: 30_000 });
         await expect(results.locator(`a[href^="/adopter/${PEDRO}"]`)).toHaveCount(0);
+        // Option B (Jon, 2026-10-28): Pedro is rated 1★, so the line shows — closed, his rating only, no names.
         const line = martaCard.getByTestId('card-household-line');
-        await expect(line).toContainText(PEDRO_NAME);
+        await expect(line).toBeVisible({ timeout: 30_000 });
         await expect(line).toContainText('1.0');
+        await expect(line).not.toContainText(PEDRO_NAME);
+        // His «Inexacto» is a FLAG: it never shows on the line.
+        await expect(line.getByTestId('card-household-alert')).toHaveCount(0);
+        await expect(line.locator('[data-alert="inaccurate"]')).toHaveCount(0);
+        const toggle = line.getByTestId('card-household-toggle');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        const before = page.url();
+        await toggle.click();
+        // Opening it never follows the card's link.
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        expect(page.url()).toBe(before);
+        await expect(line.getByTestId('card-household-list')).toContainText(PEDRO_NAME);
+        await expect(line.locator('[data-alert="inaccurate"]')).toHaveCount(0);
+        await toggle.click();
+        await expect(line.getByTestId('card-household-list')).toHaveCount(0);
     });
 
     test('2b. while a contact is being written, «Sí» / «No» and the form\'s «Guardar» can\'t save the person without it', async ({ page }) => {
