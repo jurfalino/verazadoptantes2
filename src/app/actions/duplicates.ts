@@ -259,6 +259,8 @@ export interface DuplicateCandidate {
     confidence: string;
     /** Normalised 0–100 confidence percentage derived from score / PRACTICAL_MAX_DUPLICATE. */
     confidencePercent: number;
+    /** The pair is on the viewer's «Pendientes de revisar» list: they created either side and didn't take it off. */
+    onViewerList: boolean;
 }
 
 /**
@@ -268,7 +270,8 @@ export interface DuplicateCandidate {
 export async function getDuplicateCandidates(adopterId: string): Promise<DuplicateCandidate[]> {
     // Signed-in only (the profile page and its flagging panel both are): the
     // result names the other profiles that look like this one.
-    try { await getUser(); } catch {
+    let viewer: string;
+    try { viewer = await getUser(); } catch {
         logger.warn('getDuplicateCandidates: refused — no session', { adopterId });
         return [];
     }
@@ -306,18 +309,23 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
         const otherIds = candidates.map((c: { adopter1Id: string; adopter2Id: string }) =>
             c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id
         );
-        const otherAdopters = await Promise.all(
+        const [otherAdopters, self, hidden] = await Promise.all([Promise.all(
             otherIds.map((id: string) =>
-                db.select({ id: adopters.id, name: adopters.name })
+                db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy })
                     .from(adopters)
                     .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
                     .get()
             )
-        );
+        ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
+        loadHiddenPairKeys(db, viewer)]);
         const nameMap = new Map<string, string>();
+        const ownerMap = new Map<string, string | null>();
         for (const a of otherAdopters) {
-            if (a) nameMap.set(a.id, a.name);
+            if (a) { nameMap.set(a.id, a.name); ownerMap.set(a.id, a.addedBy); }
         }
+        // The same test as the feed's `listed` (owns either side), minus the pairs the viewer hid.
+        const onViewerList = (otherId: string) =>
+            (self?.addedBy === viewer || ownerMap.get(otherId) === viewer) && !hidden.has(pairKey(adopterId, otherId));
 
         return candidates
             .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
@@ -331,6 +339,7 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                     score: c.score,
                     confidence: c.confidence,
                     confidencePercent: storedScoreToPercent(c.score),
+                    onViewerList: onViewerList(otherId),
                 };
             })
             .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
@@ -1055,7 +1064,9 @@ export async function getPendingDuplicatesForUser(
     page = 1,
     pageSize = 10,
     includeLow = false,
-): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number }> {
+    /** pairKey of a pair to show (the profile banner's «Revisar»): the page holding it is returned instead of `page`. */
+    focusPair?: string,
+): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string }> {
     const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0 };
     let actorEmail: string | null = null;
     try {
@@ -1305,9 +1316,12 @@ export async function getPendingDuplicatesForUser(
         });
 
         const total = eligible.length;
+        const focusIndex = focusPair ? eligible.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
+        if (focusIndex >= 0) page = Math.floor(focusIndex / pageSize) + 1;
+        const focusCandidateId = focusIndex >= 0 ? eligible[focusIndex].candidateId : undefined;
         const start = Math.max(0, (page - 1) * pageSize);
         const pageCandidates = eligible.slice(start, start + pageSize);
-        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden };
+        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page };
 
         // Fan out only over the ids on THIS page: at most 2 × pageSize.
         const ids = new Set<string>();
@@ -1444,7 +1458,7 @@ export async function getPendingDuplicatesForUser(
             for (const built of sideCache.values()) if (lines[built.id]?.length) built.households = lines[built.id];
         }
 
-        return { pairs, total, lowHidden };
+        return { pairs, total, lowHidden, page, focusCandidateId };
     } catch (error) {
         logger.warn('getPendingDuplicatesForUser failed', {
             actorEmail, error: error instanceof Error ? error.message : String(error),

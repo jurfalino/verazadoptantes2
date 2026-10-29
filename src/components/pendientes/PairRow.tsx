@@ -252,9 +252,11 @@ function KeepSwitch({ pair, keep, onKeep, t, formatShortDate }: {
     );
 }
 
-export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, locked, isAdmin, t, formatShortDate, age, onAction, onRequestAccess }: {
+export default function PairRow({ pair, open, highlight = false, onToggle, keep, onKeep, busy, locked, isAdmin, t, formatShortDate, age, onAction, onRequestAccess }: {
     pair: PendingDedupPair;
     open: boolean;
+    /** The pair a profile's «Revisar» linked to: outlined so it's found at a glance. */
+    highlight?: boolean;
     onToggle: () => void;
     /** «¿Cuál se conserva?» for a possible duplicate (the feed's default until changed). */
     keep: KeepSide;
@@ -297,8 +299,8 @@ export default function PairRow({ pair, open, onToggle, keep, onKeep, busy, lock
     );
 
     return (
-        <div data-testid="dedup-row" data-group={group}
-            className={`border-t border-[var(--border-default)] first:border-t-0 ${open ? 'bg-[var(--accent-subtle-bg)]' : ''}`}>
+        <div data-testid="dedup-row" data-group={group} data-candidate-id={pair.candidateId} data-highlight={highlight || undefined}
+            className={`border-t border-[var(--border-default)] first:border-t-0 ${open ? 'bg-[var(--accent-subtle-bg)]' : ''} ${highlight ? 'ring-2 ring-inset ring-[var(--status-warning-border)]' : ''}`}>
             <div className="flex items-center">
                 <button type="button" aria-expanded={open} onClick={onToggle}
                     className="flex-1 min-w-0 min-h-[64px] flex items-center gap-3 pl-4 pr-2 py-3 text-left">

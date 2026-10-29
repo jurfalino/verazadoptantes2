@@ -117,4 +117,6 @@ export interface DuplicateCandidateInfo {
     matchTypes: string[];
     score: number;
     confidence: string;
+    /** On the viewer's «Pendientes de revisar» list, so «Revisar» has somewhere to land. */
+    onViewerList?: boolean;
 }

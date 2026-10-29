@@ -35,6 +35,7 @@ import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderName } from '@/lib/piiAccess';
 import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profileHouseholds';
 import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
+import { pairKey } from '@/domain/dedupPair';
 import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
@@ -430,15 +431,12 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     <RenameUndoPrompt historyId={undoRenameParam} />
                 )}
 
-                {/* v39: pending-duplicate signal. Owner / admin gets the clickable
-                    "Revisar" affordance straight to /my-adopters#pendientes
-                    where the merge UI lives. Everyone else sees the same flag
-                    informationally — non-owners can't act on someone else's record. */}
+                {/* Pending-duplicate signal, one line for everyone: «Posible duplicado de <name>», the name
+                    opening the strongest match. «Revisar» shows only when the pair is on the viewer's own
+                    «Pendientes de revisar» list, and opens that list at the pair. */}
                 {!isNew && adopter && reviewableDups.length > 0 && (() => {
-                    // The shared profile banner (audit B7), on one line: «Posible duplicado de <name>», the name
-                    // opening the strongest match. The owner/admin also gets «Revisar» (to Pendientes); everyone
-                    // else the same signal, neutral, since they can't act on someone else's record.
                     const top = reviewableDups[0];
+                    const reviewable = reviewableDups.find(c => c.onViewerList);
                     const template = reviewableDups.length === 1
                         ? (t('myAdopters.profile_pending_dup_of') || 'Posible duplicado de {name}')
                         : (t('myAdopters.profile_pending_dup_of_more') || 'Posible duplicado de {name} y {n} más').replace('{n}', String(reviewableDups.length - 1));
@@ -452,9 +450,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             {after}
                         </>
                     );
-                    return (isOwner || isAdmin) ? (
+                    return reviewable ? (
                         <ProfilePromptBanner tone="warning" icon={Search} testId="profile-pending-dup" singleLine title={title}
-                            actions={<a href="/my-adopters#pendientes" className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
+                            actions={<a href={`/my-adopters?pair=${encodeURIComponent(pairKey(adopter.id, reviewable.otherAdopterId))}#pendientes`}
+                                data-testid="profile-pending-dup-review" className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
                                 {t('myAdopters.profile_pending_dup_review') || 'Revisar'}<ArrowRight className="w-4 h-4" aria-hidden="true" />
                             </a>} />
                     ) : (
