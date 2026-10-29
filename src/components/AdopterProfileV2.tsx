@@ -434,22 +434,33 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     "Revisar" affordance straight to /my-adopters#pendientes
                     where the merge UI lives. Everyone else sees the same flag
                     informationally — non-owners can't act on someone else's record. */}
-                {!isNew && adopter && reviewableDups.length > 0 && (
-                    // The shared profile banner (audit B7): the owner/admin gets «Revisar» (to Pendientes); everyone
+                {!isNew && adopter && reviewableDups.length > 0 && (() => {
+                    // The shared profile banner (audit B7), on one line: «Posible duplicado de <name>», the name
+                    // opening the strongest match. The owner/admin also gets «Revisar» (to Pendientes); everyone
                     // else the same signal, neutral, since they can't act on someone else's record.
-                    (isOwner || isAdmin) ? (
-                        <ProfilePromptBanner tone="warning" icon={Search} testId="profile-pending-dup"
-                            title={reviewableDups.length === 1
-                                ? (t('myAdopters.profile_pending_dup_one') || 'Posible duplicado detectado')
-                                : (t('myAdopters.profile_pending_dup_many') || '{n} posibles duplicados detectados').replace('{n}', String(reviewableDups.length))}
+                    const top = reviewableDups[0];
+                    const template = reviewableDups.length === 1
+                        ? (t('myAdopters.profile_pending_dup_of') || 'Posible duplicado de {name}')
+                        : (t('myAdopters.profile_pending_dup_of_more') || 'Posible duplicado de {name} y {n} más').replace('{n}', String(reviewableDups.length - 1));
+                    const [before, after = ''] = template.split('{name}');
+                    const title = (
+                        <>
+                            {before}
+                            <a href={`/adopter/${top.otherAdopterId}`} data-testid="profile-pending-dup-link" className="underline underline-offset-2">
+                                {top.otherAdopterName}
+                            </a>
+                            {after}
+                        </>
+                    );
+                    return (isOwner || isAdmin) ? (
+                        <ProfilePromptBanner tone="warning" icon={Search} testId="profile-pending-dup" singleLine title={title}
                             actions={<a href="/my-adopters#pendientes" className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
                                 {t('myAdopters.profile_pending_dup_review') || 'Revisar'}<ArrowRight className="w-4 h-4" aria-hidden="true" />
                             </a>} />
                     ) : (
-                        <ProfilePromptBanner tone="info" icon={Search} testId="profile-pending-dup"
-                            title={t('myAdopters.profile_pending_dup_other') || 'Posible duplicado — el responsable del registro puede revisarlo.'} />
-                    )
-                )}
+                        <ProfilePromptBanner tone="info" icon={Search} testId="profile-pending-dup" singleLine title={title} />
+                    );
+                })()}
 
                 {/* PII access gating — pending-request approver panel stays here at
                     record level: it's an actionable task that must be seen and

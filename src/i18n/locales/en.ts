@@ -1861,10 +1861,9 @@ export const en = {
         source_manual: 'Manual',
         row_pending_dup: 'Possible duplicate',
         row_pending_dup_tooltip: 'There is a possible duplicate pending review above',
-        profile_pending_dup_one: 'Possible duplicate detected',
-        profile_pending_dup_many: '{n} possible duplicates detected',
+        profile_pending_dup_of: 'Possible duplicate of {name}',
+        profile_pending_dup_of_more: 'Possible duplicate of {name} and {n} more',
         profile_pending_dup_review: 'Review',
-        profile_pending_dup_other: 'Possible duplicate — the responsible rescuer can review.',
     },
     healthRecord: {
         title: 'Health record',

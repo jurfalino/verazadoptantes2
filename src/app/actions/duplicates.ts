@@ -301,7 +301,8 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
 
         if (candidates.length === 0) return [];
 
-        // Get names for the "other" adopter in each pair
+        // Get names for the "other" adopter in each pair. A profile merged away
+        // (deletedAt set) or gone drops out: there is nothing left to open.
         const otherIds = candidates.map((c: { adopter1Id: string; adopter2Id: string }) =>
             c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id
         );
@@ -309,7 +310,7 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
             otherIds.map((id: string) =>
                 db.select({ id: adopters.id, name: adopters.name })
                     .from(adopters)
-                    .where(eq(adopters.id, id))
+                    .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
                     .get()
             )
         );
@@ -319,12 +320,13 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
         }
 
         return candidates
+            .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
             .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
                 const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
                 return {
                     id: c.id,
                     otherAdopterId: otherId,
-                    otherAdopterName: nameMap.get(otherId) || 'Unknown',
+                    otherAdopterName: nameMap.get(otherId)!,
                     matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
                     score: c.score,
                     confidence: c.confidence,

@@ -1866,10 +1866,9 @@ export const pt = {
         source_manual: 'Manual',
         row_pending_dup: 'Possível duplicado',
         row_pending_dup_tooltip: 'Há um possível duplicado pendente de revisão acima',
-        profile_pending_dup_one: 'Possível duplicado detectado',
-        profile_pending_dup_many: '{n} possíveis duplicados detectados',
+        profile_pending_dup_of: 'Possível duplicado de {name}',
+        profile_pending_dup_of_more: 'Possível duplicado de {name} e mais {n}',
         profile_pending_dup_review: 'Revisar',
-        profile_pending_dup_other: 'Possível duplicado — o responsável pelo registro pode revisá-lo.',
     },
     healthRecord: {
         title: 'Histórico de saúde',
