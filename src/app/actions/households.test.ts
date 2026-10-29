@@ -94,7 +94,7 @@ vi.mock('@/lib/logger', () => ({
     withTrace: (_op: string, fn: () => unknown) => fn(),
 }));
 
-import { addHouseholdPerson, getHouseholdMatchCandidates, removeHouseholdMembership, updateHouseholdMembership } from './households';
+import { addHouseholdPerson, getDuplicateHintMatches, getHouseholdMatchCandidates, removeHouseholdMembership, updateHouseholdMembership } from './households';
 import { getAdopterApprovers } from './piiAccess';
 import { loadApprovers } from '@/lib/piiAccessRequest';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
@@ -570,6 +570,63 @@ describe('getHouseholdMatchCandidates — «¿Es este perfil?»', () => {
         expect(res).toMatchObject({ results: [], failed: true });
         expect(typeof (res as { errorId?: string }).errorId).toBe('string');
         state.db = saved;
+    });
+});
+
+describe('getDuplicateHintMatches — the composer\'s «Ya está en otro perfil»', () => {
+    const MARTA_DNI = '30.111.222';
+    beforeEach(async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'marta'`).run(JSON.stringify([
+            { id: 'mc', type: 'phone', value: MARTA_PHONE, addedBy: OTHER },
+            { id: 'md', type: 'id', value: MARTA_DNI, addedBy: OTHER },
+        ]));
+        await tokenizeAdopter('marta');
+        await tokenizeAdopter('pedro');
+        await tokenizeAdopter('rosa');
+        // Marta lives with Rosa.
+        await as(OTHER, () => addHouseholdPerson({ anchorAdopterId: 'rosa', existingProfileId: 'marta' }));
+    });
+
+    it('a typed phone (another format) finds her, with her household line and the matched contact marked', async () => {
+        const { results, failed } = await getDuplicateHintMatches({ type: 'phone', value: '11 4444-0303', excludeAdopterId: 'pedro' });
+        expect(failed).toBeUndefined();
+        const marta = results.find(r => r.adopter.id === 'marta');
+        expect(marta).toBeTruthy();
+        expect(marta!.householdLine).toEqual([expect.objectContaining({ profileId: 'rosa', name: 'Rosa Diaz' })]);
+        expect(marta!.matchedEntryIndexes).toEqual([0]);
+        expect(marta).toHaveProperty('rating', null);
+        expect(marta).toHaveProperty('activity');
+    });
+
+    it('an identity number finds her too — the strong identifier the household check never searches', async () => {
+        const { results } = await getDuplicateHintMatches({ type: 'id', value: '30111222', excludeAdopterId: 'pedro' });
+        expect(results.map(r => r.adopter.id)).toEqual(['marta']);
+        expect(results[0].matchedEntryIndexes).toEqual([1]);
+        // The household check, by contrast, has no id search at all.
+        const hh = await getHouseholdMatchCandidates({ contactEntries: [{ type: 'id', value: '30111222' }], anchorAdopterId: 'pedro' });
+        expect(hh.results).toEqual([]);
+    });
+
+    it('the profile being edited is never its own match', async () => {
+        const { results } = await getDuplicateHintMatches({ type: 'phone', value: MARTA_PHONE, excludeAdopterId: 'marta' });
+        expect(results.some(r => r.adopter.id === 'marta')).toBe(false);
+    });
+
+    it('no session, a non-strong type or an empty value → nothing (and no lookup)', async () => {
+        expect(await as(null, () => getDuplicateHintMatches({ type: 'phone', value: MARTA_PHONE }))).toEqual({ results: [] });
+        expect(await getDuplicateHintMatches({ type: 'address', value: 'Belgrano 123' })).toEqual({ results: [] });
+        expect(await getDuplicateHintMatches({ type: 'phone', value: '   ' })).toEqual({ results: [] });
+    });
+
+    it('a failed lookup says so (failed + errorId) and logs without the typed value', async () => {
+        const saved = state.db;
+        state.db = null;
+        const res = await getDuplicateHintMatches({ type: 'phone', value: MARTA_PHONE, excludeAdopterId: 'pedro' });
+        state.db = saved;
+        expect(res).toMatchObject({ results: [], failed: true, errorId: 'err12345' });
+        const call = vi.mocked(logger.error).mock.calls.find(c => String(c[0]).startsWith('getDuplicateHintMatches'));
+        expect(call?.[2]).toMatchObject({ actor: STRANGER, type: 'phone', excludeAdopterId: 'pedro' });
+        expect(JSON.stringify(call?.[2])).not.toContain('4444');
     });
 });
 

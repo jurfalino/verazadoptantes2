@@ -350,7 +350,18 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // values); a stranger learns nothing they couldn't see on the profile. (S4 removed a branch of
 // addHouseholdPerson, not an action.)
 // 169 = 168 + 1.
-const EXPECTED_ACTIONS = 169;
+// «Ya está en otro perfil», option B (Jon 2026-10-29; coordinator sign-off «dup-hint enrichment»):
+// +1 getDuplicateHintMatches (src/app/actions/households.ts, exported from the barrel). What a
+// stranger can do with arguments they choose: session required (else empty); `type` must be
+// phone|email|social|id and the value is capped at 200 chars; detection RE-RUNS from the typed
+// value (findAdopters 'duplicate', the same floor 5 / cap 3 the hint always used, fixed
+// server-side), so it never hydrates ids the caller picks — it answers only profiles matching
+// what was typed, masked for that viewer exactly as «¿Es este perfil?» (hydrateDuplicateMatches)
+// plus their household line, rating, alert counts and activity counts. `matchedEntryIndexes` names
+// which stored entry (by position) equals the typed value — nothing beyond what was typed.
+// Read-only; the typed value is never logged.
+// 170 = 169 + 1.
+const EXPECTED_ACTIONS = 170;
 
 let manifest;
 try {
