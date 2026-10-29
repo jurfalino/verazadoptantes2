@@ -8,10 +8,9 @@ import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter, changeProfileName } from "@/app/actions";
 import type { ProfileIdentityView } from "@/domain/profileIdentity";
-import ProfileAgeEditor from "@/components/ProfileAgeEditor";
 import { MinorTag } from "@/components/MinorTag";
 import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from "@/components/ui/AnchoredMenu";
-import { CalendarDays, GitMerge, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
+import { GitMerge, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
 import { hasStrongMatch } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
@@ -146,7 +145,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // Escape / outside tap / focus are AnchoredMenu's (one behaviour for every ⋯).
     const closeReportMenu = useCallback(() => setShowReportMenu(false), []);
     // «Cambiar edad» (households as profiles): anyone signed in; opened from the ⋯ menu.
-    const [ageEditorOpen, setAgeEditorOpen] = useState(false);
     const flaggingRef = useRef<AdopterFlaggingHandle>(null);
     // Publishes edit state to the global nav so, on MOBILE, it shows Cancelar/Guardar
     // (keyboard-proof) while editing an existing profile. `formRef` lets the nav's
@@ -1407,12 +1405,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                 onClick={() => setShowReportMenu(false)}
                                                                 title={t('interview.start_from_profile')} desc={t('interview.start_from_profile_desc')} />
                                                         )}
-                                                        {/* Age / «Es menor de edad» — open to anyone signed in, like the name. */}
-                                                        {identity && isAuthenticated && (
-                                                            <AnchoredMenuItem icon={CalendarDays} testId="profile-age-edit"
-                                                                onClick={() => { setShowReportMenu(false); setAgeEditorOpen(true); }}
-                                                                title={identity.age !== null || identity.minorBox ? t('adopter.age_edit') : t('adopter.age_add')} desc={t('adopter.age_hint')} />
-                                                        )}
                                                         <AnchoredMenuItem icon={Share2} testId="profile-share"
                                                             onClick={async () => {
                                                                 const url = `${window.location.origin}/adopter/${id}`;
@@ -1506,9 +1498,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         </a>
                                     )}
                                 </div>
-                            )}
-                            {!isNew && identity && ageEditorOpen && initialData?.id && (
-                                <ProfileAgeEditor adopterId={initialData.id} identity={identity} onClose={() => setAgeEditorOpen(false)} />
                             )}
                         </div>
                     </div>

@@ -149,11 +149,11 @@ export async function memberMenu(card: ReturnType<Page['getByTestId']>, item: 'e
 }
 
 /**
- * The add form: name, relationship, age, one phone. «+ Agregar» is one button
+ * The add form: name, relationship, one phone (no age: it isn't entered in the app — Jon, 2026-10-29). «+ Agregar» is one button
  * per section; with 2+ homes it asks «¿En qué hogar?» first — `home` is the
  * household id to pick there (required then, ignored otherwise).
  */
-export async function fillAddForm(page: Page, p: { name?: string; relationship?: string; age?: number; phone?: string }, home?: string) {
+export async function fillAddForm(page: Page, p: { name?: string; relationship?: string; phone?: string }, home?: string) {
     const button = page.getByTestId('household-add-member');
     await expect(button).toHaveCount(1);
     await button.click();
@@ -162,7 +162,6 @@ export async function fillAddForm(page: Page, p: { name?: string; relationship?:
     await expect(form).toBeVisible({ timeout: 15_000 });
     if (p.name) await form.getByTestId('hh-person-name').fill(p.name);
     if (p.relationship) await form.getByTestId('hh-person-rel').selectOption(p.relationship);
-    if (typeof p.age === 'number') await form.getByTestId('hh-person-age').fill(String(p.age));
     if (p.phone) {
         // The profile's own contact list (ContactEntriesSection, prefix «hh-add-contact»).
         await form.getByTestId('hh-add-contact-add-trigger').click();
