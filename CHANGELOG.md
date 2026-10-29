@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.6] - 2026-10-28
+
+### Changed — profile duplicate banner
+- One line for everyone: «Posible duplicado de <nombre>», the name opening that profile («y N más» when there are
+  several). The long «el responsable del registro puede revisarlo» sentence is gone.
+- «Revisar» shows only when the pair is on your own «Pendientes de revisar» list, and opens that list on the pair:
+  the right page, expanded, outlined, just below the top bar.
+- Profiles already merged away are no longer offered as possible duplicates.
+
 ## [2.58.5] - 2026-10-28
 
 ### Changed — one rating look, minors simplified
