@@ -1227,6 +1227,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                 if (e.target.value.trim()) { setDontKnowName(false); setNameHint(false); }
                                             }}
                                             placeholder={t('adopter.placeholder_name_aliases')}
+                                            data-testid="adopter-name-input"
                                             autoFocus
                                         />
                                         {(nameHint || dontKnowName) && (
