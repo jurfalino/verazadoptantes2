@@ -1,11 +1,12 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
-import { ADMIN_EMAIL, cleanupProfiles, createProfileViaApi, execD1, insertHousehold, insertProfile, rows } from './householdFixtures';
+import { ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, insertHousehold, insertProfile, rows } from './householdFixtures';
 
 /**
  * «Ya está en otro perfil», option B (Jon 2026-10-29), as a regular rescuer
- * (the `user` project) adding a phone on someone else's profile, where the
- * phone already sits on two profiles the admin owns (masked for this viewer):
+ * (the `user` project). First adding a phone on someone else's profile, where
+ * the phone already sits on two profiles the admin owns (masked for this
+ * viewer) — case 2, «Marcar como posible duplicado»:
  *
  *   1. The compact inline box: two rows (name, rating, «Ver perfil»), the
  *      household line only on the one whose housemate is 1★, the typed phone
@@ -13,8 +14,14 @@ import { ADMIN_EMAIL, cleanupProfiles, createProfileViaApi, execD1, insertHouseh
  *   2. «Ver perfil» opens a window over the page: the match card, the phone
  *      that matched marked «coincide»; «No es esta persona» closes it and that
  *      row is gone — the typed phone still in the field.
- *   3. «Es la misma persona» in the other's window flags the pair (adopter_flags,
- *      reason duplicate) and its row reads «Marcado».
+ *   3. «Marcar como posible duplicado» in the other's window (it says someone
+ *      else loaded the profile) flags the pair (adopter_flags, reason
+ *      duplicate) and its row reads «Marcado».
+ *
+ * Then case 1, on a profile this rescuer loaded: «Continuar con este perfil»
+ * → the confirmation (the rating after, who is told) → «Sí, continuar» lands
+ * on the matched profile with «Listo», once; the edited profile is absorbed
+ * and the typed phone is on the match.
  *
  * Selectors are data-testids: Chromium renders English.
  */
@@ -53,7 +60,7 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         await admin?.dispose();
     });
 
-    test('compact box → window → «No es esta persona» hides the row → «Es la misma persona» flags the pair', async ({ page }) => {
+    test('compact box → window → «No es esta persona» hides the row → «Marcar como posible duplicado» flags the pair', async ({ page, browser, baseURL }) => {
         test.setTimeout(180_000);
         await page.goto(`/adopter/${ANCHOR}`);
         await dismissCountryBanner(page);
@@ -83,8 +90,12 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         await expect(win.getByTestId('dup-hint-window-head')).toContainText(DOS);
         await expect(win.getByTestId('card-household-line')).toHaveCount(1);
         await expect(win.getByTestId('dup-hint-contact').getByTestId('contact-matches')).toHaveCount(1);
-        await expect(win.getByTestId('dup-hint-same')).toBeVisible();
-        await expect(win.getByTestId('dup-hint-open-full')).toBeVisible();
+        // Case 2: someone else loaded the profile being edited — flag, never continue.
+        await expect(win.getByTestId('dup-hint-cant-join')).toBeVisible();
+        await expect(win.getByTestId('dup-hint-flag')).toBeVisible();
+        await expect(win.getByTestId('dup-hint-flag-told')).toBeVisible();
+        await expect(win.getByTestId('dup-hint-open-to-add')).toBeVisible();
+        await expect(win.getByTestId('dup-hint-continue')).toHaveCount(0);
         await win.getByTestId('dup-hint-not-this').click();
         await expect(win).toHaveCount(0);
         await expect(rowsInBox).toHaveCount(1);
@@ -93,14 +104,92 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         // Nothing was written for «No es esta persona».
         expect(rows(`SELECT id FROM adopter_flags WHERE adopter_id = '${ANCHOR}'`)).toHaveLength(0);
 
-        // 3. «Es la misma persona» on the other one.
+        // 3. «Marcar como posible duplicado» on the other one.
         await uno.getByTestId('dup-hint-view').click();
         await expect(win).toBeVisible();
-        await win.getByTestId('dup-hint-same').click();
+        await win.getByTestId('dup-hint-flag').click();
         await expect(win).toHaveCount(0, { timeout: 15_000 });
         await expect(uno.getByTestId('dup-hint-flagged')).toBeVisible();
         await expect.poll(() => rows(`SELECT reason, target_adopter_id AS t FROM adopter_flags WHERE adopter_id = '${ANCHOR}'`), { timeout: 15_000 })
             .toEqual([expect.objectContaining({ reason: 'duplicate', t: UNO_ID })]);
         await expect(input).toHaveValue(PHONE);
+
+        // 4. Both owners are told (never the flagger), and «Revisar» opens the
+        //    match owner's «Pendientes» at that pair.
+        const flagId = String(rows(`SELECT id FROM adopter_flags WHERE adopter_id = '${ANCHOR}'`)[0].id);
+        const told = () => rows(`SELECT user_id AS u, url FROM notifications WHERE type = 'duplicate_flagged' AND metadata LIKE '%${ANCHOR}%'`);
+        // (The admin's org teammates in the seed are told too: owners AND their teams.)
+        await expect.poll(() => told().map(r => String(r.u)), { timeout: 15_000 }).toEqual(expect.arrayContaining([ADMIN_EMAIL, OWNER]));
+        expect(told().map(r => String(r.u))).not.toContain(USER_EMAIL);
+        expect(new Set(told().map(r => String(r.u))).size).toBe(told().length);
+        const url = String(told()[0].url);
+        expect(url).toContain('#pendientes');
+        const adminCtx = await browser.newContext({ storageState: '.auth/admin.json', baseURL });
+        const adminPage = await adminCtx.newPage();
+        await adminPage.goto(url);
+        const focused = adminPage.locator(`[data-testid="dedup-row"][data-candidate-id="${flagId}"]`);
+        await expect(focused).toBeVisible({ timeout: 30_000 });
+        await expect(focused).toHaveAttribute('data-highlight', /.+/);
+        await adminCtx.close();
+    });
+});
+
+const PHONE_C1 = `11 6${s.slice(-3)}-${s.slice(-7, -3)}`;
+const MINE = `test-duphint-fixture-mine-${stamp}`;
+const MINE_NAME = `Duphint Maria ${stamp}`;
+const MATCH_NAME = `Duphint Jonatan ${stamp}`;
+let MATCH_ID = '';
+
+test.describe.serial('composer duplicate hint — «Continuar con este perfil» on my own profile (case 1)', () => {
+    test.beforeAll(async ({ baseURL }) => {
+        const adminCtx = await playwrightRequest.newContext({ baseURL, storageState: '.auth/admin.json' });
+        MATCH_ID = await createProfileViaApi(adminCtx, { name: MATCH_NAME, phone: `+54 9 ${PHONE_C1}` });
+        await adminCtx.dispose();
+        insertProfile({ id: MINE, name: MINE_NAME, owner: USER_EMAIL, contacts: [{ id: `${MINE}-e`, type: 'email', value: `duphint-${stamp}@example.org`, addedBy: USER_EMAIL }] });
+        execD1(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-duphint-fixture-ev-mine-${stamp}', '${MINE}', 'observation', 4, '${USER_EMAIL}', strftime('%s','now','-2 days'))`);
+    });
+    test.afterAll(async () => {
+        cleanupProfiles([MINE, MATCH_ID]);
+        execD1(`DELETE FROM adopter_events WHERE id = 'test-duphint-fixture-ev-mine-${stamp}'`);
+    });
+
+    test('continue → the confirmation → lands on the match with «Listo», once; mine absorbed, the typed phone kept', async ({ page }) => {
+        test.setTimeout(180_000);
+        await page.goto(`/adopter/${MINE}`);
+        await dismissCountryBanner(page);
+        await page.getByTestId('ce-add-trigger').click();
+        await page.getByTestId('ce-type-phone').click();
+        await page.getByTestId('ce-composer-input').fill(PHONE_C1);
+
+        const row = page.getByTestId('dup-hint').locator(`[data-adopter-id="${MATCH_ID}"]`);
+        await expect(row).toBeVisible({ timeout: 30_000 });
+        await row.getByTestId('dup-hint-view').click();
+        const win = page.getByTestId('dup-hint-window');
+        await expect(win.getByTestId('dup-hint-continue')).toBeVisible();
+        await expect(win.getByTestId('dup-hint-flag')).toHaveCount(0);
+        await win.getByTestId('dup-hint-continue').click();
+
+        const confirm = page.getByTestId('dup-hint-confirm');
+        await expect(confirm).toBeVisible();
+        await expect(confirm.getByTestId('continue-merge-new')).toContainText(`duphint-${stamp}@example.org`);
+        await expect(confirm.getByTestId('continue-merge-records')).toBeVisible();
+        await expect(confirm.getByTestId('dup-hint-rating-after').getByTestId('rating-value')).toBeVisible();
+        // The admin loaded the match: they are told.
+        await expect(confirm.getByTestId('dup-hint-confirm-told')).toBeVisible();
+        await confirm.getByTestId('dup-hint-confirm-yes').click();
+
+        await page.waitForURL(new RegExp(`/adopter/${MATCH_ID}$`), { timeout: 30_000 });
+        const banner = page.getByTestId('continued-profile-banner');
+        await expect(banner).toBeVisible({ timeout: 15_000 });
+        await expect(banner).toContainText(MINE_NAME);
+        expect(rows(`SELECT deleted_at AS d FROM adopters WHERE id = '${MINE}'`)[0].d).not.toBeNull();
+        const entries = String(rows(`SELECT contact_entries AS c FROM adopters WHERE id = '${MATCH_ID}'`)[0].c);
+        expect(entries).toContain(PHONE_C1);
+        expect(entries).toContain(`duphint-${stamp}@example.org`);
+
+        // One-shot: a reload doesn't show it again.
+        await page.reload();
+        await expect(page.getByTestId('ce-add-trigger')).toBeVisible({ timeout: 30_000 });
+        await expect(page.getByTestId('continued-profile-banner')).toHaveCount(0);
     });
 });
