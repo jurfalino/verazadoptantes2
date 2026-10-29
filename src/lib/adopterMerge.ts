@@ -212,14 +212,15 @@ export async function mergeAdopters(
             // this the absorbed record's name stops being a NAME token — a person
             // recorded under that spelling elsewhere would silently stop matching
             // the survivor (aliases tokenize as name_words; see extractTokens).
-            // A contact the survivor already has as the duplicate matcher sees it
-            // («11 6312-0851» beside «+54 9 11 6312-0851») is not added twice: the
+            // A contact the survivor already holds wholly (contactCoveredBy:
+            // «11 6312-0851» in «+54 9 11 6312-0851») is not added twice: the
             // survivor's entry stays, with the absorbed one's phone apps; the
             // absorbed owner's access follows it (grantAccessAfterFold).
             let mergedEntries = foldContactEntries(
                 deserializeContactEntries(p.contactEntries),
                 deserializeContactEntries(secondary.contactEntries),
-            ).entries;
+                { stricterVisibility: true },
+            );
             const secondaryName = (secondary.name || '').trim();
             // The absorbed name is a previous name of the same person: a rename-protected
             // alias (households as profiles) — only the survivor's team may drop it. An

@@ -21,7 +21,7 @@ import { adopters, auditLog, piiAccessGrants } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
-import { deserializeContactEntries, parseBlobToContactEntries, sameContact } from '@/lib/contactEntries';
+import { contactCoveredBy, deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import { hashEntryValue } from '@/lib/piiAccess';
 import { realOwner } from '@/domain/dedupPair';
 
@@ -50,9 +50,10 @@ async function absorbedEntryHashes(db: Db, absorbedId: string, survivorId: strin
     // The merge keeps ONE copy of a contact both had in different formats
     // («+54 9 11 6312-0851» stays, «11 6312-0851» goes — foldContactEntries):
     // the grant follows the survivor's entry that now stands for it, so the
-    // absorbed team still sees the number its profile brought. Only an entry the
-    // matcher calls the same one (sameContact): nothing else of the survivor's.
-    const standIns = entriesOf(survivor).filter(s => own.some(e => sameContact(e, s)));
+    // absorbed team still sees the number its profile brought. Only a survivor
+    // entry the absorbed side brought WHOLLY (contactCoveredBy: every number in
+    // it is theirs) — never one that also holds a number they didn't have.
+    const standIns = entriesOf(survivor).filter(s => own.some(e => contactCoveredBy(s, e)));
     return [...new Set([...own, ...standIns].map(e => hashEntryValue(e.type, e.value)))];
 }
 

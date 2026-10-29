@@ -94,7 +94,7 @@ export async function continueWithMatchedProfile(input: {
         const matchEntries = matchParsed.length > 0 ? matchParsed : parseBlobToContactEntries(match.contactInfo);
         let typedSaved = false;
         if (typed && isDupHintType(typed.type) && typeof typed.value === 'string' && typed.value.trim()
-            && typedIsNewFor(matchEntries, typed.type, typed.value.trim())) {
+            && typedIsNewFor(matchEntries, typed.type, typed.value.trim(), typeof typed.platform === 'string' ? typed.platform : undefined)) {
             const platform = typed.type === 'social' && typeof typed.platform === 'string' && SOCIAL_PLATFORMS.includes(typed.platform)
                 ? typed.platform as SocialPlatform : undefined;
             // A handle needs its network, as the composer's Save asks for it.

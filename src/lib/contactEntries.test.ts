@@ -4,6 +4,7 @@ import {
     newContactsForProfile,
     sameContact,
     foldContactEntries,
+    contactCoveredBy,
     categorizeContactText,
     contactEntriesToBlob,
     parseBlobToContactEntries,
@@ -713,21 +714,50 @@ describe('contactMatchKeys / sameContact / foldContactEntries — the duplicate 
         expect(newContactsForProfile([{ id: 't1', type: 'phone', value: '11 6312-0851' }, { id: 't2', type: 'email', value: 'x@y.com' }], profile).map(e => e.value)).toEqual(['x@y.com']);
     });
 
-    it('fold: the kept entry stays (its formatting), gains the other\'s phone apps; one copy; the dropped one is paired with its stand-in', () => {
+    it('fold: the kept entry stays (its formatting), gains the other\'s phone apps; one copy', () => {
         const base: ContactEntry[] = [{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851', apps: ['telegram'] }];
         const incoming: ContactEntry[] = [{ id: 'q1', type: 'phone', value: '11 6312-0851', apps: ['whatsapp'] }, { id: 'q2', type: 'email', value: 'x@y.com' }];
-        const { entries, same } = foldContactEntries(base, incoming);
+        const entries = foldContactEntries(base, incoming, { stricterVisibility: true });
         expect(entries.filter(e => e.type === 'phone')).toEqual([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851', apps: ['telegram', 'whatsapp'] }]);
         expect(entries.map(e => e.value)).toContain('x@y.com');
-        expect(same).toEqual([{ incoming: incoming[0], kept: expect.objectContaining({ id: 'p1' }) }]);
         // The input lists are not changed.
         expect(base[0].apps).toEqual(['telegram']);
     });
 
-    it('fold visibility: the kept entry stays public only when both copies were (the stricter rule)', () => {
+    it('fold visibility in a MERGE: the kept entry stays public only when both copies were (the stricter rule)', () => {
         const pub = (v: string, isPublic?: boolean): ContactEntry => ({ type: 'phone', value: v, ...(isPublic ? { isPublic } : {}) });
-        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851')]).entries[0].isPublic).toBeUndefined();
-        expect(foldContactEntries([pub('+54 9 11 6312-0851')], [pub('11 6312-0851', true)]).entries[0].isPublic).toBeUndefined();
-        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851', true)]).entries[0].isPublic).toBe(true);
+        const merge = { stricterVisibility: true };
+        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851')], merge)[0].isPublic).toBeUndefined();
+        expect(foldContactEntries([pub('+54 9 11 6312-0851')], [pub('11 6312-0851', true)], merge)[0].isPublic).toBeUndefined();
+        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851', true)], merge)[0].isPublic).toBe(true);
+    });
+
+    it('fold visibility for a third party\'s typed contact: never changes the existing entry (round 7, S2)', () => {
+        const kept: ContactEntry = { type: 'phone', value: '+54 9 11 6312-0851', isPublic: true };
+        expect(foldContactEntries([kept], [{ type: 'phone', value: '11 6312-0851' }], { stricterVisibility: false })).toEqual([kept]);
+        expect(foldContactEntries([kept], [{ type: 'phone', value: '+54 9 11 6312-0851' }], { stricterVisibility: false })).toEqual([kept]);
+    });
+
+    it('M1: a two-number entry is never folded into one of its numbers — nothing lost, and the preview lists it', () => {
+        const base: ContactEntry[] = [{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851' }];
+        const two: ContactEntry = { id: 'q1', type: 'phone', value: '11 6312-0851 / 11 4444-5555' };
+        expect(contactCoveredBy(two, base[0])).toBe(false);
+        expect(foldContactEntries(base, [two], { stricterVisibility: true }).map(e => e.value)).toEqual(['+54 9 11 6312-0851', '11 6312-0851 / 11 4444-5555']);
+        const profile = { contactEntries: JSON.stringify(base), contactInfo: null };
+        expect(newContactsForProfile([two], profile).map(e => e.value)).toEqual(['11 6312-0851 / 11 4444-5555']);
+        // The other way round, one of its numbers IS wholly held by it.
+        expect(contactCoveredBy(base[0], two)).toBe(true);
+        expect(foldContactEntries([two], [base[0]], { stricterVisibility: true })).toHaveLength(1);
+    });
+
+    it('S1: the same handle on different networks, or with one side missing a network, are different contacts', () => {
+        const ig: ContactEntry = { type: 'social', value: 'ana.perez', platform: 'instagram' };
+        const fb: ContactEntry = { type: 'social', value: 'ana.perez', platform: 'facebook' };
+        const bare: ContactEntry = { type: 'social', value: '@ana.perez' };
+        expect(foldContactEntries([ig], [fb], { stricterVisibility: true })).toHaveLength(2);
+        expect(foldContactEntries([ig], [bare], { stricterVisibility: true })).toHaveLength(2);
+        expect(foldContactEntries([ig], [{ type: 'social', value: 'https://instagram.com/ana.perez', platform: 'instagram' }], { stricterVisibility: true })).toHaveLength(1);
+        // The hint's loose «coincide» still sees the same handle.
+        expect(sameContact(ig, fb)).toBe(true);
     });
 });

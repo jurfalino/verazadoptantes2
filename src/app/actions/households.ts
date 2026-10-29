@@ -966,7 +966,7 @@ async function continuePreview(
     // compares phones (country / area prefixes) — exactly when «Sí, continuar» saves it.
     const matchParsed = deserializeContactEntries(match.row.contactEntries);
     const matchEntries = matchParsed.length > 0 ? matchParsed : parseBlobToContactEntries(match.row.contactInfo);
-    const typed = isDupHintType(typedEntry.type) && typedIsNewFor(matchEntries, typedEntry.type, typedEntry.value) ? [typedEntry] : [];
+    const typed = isDupHintType(typedEntry.type) && typedIsNewFor(matchEntries, typedEntry.type, typedEntry.value, typedEntry.platform) ? [typedEntry] : [];
     return {
         // Only what the preview shows: never who added each one.
         newContacts: newContactsForProfile([...own, ...typed], match.row)

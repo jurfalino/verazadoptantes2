@@ -174,14 +174,18 @@ export async function appendToExistingAdopter(
                     // The same rule as the «Se agregará» preview (newContactsForProfile →
                     // contactMatchKeys): a typed contact the profile already has in another
                     // format is not stored twice.
-                    const merged = foldContactEntries(base, incoming).entries;
+                    // A third party's typed contact never changes the visibility of the profile's own entry.
+                    const merged = foldContactEntries(base, incoming, { stricterVisibility: false });
                     // S1: never grow past the cap (a later read would truncate it).
                     if (merged.length !== base.length && (contactCapExceeded(merged) || contactEntriesJsonCount(fields.contactEntries) > MAX_CONTACT_ENTRIES)) return { result: { [CONTACT_ENTRIES_FULL]: '1' } };
                     // A same-contact copy may only add its phone apps to an existing entry: still a write.
-                    if (merged.length !== base.length || JSON.stringify(merged) !== JSON.stringify(foldContactEntries(base, []).entries)) {
+                    if (merged.length !== base.length || JSON.stringify(merged) !== JSON.stringify(foldContactEntries(base, [], { stricterVisibility: false }))) {
                         updates.contactEntries = JSON.stringify(merged);
                         updates.contactInfo = contactEntriesToBlob(merged) || null;
-                        appendedFields.contactInfo = contactEntriesToBlob(incoming);
+                        // The history names only what was really added (not copies folded into an existing entry).
+                        const baseIds = new Set(base.map(e => e.id).filter(Boolean));
+                        const added = merged.filter(e => !e.id || !baseIds.has(e.id));
+                        if (added.length) appendedFields.contactInfo = contactEntriesToBlob(added);
                     }
                 }
             } else {

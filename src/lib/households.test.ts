@@ -533,6 +533,13 @@ describe('householdLinesFor', () => {
         expect(lucas.map(l => l.profileId).sort()).toEqual(['marta', 'pedro', 'rosa']);
     });
 
+    it('the households flag is read failing open: a failed read keeps the housemate lines', async () => {
+        await pedrosHousehold();
+        const { getFeatureFlag } = await import('@/config/features');
+        await householdLinesFor(db(), STRANGER, ['lucas']);
+        expect(vi.mocked(getFeatureFlag)).toHaveBeenCalledWith('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true });
+    });
+
     it('households switched off: no lines at all, nothing read', async () => {
         await pedrosHousehold();
         const { getFeatureFlag } = await import('@/config/features');

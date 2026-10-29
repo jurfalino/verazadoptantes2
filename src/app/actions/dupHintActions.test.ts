@@ -475,6 +475,37 @@ describe('the same phone saved twice in the existing paths (round 4)', () => {
         expect(refs).not.toContain(hashEntryValue('email', 'secreto@example.com'));
     });
 
+    it('M1 data loss: an absorbed two-number entry is kept whole beside the survivor\'s single number (merge)', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: '+54 9 11 6312-0851', addedBy: OTHER }]));
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'm1', type: 'phone', value: '11 6312-0851 / 11 4444-5555', addedBy: OWNER }]));
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: true });
+        expect(contactsOf('jonatan').filter(c => c.type === 'phone').map(c => c.value)).toEqual(['+54 9 11 6312-0851', '11 6312-0851 / 11 4444-5555']);
+    });
+
+    it('M1 leak: a survivor two-number entry is never granted for an absorbed single number (rescuer merge)', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: '11 6312-0851 / 11 4444-5555', addedBy: OTHER }]));
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'm1', type: 'phone', value: '6312-0851', addedBy: OWNER }]));
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: true });
+        const refs = sqlite.prepare(`SELECT entry_ref AS r FROM pii_access_grants WHERE adopter_id = 'jonatan' AND grantee_email = ? AND scope = 'entry' AND revoked_at IS NULL`).all(OWNER).map(g => g.r);
+        expect(refs).toContain(hashEntryValue('phone', '6312-0851'));
+        expect(refs).not.toContain(hashEntryValue('phone', '11 6312-0851 / 11 4444-5555'));
+    });
+
+    it('M1 in appendToExistingAdopter: a typed two-number entry against one of its numbers is added whole', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851' }]));
+        expect(await appendToExistingAdopter('maria', { contactEntries: JSON.stringify([{ type: 'phone', value: '11 6312-0851 / 11 4444-5555' }]) })).toMatchObject({ success: true });
+        expect(contactsOf('maria').filter(c => c.type === 'phone').map(c => c.value)).toEqual(['+54 9 11 6312-0851', '11 6312-0851 / 11 4444-5555']);
+    });
+
+    it('S2: a typed copy in appendToExistingAdopter never makes the profile\'s public entry protected; the history names only what was added', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851', isPublic: true }]));
+        expect(await appendToExistingAdopter('maria', { contactEntries: JSON.stringify([{ type: 'phone', value: '11 6312-0851' }, { type: 'email', value: 'otra@example.com' }]) })).toMatchObject({ success: true });
+        expect(contactsOf('maria').find(c => c.type === 'phone')).toMatchObject({ id: 'p1', isPublic: true });
+        const history = sqlite.prepare(`SELECT changes FROM adopter_history WHERE adopter_id = 'maria' ORDER BY rowid DESC LIMIT 1`).get()!.changes as string;
+        expect(history).toContain('otra@example.com');
+        expect(history).not.toContain('6312-0851');
+    });
+
     it('the new-profile form\'s «Continuar con este perfil» (appendToExistingAdopter): «11 6312-0851» typed against «+54 9 11 6312-0851» is not stored twice', async () => {
         sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851' }]));
         const res = await appendToExistingAdopter('maria', { contactEntries: JSON.stringify([{ type: 'phone', value: '11 6312-0851', apps: ['whatsapp'] }, { type: 'email', value: 'otra@example.com' }]) });

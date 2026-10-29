@@ -773,7 +773,8 @@ export async function householdLinesFor(
     adopterIds: string[],
 ): Promise<Record<string, HouseholdLine[]>> {
     // Households switched off: no card says anything about a home (every mount reads this).
-    if (adopterIds.length === 0 || !(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS'))) return {};
+    // A failed flag read keeps the lines: a housemate warning («Convive con Pedro ★1») must not vanish on a D1 hiccup.
+    if (adopterIds.length === 0 || !(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true }))) return {};
     const memo = <T>(m: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
         let p = m.get(key);
         if (!p) { p = load(); m.set(key, p); }
