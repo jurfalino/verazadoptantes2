@@ -35,7 +35,10 @@ import { householdLineSummary, type HouseholdLine } from '@/domain/households';
 
 export function CardHouseholdLine({ lines, className = 'mt-2' }: { lines: HouseholdLine[] | null | undefined; className?: string }) {
     const { t } = useLanguage();
-    const [open, setOpen] = useState(false);
+    // Open for THESE lines only: a new search keeps the card (keyed by adopter id) but brings a new
+    // array, so the line comes back closed — with no open frame, unlike a reset in an effect.
+    const [openFor, setOpenFor] = useState<HouseholdLine[] | null | undefined>(null);
+    const open = openFor != null && openFor === lines;
     const listId = useId();
     const summary = householdLineSummary(lines);
     if (!summary.show) return null;
@@ -56,7 +59,7 @@ export function CardHouseholdLine({ lines, className = 'mt-2' }: { lines: Househ
             >
                 <button
                     type="button"
-                    onClick={() => setOpen(o => !o)}
+                    onClick={() => setOpenFor(o => (o === lines ? null : lines))}
                     aria-expanded={open}
                     aria-controls={listId}
                     data-testid="card-household-toggle"
