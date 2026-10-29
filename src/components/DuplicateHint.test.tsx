@@ -171,6 +171,12 @@ describe('DupHintProfile — the window', () => {
         expect(ids(html)).toEqual(['dup-hint-review', 'dup-hint-not-this', 'dup-hint-open-full']);
     });
 
+    it("'settled' (already recorded as two people): «Ya figuran como personas distintas.», only «No es esta persona» and the open link (F3)", () => {
+        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'settled' }} canAct {...handlers} />);
+        expect(text(html)).toContain('Ya figuran como personas distintas.');
+        expect(ids(html)).toEqual(['dup-hint-not-this', 'dup-hint-open-full']);
+    });
+
     it("case 5 'pending': only said — «No es esta persona» and the open link, no flag, no continue", () => {
         const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'pending', alreadyPending: true }} canAct {...handlers} />);
         expect(text(html)).toContain('Ya está marcado para revisar.');
