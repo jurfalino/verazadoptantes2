@@ -28,6 +28,7 @@ import { alias } from 'drizzle-orm/sqlite-core';
 import { adopters, adoptions, duplicateCandidates, householdCorrections, householdMemberships, households } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { getFeatureFlag } from '@/config/features';
 import { runBatch } from '@/lib/dbBatch';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import { isPrivilegedOnProfile } from '@/lib/profilePrivilege';
@@ -771,6 +772,8 @@ export async function householdLinesFor(
     viewer: string | null | undefined,
     adopterIds: string[],
 ): Promise<Record<string, HouseholdLine[]>> {
+    // Households switched off: no card says anything about a home (every mount reads this).
+    if (adopterIds.length === 0 || !(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS'))) return {};
     const memo = <T>(m: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
         let p = m.get(key);
         if (!p) { p = load(); m.set(key, p); }

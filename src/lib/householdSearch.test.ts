@@ -38,7 +38,7 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
 }));
 vi.mock('@/config/features', async (orig) => ({
     ...(await orig()),
-    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_GUEST_NAME_MASK'),
+    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_GUEST_NAME_MASK' || flag === 'ENABLE_HOUSEHOLD_MEMBERS'),
 }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async (_n: string, task: () => Promise<unknown>) => { await task(); }) }));

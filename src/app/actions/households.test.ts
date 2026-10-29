@@ -40,7 +40,7 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
 // PII gating ON, so "not an approver / still masked" actually tests something.
 vi.mock('@/config/features', async (orig) => ({
     ...(await orig()),
-    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING'),
+    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_HOUSEHOLD_MEMBERS'),
 }));
 // A racing caller dropping the household right after ensureHousehold / addMembership (Task 1 carry-over).
 vi.mock('@/lib/households', async (orig) => {

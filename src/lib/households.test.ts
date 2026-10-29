@@ -21,7 +21,7 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
 // PII gating ON, so "a stranger sees masked" actually tests masking.
 vi.mock('@/config/features', async (orig) => ({
     ...(await orig()),
-    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING'),
+    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_HOUSEHOLD_MEMBERS'),
 }));
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
@@ -531,6 +531,13 @@ describe('householdLinesFor', () => {
         await addMembership(db(), { householdId: second, adopterId: 'pedro', addedBy: STRANGER });
         const { lucas } = await householdLinesFor(db(), null, ['lucas']);
         expect(lucas.map(l => l.profileId).sort()).toEqual(['marta', 'pedro', 'rosa']);
+    });
+
+    it('households switched off: no lines at all, nothing read', async () => {
+        await pedrosHousehold();
+        const { getFeatureFlag } = await import('@/config/features');
+        vi.mocked(getFeatureFlag).mockImplementationOnce(async () => false);
+        expect(await householdLinesFor(db(), STRANGER, ['lucas', 'marta'])).toEqual({});
     });
 });
 
