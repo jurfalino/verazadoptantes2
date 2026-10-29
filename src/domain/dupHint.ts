@@ -133,7 +133,9 @@ export function visibleDupHintMatches<T extends { adopterId: string }>(matches: 
  *   absorbed into an ownerless profile without an admin).
  * - 'review_admins': «Ya dijeron que no son la misma persona» — the other
  *   owner declined the viewer team's request on this pair, or an admin ruled
- *   them separate (case 4): only the admins can be asked.
+ *   them separate (case 4): only the admins can be asked — and only by
+ *   someone whose team loaded one of the two (fix round 2, review F1: never
+ *   a stranger filing disputes about other people's profiles).
  * - 'pending': an open duplicate flag or a pending merge request already
  *   covers the pair (case 5): no second flag, no second notice.
  */
@@ -143,6 +145,8 @@ export interface DupHintFacts {
     isAdmin: boolean;
     /** The viewer or a teammate loaded the profile being edited (isOwnerOrOrgMate). */
     currentTeamOwned: boolean;
+    /** The viewer or a teammate loaded the match. */
+    matchTeamOwned: boolean;
     /** The match has a real owner (realOwner(addedBy)). */
     matchHasOwner: boolean;
     /** PairVerdict.declinedForTeam. */
@@ -156,11 +160,13 @@ export interface DupHintFacts {
 /**
  * Priority 4 (said no) > 5 (pending) > 3 (ownerless) > 1 / 2. Admins choose
  * freely (D24): always 'continue' — a pending flag or request is only said
- * («Ya está marcado para revisar.»), and their merge closes it.
+ * («Ya está marcado para revisar.»), and their merge closes it. «Said no» asks
+ * the admins only for a viewer whose team loaded one of the two; anyone else
+ * falls through (to 'flag', which a said-no pair refuses: the window says why).
  */
 export function decideDupHintAction(f: DupHintFacts): DupHintAction {
     if (f.isAdmin) return 'continue';
-    if (f.declinedForTeam || f.adminRuledSeparate) return 'review_admins';
+    if ((f.declinedForTeam || f.adminRuledSeparate) && (f.currentTeamOwned || f.matchTeamOwned)) return 'review_admins';
     if (f.pending) return 'pending';
     if (!f.matchHasOwner) return 'flag';
     return f.currentTeamOwned ? 'continue' : 'flag';

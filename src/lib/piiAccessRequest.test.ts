@@ -37,7 +37,8 @@ describe('fileAccessRequestFor', () => {
         expect(helper).not.toMatch(/^\s*['"]use server['"]/m);
         expect(helper).toMatch(/fileAccessRequestFor\(actor,/);
         expect(helper).not.toMatch(/requestPiiAccess\(|getUser\(/);
-        const contact = read('src/app/actions/addContactEntry.ts');
+        // The add path's body lives in src/lib/contactEntryAdd.ts (fix round 2: its notify option is not the browser's).
+        const contact = read('src/lib/contactEntryAdd.ts');
         expect(contact).toMatch(/fileContributionAccessRequest\([^)]*actor, adopterId\)/);
         expect(contact).not.toMatch(/requestPiiAccess\(/);
         // Households as profiles: the household add files on the person it made, with the actor it has.

@@ -1,10 +1,10 @@
 'use server';
 
-import { adopterFlags, adopterHistory } from '@/db/schema';
+import { adopterFlags, adopterHistory, adopters } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
-import { logger } from '@/lib/logger';
+import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
@@ -12,7 +12,18 @@ import { runAfterResponse } from '@/lib/background';
 import { historyKindFor } from '@/lib/profilePrivilege';
 import { FLAG_REASONS } from '@/domain/constants';
 
-export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string) {
+export type FlagAdopterResult =
+    /** `already`: an open duplicate flag already covers this pair (either direction) — its id, nothing new written or sent. */
+    | { success: true; id: string; already?: true }
+    /**
+     * A duplicate flag refused: 'invalid_target' (the same profile, or one that
+     * doesn't exist or was merged away); 'said_no' (someone already said they are
+     * two people — declined for the flagger's team, or an admin ruled it — as the
+     * «Ya está en otro perfil» window says).
+     */
+    | { success: false; error: 'invalid_target' | 'said_no'; errorId: string };
+
+export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string): Promise<FlagAdopterResult> {
     const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
     if (!parsed.success) {
         throw new Error(`Invalid flag data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
@@ -22,6 +33,32 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         const db = await getDb();
         if (!db) throw new Error("No database");
         const flaggedBy = await getUser();
+
+        // A duplicate flag names a pair — the profile menu «Reportar → Duplicado» and the
+        // «Ya está en otro perfil» window alike: once per pair, two real live profiles,
+        // and never on a pair someone already said are two people.
+        if (reason === FLAG_REASONS.DUPLICATE && targetAdopterId) {
+            const refuse = (error: 'invalid_target' | 'said_no') => {
+                const errorId = generateErrorId();
+                logger.warn('flagAdopter: duplicate flag refused', { adopterId, targetAdopterId, actor: flaggedBy, reason: error, errorId });
+                return { success: false as const, error, errorId };
+            };
+            if (targetAdopterId === adopterId) return refuse('invalid_target');
+            const live = (id: string) => db.select({ deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, id)).get() as Promise<{ deletedAt: Date | null } | undefined>;
+            const [a, b] = await Promise.all([live(adopterId), live(targetAdopterId)]);
+            if (!a || !b || a.deletedAt || b.deletedAt) return refuse('invalid_target');
+            const { pairUnderReview, loadPairVerdict, teamOf } = await import('@/lib/pairVerdict');
+            const review = await pairUnderReview(db, adopterId, targetAdopterId);
+            if (review.flagId) {
+                logger.info('flagAdopter: the pair already has an open duplicate flag, no second one', { adopterId, targetAdopterId, actor: flaggedBy, flagId: review.flagId });
+                return { success: true, id: review.flagId, already: true };
+            }
+            const { isAdminAsync } = await import('@/config/admins');
+            if (!(await isAdminAsync(flaggedBy))) {
+                const verdict = await loadPairVerdict(db, adopterId, targetAdopterId, await teamOf(flaggedBy));
+                if (verdict.declinedForTeam || verdict.adminRuledSeparate) return refuse('said_no');
+            }
+        }
 
         const id = crypto.randomUUID();
         await db.insert(adopterFlags).values({

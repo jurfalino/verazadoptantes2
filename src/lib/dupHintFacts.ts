@@ -73,6 +73,8 @@ export interface DupHintMatchDecision {
     /** The open duplicate flag on the pair, if any. */
     flagId: string | null;
     matchTeamOwned: boolean;
+    /** Someone already said they are two people (declined for the viewer's team, or an admin ruled it). */
+    saidNo: boolean;
 }
 
 /** What the window offers for this match (needs a saved CURRENT). */
@@ -90,12 +92,13 @@ export async function decideDupHintMatch(
     const action = decideDupHintAction({
         isAdmin: viewer.isAdmin,
         currentTeamOwned: viewer.currentTeamOwned,
+        matchTeamOwned,
         matchHasOwner: !!realOwner(match.addedBy),
         declinedForTeam: verdict.declinedForTeam,
         adminRuledSeparate: verdict.adminRuledSeparate,
         pending,
     });
-    return { action, alreadyPending: pending, flagId: review.flagId, matchTeamOwned };
+    return { action, alreadyPending: pending, flagId: review.flagId, matchTeamOwned, saidNo: verdict.declinedForTeam || verdict.adminRuledSeparate };
 }
 
 /** Every record's rating on this profile (null = not rated): what the profile's average is computed from. */

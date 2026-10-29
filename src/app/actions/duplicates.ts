@@ -902,7 +902,8 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         // este perfil» (src/lib/pairMerge.ts), wording of these logs unchanged.
         const absorbed = secondaryId === sideA.id ? sideA : sideB;
         const merged = await mergeChosenPair(db, {
-            primaryId, secondaryId, actor, isAdmin, viaAdmin,
+            // Full contact after any admin's merge here (foldAccess.security's tested D40 behaviour).
+            primaryId, secondaryId, actor, fullAccess: isAdmin, viaAdmin,
             notifyOwner: action.kind === 'merge' ? action.notifyOwner : null,
             absorbedAddedBy: absorbed.addedBy,
             label: 'mergePendingDedupPair', ctx: { candidateId, actorEmail },

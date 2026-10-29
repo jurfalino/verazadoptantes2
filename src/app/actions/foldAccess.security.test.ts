@@ -100,7 +100,9 @@ beforeEach(() => {
 
 describe('C1: keeping another rescuer\'s profile without their consent', () => {
     it('flag a throwaway as a duplicate of theirs, merge keeping theirs: no all_contact — only the throwaway\'s own entries, the victim\'s stay masked', async () => {
-        const { id: flagId } = await flagAdopter('throwaway', 'duplicate', 'same person', 'victim');
+        const flagged = await flagAdopter('throwaway', 'duplicate', 'same person', 'victim');
+        if (!flagged.success) throw new Error(flagged.error); // (typed result since fix round 2)
+        const flagId = flagged.id;
         expect(await mergePendingDedupPair(flagId, { keepId: 'victim' })).toEqual({ success: true, outcome: 'merged' });
 
         expect(grantsOn('victim')).toEqual([

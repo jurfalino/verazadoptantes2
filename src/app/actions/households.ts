@@ -67,6 +67,7 @@ import { findAdopters } from './findAdopters';
 import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
 import { ratingAfterMerge } from '@/domain/ratings';
+import { realOwner } from '@/domain/dedupPair';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
@@ -795,11 +796,18 @@ export type DupHintMatch = HouseholdMatchCandidate & {
     /** An open duplicate flag or a pending request already covers the pair («Ya está marcado para revisar.»). */
     alreadyPending: boolean;
     /**
-     * Someone outside the viewer's team loaded the profile being edited: the
-     * 'flag' window says «Lo cargó otra persona…» (not when the flag is only
-     * because the match has no owner, case 3).
+     * Why the 'flag' window can't offer «Continuar» for the profile being
+     * edited: 'other_owner' «Lo cargó otra persona…», 'no_owner' «Este perfil
+     * no tiene un responsable…»; absent when the flag is only because the match
+     * has no owner (case 3).
      */
-    loadedByOther?: boolean;
+    cantJoin?: 'other_owner' | 'no_owner';
+    /**
+     * Someone already said they are two people, and this viewer can't ask the
+     * admins (no profile of theirs): the 'flag' window says «Ya dijeron que
+     * no…» instead of offering a flag the server refuses.
+     */
+    saidNo?: boolean;
     /**
      * Only for 'continue': who «Sí, continuar» tells (display names, never
      * emails) — the confirmation's «Le avisamos a …» line.
@@ -811,7 +819,7 @@ export type DupHintMatch = HouseholdMatchCandidate & {
      * its records — and the rating this one will have after the merge
      * (ratingAfterMerge: both profiles' records together).
      */
-    preview?: { newContacts: ContactEntry[]; records: number; ratingAfter: number | null };
+    preview?: { newContacts: ContactEntry[]; records: number; ratingAfter: number | null; /** The profile being edited, «El perfil de {name} deja de existir por separado.» */ currentName: string };
 };
 
 /**
@@ -894,19 +902,24 @@ async function dupHintWindow(
     match: { id: string; row: { contactEntries: string | null; contactInfo: string | null; addedBy: string | null } | undefined },
     typedEntry: ContactEntry,
     ctx: Record<string, unknown>,
-): Promise<Pick<DupHintMatch, 'action' | 'alreadyPending' | 'loadedByOther' | 'toldNames' | 'preview'>> {
+): Promise<Pick<DupHintMatch, 'action' | 'alreadyPending' | 'cantJoin' | 'saidNo' | 'toldNames' | 'preview'>> {
     if (!viewer?.current) return { action: null, alreadyPending: false };
     const current = viewer.current;
     const mctx = { ...ctx, profileId: match.id };
     if (!match.row) {
         logger.warn('getDuplicateHintMatches: match owner unreadable, offering the flag', mctx);
-        return { action: 'flag', alreadyPending: false, loadedByOther: !viewer.currentTeamOwned && !viewer.isAdmin };
+        return { action: 'flag', alreadyPending: false, ...cantJoinOf(viewer, current) };
     }
     const row = match.row;
-    const loadedByOther = !viewer.currentTeamOwned && !viewer.isAdmin;
+    const cantJoin = cantJoinOf(viewer, current);
     try {
         const decision = await decideDupHintMatch(db, { ...viewer, current }, { id: match.id, addedBy: row.addedBy });
-        if (decision.action !== 'continue') return { action: decision.action, alreadyPending: decision.alreadyPending, loadedByOther };
+        if (decision.action !== 'continue') {
+            return {
+                action: decision.action, alreadyPending: decision.alreadyPending, ...cantJoin,
+                ...(decision.action === 'flag' && decision.saidNo ? { saidNo: true } : {}),
+            };
+        }
         const plan = dupHintMergePlan({
             actor: viewer.actor, isAdmin: viewer.isAdmin,
             currentTeamOwned: viewer.currentTeamOwned, matchTeamOwned: decision.matchTeamOwned,
@@ -919,8 +932,14 @@ async function dupHintWindow(
         return { action: 'continue', alreadyPending: decision.alreadyPending, toldNames, preview };
     } catch (e) {
         logger.warn('getDuplicateHintMatches: window decision D1 fallback hit, offering the flag', { ...mctx, error: e instanceof Error ? e.message : String(e) });
-        return { action: 'flag', alreadyPending: false, loadedByOther };
+        return { action: 'flag', alreadyPending: false, ...cantJoin };
     }
+}
+
+/** Why the profile being edited can't be joined by this viewer (the 'flag' window's first line). */
+function cantJoinOf(viewer: DupHintViewer, current: DupHintProfileRow): Pick<DupHintMatch, 'cantJoin'> {
+    if (viewer.isAdmin || viewer.currentTeamOwned) return {};
+    return { cantJoin: realOwner(current.addedBy) ? 'other_owner' : 'no_owner' };
 }
 
 /**
@@ -954,6 +973,7 @@ async function continuePreview(
             .map(e => ({ id: e.id, type: e.type, value: e.value, ...(e.platform ? { platform: e.platform } : {}) })),
         records: currentRatings.length,
         ratingAfter: ratingAfterMerge(matchRatings, currentRatings),
+        currentName: current.name ?? '',
     };
 }
 

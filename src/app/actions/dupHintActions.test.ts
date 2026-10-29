@@ -62,6 +62,7 @@ import { getDuplicateHintMatches } from './households';
 import { continueWithMatchedProfile, askAdminsToReviewPair } from './dupHintActions';
 import { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 import { flagAdopter } from './flags';
+import { addContactEntry } from './addContactEntry';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
@@ -122,16 +123,31 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
 
     it('case 2 (someone else loaded it): flag, «Lo cargó otra persona», no preview, nobody named', async () => {
         const w = await as(STRANGER, () => windowFor('jonatan'));
-        expect(w).toMatchObject({ action: 'flag', loadedByOther: true });
+        expect(w).toMatchObject({ action: 'flag', cantJoin: 'other_owner' });
+        expect(w!.saidNo).toBeUndefined();
         expect(w!.preview).toBeUndefined();
         expect(w!.toldNames).toBeUndefined();
         // Also when the viewer loaded the match.
-        expect(await as(OTHER, () => windowFor('jonatan'))).toMatchObject({ action: 'flag', loadedByOther: true });
+        expect(await as(OTHER, () => windowFor('jonatan'))).toMatchObject({ action: 'flag', cantJoin: 'other_owner' });
     });
 
     it('case 3 (the match has no real owner): flag, even though the profile being edited is mine', async () => {
         sqlite.prepare(`UPDATE adopters SET added_by = 'anonymous' WHERE id = 'jonatan'`).run();
-        expect(await windowFor('jonatan')).toMatchObject({ action: 'flag', loadedByOther: false });
+        const w = await windowFor('jonatan');
+        expect(w).toMatchObject({ action: 'flag' });
+        expect(w!.cantJoin).toBeUndefined();
+    });
+
+    it('nobody is responsible for the profile being edited (an import): flag, «Este perfil no tiene un responsable…» (N7)', async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'anonymous' WHERE id = 'maria'`).run();
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'flag', cantJoin: 'no_owner' });
+    });
+
+    it('a said-no pair, seen by someone who loaded neither profile: flag with «Ya dijeron que no…», never review_admins (F1)', async () => {
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at) VALUES ('mr1', 'maria', 'jonatan', ?, NULL, 'admin_declined', 1)`).run(OWNER);
+        expect(await as(STRANGER, () => windowFor('jonatan'))).toMatchObject({ action: 'flag', saidNo: true, cantJoin: 'other_owner' });
+        // The owner of the match may still ask.
+        expect(await as(OTHER, () => windowFor('jonatan'))).toMatchObject({ action: 'review_admins' });
     });
 
     it('case 4 (the other owner declined my team\'s request): review_admins', async () => {
@@ -198,6 +214,31 @@ describe('continueWithMatchedProfile — «Sí, continuar»', () => {
         expect(deleted('maria')).toBe(false);
     });
 
+    it('the typed value saved on the way is not announced as «agregó un dato» (F2) — the composer\'s own save still is', async () => {
+        await as(MATE, () => continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'email', value: 'nuevo@example.com' } }));
+        expect(contactsOf('jonatan').map(c => c.value)).toContain('nuevo@example.com');
+        expect(notify.create.filter(n => n.type === 'contact_entry_added')).toEqual([]);
+        // The normal composer save (the browser door) keeps notifying the owner.
+        await as(MATE, () => addContactEntry({ adopterId: 'jonatan', type: 'email', value: 'otro@example.com' }));
+        expect(notify.create.filter(n => n.type === 'contact_entry_added').map(n => n.userId)).toEqual([OTHER]);
+    });
+
+    it('an admin folding their own team\'s profile into another rescuer\'s: a rescuer merge — only what theirs brought, never all_contact (F4)', async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = ? WHERE id = 'maria'`).run(ADMIN);
+        expect(await as(ADMIN, () => continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' }))).toMatchObject({ ok: true, told: ['other-rescuer'] });
+        const grants = sqlite.prepare(`SELECT grantee_email AS email, scope FROM pii_access_grants WHERE adopter_id = 'jonatan' AND origin = 'merge' AND revoked_at IS NULL`).all();
+        expect(grants.length).toBeGreaterThan(0);
+        expect(grants.every(g => g.scope === 'entry')).toBe(true);
+        // An admin deciding a pair of two other rescuers (viaAdmin) is a consented fold: full contact.
+    });
+
+    it('an admin merging two other rescuers\' profiles (an admin decision): the absorbed owner gets all_contact', async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'gatitos@example.com' WHERE id = 'maria'`).run();
+        expect(await as(ADMIN, () => continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' }))).toMatchObject({ ok: true });
+        expect(sqlite.prepare(`SELECT grantee_email AS email, scope FROM pii_access_grants WHERE adopter_id = 'jonatan' AND origin = 'merge' AND revoked_at IS NULL`).all())
+            .toEqual([{ email: 'gatitos@example.com', scope: 'all_contact' }]);
+    });
+
     it('both profiles the team\'s: merged, nobody told', async () => {
         sqlite.prepare(`UPDATE adopters SET added_by = ? WHERE id = 'jonatan'`).run(MATE);
         const res = await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' });
@@ -257,6 +298,13 @@ describe('askAdminsToReviewPair — after a «no», ask the admins', () => {
         expect(notify.admins).toHaveLength(1);
     });
 
+    it('refused for someone who loaded neither profile (F1): not_yours, no request, no admin told', async () => {
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at) VALUES ('mr1', 'maria', 'jonatan', ?, NULL, 'admin_declined', 1)`).run(OWNER);
+        expect(await as(STRANGER, () => askAdminsToReviewPair({ currentId: 'maria', matchId: 'jonatan' }))).toEqual({ ok: false, error: 'not_yours', errorId: 'gen12345' });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM merge_requests`).get()!.n).toBe(1);
+        expect(notify.admins).toEqual([]);
+    });
+
     it('refused when nobody said no (the window offers «Continuar» there)', async () => {
         expect(await askAdminsToReviewPair({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: false, error: 'not_allowed:continue' });
     });
@@ -291,6 +339,36 @@ describe('duplicate flags tell the owners (flagAdopter / flagAdopterAsDuplicate)
         notify.create.length = 0;
         await as(STRANGER, () => flagAdopter('jonatan', 'inaccurate', 'x'));
         expect(flagged()).toEqual([]);
+    });
+
+    it('«Reportar → Duplicado» twice on the same pair: the open flag comes back, no second row, no second notice (N1)', async () => {
+        const first = await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'));
+        const told = flagged().length;
+        const again = await as(MATE, () => flagAdopter('jonatan', 'duplicate', 'y', 'maria'));
+        expect(again).toEqual({ success: true, id: first.success ? first.id : '', already: true });
+        expect(flagsOn('maria')).toHaveLength(1);
+        expect(flagsOn('jonatan')).toHaveLength(0);
+        expect(flagged()).toHaveLength(told);
+        expect(notify.admins).toHaveLength(1);
+    });
+
+    it('a duplicate flag on itself, or on a profile that does not exist or was merged away: refused, nothing written or sent', async () => {
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'maria'))).toEqual({ success: false, error: 'invalid_target', errorId: 'gen12345' });
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'nobody'))).toMatchObject({ success: false, error: 'invalid_target' });
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 1 WHERE id = 'jonatan'`).run();
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'))).toMatchObject({ success: false, error: 'invalid_target' });
+        expect(flagsOn('maria')).toEqual([]);
+        expect(notify.create).toEqual([]);
+        expect(notify.admins).toEqual([]);
+    });
+
+    it('a pair someone already said are two people: refused with the window\'s reason (N2), via the menu and the window; admins may still flag', async () => {
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at) VALUES ('mr1', 'maria', 'jonatan', ?, NULL, 'admin_declined', 1)`).run(OWNER);
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'))).toMatchObject({ success: false, error: 'said_no' });
+        expect(await as(STRANGER, () => flagAdopterAsDuplicate({ currentAdopterId: 'maria', matchedAdopterId: 'jonatan', matchedAdopterName: 'J' }))).toEqual({ ok: false, error: 'said_no:gen12345' });
+        expect(flagsOn('maria')).toEqual([]);
+        expect(notify.create).toEqual([]);
+        expect(await as(ADMIN, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'))).toMatchObject({ success: true });
     });
 
     it('flagging the same pair twice (either direction): no second row, no second notice', async () => {

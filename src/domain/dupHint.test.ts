@@ -81,7 +81,7 @@ describe('«No es esta persona» — hidden while the typed value stays the same
 
 
 describe('decideDupHintAction — what the «Ver perfil» window offers (Jon 2026-10-29)', () => {
-    const base: DupHintFacts = { isAdmin: false, currentTeamOwned: true, matchHasOwner: true, declinedForTeam: false, adminRuledSeparate: false, pending: false };
+    const base: DupHintFacts = { isAdmin: false, currentTeamOwned: true, matchTeamOwned: false, matchHasOwner: true, declinedForTeam: false, adminRuledSeparate: false, pending: false };
     const with_ = (over: Partial<DupHintFacts>) => decideDupHintAction({ ...base, ...over });
 
     it('case 1: the viewer or their team loaded the profile being edited → continue', () => {
@@ -97,7 +97,12 @@ describe('decideDupHintAction — what the «Ver perfil» window offers (Jon 202
     it('case 4: they already said no — the other owner declined, or an admin ruled them separate → review_admins', () => {
         expect(with_({ declinedForTeam: true })).toBe('review_admins');
         expect(with_({ adminRuledSeparate: true })).toBe('review_admins');
-        expect(with_({ adminRuledSeparate: true, currentTeamOwned: false })).toBe('review_admins');
+        // Mine is the match (someone else's profile being edited): mine is one of the two — I may ask.
+        expect(with_({ adminRuledSeparate: true, currentTeamOwned: false, matchTeamOwned: true })).toBe('review_admins');
+    });
+    it('case 4 needs a profile of mine (review F1): a stranger on a said-no pair falls through to pending / flag', () => {
+        expect(with_({ adminRuledSeparate: true, currentTeamOwned: false, matchTeamOwned: false })).toBe('flag');
+        expect(with_({ declinedForTeam: true, currentTeamOwned: false, matchTeamOwned: false, pending: true })).toBe('pending');
     });
     it('case 5: already up for review → pending', () => {
         expect(with_({ pending: true })).toBe('pending');

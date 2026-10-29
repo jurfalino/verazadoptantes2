@@ -184,13 +184,20 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             setSubmitLoading(true);
             try {
                 const res = await flagAdopter(adopterId, reason, details, targetAdopter.id);
-                if (res.success) {
+                if (res.success && res.already) {
+                    // An open duplicate flag already covers this pair: nothing new was written or sent.
+                    toast.info(t('adopter.dup_hint_pending'));
+                    resetAndClose();
+                } else if (res.success) {
                     toast.success(t('flagging.submit_success') || 'Report submitted successfully');
                     zarazTrack('flag_submitted', { flagType: 'duplicate' });
                     resetAndClose();
                     router.refresh();
+                } else if (res.error === 'said_no') {
+                    // Someone already said they are two people — the same reason «Ya está en otro perfil» gives.
+                    toast.info(t('adopter.dup_hint_said_no'));
                 } else {
-                    toast.error(t('errors.generic'), t('errors.submit_report_failed'));
+                    toast.error(t('errors.generic'), t('errors.submit_report_failed'), res.errorId);
                 }
             } catch (e) {
                 console.error(e);

@@ -15,14 +15,15 @@
  *   (addContactEntry), so the merge carries it to MATCH and nothing typed is lost.
  * - `askAdminsToReviewPair` — case 4, «Ya dijeron que no son la misma
  *   persona»: files the dispute exactly as «Pendientes»' 'dispute' choice does
- *   (createMergeRequest with `ownerEmail: null, dispute: true`, MATCH kept).
+ *   (createMergeRequest with `ownerEmail: null, dispute: true`, MATCH kept) —
+ *   only for a viewer whose team loaded one of the two (`not_yours` otherwise).
  *
  * Browser-callable: the session is the only source of the actor. Refusals
  * come back as codes with an errorId (the window says «No se pudo unir los
  * perfiles (error …)»); failures are logged with their context.
  */
 import { getDb, getUser } from './_db';
-import { addContactEntry } from './addContactEntry';
+import { addContactEntryFor } from '@/lib/contactEntryAdd';
 import { logger, generateErrorId } from '@/lib/logger';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { normEmail } from '@/lib/orgMembership';
@@ -98,10 +99,11 @@ export async function continueWithMatchedProfile(input: {
             if (typed.type === 'social' && !detectSocialPlatform(typed.value) && !platform) return refuse('platform_required');
             const apps = typed.type === 'phone' && Array.isArray(typed.apps)
                 ? typed.apps.filter((a): a is MessagingApp => typeof a === 'string' && MESSAGING_APPS.includes(a)) : [];
-            const added = await addContactEntry({
+            // No «agregó un dato» notice: this profile is merged away right after, and the merge tells whoever it must.
+            const added = await addContactEntryFor({
                 adopterId: current.id, type: typed.type, value: typed.value.trim().slice(0, DUP_HINT_MAX_VALUE),
                 ...(platform ? { platform } : {}), ...(apps.length ? { apps } : {}),
-            });
+            }, { notifyApprovers: false });
             if (!added.ok) {
                 if (added.error === CONTACT_ENTRIES_FULL) return refuse(CONTACT_ENTRIES_FULL);
                 const errorId = 'errorId' in added && typeof added.errorId === 'string' ? added.errorId : generateErrorId();
@@ -113,7 +115,9 @@ export async function continueWithMatchedProfile(input: {
 
         const merged = await mergeChosenPair(db, {
             primaryId: match.id, secondaryId: current.id, actor,
-            isAdmin: viewer.isAdmin, viaAdmin: plan.viaAdmin, notifyOwner: plan.notifyOwner,
+            // Full contact only after an ADMIN merge; an admin folding their own team's
+            // profile into another rescuer's is a rescuer merge (review F4).
+            fullAccess: plan.viaAdmin, viaAdmin: plan.viaAdmin, notifyOwner: plan.notifyOwner,
             absorbedAddedBy: current.addedBy,
             label: 'continueWithMatchedProfile', ctx,
         });
@@ -163,6 +167,8 @@ export async function askAdminsToReviewPair(input: { currentId: string; matchId:
         const current = viewer.current;
         if (!current || !match || match.deletedAt) return refuse('not_found');
         const decision = await decideDupHintMatch(db, { ...viewer, current }, { id: match.id, addedBy: match.addedBy });
+        // Only someone whose team loaded one of the two may ask (review F1) — as in «Pendientes».
+        if (!viewer.isAdmin && !viewer.currentTeamOwned && !decision.matchTeamOwned) return refuse('not_yours');
         if (decision.action !== 'review_admins') return refuse(`not_allowed:${decision.action}`);
         // As «Pendientes»' 'dispute' (D49/D50): the admins decide, MATCH kept.
         const filed = await createMergeRequest(db, {

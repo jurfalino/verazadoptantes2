@@ -136,7 +136,7 @@ describe('DupHintProfile — the window', () => {
     });
 
     it("case 2 'flag': who loaded it, «Marcar como posible duplicado» + who is told, «Abrir perfil para agregar datos», «No es esta persona»", () => {
-        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', loadedByOther: true }} canAct {...handlers} />);
+        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'other_owner' }} canAct {...handlers} />);
         expect(ids(html)).toEqual(['dup-hint-flag', 'dup-hint-open-to-add', 'dup-hint-not-this']);
         const said = text(html);
         expect(said).toContain('Lo cargó otra persona, así que no podés unirlos vos. Podés:');
@@ -146,9 +146,22 @@ describe('DupHintProfile — the window', () => {
         expect(said.indexOf('Lo cargó otra persona')).toBeLessThan(said.indexOf('Marcar como posible duplicado'));
         expect(html).not.toContain('data-testid="dup-hint-continue"');
         // Case 3 (the match has no owner, the profile being edited is mine): no «Lo cargó otra persona».
-        const ownerless = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', loadedByOther: false }} canAct {...handlers} />);
+        const ownerless = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag' }} canAct {...handlers} />);
         expect(ownerless).not.toContain('data-testid="dup-hint-cant-join"');
         expect(ids(ownerless)[0]).toBe('dup-hint-flag');
+    });
+
+    it('case 2 when nobody is responsible for the profile being edited: «Este perfil no tiene un responsable…» (fix round 2, N7)', () => {
+        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'no_owner' }} canAct {...handlers} />);
+        expect(text(html)).toContain('Este perfil no tiene un responsable, así que no podés unirlos vos. Podés:');
+        expect(text(html)).not.toContain('Lo cargó otra persona');
+        expect(ids(html)[0]).toBe('dup-hint-flag');
+    });
+
+    it('a said-no pair this viewer can\'t ask about: «Ya dijeron que no…», no flag (the server refuses one)', () => {
+        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'other_owner', saidNo: true }} canAct {...handlers} />);
+        expect(text(html)).toContain('Ya dijeron que no son la misma persona.');
+        expect(ids(html)).toEqual(['dup-hint-open-to-add', 'dup-hint-not-this']);
     });
 
     it("case 4 'review_admins': «Ya dijeron que no…» and «Pedir revisión a un administrador» — never «Continuar»", () => {
@@ -185,7 +198,7 @@ describe('DupHintProfile — the window', () => {
 });
 
 describe('DupHintContinueDialog — the new-profile form\'s confirmation', () => {
-    const preview = { newContacts: [{ id: 'c1', type: 'phone' as const, value: '555-1234' }, { id: 'c2', type: 'email' as const, value: 'maria@example.com' }], records: 1, ratingAfter: 4 };
+    const preview = { newContacts: [{ id: 'c1', type: 'phone' as const, value: '555-1234' }, { id: 'c2', type: 'email' as const, value: 'maria@example.com' }], records: 1, ratingAfter: 4, currentName: 'María García López' };
 
     it('the shared dialog: title, what it adds, the rating after, one owner told', () => {
         const html = renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview, toldNames: ['Refugio Patitas'] }} busy={false} failure={null} onCancel={() => {}} onConfirm={() => {}} />);
@@ -198,7 +211,8 @@ describe('DupHintContinueDialog — the new-profile form\'s confirmation', () =>
         expect(html).toContain('data-testid="dup-hint-rating-after"');
         expect(said).toContain('Calificación después de unirlos:');
         expect(said).toContain('4.0 · Bueno');
-        expect(said).toContain('Le avisamos a Refugio Patitas, que puede deshacerlo si no es la misma persona.');
+        // The prototype's line first (fix round 2, N6), then who is told.
+        expect(said).toContain('El perfil de María García López deja de existir por separado. Le avisamos a Refugio Patitas, que puede deshacerlo si no es la misma persona.');
         expect(said).toContain('Sí, continuar');
     });
 
@@ -206,7 +220,8 @@ describe('DupHintContinueDialog — the new-profile form\'s confirmation', () =>
         const two = text(renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview, toldNames: ['Gatitos Felices', 'Refugio Patitas'] }} busy={false} failure={null} onCancel={() => {}} onConfirm={() => {}} />));
         expect(two).toContain('Les avisamos a Gatitos Felices y Refugio Patitas, que pueden deshacerlo si no es la misma persona.');
         const none = renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview: { ...preview, ratingAfter: null }, toldNames: [] }} busy={false} failure={null} onCancel={() => {}} onConfirm={() => {}} />);
-        expect(none).not.toContain('data-testid="dup-hint-confirm-told"');
+        expect(text(none)).toContain('El perfil de María García López deja de existir por separado.');
+        expect(text(none)).not.toContain('Le avisamos');
         expect(text(none)).toContain('Sin calificación');
     });
 

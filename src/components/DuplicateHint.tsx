@@ -124,7 +124,7 @@ export function DupHintBox({ matches, done, onView, className = '' }: {
                             <CardHouseholdLine lines={m.householdLine} className="mt-1" />
                         </div>
                         {done.has(m.adopterId) ? (
-                            <span className="shrink-0 inline-flex items-center gap-1 min-h-[44px] pr-1 text-[13px] font-semibold text-teal-700 text-right"
+                            <span className="shrink-0 inline-flex items-center gap-1 min-h-[44px] pr-1 text-[13px] font-semibold text-right" style={{ color: 'var(--accent)' }}
                                 data-testid={done.get(m.adopterId) === 'sent' ? 'dup-hint-sent' : 'dup-hint-flagged'}>
                                 <Check className="w-4 h-4 shrink-0" aria-hidden="true" />
                                 {done.get(m.adopterId) === 'sent' ? t('adopter.dup_hint_review_sent') : t('adopter.dup_hint_flagged')}
@@ -175,7 +175,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
     );
     const openLink = (
         <button type="button" onClick={onOpenFull} disabled={disabled} data-testid="dup-hint-open-full"
-            className="inline-flex items-center justify-center gap-1 min-h-[44px] px-2 rounded-xl text-[13px] font-semibold text-teal-700 hover:underline disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
+            className="inline-flex items-center justify-center gap-1 min-h-[44px] px-2 rounded-xl text-[13px] font-semibold hover:underline disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" style={{ color: 'var(--accent)' }}>
             {t('adopter.dup_hint_open_full')}
             <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
         </button>
@@ -209,8 +209,8 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
                         {match.alreadyPending && note(t('adopter.dup_hint_pending'), 'dup-hint-pending-note')}
                         {needsPlatform && (
                             // The composer's own ask (its Save is disabled the same way until a network is picked).
-                            <p className="text-xs font-semibold text-stone-700" data-testid="dup-hint-needs-platform">
-                                {t('adopter.ce_social_which')}<span className="text-red-600"> *</span>
+                            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }} data-testid="dup-hint-needs-platform">
+                                {t('adopter.ce_social_which')}<span style={{ color: 'var(--status-error-text)' }}> *</span>
                             </p>
                         )}
                         <Button type="button" fullWidth onClick={onContinue} disabled={disabled || needsPlatform} data-testid="dup-hint-continue"
@@ -223,12 +223,20 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
                 )}
                 {action === 'flag' && (
                     <>
-                        {match.loadedByOther && note(t('adopter.dup_hint_cant_join'), 'dup-hint-cant-join')}
-                        <Button type="button" fullWidth onClick={onFlag} disabled={disabled} loading={busy === 'flag'} data-testid="dup-hint-flag"
-                            icon={<Flag className="w-4 h-4" aria-hidden="true" />}>
-                            {t('adopter.dup_hint_flag_action')}
-                        </Button>
-                        <p className="-mt-1 text-center text-xs" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-flag-told">{t('adopter.dup_hint_flag_told')}</p>
+                        {match.cantJoin && note(t(match.cantJoin === 'no_owner' ? 'adopter.dup_hint_cant_join_no_owner' : 'adopter.dup_hint_cant_join'), 'dup-hint-cant-join')}
+                        {match.saidNo ? (
+                            // Someone already said they are two people and this viewer can't ask the admins:
+                            // said, no flag (the server refuses one, with the same reason).
+                            note(t('adopter.dup_hint_said_no'), 'dup-hint-said-no')
+                        ) : (
+                            <>
+                                <Button type="button" fullWidth onClick={onFlag} disabled={disabled} loading={busy === 'flag'} data-testid="dup-hint-flag"
+                                    icon={<Flag className="w-4 h-4" aria-hidden="true" />}>
+                                    {t('adopter.dup_hint_flag_action')}
+                                </Button>
+                                <p className="-mt-1 text-center text-xs" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-flag-told">{t('adopter.dup_hint_flag_told')}</p>
+                            </>
+                        )}
                         <Button type="button" variant="secondary" fullWidth onClick={onOpenFull} disabled={disabled} loading={busy === 'open'} data-testid="dup-hint-open-to-add"
                             icon={<ArrowUpRight className="w-4 h-4" aria-hidden="true" />}>
                             {t('adopter.dup_hint_open_to_add')}
@@ -276,6 +284,7 @@ export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfir
 }) {
     const { t } = useLanguage();
     const told = match.toldNames ?? [];
+    const currentName = match.preview?.currentName?.trim() ?? '';
     const toldLine = told.length === 0 ? null
         : told.length === 1 ? t('adopter.dup_hint_confirm_told_one').replace('{name}', told[0])
             : t('adopter.dup_hint_confirm_told_many').replace('{names}', joinNames(t, told));
@@ -293,7 +302,10 @@ export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfir
             <p className="flex flex-wrap items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }} data-testid="dup-hint-rating-after">
                 {t('adopter.dup_hint_rating_after')} <RatingBadge rating={match.preview?.ratingAfter ?? null} />
             </p>
-            {toldLine && <p className="text-xs [overflow-wrap:anywhere]" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-confirm-told">{toldLine}</p>}
+            <p className="text-xs [overflow-wrap:anywhere]" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-confirm-told">
+                {t('adopter.dup_hint_confirm_absorbed').replace('{name}', currentName || t('adopter.nameless'))}
+                {toldLine && <> {toldLine}</>}
+            </p>
             {failure && <p role="alert" className="text-sm font-medium [overflow-wrap:anywhere]" style={{ color: 'var(--status-error-text)' }} data-testid="dup-hint-confirm-failed">{failure}</p>}
         </ContinueMergeDialog>
     );
@@ -432,11 +444,15 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
             if (res.ok) {
                 // Already up for review: nothing new was sent, so it doesn't say «Les avisamos».
                 if (res.already) toast.info(t('adopter.dup_hint_pending'));
-                else toast.success('🚩', t('adopter.dup_hint_flag_success'));
+                else toast.success(t('adopter.dup_hint_flag_success'));
                 markDone(m.adopterId, 'flagged');
                 setOpenId(null);
+            } else if (res.error.startsWith('said_no')) {
+                // Someone already said they are two people: the window's own reason, not a failure.
+                toast.info(t('adopter.dup_hint_said_no'));
+                setOpenId(null);
             } else {
-                // `internal_error:<errorId>`: the id was logged server-side.
+                // `<code>:<errorId>`: the id was logged server-side.
                 const errorId = res.error.includes(':') ? res.error.split(':')[1] : resolveErrorId(new Error(`flagAdopterAsDuplicate: ${res.error}`), 'DuplicateHint.flag');
                 toast.error(t('errors.generic') || 'Error', t('adopter.dup_hint_flag_failed'), errorId);
             }
@@ -453,7 +469,9 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
         try {
             const res = await askAdminsToReviewPair({ currentId: excludeAdopterId, matchId: m.adopterId });
             if (res.ok) {
-                toast.success('✓', t('myAdopters.pending_d_disputed'));
+                // Asking again files nothing new: said so, not «sent».
+                if (res.already) toast.info(t('adopter.dup_hint_review_already'));
+                else toast.success(t('myAdopters.pending_d_disputed'));
                 markDone(m.adopterId, 'sent');
                 setOpenId(null);
             } else {

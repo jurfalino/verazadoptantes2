@@ -59,7 +59,9 @@ export async function flagAdopterAsDuplicate(input: {
         // included to avoid re-logging PII the flag-bearer already knows.
         const details = `Marcado desde la búsqueda de duplicados — coincide con "${input.matchedAdopterName}"`;
         const res = await flagAdopter(currentAdopterId, FLAG_REASONS.DUPLICATE, details, matchedAdopterId);
-        return { ok: true, flagId: res.id };
+        // A refusal (the same / a missing profile, or a pair already said to be two people): its code and id.
+        if (!res.success) return { ok: false, error: `${res.error}:${res.errorId}` };
+        return res.already ? { ok: true, flagId: res.id, already: true } : { ok: true, flagId: res.id };
     } catch (e) {
         const errorId = logger.error('flagAdopterAsDuplicate failed', e instanceof Error ? e : new Error(String(e)), {
             currentAdopterId, matchedAdopterId, user,
