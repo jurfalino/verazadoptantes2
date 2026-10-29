@@ -164,6 +164,20 @@ describe('DupHintProfile — the window', () => {
         expect(ids(html)).toEqual(['dup-hint-not-this', 'dup-hint-open-full']);
     });
 
+    it('a handle with no network picked: «Continuar» waits, asking «¿Qué red social es?» as the composer does (fix round 1)', () => {
+        const html = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct needsPlatform {...handlers} />);
+        expect(html).toContain('data-testid="dup-hint-needs-platform"');
+        expect(text(html)).toContain('¿Qué red social es? *');
+        expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-testid="dup-hint-continue"|<button[^>]*data-testid="dup-hint-continue"[^>]*disabled=""/);
+        const ready = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct {...handlers} />);
+        expect(ready).not.toContain('data-testid="dup-hint-needs-platform"');
+    });
+
+    it('a standalone «sin actividad» starts with a capital (fix round 1)', () => {
+        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, activity: {} }} canAct {...handlers} />);
+        expect(html).toMatch(/<div class="first-letter:uppercase"><span[^>]*data-testid="dup-hint-activity"[^>]*>sin actividad<\/span>/);
+    });
+
     it('no answer without a saved profile being edited', () => {
         const html = renderToStaticMarkup(<DupHintProfile match={jonathan} canAct={false} {...handlers} />);
         expect(ids(html)).toEqual(['dup-hint-not-this', 'dup-hint-open-full']);

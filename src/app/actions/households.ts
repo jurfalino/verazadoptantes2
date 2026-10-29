@@ -65,7 +65,7 @@ import { createHouseholdProfile } from './_adopterFactory';
 import { searchFormDuplicates } from '@/lib/formDuplicates';
 import { findAdopters } from './findAdopters';
 import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
-import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, isDupHintType, type DupHintAction } from '@/domain/dupHint';
+import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
 import { ratingAfterMerge } from '@/domain/ratings';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
@@ -943,9 +943,14 @@ async function continuePreview(
     const own = (parsed.length > 0 ? parsed : parseBlobToContactEntries(current.contactInfo))
         .filter(e => !e.masked && e.type !== 'alias' && e.value?.trim());
     const [currentRatings, matchRatings] = await Promise.all([ratingsOf(db, current.id), ratingsOf(db, match.id)]);
+    // The typed value only when the match doesn't already have it as the matcher
+    // compares phones (country / area prefixes) — exactly when «Sí, continuar» saves it.
+    const matchParsed = deserializeContactEntries(match.row.contactEntries);
+    const matchEntries = matchParsed.length > 0 ? matchParsed : parseBlobToContactEntries(match.row.contactInfo);
+    const typed = isDupHintType(typedEntry.type) && typedIsNewFor(matchEntries, typedEntry.type, typedEntry.value) ? [typedEntry] : [];
     return {
         // Only what the preview shows: never who added each one.
-        newContacts: newContactsForProfile([...own, typedEntry], match.row)
+        newContacts: newContactsForProfile([...own, ...typed], match.row)
             .map(e => ({ id: e.id, type: e.type, value: e.value, ...(e.platform ? { platform: e.platform } : {}) })),
         records: currentRatings.length,
         ratingAfter: ratingAfterMerge(matchRatings, currentRatings),

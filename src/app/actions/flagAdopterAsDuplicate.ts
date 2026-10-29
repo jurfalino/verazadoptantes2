@@ -23,8 +23,8 @@ import { logger } from '@/lib/logger';
  *
  * Thin wrapper over `flagAdopter` (reason=DUPLICATE, target=matched
  * adopter id). `flagAdopter` already inserts an adopter_flags row,
- * writes to adopter_history, audit-logs, and notifies admins and both
- * profiles' owner teams.
+ * writes to adopter_history, audit-logs, and notifies admins and whoever
+ * added each profile.
  *
  * Once per pair (case 5, «Ya está marcado para revisar»): when an open
  * duplicate flag (either direction) or a pending merge request already covers

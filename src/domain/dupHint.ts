@@ -11,7 +11,7 @@
  * - `visibleDupHintMatches`: «No es esta persona» hides a match for as long as
  *   the typed value stays the same (local only, no server write).
  */
-import { normalizeIdValue, normalizeSocialHandle } from '@/lib/tokenizer';
+import { extractPhones, extractPhoneSuffixes, normalizeIdValue, normalizeSocialHandle } from '@/lib/tokenizer';
 import { mergeOwnersToTell, realOwner } from '@/domain/dedupPair';
 
 export type DupHintType = 'phone' | 'email' | 'social' | 'id';
@@ -54,13 +54,20 @@ export function dupHintSearchInput(type: unknown, value: unknown): DupHintSearch
     }
 }
 
-const digits = (s: string) => s.replace(/\D/g, '');
+/** A phone as the token index keys it: its digits and, when long enough, its last 8 (phone + phone_suffix). */
+const phoneKeys = (v: string) => {
+    const phones = extractPhones(v);
+    return new Set([...phones, ...extractPhoneSuffixes(phones)]);
+};
 
 /**
- * True when a stored contact is the identifier typed: phones by their last 8
- * digits (the engine's phone-suffix rule, as the «¿Es este perfil?» card marks
- * them), emails as written (case-insensitive), social handles and id numbers
- * normalized as the token index normalizes them.
+ * True when a stored contact is the identifier typed, compared exactly as the
+ * duplicate matcher compares them (src/lib/tokenizer.ts): phones by the token
+ * index's keys — the digits, and the last 8 for a number of 9+ digits, so
+ * «+54 9 11 6312-0851» and «11 6312-0851» are the same phone (country and
+ * area prefixes ignored); emails as written (case-insensitive); social
+ * handles and id numbers normalized as the index normalizes them. The window's
+ * «coincide», and whether «Continuar» still needs to add the typed value.
  */
 export function entryMatchesTyped(entry: { type: string; value: string }, type: DupHintType, typed: string): boolean {
     if (entry.type !== type || typeof entry.value !== 'string') return false;
@@ -68,9 +75,8 @@ export function entryMatchesTyped(entry: { type: string; value: string }, type: 
     if (!v) return false;
     switch (type) {
         case 'phone': {
-            const a = digits(entry.value);
-            const b = digits(v);
-            return a.length >= 6 && b.length >= 6 && a.slice(-8) === b.slice(-8);
+            const typedKeys = phoneKeys(v);
+            return [...phoneKeys(entry.value)].some(k => typedKeys.has(k));
         }
         case 'email':
             return entry.value.trim().toLowerCase() === v.toLowerCase();
@@ -83,6 +89,16 @@ export function entryMatchesTyped(entry: { type: string; value: string }, type: 
             return a.length > 0 && a === normalizeIdValue(v);
         }
     }
+}
+
+/**
+ * Does «Continuar» still need to add the value being typed to the match? Not
+ * when the match already carries it as the matcher sees it (entryMatchesTyped:
+ * «+54 9 11 6312-0851» already is «11 6312-0851»). The confirmation's
+ * «Se agregará» and the action itself both ask this, so they can't disagree.
+ */
+export function typedIsNewFor(matchEntries: ReadonlyArray<{ type: string; value: string }>, type: DupHintType, typed: string): boolean {
+    return !!typed.trim() && !matchEntries.some(e => entryMatchesTyped(e, type, typed));
 }
 
 /** «No es esta persona» answers, for one typed value. */

@@ -75,6 +75,10 @@ interface Props {
     platform?: string;
     /** WhatsApp / Telegram picked for a phone: saved with the value on «Continuar». */
     apps?: string[];
+    /** A handle with no network picked: «Continuar» asks for it, as the composer's Save does. */
+    needsPlatform?: boolean;
+    /** «Continuar» saved the typed value but the merge failed: the composer clears it (it is saved). */
+    onTypedSaved?: () => void;
     className?: string;
 }
 
@@ -138,10 +142,12 @@ export function DupHintBox({ matches, done, onView, className = '' }: {
 }
 
 /** The window's body: the match card + the answers the server decided (`match.action`). Presentational. */
-export function DupHintProfile({ match, canAct, busy = null, onContinue, onFlag, onReview, onNotThis, onOpenFull }: {
+export function DupHintProfile({ match, canAct, needsPlatform = false, busy = null, onContinue, onFlag, onReview, onNotThis, onOpenFull }: {
     match: DupHintMatch;
     /** A saved profile is being edited: the window's answer (continue / flag / review) can be given. */
     canAct: boolean;
+    /** The typed handle has no network yet: «Continuar» waits for it (the composer's «¿Qué red social es?» *). */
+    needsPlatform?: boolean;
     /** Which answer is running (its button spins; all are disabled). */
     busy?: 'flag' | 'review' | 'open' | null;
     onContinue: () => void;
@@ -195,12 +201,19 @@ export function DupHintProfile({ match, canAct, busy = null, onContinue, onFlag,
                     ))}
                 </ul>
             )}
-            {match.activity && <div><PersonActivity activity={match.activity} testId="dup-hint-activity" /></div>}
+            {/* Standalone here (every other card writes it after the name): «Sin actividad», capitalised. */}
+            {match.activity && <div className="first-letter:uppercase"><PersonActivity activity={match.activity} testId="dup-hint-activity" /></div>}
             <div className="flex flex-col gap-2 pt-1">
                 {action === 'continue' && (
                     <>
                         {match.alreadyPending && note(t('adopter.dup_hint_pending'), 'dup-hint-pending-note')}
-                        <Button type="button" fullWidth onClick={onContinue} disabled={disabled} data-testid="dup-hint-continue"
+                        {needsPlatform && (
+                            // The composer's own ask (its Save is disabled the same way until a network is picked).
+                            <p className="text-xs font-semibold text-stone-700" data-testid="dup-hint-needs-platform">
+                                {t('adopter.ce_social_which')}<span className="text-red-600"> *</span>
+                            </p>
+                        )}
+                        <Button type="button" fullWidth onClick={onContinue} disabled={disabled || needsPlatform} data-testid="dup-hint-continue"
                             icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
                             {t('adopter.dup_action_continue_with_existing')}
                         </Button>
@@ -286,7 +299,7 @@ export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfir
     );
 }
 
-export default function DuplicateHint({ type, value, excludeAdopterId, platform, apps, className }: Props) {
+export default function DuplicateHint({ type, value, excludeAdopterId, platform, apps, needsPlatform = false, onTypedSaved, className }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -473,6 +486,19 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                 router.push(`/adopter/${res.matchId}`);
                 return;
             }
+            if (res.typedSaved) {
+                // The value is on this profile now: the composer clears it so it can't be saved twice; the window closes with it.
+                toast.error(t('errors.generic') || 'Error', t('adopter.dup_hint_join_failed_saved'), res.errorId);
+                setContinuing(false);
+                setConfirmId(null);
+                onTypedSaved?.();
+                return;
+            }
+            if (res.error === 'platform_required') {
+                setContinueFailure(t('adopter.ce_social_which'));
+                setContinuing(false);
+                return;
+            }
             if (res.error === CONTACT_ENTRIES_FULL) {
                 // An expected rule (the profile holds the most contacts it can), not a failure.
                 setContinueFailure(t('adopter.ce_add_full'));
@@ -497,6 +523,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                     <DupHintProfile
                         match={open}
                         canAct={!!excludeAdopterId}
+                        needsPlatform={needsPlatform}
                         busy={busy}
                         onContinue={() => { setContinueFailure(null); setConfirmId(open.adopterId); setOpenId(null); }}
                         onFlag={() => handleFlag(open)}

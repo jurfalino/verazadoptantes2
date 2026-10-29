@@ -53,7 +53,7 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         logAudit({ userEmail: flaggedBy, action: 'flag_created', target: adopterId, details: { reason, details } });
 
         // Notify admins (after the response, kept alive — see src/lib/background.ts).
-        // A duplicate flag with a target also tells both profiles' owner teams
+        // A duplicate flag with a target also tells whoever added each profile
         // first (duplicate_flagged); an owner who is an admin gets only that one.
         await runAfterResponse('flagAdopter.notifyAdmins', async () => {
             let ownersTold: string[] = [];

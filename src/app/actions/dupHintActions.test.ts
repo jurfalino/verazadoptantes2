@@ -5,8 +5,8 @@
  * told), and the actions re-deciding it on the server: «Continuar con este
  * perfil» (continueWithMatchedProfile — MATCH survives, the foreign owner is
  * told, the typed value lands on MATCH), the dispute after a «no»
- * (askAdminsToReviewPair), and duplicate flags telling the owners and their
- * teams once (flagAdopter / flagAdopterAsDuplicate).
+ * (askAdminsToReviewPair), and duplicate flags telling whoever added each
+ * profile once (flagAdopter / flagAdopterAsDuplicate).
  *
  * Real SQL (every drizzle/*.sql replayed), the real duplicate engine and token
  * index, the real merge and merge requests; the session is the only actor.
@@ -48,6 +48,10 @@ vi.mock('./notifications', () => ({
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
     resolveDisplayNames: vi.fn(async (emails: string[]) => new Map(emails.map(e => [e.toLowerCase(), e.split('@')[0]]))),
 }));
+vi.mock('@/lib/adopterMerge', async (orig) => {
+    const actual = await orig<typeof import('@/lib/adopterMerge')>();
+    return { ...actual, mergeAdopters: vi.fn(actual.mergeAdopters) };
+});
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
     generateErrorId: () => 'gen12345',
@@ -61,6 +65,7 @@ import { flagAdopter } from './flags';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
+import { mergeAdopters } from '@/lib/adopterMerge';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -104,7 +109,8 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
     it('case 1 (I loaded the profile being edited): continue, with what it adds, its records, the rating after, and the foreign owner named', async () => {
         const w = await windowFor('jonatan');
         expect(w).toMatchObject({ action: 'continue', alreadyPending: false, toldNames: ['other-rescuer'] });
-        expect(w!.preview!.newContacts.map(c => c.value)).toEqual(['555-1234', 'maria@example.com', TYPED]);
+        // The typed phone is not «added»: Jonatan already has it (+54 11 6585 1333), as the matcher compares phones.
+        expect(w!.preview!.newContacts.map(c => c.value)).toEqual(['555-1234', 'maria@example.com']);
         // Never who added each contact.
         expect(JSON.stringify(w!.preview)).not.toContain('addedBy');
         expect(w!.preview).toMatchObject({ records: 1, ratingAfter: 3 });
@@ -146,16 +152,50 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
 });
 
 describe('continueWithMatchedProfile — «Sí, continuar»', () => {
-    it('MATCH survives with CURRENT\'s contacts and the typed value; the foreign owner hears it; the told names come back', async () => {
+    it('MATCH survives with CURRENT\'s contacts and no second copy of the typed phone; the foreign owner hears it; the told names come back', async () => {
         const res = await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'phone', value: TYPED } });
         expect(res).toEqual({ ok: true, matchId: 'jonatan', currentName: 'María García López', told: ['other-rescuer'] });
         expect(deleted('maria')).toBe(true);
         expect(deleted('jonatan')).toBe(false);
-        expect(contactsOf('jonatan').map(c => c.value)).toEqual(expect.arrayContaining([MATCH_PHONE, '555-1234', 'maria@example.com', TYPED]));
+        // (Her name stays as an alias, as every merge keeps it.)
+        expect(contactsOf('jonatan').filter(c => c.type !== 'alias').map(c => c.value).sort()).toEqual([MATCH_PHONE, '555-1234', 'maria@example.com'].sort());
         // The records moved too: the rating is now over all three.
         expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopter_events WHERE adopter_id = 'jonatan'`).get()!.n).toBe(3);
         const merged = notify.create.filter(n => n.type === 'adopter_merged');
         expect(merged).toEqual([expect.objectContaining({ userId: OTHER, url: expect.stringMatching(/^\/adopter\/jonatan\?dispute=/) })]);
+    });
+
+    it('exactly «+54 9 11 6312-0851» on the match and «11 6312-0851» typed: neither in «Se agregará» nor saved twice (fix round 1)', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: '+54 9 11 6312-0851', addedBy: OTHER }]));
+        await tokenizeAdopter('jonatan');
+        const { results } = await getDuplicateHintMatches({ type: 'phone', value: '11 6312-0851', excludeAdopterId: 'maria' });
+        const w = results.find(r => r.adopter.id === 'jonatan');
+        expect(w?.matchedEntryIndexes).toEqual([0]);
+        expect(w!.preview!.newContacts.map(c => c.value)).not.toContain('11 6312-0851');
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'phone', value: '11 6312-0851' } })).toMatchObject({ ok: true });
+        expect(contactsOf('jonatan').filter(c => c.type === 'phone').map(c => c.value).sort()).toEqual(['+54 9 11 6312-0851', '555-1234'].sort());
+    });
+
+    it('a typed value the match does not have yet is added through the composer\'s save', async () => {
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'email', value: 'nuevo@example.com' } })).toMatchObject({ ok: true });
+        expect(contactsOf('jonatan').map(c => c.value)).toContain('nuevo@example.com');
+    });
+
+    it('a social handle with no network picked: refused before anything is saved (the composer asks for it)', async () => {
+        const res = await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'social', value: 'maria.garcia' } });
+        expect(res).toEqual({ ok: false, error: 'platform_required', errorId: 'gen12345' });
+        expect(deleted('maria')).toBe(false);
+        expect(contactsOf('maria').map(c => c.value)).not.toContain('maria.garcia');
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'social', value: 'maria.garcia', platform: 'instagram' } })).toMatchObject({ ok: true });
+        expect(contactsOf('jonatan').find(c => c.type === 'social')).toMatchObject({ value: 'maria.garcia', platform: 'instagram' });
+    });
+
+    it('the merge fails after the typed value was saved: says so (typedSaved), so the composer clears it', async () => {
+        vi.mocked(mergeAdopters).mockResolvedValueOnce({ success: false, error: 'boom' });
+        const res = await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'email', value: 'nuevo@example.com' } });
+        expect(res).toEqual({ ok: false, error: 'merge_failed', errorId: 'err12345', typedSaved: true });
+        expect(contactsOf('maria').map(c => c.value)).toContain('nuevo@example.com');
+        expect(deleted('maria')).toBe(false);
     });
 
     it('both profiles the team\'s: merged, nobody told', async () => {
@@ -225,10 +265,10 @@ describe('askAdminsToReviewPair — after a «no», ask the admins', () => {
 describe('duplicate flags tell the owners (flagAdopter / flagAdopterAsDuplicate)', () => {
     const flagged = () => notify.create.filter(n => n.type === 'duplicate_flagged');
 
-    it('both owners and their teams, once each, never the flagger; «Revisar» opens Pendientes at the pair; the admins are told too', async () => {
+    it('whoever added each profile — not their org members — once each, never the flagger; «Revisar» opens Pendientes at the pair; the admins are told too', async () => {
         const res = await as(STRANGER, () => flagAdopterAsDuplicate({ currentAdopterId: 'maria', matchedAdopterId: 'jonatan', matchedAdopterName: 'Jonatan Urfalino' }));
         expect(res).toMatchObject({ ok: true });
-        expect(flagged().map(n => n.userId).sort()).toEqual([MATE, OTHER, OWNER].sort());
+        expect(flagged().map(n => n.userId).sort()).toEqual([OTHER, OWNER].sort());
         expect(flagged()[0]).toMatchObject({
             url: `/my-adopters?pair=${encodeURIComponent('jonatan|maria')}#pendientes`,
             title: 'Posible duplicado en tu perfil',
@@ -240,14 +280,14 @@ describe('duplicate flags tell the owners (flagAdopter / flagAdopterAsDuplicate)
     it('a flagger who is an owner is not told; an owner who is an admin gets only the owner notice', async () => {
         sqlite.prepare(`UPDATE adopters SET added_by = ? WHERE id = 'jonatan'`).run(ADMIN);
         await as(OWNER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'));
-        expect(flagged().map(n => n.userId).sort()).toEqual([ADMIN, MATE].sort());
+        expect(flagged().map(n => n.userId)).toEqual([ADMIN]);
         expect(notify.admins).toHaveLength(1);
         expect(notify.admins[0].skip).toEqual(expect.arrayContaining([ADMIN]));
     });
 
     it('the profile menu «Reportar → Duplicado» (flagAdopter with a target) tells them the same way; other reasons tell only the admins', async () => {
         await as(STRANGER, () => flagAdopter('jonatan', 'duplicate', 'x', 'maria'));
-        expect(flagged().map(n => n.userId).sort()).toEqual([MATE, OTHER, OWNER].sort());
+        expect(flagged().map(n => n.userId).sort()).toEqual([OTHER, OWNER].sort());
         notify.create.length = 0;
         await as(STRANGER, () => flagAdopter('jonatan', 'inaccurate', 'x'));
         expect(flagged()).toEqual([]);

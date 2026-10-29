@@ -916,6 +916,7 @@ export const en = {
         dup_hint_done_told_one: 'We let {name} know.',
         dup_hint_done_told_many: 'We let {names} know.',
         dup_hint_join_failed: 'The profiles could not be joined (error {id}).',
+        dup_hint_join_failed_saved: 'The profiles could not be joined. The detail was saved on this profile.',
         ce_undo: 'Undo',
         ce_visibility_microcopy: 'Protected data: others can only confirm it if they already know it.',
         ce_visibility_profile_public: 'This profile is public and visible to everyone.',

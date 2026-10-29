@@ -114,14 +114,12 @@ test.describe.serial('composer duplicate hint (option B)', () => {
             .toEqual([expect.objectContaining({ reason: 'duplicate', t: UNO_ID })]);
         await expect(input).toHaveValue(PHONE);
 
-        // 4. Both owners are told (never the flagger), and «Revisar» opens the
+        // 4. Whoever added each profile is told (never the flagger), and «Revisar» opens the
         //    match owner's «Pendientes» at that pair.
         const flagId = String(rows(`SELECT id FROM adopter_flags WHERE adopter_id = '${ANCHOR}'`)[0].id);
         const told = () => rows(`SELECT user_id AS u, url FROM notifications WHERE type = 'duplicate_flagged' AND metadata LIKE '%${ANCHOR}%'`);
-        // (The admin's org teammates in the seed are told too: owners AND their teams.)
-        await expect.poll(() => told().map(r => String(r.u)), { timeout: 15_000 }).toEqual(expect.arrayContaining([ADMIN_EMAIL, OWNER]));
-        expect(told().map(r => String(r.u))).not.toContain(USER_EMAIL);
-        expect(new Set(told().map(r => String(r.u))).size).toBe(told().length);
+        // Whoever added each profile only — not the admin's org teammate in the seed, never the flagger.
+        await expect.poll(() => told().map(r => String(r.u)).sort(), { timeout: 15_000 }).toEqual([ADMIN_EMAIL, OWNER].sort());
         const url = String(told()[0].url);
         expect(url).toContain('#pendientes');
         const adminCtx = await browser.newContext({ storageState: '.auth/admin.json', baseURL });
@@ -153,7 +151,7 @@ test.describe.serial('composer duplicate hint — «Continuar con este perfil» 
         execD1(`DELETE FROM adopter_events WHERE id = 'test-duphint-fixture-ev-mine-${stamp}'`);
     });
 
-    test('continue → the confirmation → lands on the match with «Listo», once; mine absorbed, the typed phone kept', async ({ page }) => {
+    test('continue → the confirmation → lands on the match with «Listo», once; mine absorbed, the phone not doubled', async ({ page }) => {
         test.setTimeout(180_000);
         await page.goto(`/adopter/${MINE}`);
         await dismissCountryBanner(page);
@@ -172,6 +170,8 @@ test.describe.serial('composer duplicate hint — «Continuar con este perfil» 
         const confirm = page.getByTestId('dup-hint-confirm');
         await expect(confirm).toBeVisible();
         await expect(confirm.getByTestId('continue-merge-new')).toContainText(`duphint-${stamp}@example.org`);
+        // The typed phone is already on the match (+54 9 …, the same phone as the matcher compares it): not «added».
+        await expect(confirm.getByTestId('continue-merge-new')).not.toContainText(PHONE_C1);
         await expect(confirm.getByTestId('continue-merge-records')).toBeVisible();
         await expect(confirm.getByTestId('dup-hint-rating-after').getByTestId('rating-value')).toBeVisible();
         // The admin loaded the match: they are told.
@@ -183,9 +183,10 @@ test.describe.serial('composer duplicate hint — «Continuar con este perfil» 
         await expect(banner).toBeVisible({ timeout: 15_000 });
         await expect(banner).toContainText(MINE_NAME);
         expect(rows(`SELECT deleted_at AS d FROM adopters WHERE id = '${MINE}'`)[0].d).not.toBeNull();
-        const entries = String(rows(`SELECT contact_entries AS c FROM adopters WHERE id = '${MATCH_ID}'`)[0].c);
-        expect(entries).toContain(PHONE_C1);
-        expect(entries).toContain(`duphint-${stamp}@example.org`);
+        const entries = JSON.parse(String(rows(`SELECT contact_entries AS c FROM adopters WHERE id = '${MATCH_ID}'`)[0].c)) as Array<{ type: string; value: string }>;
+        // One copy of the phone (no «11 …» beside «+54 9 11 …»), and my email moved over.
+        expect(entries.filter(e => e.type === 'phone').map(e => e.value)).toEqual([`+54 9 ${PHONE_C1}`]);
+        expect(entries.map(e => e.value)).toContain(`duphint-${stamp}@example.org`);
 
         // One-shot: a reload doesn't show it again.
         await page.reload();

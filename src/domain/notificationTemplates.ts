@@ -41,7 +41,7 @@ export interface NotificationTemplateParams {
     deletion_request: { requesterName: string };
     /** `reason` is the FLAG_REASONS code (admins read it as is today). */
     adopter_flagged: { reporterName: string; reason: string };
-    /** To both profiles' owner teams when someone flags them as one person; a missing name reads «un perfil». */
+    /** To whoever added each profile when someone flags them as one person; a missing name reads «un perfil». */
     duplicate_flagged: { reporterName: string; nameA?: string; nameB?: string };
     /** `disputable`: '1' when attaching folded another profile in and the notice links to «¿No es la misma persona?» (D50). */
     contract_attached: { actorName: string; profileName: string; animalName?: string; disputable?: string };

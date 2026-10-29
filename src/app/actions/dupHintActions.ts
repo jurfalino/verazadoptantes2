@@ -29,8 +29,8 @@ import { normEmail } from '@/lib/orgMembership';
 import { createMergeRequest } from '@/lib/mergeRequests';
 import { mergeChosenPair } from '@/lib/pairMerge';
 import { decideDupHintMatch, loadDupHintViewer, profileRow } from '@/lib/dupHintFacts';
-import { dupHintMergePlan, isDupHintType, DUP_HINT_MAX_VALUE } from '@/domain/dupHint';
-import { CONTACT_ENTRIES_FULL, type MessagingApp, type SocialPlatform } from '@/lib/contactEntries';
+import { dupHintMergePlan, isDupHintType, typedIsNewFor, DUP_HINT_MAX_VALUE } from '@/domain/dupHint';
+import { CONTACT_ENTRIES_FULL, deserializeContactEntries, detectSocialPlatform, parseBlobToContactEntries, type MessagingApp, type SocialPlatform } from '@/lib/contactEntries';
 
 const id64 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 64) : '');
 
@@ -45,7 +45,8 @@ const MESSAGING_APPS: readonly string[] = ['whatsapp', 'telegram'];
 
 export type ContinueWithMatchedProfileResult =
     | { ok: true; matchId: string; currentName: string; told: string[] }
-    | { ok: false; error: string; errorId: string };
+    /** `typedSaved`: the typed value was saved on the profile being edited before the merge failed — the composer clears it. */
+    | { ok: false; error: string; errorId: string; typedSaved?: true };
 
 export async function continueWithMatchedProfile(input: {
     currentId: string;
@@ -82,11 +83,19 @@ export async function continueWithMatchedProfile(input: {
         });
 
         // The value being typed: saved on CURRENT as its Save would, so the merge
-        // carries it to MATCH (deduped there) — and nothing typed is lost.
+        // carries it to MATCH — and nothing typed is lost. Not when MATCH already
+        // has it as the matcher compares it (typedIsNewFor: «+54 9 11 6312-0851»
+        // is «11 6312-0851»): the merge would keep both copies.
         const typed = input?.typed;
-        if (typed && isDupHintType(typed.type) && typeof typed.value === 'string' && typed.value.trim()) {
+        const matchParsed = deserializeContactEntries(match.contactEntries);
+        const matchEntries = matchParsed.length > 0 ? matchParsed : parseBlobToContactEntries(match.contactInfo);
+        let typedSaved = false;
+        if (typed && isDupHintType(typed.type) && typeof typed.value === 'string' && typed.value.trim()
+            && typedIsNewFor(matchEntries, typed.type, typed.value.trim())) {
             const platform = typed.type === 'social' && typeof typed.platform === 'string' && SOCIAL_PLATFORMS.includes(typed.platform)
                 ? typed.platform as SocialPlatform : undefined;
+            // A handle needs its network, as the composer's Save asks for it.
+            if (typed.type === 'social' && !detectSocialPlatform(typed.value) && !platform) return refuse('platform_required');
             const apps = typed.type === 'phone' && Array.isArray(typed.apps)
                 ? typed.apps.filter((a): a is MessagingApp => typeof a === 'string' && MESSAGING_APPS.includes(a)) : [];
             const added = await addContactEntry({
@@ -99,6 +108,7 @@ export async function continueWithMatchedProfile(input: {
                 logger.warn('continueWithMatchedProfile: the typed value was not saved, nothing merged', { ...ctx, type: typed.type, reason: added.error, errorId });
                 return { ok: false, error: 'typed_not_saved', errorId };
             }
+            typedSaved = true;
         }
 
         const merged = await mergeChosenPair(db, {
@@ -107,7 +117,10 @@ export async function continueWithMatchedProfile(input: {
             absorbedAddedBy: current.addedBy,
             label: 'continueWithMatchedProfile', ctx,
         });
-        if (!merged.ok) return merged.error === 'merge_failed' ? { ok: false, error: 'merge_failed', errorId: merged.errorId } : refuse(merged.error);
+        if (!merged.ok) {
+            const failed = merged.error === 'merge_failed' ? { ok: false as const, error: 'merge_failed', errorId: merged.errorId } : refuse(merged.error);
+            return typedSaved ? { ...failed, typedSaved: true } : failed;
+        }
 
         let told: string[] = [];
         if (plan.told.length > 0) {

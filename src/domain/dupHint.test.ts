@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NO_DISMISSED, decideDupHintAction, dismissDupHintMatch, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, visibleDupHintMatches, type DupHintFacts } from './dupHint';
+import { NO_DISMISSED, decideDupHintAction, dismissDupHintMatch, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, typedIsNewFor, visibleDupHintMatches, type DupHintFacts } from './dupHint';
 import { decideDedupAction, mergeOwnersToTell } from './dedupPair';
 import { ratingAfterMerge } from './ratings';
 
@@ -35,6 +35,25 @@ describe('entryMatchesTyped — which stored contact is the one typed', () => {
     });
     it('never across types', () => {
         expect(entryMatchesTyped({ type: 'email', value: '30111222' }, 'id', '30111222')).toBe(false);
+    });
+    it('phones as the matcher keys them: «+54 9 11 6312-0851» and «11 6312-0851» are one phone (fix round 1)', () => {
+        expect(entryMatchesTyped({ type: 'phone', value: '+54 9 11 6312-0851' }, 'phone', '11 6312-0851')).toBe(true);
+        expect(entryMatchesTyped({ type: 'phone', value: '11 6312-0851' }, 'phone', '+54 9 11 6312-0851')).toBe(true);
+        expect(entryMatchesTyped({ type: 'phone', value: '+54 9 11 6312-0851' }, 'phone', '11 6312-0852')).toBe(false);
+    });
+});
+
+describe('typedIsNewFor — does «Continuar» still add the typed value?', () => {
+    const match = [{ type: 'phone', value: '+54 9 11 6312-0851' }, { type: 'email', value: 'Ana@Mail.com' }];
+    it('not when the match already has it as the matcher compares it (country / area prefixes, case)', () => {
+        expect(typedIsNewFor(match, 'phone', '11 6312-0851')).toBe(false);
+        expect(typedIsNewFor(match, 'phone', '6312 0851')).toBe(false);
+        expect(typedIsNewFor(match, 'email', 'ana@mail.com')).toBe(false);
+    });
+    it('yes for a value the match does not carry; never for a blank one', () => {
+        expect(typedIsNewFor(match, 'phone', '11 6312-0999')).toBe(true);
+        expect(typedIsNewFor(match, 'email', 'otra@mail.com')).toBe(true);
+        expect(typedIsNewFor(match, 'phone', '  ')).toBe(false);
     });
 });
 

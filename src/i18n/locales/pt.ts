@@ -923,6 +923,7 @@ export const pt = {
         dup_hint_done_told_one: 'Avisamos {name}.',
         dup_hint_done_told_many: 'Avisamos {names}.',
         dup_hint_join_failed: 'Não foi possível unir os perfis (erro {id}).',
+        dup_hint_join_failed_saved: 'Não foi possível unir os perfis. O dado ficou salvo neste perfil.',
         ce_undo: 'Desfazer',
         ce_visibility_microcopy: 'Dados protegidos: outros só podem confirmá-los se já os conhecerem.',
         ce_visibility_profile_public: 'Este perfil é público e visível para todos.',
