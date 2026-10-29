@@ -2,9 +2,9 @@
 
 import { getDb, getUser } from './_db';
 import { flagAdopter } from './flags';
-import { pairUnderReview } from '@/lib/pairVerdict';
+import { pairSettledSeparate, pairUnderReview } from '@/lib/pairVerdict';
 import { FLAG_REASONS } from '@/domain/constants';
-import { logger } from '@/lib/logger';
+import { logger, generateErrorId } from '@/lib/logger';
 
 /**
  * Public server action invoked from <DuplicateHint>'s «Es la misma persona»
@@ -47,6 +47,12 @@ export async function flagAdopterAsDuplicate(input: {
     try {
         const db = await getDb();
         if (!db) throw new Error('No database');
+        // Already recorded as two people: refused before anything else (as flagAdopter does).
+        if (await pairSettledSeparate(db, currentAdopterId, matchedAdopterId)) {
+            const errorId = generateErrorId();
+            logger.warn('flagAdopterAsDuplicate: refused, the pair is settled as two people', { currentAdopterId, matchedAdopterId, user, errorId });
+            return { ok: false, error: `settled_separate:${errorId}` };
+        }
         const review = await pairUnderReview(db, currentAdopterId, matchedAdopterId);
         if (review.flagId || review.requestPending) {
             logger.info('flagAdopterAsDuplicate: the pair is already up for review, no second flag', {

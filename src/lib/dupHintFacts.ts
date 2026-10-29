@@ -23,7 +23,7 @@ import { adopters, adoptions } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { isAdminAsync } from '@/config/admins';
 import { isOwnerOrOrgMate } from '@/lib/orgMembership';
-import { loadPairVerdict, pairUnderReview, teamOf } from '@/lib/pairVerdict';
+import { loadPairVerdict, pairSettledSeparate, pairUnderReview, teamOf, type SettledSeparate } from '@/lib/pairVerdict';
 import { realOwner } from '@/domain/dedupPair';
 import { decideDupHintAction, type DupHintAction } from '@/domain/dupHint';
 
@@ -75,6 +75,8 @@ export interface DupHintMatchDecision {
     matchTeamOwned: boolean;
     /** Someone already said they are two people (declined for the viewer's team, or an admin ruled it). */
     saidNo: boolean;
+    /** Already recorded as two people, and how (action 'settled'). */
+    settled: SettledSeparate | null;
 }
 
 /** What the window offers for this match (needs a saved CURRENT). */
@@ -83,10 +85,11 @@ export async function decideDupHintMatch(
     viewer: DupHintViewer & { current: DupHintProfileRow },
     match: { id: string; addedBy: string | null },
 ): Promise<DupHintMatchDecision> {
-    const [verdict, review, matchTeamOwned] = await Promise.all([
+    const [verdict, review, matchTeamOwned, settled] = await Promise.all([
         loadPairVerdict(db, viewer.current.id, match.id, viewer.team),
         pairUnderReview(db, viewer.current.id, match.id),
         isOwnerOrOrgMate(viewer.actor, match.addedBy),
+        pairSettledSeparate(db, viewer.current.id, match.id),
     ]);
     const pending = !!review.flagId || review.requestPending;
     const action = decideDupHintAction({
@@ -97,8 +100,9 @@ export async function decideDupHintMatch(
         declinedForTeam: verdict.declinedForTeam,
         adminRuledSeparate: verdict.adminRuledSeparate,
         pending,
+        settledSeparate: !!settled,
     });
-    return { action, alreadyPending: pending, flagId: review.flagId, matchTeamOwned, saidNo: verdict.declinedForTeam || verdict.adminRuledSeparate };
+    return { action, alreadyPending: pending, flagId: review.flagId, matchTeamOwned, saidNo: verdict.declinedForTeam || verdict.adminRuledSeparate, settled };
 }
 
 /** Every record's rating on this profile (null = not rated): what the profile's average is computed from. */

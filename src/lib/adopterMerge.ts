@@ -16,7 +16,7 @@ import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
-import { deserializeContactEntries, mergeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
+import { deserializeContactEntries, foldContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
 import { knownAsNames, preserveRenameAliases, withRenameAliases } from '@/domain/profileIdentity';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
@@ -212,10 +212,14 @@ export async function mergeAdopters(
             // this the absorbed record's name stops being a NAME token — a person
             // recorded under that spelling elsewhere would silently stop matching
             // the survivor (aliases tokenize as name_words; see extractTokens).
-            let mergedEntries = mergeContactEntries(
+            // A contact the survivor already has as the duplicate matcher sees it
+            // («11 6312-0851» beside «+54 9 11 6312-0851») is not added twice: the
+            // survivor's entry stays, with the absorbed one's phone apps; the
+            // absorbed owner's access follows it (grantAccessAfterFold).
+            let mergedEntries = foldContactEntries(
                 deserializeContactEntries(p.contactEntries),
                 deserializeContactEntries(secondary.contactEntries),
-            );
+            ).entries;
             const secondaryName = (secondary.name || '').trim();
             // The absorbed name is a previous name of the same person: a rename-protected
             // alias (households as profiles) — only the survivor's team may drop it. An

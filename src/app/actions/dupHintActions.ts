@@ -75,6 +75,8 @@ export async function continueWithMatchedProfile(input: {
         const current = viewer.current;
         if (!current || !match || match.deletedAt) return refuse('not_found');
         const decision = await decideDupHintMatch(db, { ...viewer, current }, { id: match.id, addedBy: match.addedBy });
+        // Already recorded as two people (a shared home, «Mantener separados», «Viven juntos»): never merged here.
+        if (decision.action === 'settled') return refuse('settled_separate');
         // Cases 2–5 are someone else's call (or already someone's): never merged from here.
         if (decision.action !== 'continue') return refuse(`not_allowed:${decision.action}`);
         const plan = dupHintMergePlan({
@@ -165,6 +167,7 @@ export async function askAdminsToReviewPair(input: { currentId: string; matchId:
         const current = viewer.current;
         if (!current || !match || match.deletedAt) return refuse('not_found');
         const decision = await decideDupHintMatch(db, { ...viewer, current }, { id: match.id, addedBy: match.addedBy });
+        if (decision.action === 'settled') return refuse('settled_separate');
         // Only someone whose team loaded one of the two may ask (review F1) — as in «Pendientes».
         if (!viewer.isAdmin && !viewer.currentTeamOwned && !decision.matchTeamOwned) return refuse('not_yours');
         if (decision.action !== 'review_admins') return refuse(`not_allowed:${decision.action}`);

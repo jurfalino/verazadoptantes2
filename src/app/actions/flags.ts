@@ -19,9 +19,10 @@ export type FlagAdopterResult =
      * A duplicate flag refused: 'invalid_target' (the same profile, or one that
      * doesn't exist or was merged away); 'said_no' (someone already said they are
      * two people — declined for the flagger's team, or an admin ruled it — as the
-     * «Ya está en otro perfil» window says).
+     * «Ya está en otro perfil» window says); 'settled_separate' (already recorded as
+     * two people: a shared home, «Mantener separados», «Viven juntos» — for admins too).
      */
-    | { success: false; error: 'invalid_target' | 'said_no'; errorId: string };
+    | { success: false; error: 'invalid_target' | 'said_no' | 'settled_separate'; errorId: string };
 
 export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string): Promise<FlagAdopterResult> {
     const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
@@ -38,7 +39,7 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         // «Ya está en otro perfil» window alike: once per pair, two real live profiles,
         // and never on a pair someone already said are two people.
         if (reason === FLAG_REASONS.DUPLICATE && targetAdopterId) {
-            const refuse = (error: 'invalid_target' | 'said_no') => {
+            const refuse = (error: 'invalid_target' | 'said_no' | 'settled_separate') => {
                 const errorId = generateErrorId();
                 logger.warn('flagAdopter: duplicate flag refused', { adopterId, targetAdopterId, actor: flaggedBy, reason: error, errorId });
                 return { success: false as const, error, errorId };
@@ -47,7 +48,8 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
             const live = (id: string) => db.select({ deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, id)).get() as Promise<{ deletedAt: Date | null } | undefined>;
             const [a, b] = await Promise.all([live(adopterId), live(targetAdopterId)]);
             if (!a || !b || a.deletedAt || b.deletedAt) return refuse('invalid_target');
-            const { pairUnderReview, loadPairVerdict, teamOf } = await import('@/lib/pairVerdict');
+            const { pairUnderReview, pairSettledSeparate, loadPairVerdict, teamOf } = await import('@/lib/pairVerdict');
+            if (await pairSettledSeparate(db, adopterId, targetAdopterId)) return refuse('settled_separate');
             const review = await pairUnderReview(db, adopterId, targetAdopterId);
             if (review.flagId) {
                 logger.info('flagAdopter: the pair already has an open duplicate flag, no second one', { adopterId, targetAdopterId, actor: flaggedBy, flagId: review.flagId });

@@ -911,6 +911,7 @@ export const es = {
         dup_hint_flag_told: 'Les avisamos a quienes cargaron cada perfil y a los administradores.',
         dup_hint_open_to_add: 'Abrir perfil para agregar datos',
         dup_hint_said_no: 'Ya dijeron que no son la misma persona.',
+        dup_hint_settled: 'Ya figuran como personas distintas.',
         dup_hint_review_sent: 'Enviado a los administradores',
         dup_hint_review_failed: 'No se pudo enviar a los administradores.',
         dup_hint_pending: 'Ya está marcado para revisar.',

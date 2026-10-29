@@ -81,7 +81,7 @@ describe('«No es esta persona» — hidden while the typed value stays the same
 
 
 describe('decideDupHintAction — what the «Ver perfil» window offers (Jon 2026-10-29)', () => {
-    const base: DupHintFacts = { isAdmin: false, currentTeamOwned: true, matchTeamOwned: false, matchHasOwner: true, declinedForTeam: false, adminRuledSeparate: false, pending: false };
+    const base: DupHintFacts = { isAdmin: false, currentTeamOwned: true, matchTeamOwned: false, matchHasOwner: true, declinedForTeam: false, adminRuledSeparate: false, pending: false, settledSeparate: false };
     const with_ = (over: Partial<DupHintFacts>) => decideDupHintAction({ ...base, ...over });
 
     it('case 1: the viewer or their team loaded the profile being edited → continue', () => {
@@ -112,6 +112,11 @@ describe('decideDupHintAction — what the «Ver perfil» window offers (Jon 202
         expect(with_({ declinedForTeam: true, pending: true, matchHasOwner: false })).toBe('review_admins');
         expect(with_({ pending: true, matchHasOwner: false })).toBe('pending');
         expect(with_({ matchHasOwner: false, currentTeamOwned: true })).toBe('flag');
+    });
+    it('already recorded as two people (a shared home, «Mantener separados», «Viven juntos»): settled — before everything, for admins too (F3)', () => {
+        for (const over of [{}, { declinedForTeam: true }, { pending: true }, { matchHasOwner: false }, { currentTeamOwned: false }, { isAdmin: true }]) {
+            expect(with_({ settledSeparate: true, ...over })).toBe('settled');
+        }
     });
     it('admins choose freely (D24): continue, whatever was said, pending or owned', () => {
         for (const over of [{}, { currentTeamOwned: false }, { matchHasOwner: false }, { declinedForTeam: true }, { adminRuledSeparate: true }, { pending: true }]) {

@@ -193,9 +193,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     zarazTrack('flag_submitted', { flagType: 'duplicate' });
                     resetAndClose();
                     router.refresh();
-                } else if (res.error === 'said_no') {
-                    // Someone already said they are two people — the same reason «Ya está en otro perfil» gives.
-                    toast.info(t('adopter.dup_hint_said_no'));
+                } else if (res.error === 'said_no' || res.error === 'settled_separate') {
+                    // Someone already said they are two people / they're recorded as such — the reason «Ya está en otro perfil» gives.
+                    toast.info(t(res.error === 'said_no' ? 'adopter.dup_hint_said_no' : 'adopter.dup_hint_settled'));
                 } else {
                     toast.error(t('errors.generic'), t('errors.submit_report_failed'), res.errorId);
                 }

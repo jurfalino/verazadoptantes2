@@ -19,7 +19,7 @@ import {
     deserializeContactEntries,
     contactEntriesToBlob,
     parseBlobToContactEntries,
-    mergeContactEntries,
+    foldContactEntries,
     stripRenameMarks,
     contactCapExceeded,
     contactEntriesJsonCount,
@@ -171,10 +171,14 @@ export async function appendToExistingAdopter(
                 if (incoming.length) {
                     const targetEntries = deserializeContactEntries(row.contactEntries);
                     const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(row.contactInfo);
-                    const merged = mergeContactEntries(base, incoming);
+                    // The same rule as the «Se agregará» preview (newContactsForProfile →
+                    // contactMatchKeys): a typed contact the profile already has in another
+                    // format is not stored twice.
+                    const merged = foldContactEntries(base, incoming).entries;
                     // S1: never grow past the cap (a later read would truncate it).
                     if (merged.length !== base.length && (contactCapExceeded(merged) || contactEntriesJsonCount(fields.contactEntries) > MAX_CONTACT_ENTRIES)) return { result: { [CONTACT_ENTRIES_FULL]: '1' } };
-                    if (merged.length !== base.length) {
+                    // A same-contact copy may only add its phone apps to an existing entry: still a write.
+                    if (merged.length !== base.length || JSON.stringify(merged) !== JSON.stringify(foldContactEntries(base, []).entries)) {
                         updates.contactEntries = JSON.stringify(merged);
                         updates.contactInfo = contactEntriesToBlob(merged) || null;
                         appendedFields.contactInfo = contactEntriesToBlob(incoming);

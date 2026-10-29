@@ -63,6 +63,8 @@ import { continueWithMatchedProfile, askAdminsToReviewPair } from './dupHintActi
 import { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 import { flagAdopter } from './flags';
 import { addContactEntry } from './addContactEntry';
+import { appendToExistingAdopter } from './adopters';
+import { hashEntryValue } from '@/lib/piiAccess';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
@@ -377,5 +379,75 @@ describe('duplicate flags tell the owners (flagAdopter / flagAdopterAsDuplicate)
         expect(flagsOn('maria')).toHaveLength(1);
         expect(flagsOn('jonatan')).toHaveLength(0);
         expect({ owners: flagged().length, admins: notify.admins.length }).toEqual(before);
+    });
+});
+
+describe('already recorded as two people (F3 option a): «Ya figuran como personas distintas.»', () => {
+    const shareHome = (giftRecipient = 0) => {
+        sqlite.prepare(`INSERT INTO households (id, created_by, created_at) VALUES ('hh1', ?, 1)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES ('m-a', 'hh1', 'maria', 'unknown', 0, ?, 1), ('m-b', 'hh1', 'jonatan', 'unknown', ?, ?, 1)`).run(OWNER, giftRecipient, OWNER);
+    };
+    const sources: Array<[string, () => void]> = [
+        ['they share a home', () => shareHome()],
+        ['«Mantener separados» in Pendientes (a dismissed candidate)', () => sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES ('c1', 'maria', 'jonatan', '["phone"]', 60, 'medium', 'dismissed', 1)`).run()],
+        ['«Viven juntos» (the kept-separate household marker on a flag)', () => sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('f1', 'jonatan', ?, 'duplicate', 'maria', 'Kept separate: household', 1)`).run(STRANGER)],
+    ];
+
+    it.each(sources)('%s: the window says so — for the owner and an admin alike — and every action refuses it', async (_label, seed) => {
+        seed();
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'settled' });
+        expect(await as(ADMIN, () => windowFor('jonatan'))).toMatchObject({ action: 'settled' });
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'email', value: 'nuevo@example.com' } })).toEqual({ ok: false, error: 'settled_separate', errorId: 'gen12345' });
+        expect(await as(ADMIN, () => continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' }))).toMatchObject({ ok: false, error: 'settled_separate' });
+        expect(await askAdminsToReviewPair({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: false, error: 'settled_separate' });
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'))).toMatchObject({ success: false, error: 'settled_separate' });
+        expect(await as(ADMIN, () => flagAdopter('jonatan', 'duplicate', 'x', 'maria'))).toMatchObject({ success: false, error: 'settled_separate' });
+        expect(await as(STRANGER, () => flagAdopterAsDuplicate({ currentAdopterId: 'maria', matchedAdopterId: 'jonatan', matchedAdopterName: 'J' }))).toEqual({ ok: false, error: 'settled_separate:gen12345' });
+        expect(deleted('maria')).toBe(false);
+        expect(contactsOf('maria').map(c => c.value)).not.toContain('nuevo@example.com');
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopter_flags WHERE details IS NULL OR details NOT LIKE 'Kept separate:%'`).get()!.n).toBe(0);
+        expect(notify.create).toEqual([]);
+        expect(notify.admins).toEqual([]);
+    });
+
+    it('housemates who share an email are NOT settled (as «Pendientes» never hides them); a gift household never settles', async () => {
+        shareHome();
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: MATCH_PHONE }, { id: 'j2', type: 'email', value: 'MARIA@example.com' }]));
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'continue' });
+    });
+
+    it('a gift household does not count', async () => {
+        shareHome(1);
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'continue' });
+    });
+});
+
+describe('the same phone saved twice in the existing paths (round 4)', () => {
+    it('the general merge: «11 6312-0851» on the absorbed profile and «+54 9 11 6312-0851» on the kept one → one entry, the kept one\'s, with both apps', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: '+54 9 11 6312-0851', apps: ['telegram'], addedBy: OTHER }]));
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'm1', type: 'phone', value: '11 6312-0851', apps: ['whatsapp'], addedBy: OWNER }]));
+        await tokenizeAdopter('maria');
+        await tokenizeAdopter('jonatan');
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: true });
+        expect(contactsOf('jonatan').filter(c => c.type === 'phone')).toEqual([expect.objectContaining({ id: 'j1', value: '+54 9 11 6312-0851', apps: ['telegram', 'whatsapp'] })]);
+    });
+
+    it('the grant follows: after a rescuer merge the absorbed team may still see that number, on the kept entry', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: '+54 9 11 6312-0851', addedBy: OTHER }, { id: 'j2', type: 'email', value: 'secreto@example.com', addedBy: OTHER }]));
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'm1', type: 'phone', value: '11 6312-0851', addedBy: OWNER }]));
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: true });
+        const refs = sqlite.prepare(`SELECT entry_ref AS r FROM pii_access_grants WHERE adopter_id = 'jonatan' AND grantee_email = ? AND scope = 'entry' AND revoked_at IS NULL`).all(OWNER).map(g => g.r);
+        expect(refs).toContain(hashEntryValue('phone', '+54 9 11 6312-0851'));
+        // Never the survivor's other contacts (final review C1).
+        expect(refs).not.toContain(hashEntryValue('email', 'secreto@example.com'));
+    });
+
+    it('the new-profile form\'s «Continuar con este perfil» (appendToExistingAdopter): «11 6312-0851» typed against «+54 9 11 6312-0851» is not stored twice', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'maria'`).run(JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851' }]));
+        const res = await appendToExistingAdopter('maria', { contactEntries: JSON.stringify([{ type: 'phone', value: '11 6312-0851', apps: ['whatsapp'] }, { type: 'email', value: 'otra@example.com' }]) });
+        expect(res).toMatchObject({ success: true });
+        const phones = contactsOf('maria').filter(c => c.type === 'phone');
+        expect(phones).toEqual([expect.objectContaining({ id: 'p1', value: '+54 9 11 6312-0851', apps: ['whatsapp'] })]);
+        expect(contactsOf('maria').map(c => c.value)).toContain('otra@example.com');
     });
 });

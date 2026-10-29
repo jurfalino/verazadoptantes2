@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
     contactBlobForDisplay,
     newContactsForProfile,
+    sameContact,
+    foldContactEntries,
     categorizeContactText,
     contactEntriesToBlob,
     parseBlobToContactEntries,
@@ -695,5 +697,37 @@ describe('newContactsForProfile', () => {
     it('blank and repeated typed entries count once', () => {
         const typed = [{ id: 't1', type: 'phone' as const, value: '11 5555-0001' }, { id: 't2', type: 'phone' as const, value: '1155550001' }, { id: 't3', type: 'email' as const, value: '  ' }];
         expect(newContactsForProfile(typed, profile([]))).toHaveLength(1);
+    });
+});
+
+describe('contactMatchKeys / sameContact / foldContactEntries — the duplicate matcher\'s own «same contact» (round 4)', () => {
+    it('«11 6312-0851» and «+54 9 11 6312-0851» are one phone; emails by case; a different number is not', () => {
+        expect(sameContact({ type: 'phone', value: '11 6312-0851' }, { type: 'phone', value: '+54 9 11 6312-0851' })).toBe(true);
+        expect(sameContact({ type: 'phone', value: '11 6312-0852' }, { type: 'phone', value: '+54 9 11 6312-0851' })).toBe(false);
+        expect(sameContact({ type: 'email', value: 'Ana@Mail.com' }, { type: 'email', value: 'ana@mail.com ' })).toBe(true);
+        expect(sameContact({ type: 'phone', value: '11 6312-0851' }, { type: 'id', value: '1163120851' })).toBe(false);
+    });
+
+    it('the new-profile form\'s preview (newContactsForProfile) does not list «11 6312-0851» against «+54 9 11 6312-0851»', () => {
+        const profile = { contactEntries: JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851' }]), contactInfo: null };
+        expect(newContactsForProfile([{ id: 't1', type: 'phone', value: '11 6312-0851' }, { id: 't2', type: 'email', value: 'x@y.com' }], profile).map(e => e.value)).toEqual(['x@y.com']);
+    });
+
+    it('fold: the kept entry stays (its formatting), gains the other\'s phone apps; one copy; the dropped one is paired with its stand-in', () => {
+        const base: ContactEntry[] = [{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851', apps: ['telegram'] }];
+        const incoming: ContactEntry[] = [{ id: 'q1', type: 'phone', value: '11 6312-0851', apps: ['whatsapp'] }, { id: 'q2', type: 'email', value: 'x@y.com' }];
+        const { entries, same } = foldContactEntries(base, incoming);
+        expect(entries.filter(e => e.type === 'phone')).toEqual([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851', apps: ['telegram', 'whatsapp'] }]);
+        expect(entries.map(e => e.value)).toContain('x@y.com');
+        expect(same).toEqual([{ incoming: incoming[0], kept: expect.objectContaining({ id: 'p1' }) }]);
+        // The input lists are not changed.
+        expect(base[0].apps).toEqual(['telegram']);
+    });
+
+    it('fold visibility: the kept entry stays public only when both copies were (the stricter rule)', () => {
+        const pub = (v: string, isPublic?: boolean): ContactEntry => ({ type: 'phone', value: v, ...(isPublic ? { isPublic } : {}) });
+        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851')]).entries[0].isPublic).toBeUndefined();
+        expect(foldContactEntries([pub('+54 9 11 6312-0851')], [pub('11 6312-0851', true)]).entries[0].isPublic).toBeUndefined();
+        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851', true)]).entries[0].isPublic).toBe(true);
     });
 });

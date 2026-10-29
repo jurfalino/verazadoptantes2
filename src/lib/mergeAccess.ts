@@ -21,7 +21,7 @@ import { adopters, auditLog, piiAccessGrants } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
-import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
+import { deserializeContactEntries, parseBlobToContactEntries, sameContact } from '@/lib/contactEntries';
 import { hashEntryValue } from '@/lib/piiAccess';
 import { realOwner } from '@/domain/dedupPair';
 
@@ -36,15 +36,24 @@ export type FoldAccess =
  * maskAdopterContact masks (structured entries, else the legacy blob parsed),
  * minus the ones it never masks (aliases, notes, per-entry public ones).
  */
-async function absorbedEntryHashes(db: Db, absorbedId: string): Promise<string[]> {
-    const row = await db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo })
-        .from(adopters).where(eq(adopters.id, absorbedId)).get();
+async function absorbedEntryHashes(db: Db, absorbedId: string, survivorId: string): Promise<string[]> {
+    const read = (id: string) => db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo })
+        .from(adopters).where(eq(adopters.id, id)).get() as Promise<{ contactEntries: string | null; contactInfo: string | null } | undefined>;
+    const [row, survivor] = await Promise.all([read(absorbedId), read(survivorId)]);
     if (!row) throw new Error('absorbed profile not found');
-    const parsed = deserializeContactEntries(row.contactEntries);
-    const entries = parsed.length > 0 ? parsed : parseBlobToContactEntries(row.contactInfo);
-    return [...new Set(entries
-        .filter(e => e.type !== 'alias' && e.type !== 'other' && !e.isPublic)
-        .map(e => hashEntryValue(e.type, e.value)))];
+    const entriesOf = (r: { contactEntries: string | null; contactInfo: string | null } | undefined) => {
+        const parsed = deserializeContactEntries(r?.contactEntries ?? null);
+        return (parsed.length > 0 ? parsed : parseBlobToContactEntries(r?.contactInfo ?? null))
+            .filter(e => e.type !== 'alias' && e.type !== 'other' && !e.isPublic);
+    };
+    const own = entriesOf(row);
+    // The merge keeps ONE copy of a contact both had in different formats
+    // («+54 9 11 6312-0851» stays, «11 6312-0851» goes — foldContactEntries):
+    // the grant follows the survivor's entry that now stands for it, so the
+    // absorbed team still sees the number its profile brought. Only an entry the
+    // matcher calls the same one (sameContact): nothing else of the survivor's.
+    const standIns = entriesOf(survivor).filter(s => own.some(e => sameContact(e, s)));
+    return [...new Set([...own, ...standIns].map(e => hashEntryValue(e.type, e.value)))];
 }
 
 /**
@@ -82,7 +91,7 @@ export async function grantAccessAfterFold(db: Db, input: {
         const [absorbedTeam, survivorTeam, entryHashes] = await Promise.all([
             getTeamEmails(absorbedOwner),
             survivorOwner ? getTeamEmails(survivorOwner) : Promise.resolve([] as string[]),
-            access.scope === 'absorbed_entries' ? absorbedEntryHashes(db, access.absorbedId) : Promise.resolve([] as string[]),
+            access.scope === 'absorbed_entries' ? absorbedEntryHashes(db, access.absorbedId, survivorId) : Promise.resolve([] as string[]),
         ]);
         const alreadySees = new Set(survivorTeam.map(normEmail));
         const grantees = [...new Set([absorbedOwner, ...absorbedTeam.map(normEmail)])].filter(e => e && !alreadySees.has(e));

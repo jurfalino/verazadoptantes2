@@ -904,6 +904,7 @@ export const en = {
         dup_hint_flag_told: 'We will let whoever added each profile and the admins know.',
         dup_hint_open_to_add: 'Open the profile to add details',
         dup_hint_said_no: 'They already said these are not the same person.',
+        dup_hint_settled: 'They are already recorded as different people.',
         dup_hint_review_sent: 'Sent to the admins',
         dup_hint_review_failed: 'Could not send it to the admins.',
         dup_hint_pending: 'It is already marked for review.',

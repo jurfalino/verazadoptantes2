@@ -29,6 +29,8 @@
  *     - 'review_admins' (they already said no): «Pedir revisión a un
  *       administrador» (askAdminsToReviewPair, the «Pendientes» dispute).
  *     - 'pending' (already up for review): only said.
+ *     - 'settled' (already recorded as two people: a shared home, «Mantener
+ *       separados», «Viven juntos»): «Ya figuran como personas distintas.»
  *   Always: «No es esta persona» → closes the window and drops that row while
  *   the typed value stays the same (local only, no server write, no toast);
  *   «Abrir perfil completo en otra pestaña» → writes the search-match grant
@@ -255,6 +257,13 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
                         {openLink}
                     </>
                 )}
+                {action === 'settled' && (
+                    <>
+                        {note(t('adopter.dup_hint_settled'), 'dup-hint-settled')}
+                        {notThis}
+                        {openLink}
+                    </>
+                )}
                 {action === 'pending' && (
                     <>
                         {note(t('adopter.dup_hint_pending'), 'dup-hint-pending-note')}
@@ -447,9 +456,9 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                 else toast.success(t('adopter.dup_hint_flag_success'));
                 markDone(m.adopterId, 'flagged');
                 setOpenId(null);
-            } else if (res.error.startsWith('said_no')) {
-                // Someone already said they are two people: the window's own reason, not a failure.
-                toast.info(t('adopter.dup_hint_said_no'));
+            } else if (res.error.startsWith('said_no') || res.error.startsWith('settled_separate')) {
+                // Someone already said they are two people / they are recorded as such: the window's own reason, not a failure.
+                toast.info(t(res.error.startsWith('said_no') ? 'adopter.dup_hint_said_no' : 'adopter.dup_hint_settled'));
                 setOpenId(null);
             } else {
                 // `<code>:<errorId>`: the id was logged server-side.
@@ -473,6 +482,9 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                 if (res.already) toast.info(t('adopter.dup_hint_review_already'));
                 else toast.success(t('myAdopters.pending_d_disputed'));
                 markDone(m.adopterId, 'sent');
+                setOpenId(null);
+            } else if (res.error === 'settled_separate') {
+                toast.info(t('adopter.dup_hint_settled'));
                 setOpenId(null);
             } else {
                 toast.error(t('errors.generic') || 'Error', t('adopter.dup_hint_review_failed'), res.errorId);
@@ -510,6 +522,11 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                 setContinuing(false);
                 setConfirmId(null);
                 onTypedSaved?.();
+                return;
+            }
+            if (res.error === 'settled_separate') {
+                setContinueFailure(t('adopter.dup_hint_settled'));
+                setContinuing(false);
                 return;
             }
             if (res.error === 'platform_required') {

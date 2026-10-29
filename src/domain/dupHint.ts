@@ -11,7 +11,7 @@
  * - `visibleDupHintMatches`: «No es esta persona» hides a match for as long as
  *   the typed value stays the same (local only, no server write).
  */
-import { extractPhones, extractPhoneSuffixes, normalizeIdValue, normalizeSocialHandle } from '@/lib/tokenizer';
+import { contactMatchKeys, sameContact, type ContactEntry } from '@/lib/contactEntries';
 import { mergeOwnersToTell, realOwner } from '@/domain/dedupPair';
 
 export type DupHintType = 'phone' | 'email' | 'social' | 'id';
@@ -54,41 +54,20 @@ export function dupHintSearchInput(type: unknown, value: unknown): DupHintSearch
     }
 }
 
-/** A phone as the token index keys it: its digits and, when long enough, its last 8 (phone + phone_suffix). */
-const phoneKeys = (v: string) => {
-    const phones = extractPhones(v);
-    return new Set([...phones, ...extractPhoneSuffixes(phones)]);
-};
-
 /**
  * True when a stored contact is the identifier typed, compared exactly as the
- * duplicate matcher compares them (src/lib/tokenizer.ts): phones by the token
- * index's keys — the digits, and the last 8 for a number of 9+ digits, so
- * «+54 9 11 6312-0851» and «11 6312-0851» are the same phone (country and
- * area prefixes ignored); emails as written (case-insensitive); social
- * handles and id numbers normalized as the index normalizes them. The window's
- * «coincide», and whether «Continuar» still needs to add the typed value.
+ * duplicate matcher compares them — the one shared rule, sameContact
+ * (src/lib/contactEntries.ts): «+54 9 11 6312-0851» and «11 6312-0851» are the
+ * same phone; emails case-insensitive; handles and ids normalized. The
+ * window's «coincide», and whether «Continuar» still needs to add the value.
  */
-export function entryMatchesTyped(entry: { type: string; value: string }, type: DupHintType, typed: string): boolean {
+export function entryMatchesTyped(entry: { type: string; value: string; platform?: string }, type: DupHintType, typed: string): boolean {
     if (entry.type !== type || typeof entry.value !== 'string') return false;
     const v = typed.trim();
     if (!v) return false;
-    switch (type) {
-        case 'phone': {
-            const typedKeys = phoneKeys(v);
-            return [...phoneKeys(entry.value)].some(k => typedKeys.has(k));
-        }
-        case 'email':
-            return entry.value.trim().toLowerCase() === v.toLowerCase();
-        case 'social': {
-            const a = normalizeSocialHandle(entry.value);
-            return !!a && a === normalizeSocialHandle(v);
-        }
-        case 'id': {
-            const a = normalizeIdValue(entry.value);
-            return a.length > 0 && a === normalizeIdValue(v);
-        }
-    }
+    // Too short to be a phone the matcher indexes («123»): never «coincide».
+    if (type === 'phone' && !contactMatchKeys({ type, value: v }).some(k => k.startsWith('~phone|'))) return false;
+    return sameContact(entry as Pick<ContactEntry, 'type' | 'value' | 'platform'>, { type, value: v });
 }
 
 /**
@@ -138,8 +117,13 @@ export function visibleDupHintMatches<T extends { adopterId: string }>(matches: 
  *   a stranger filing disputes about other people's profiles).
  * - 'pending': an open duplicate flag or a pending merge request already
  *   covers the pair (case 5): no second flag, no second notice.
+ * - 'settled': the pair is already recorded as two people — they share a home,
+ *   or it was set aside as «Mantener separados» / «Viven juntos» (F3, Jon
+ *   2026-10-29, option a): «Ya figuran como personas distintas.», nothing to
+ *   do but «No es esta persona» or open the profile. Before everything else,
+ *   for admins too.
  */
-export type DupHintAction = 'continue' | 'flag' | 'review_admins' | 'pending';
+export type DupHintAction = 'continue' | 'flag' | 'review_admins' | 'pending' | 'settled';
 
 export interface DupHintFacts {
     isAdmin: boolean;
@@ -155,6 +139,8 @@ export interface DupHintFacts {
     adminRuledSeparate: boolean;
     /** An open duplicate flag (either direction) or a pending merge request on the pair. */
     pending: boolean;
+    /** Already recorded as two people (pairSettledSeparate: a shared home, «Mantener separados», «Viven juntos»). */
+    settledSeparate: boolean;
 }
 
 /**
@@ -165,6 +151,7 @@ export interface DupHintFacts {
  * falls through (to 'flag', which a said-no pair refuses: the window says why).
  */
 export function decideDupHintAction(f: DupHintFacts): DupHintAction {
+    if (f.settledSeparate) return 'settled';
     if (f.isAdmin) return 'continue';
     if ((f.declinedForTeam || f.adminRuledSeparate) && (f.currentTeamOwned || f.matchTeamOwned)) return 'review_admins';
     if (f.pending) return 'pending';
