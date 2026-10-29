@@ -317,8 +317,8 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                                is 'contribution' for a stranger (never an approver), and the
 //                                owner's team is told in-app + by email with «Deshacer».
 //   changeProfileAge(input)      open by design: integer 0–120 or null + the «menor» box;
-//                                credited, history, owner's team told. Marking a profile that
-//                                has records or open alerts as a minor is refused.
+//                                credited, history, owner's team told. «Menor» is a marker only
+//                                (Jon, 2026-10-28): any profile can be marked.
 //   undoProfileRename(historyId) owner ∨ org-mate ∨ admin ∨ moderator of the profile, else
 //                                not_authorized; only a rename row (never an undo), only while
 //                                the profile still carries that rename's name, once.

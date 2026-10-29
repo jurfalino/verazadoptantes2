@@ -27,8 +27,6 @@ vi.mock('@/lib/pairVerdict', () => ({
     refuseDisputedMerge: async () => false,
 }));
 vi.mock('@/lib/mergeAccess', () => ({ grantAccessAfterFold: grantSpy }));
-// Its hand-made adopters table has no age columns; the minor-survivor rule is covered in mergePendingDedupPair.v2.test.ts.
-vi.mock('@/lib/minors', () => ({ minorSurvivorHasActivity: vi.fn(async () => false) }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: async () => false }));
 vi.mock('./notifications', () => ({
     createNotification: notifySpy,

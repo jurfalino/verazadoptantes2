@@ -1,6 +1,6 @@
 /**
  * Households as profiles, Task 3 — any profile's name and age, open to anyone
- * signed in; minors get no records, alerts or ratings. Real SQL (every
+ * signed in; a minor is a marker only (records, alerts and ratings as anyone). Real SQL (every
  * drizzle/*.sql replayed), the real token index and duplicate search, the real
  * record writer; the session is the only source of the actor.
  * OWNER (team: MATE) owns Pedro; STRANGER owns nothing here.
@@ -47,6 +47,7 @@ vi.mock('./notifications', () => ({
         return id;
     }),
     notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
+    notifyOrgMembers: vi.fn(async () => undefined),
     resolveDisplayName: vi.fn(async (email: string) => email.split('@')[0]),
     resolveDisplayNames: vi.fn(async (emails: string[]) => Object.fromEntries(emails.map(e => [e, e.split('@')[0]]))),
 }));
@@ -65,8 +66,8 @@ import { loadApprovers } from '@/lib/piiAccessRequest';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { insertRecord } from './_recordWrite';
 import { setProfileAge, recordSignerRename } from '@/lib/profileIdentity';
-import { isMinorProfile } from '@/lib/minors';
-import { isProfileIsMinorError } from '@/domain/profileIdentity';
+import { isMinor } from '@/domain/households';
+import { RECORD_TYPES } from '@/domain/constants';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { saveApiActivity } from '@/lib/api/records';
 import { removeContactEntry } from './removeContactEntry';
@@ -95,6 +96,10 @@ const entriesOf = (id: string) => deserializeContactEntries(sqlite.prepare('SELE
 const historyOf = (adopterId: string) => sqlite.prepare('SELECT id, changed_by, kind, changes FROM adopter_history WHERE adopter_id = ? ORDER BY rowid').all(adopterId)
     .map(r => ({ ...r, id: r.id as string, changes: JSON.parse(r.changes as string) }));
 const noticesOfType = (type: string) => notify.create.filter(n => n.type === type);
+const minorNow = (id: string) => {
+    const r = sqlite.prepare('SELECT age, age_as_of, is_minor FROM adopters WHERE id = ?').get(id)!;
+    return isMinor({ age: r.age as number | null, ageAsOf: r.age_as_of as string | null, isMinor: r.is_minor as number | null });
+};
 const findsByName = async (name: string) => (await as(MATE, () => findAdopters({ name }, { mode: 'duplicate' }))).results.map(r => r.adopterId);
 
 beforeEach(async () => {
@@ -246,7 +251,7 @@ describe('changeProfileAge and minors', () => {
         expect(await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: false })).toMatchObject({ ok: true, age: 12, isMinor: true });
         const row = sqlite.prepare("SELECT age, age_as_of, is_minor FROM adopters WHERE id = 'lucas'").get()!;
         expect(row).toMatchObject({ age: 12, is_minor: 1, age_as_of: new Date().toISOString().slice(0, 10) });
-        expect(await isMinorProfile(state.db as never, 'lucas')).toBe(true);
+        expect(minorNow('lucas')).toBe(true);
         const h = historyOf('lucas').at(-1)!;
         expect(h).toMatchObject({ changed_by: STRANGER, kind: 'contribution' });
         expect(h.changes).toEqual({ age_changed: { from: { age: null, minor: false }, to: { age: 12, minor: true } } });
@@ -256,93 +261,83 @@ describe('changeProfileAge and minors', () => {
         expect(await changeProfileAge({ adopterId: 'lucas', age: 30, isMinor: true })).toMatchObject({ ok: true, isMinor: false });
         expect(sqlite.prepare("SELECT is_minor FROM adopters WHERE id = 'lucas'").get()!.is_minor).toBe(0);
         expect(await changeProfileAge({ adopterId: 'lucas', age: null, isMinor: true })).toMatchObject({ ok: true, age: null, isMinor: true });
-        expect(await isMinorProfile(state.db as never, 'lucas')).toBe(true);
+        expect(minorNow('lucas')).toBe(true);
         expect(await changeProfileAge({ adopterId: 'lucas', age: 12.5, isMinor: false })).toEqual({ ok: false, error: 'invalid' });
         expect(await changeProfileAge({ adopterId: 'lucas', age: 121, isMinor: false })).toEqual({ ok: false, error: 'invalid' });
     });
 
-    it('on a minor: saveAdoption refused (a request, an adoption with a rating), flagAdopter refused — with a clear code; nothing written', async () => {
+    // «Menor de edad» is an informational marker only (Jon, 2026-10-28): a minor
+    // is rated, recorded and flagged like anyone else; nothing is refused.
+    it('on a minor: every record type saves, a rating lands, an alert is filed — like anyone else', async () => {
         await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
-        const before = sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n;
-        // An expected rule, not a failure (audit A3): the refusal carries no Error ID — the screen shows
-        // «Es menor de edad…» as a validation message, never an error toast with an id to quote.
-        const ruleOnly = (e: unknown) => isProfileIsMinorError(e) && !/Error ID/.test((e as Error).message);
-        await expect(saveAdoption({ adopterId: 'lucas', recordType: 'adoption_request', species: 'cat', status: 'pending' } as never))
-            .rejects.toSatisfy(ruleOnly);
-        await expect(saveAdoption({ adopterId: 'lucas', recordType: 'adoption', animalName: 'Nina', species: 'cat', status: 'completed', rating: 1 } as never))
-            .rejects.toSatisfy(ruleOnly);
-        await expect(flagAdopter('lucas', 'inaccurate_information', 'datos falsos')).rejects.toSatisfy(ruleOnly);
-        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(before);
-        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adopter_flags WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
+        expect(minorNow('lucas')).toBe(true);
+        // Every record a person carries (AVAILABLE lists an animal, it is no one's record).
+        const personTypes = Object.values(RECORD_TYPES).filter(rt => rt !== RECORD_TYPES.AVAILABLE);
+        for (const recordType of personTypes) {
+            const res = await as(OWNER, () => saveAdoption({ adopterId: 'lucas', recordType, animalName: `Nina ${recordType}`, species: 'cat', status: 'completed', rating: 4, details: `x ${recordType}` } as never));
+            expect(res, recordType).toMatchObject({ success: true });
+        }
+        const types = sqlite.prepare("SELECT record_type AS t FROM adoptions WHERE adopter_id = 'lucas'").all().map(r => r.t);
+        const placed = sqlite.prepare("SELECT record_type AS t FROM placements WHERE adopter_id = 'lucas'").all().map(r => r.t);
+        expect(new Set([...types, ...placed])).toEqual(new Set(personTypes));
+        // The rating lands: the profile's average counts the minor's records.
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas' AND rating = 4").get()!.n).toBeGreaterThan(0);
+        expect(await as(OWNER, () => flagAdopter('lucas', 'inaccurate_information', 'datos falsos'))).toMatchObject({ success: true });
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adopter_flags WHERE adopter_id = 'lucas'").get()!.n).toBe(1);
         // Every create path (API, forms, imports) goes through the record writer.
-        await expect(insertRecord(state.db as never, { adopterId: 'lucas', recordType: 'observation', details: 'x' }, OWNER)).rejects.toSatisfy(isProfileIsMinorError);
+        expect(await insertRecord(state.db as never, { adopterId: 'lucas', recordType: 'observation', details: 'y' }, OWNER)).toEqual(expect.any(String));
     });
 
-    it('the API refuses a record on a minor it matched (422 profile_is_minor) before writing anything', async () => {
+    it('the API saves a record on a minor it matched', async () => {
         await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
         const ctx = { db: state.db, key: { id: 'k1', name: 'Catpuccino', ownerEmail: OWNER, importMode: null }, requestId: 'req-1', log: {}, rowClaimed: false } as never;
         const req = { person: { fullName: 'Lucas Paez' }, activity: { activityType: 'adoption_request', species: 'cat', externalId: 'ext-1' } } as never;
-        await expect(saveApiActivity(ctx, req, { result: 'found', profileId: 'lucas' } as never, new Map(), new Map()))
-            .rejects.toMatchObject({ status: 422, code: 'profile_is_minor' });
-        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
+        await saveApiActivity(ctx, req, { result: 'found', profileId: 'lucas' } as never, new Map(), new Map());
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(1);
     });
 
-    it('the spreadsheet import matched to a minor: the row is refused as the rule (no server-error id), logged at info, nothing written', async () => {
+    it('the spreadsheet import matched to a minor: the row is added like any other', async () => {
         await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
-        const { logger } = await import('@/lib/logger');
-        vi.mocked(logger.error).mockClear();
         const out = await as(OWNER, () => importAdoptersBatch([{
             index: 0, action: 'upsert', matchedAdopterId: 'lucas', name: 'Lucas Paez',
             contactEntries: JSON.stringify([{ type: 'phone', value: '+54 11 4200 0999' }]),
             adoption: { recordType: 'adoption_request', species: 'cat' } as never,
         }], 'run-minor'));
-        expect(out[0]).toMatchObject({ index: 0, status: 'failed' });
-        expect(out[0].message).toMatch(/menor de edad/i);
-        expect(out[0].message).not.toMatch(/Error del servidor|ID:/);
-        expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
-        expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.stringContaining('minor'), expect.objectContaining({ adopterId: 'lucas' }));
-        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
-        // Refused before anything is written: the phone isn't added either.
-        expect(entriesOf('lucas').map(e => e.value)).not.toContain('+54 11 4200 0999');
+        expect(out[0].status).not.toBe('failed');
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(1);
+        expect(entriesOf('lucas').map(e => e.value)).toContain('+54 11 4200 0999');
     });
 
-    it('a form linked to a minor: the request record is refused at info, not as a failure', async () => {
+    it('a form linked to a minor records its request on them', async () => {
         await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
-        const { logger } = await import('@/lib/logger');
-        vi.mocked(logger.warn).mockClear();
         sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, species, created_at) VALUES ('sub-minor', 'u1', 'Lucas Paez', 'cat', 1000)`).run();
         const { addFormRequestRecord } = await import('@/lib/formRequest');
         await addFormRequestRecord(state.db, 'sub-minor', 'lucas', OWNER);
-        expect(vi.mocked(logger.warn)).not.toHaveBeenCalledWith(expect.stringContaining('addFormRequestRecord'), expect.anything());
-        expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.stringContaining('addFormRequestRecord'), expect.objectContaining({ submissionId: 'sub-minor', adopterId: 'lucas' }));
-        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = 'lucas'").get()!.n).toBe(0);
+        expect(sqlite.prepare("SELECT record_type AS t FROM adoptions WHERE adopter_id = 'lucas'").all().map(r => r.t)).toEqual(['adoption_request']);
     });
 
-    it('a rating cannot land on a minor by moving an existing record onto them', async () => {
-        const recordId = await as(OWNER, () => saveAdoption({ adopterId: 'pedro', recordType: 'observation', species: 'cat', status: 'completed', rating: 1, details: 'x' } as never));
+    it('a minor\'s own record can be rated and re-rated', async () => {
         await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true });
-        await expect(as(OWNER, () => saveAdoption({ id: recordId.id, adopterId: 'lucas', rating: 2 } as never))).rejects.toSatisfy(isProfileIsMinorError);
-        expect(sqlite.prepare('SELECT adopter_id FROM adoptions WHERE id = ?').get(recordId.id)!.adopter_id).toBe('pedro');
+        const rec = await as(OWNER, () => saveAdoption({ adopterId: 'lucas', recordType: 'observation', species: 'cat', status: 'completed', rating: 1, details: 'x' } as never));
+        expect(await as(OWNER, () => saveAdoption({ id: rec.id, adopterId: 'lucas', recordType: 'observation', rating: 2 } as never))).toMatchObject({ success: true });
+        expect(sqlite.prepare('SELECT adopter_id, rating FROM adoptions WHERE id = ?').get(rec.id)).toMatchObject({ adopter_id: 'lucas', rating: 2 });
     });
 
-    it('at 18 (age + time) → no longer a minor, records allowed again', async () => {
+    it('at 18 (age + time) → no longer a minor; the stored box stays as data', async () => {
         const twoYearsAgo = new Date(Date.UTC(new Date().getUTCFullYear() - 2, 0, 1));
         await setProfileAge(state.db as never, { adopterId: 'lucas', age: 16, isMinor: true, actor: OWNER, today: twoYearsAgo });
         expect(sqlite.prepare("SELECT is_minor FROM adopters WHERE id = 'lucas'").get()!.is_minor).toBe(1);
-        expect(await isMinorProfile(state.db as never, 'lucas')).toBe(false);
-        expect(await saveAdoption({ adopterId: 'lucas', recordType: 'adoption_request', species: 'cat', status: 'pending' } as never)).toMatchObject({ success: true });
+        expect(minorNow('lucas')).toBe(false);
     });
 
-    it('a profile with records or open alerts cannot be marked a minor (an adult with a history is never buried)', async () => {
+    it('a profile with records or open alerts can be marked a minor', async () => {
         await as(OWNER, () => saveAdoption({ adopterId: 'pedro', recordType: 'observation', species: 'cat', status: 'completed', rating: 1, details: 'x' } as never));
-        expect(await changeProfileAge({ adopterId: 'pedro', age: 12, isMinor: true })).toEqual({ ok: false, error: 'has_activity' });
-        expect(await changeProfileAge({ adopterId: 'pedro', age: null, isMinor: true })).toEqual({ ok: false, error: 'has_activity' });
-        expect(pedro()).toMatchObject({ age: null, is_minor: 0 });
-        // An adult age is fine.
-        expect(await changeProfileAge({ adopterId: 'pedro', age: 45, isMinor: false })).toMatchObject({ ok: true, isMinor: false });
+        expect(await changeProfileAge({ adopterId: 'pedro', age: 12, isMinor: true })).toMatchObject({ ok: true, age: 12, isMinor: true });
+        expect(pedro()).toMatchObject({ age: 12, is_minor: 1 });
+        expect(await changeProfileAge({ adopterId: 'pedro', age: null, isMinor: true })).toMatchObject({ ok: true, age: null, isMinor: true });
 
         await flagAdopter('lucas', 'inaccurate_information', 'datos falsos');
-        expect(await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true })).toEqual({ ok: false, error: 'has_activity' });
+        expect(await changeProfileAge({ adopterId: 'lucas', age: 12, isMinor: true })).toMatchObject({ ok: true, isMinor: true });
     });
 });
 

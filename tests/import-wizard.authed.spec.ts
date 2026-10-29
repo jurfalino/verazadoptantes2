@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { cleanupProfiles, createProfileViaApi, housemates, rows } from './householdFixtures';
+import { cleanupProfiles, createProfileViaApi, execD1, housemates, rows } from './householdFixtures';
 
 test.setTimeout(90000);
 
@@ -370,6 +370,29 @@ test.describe('Import wizard — duplicates', () => {
         await expect(page.locator('[role="radio"][aria-checked="true"]')).toHaveCount(0);
         await expect(page.getByTestId('import-actions').getByRole('button').first()).toHaveText(/Create a new profile|Crear un perfil nuevo/i);
         await expect(page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i })).toBeDisabled();
+    });
+
+    test('a minor matched on name and phone is tagged, pre-selected, and takes the post like anyone (Jon, 2026-10-28)', async ({ page }) => {
+        test.setTimeout(150_000);
+        const stamp = String(Date.now());
+        const name = `Lucia Menor ${stamp}`;
+        const phone = `11 7${stamp.slice(-3)}-${stamp.slice(-7, -3)}`;
+        const id = await createProfileViaApi(page.request, { name, phone });
+        try {
+            execD1(`UPDATE adopters SET is_minor = 1, age = NULL, age_as_of = NULL WHERE id = '${id}'`);
+            await stubAi(page, { name, phones: [phone] });
+            await pasteAndContinue(page, `${name}, tel ${phone}`);
+            await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+            const card = page.getByTestId('import-match').filter({ has: page.locator(`a[href="/adopter/${id}"]`) });
+            await expect(card).toHaveCount(1, { timeout: 30000 });
+            await expect(card.getByTestId('import-match-head-minor')).toBeVisible();
+            await expect(card).toHaveAttribute('aria-checked', 'true');
+            await page.getByTestId('import-merge-selected').click();
+            await page.waitForURL(`**/adopter/${id}`, { timeout: 30000 });
+            await expect.poll(() => Number(rows(`SELECT COUNT(*) AS n FROM adoptions WHERE adopter_id = '${id}'`)[0]?.n ?? 0), { timeout: 30000 }).toBe(1);
+        } finally {
+            cleanupProfiles([id]);
+        }
     });
 
     test('"Agregar a este perfil" on the review screen opens the match, selected', async ({ page }) => {

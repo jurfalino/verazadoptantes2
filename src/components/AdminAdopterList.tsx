@@ -289,9 +289,8 @@ export default function AdminAdopterList({ adopters, countries: _countries, publ
                                     );
                                 })()}
                                 {/* Rating Badge */}
-                                {avgRating !== null && (
-                                    <RatingBadge rating={avgRating} size="sm" label="short" />
-                                )}
+                                {/* «Sin calificación» only once the rating is known (no enrichment = unknown, not unrated). */}
+                                {enrichment && <RatingBadge rating={avgRating} />}
                             </div>
 
                             {/* Stats Row */}

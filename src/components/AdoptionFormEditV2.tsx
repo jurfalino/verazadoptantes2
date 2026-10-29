@@ -12,7 +12,6 @@ import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
 import { didPersist } from '@/domain/serverActionResult';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { minorRefusalMessage } from '@/lib/errorMessage';
 import { MediaLightbox, isVideo as isVideoItem } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -145,7 +144,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
     };
     /** The editable fields as the save would send them — what "changed" is measured on. */
     const editableOf = (fd: typeof formData): Record<string, unknown> => ({
-        animalName: fd.animalName.trim() || null, details: fd.details, status: fd.status, rating: Number(fd.rating),
+        animalName: fd.animalName.trim() || null, details: fd.details, status: fd.status, rating: Number(fd.rating) || null,
         comments: fd.comments, species: fd.species, recordType: fd.recordType, date: fd.date,
         deliveredToHome: fd.deliveredToHome ? 1 : 0, verifiedAddress: fd.verifiedAddress || null, identityVerified: fd.identityVerified ? 1 : 0,
     });
@@ -452,7 +451,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             zarazTrack('adoption_created', {
                 species: formData.species,
                 recordType: formData.recordType,
-                rating: Number(formData.rating),
+                rating: Number(formData.rating), // analytics only (0 = not rated); the saved payload is `|| null`
                 hasMedia: (pendingImages.length + adoptionImages.length) > 0 ? 1 : 0,
             });
 
@@ -466,9 +465,6 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             }
         } catch (err) {
             console.error(err);
-            // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
-            const minor = minorRefusalMessage(err, t, 'record');
-            if (minor) { toast.warning(minor); return; }
             toast.error(
                 t('errors.generic'),
                 isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)

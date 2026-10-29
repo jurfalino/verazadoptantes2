@@ -235,10 +235,10 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
                             {applicant.adopterRating != null ? (
                                 <RatingExplainer rating={applicant.adopterRating}>
-                                    <RatingBadge rating={applicant.adopterRating} size="sm" label="short" />
+                                    <RatingBadge rating={applicant.adopterRating} />
                                 </RatingExplainer>
                             ) : (
-                                <span className="text-xs text-stone-400 italic">{t('myAdopters.rating_empty_hint')?.split(' — ')[0] || 'Sin actividad calificada'}</span>
+                                <RatingBadge rating={null} />
                             )}
                             {sourcePill}
                             {applicant.appliedAt && (

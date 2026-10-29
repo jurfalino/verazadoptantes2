@@ -22,8 +22,7 @@ import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdPerson } from './households';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
-import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY, isMinor as minorNow, type HouseholdLine } from '@/domain/households';
-import { minorSurvivorHasActivity } from '@/lib/minors';
+import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, type HouseholdLine } from '@/domain/households';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -862,10 +861,6 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
             return null;
         };
 
-        // A minor kept over a profile with records or alerts: refused now, not
-        // when someone answers the request (Task 6 ruling) — keep the other one.
-        if (await minorSurvivorHasActivity(db, primaryId, secondaryId)) return refuse(MINOR_SURVIVOR_HAS_ACTIVITY);
-
         if (chosen === 'dispute') {
             // D49/D50: the other owner rejected my team's request on the pair,
             // or an admin ruled them separate. The admins decide instead;
@@ -894,9 +889,6 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
         }
 
         const result = await mergeAdopters(primaryId, secondaryId, actor);
-        // The kept profile is a minor and the other has records or alerts: the
-        // row can be combined keeping the other profile (Task 6 ruling).
-        if (!result.success && result.error === MINOR_SURVIVOR_HAS_ACTIVITY) return refuse(MINOR_SURVIVOR_HAS_ACTIVITY);
         // Some old household data of these two couldn't be converted yet (Task 7): retryable, nothing moved.
         if (!result.success && result.error === HOUSEHOLD_NOT_CONVERTED) return refuse(HOUSEHOLD_NOT_CONVERTED);
         if (!result.success) {

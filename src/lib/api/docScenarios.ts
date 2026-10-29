@@ -37,7 +37,13 @@ export interface Registered {
     phone?: string;
     documentId?: string;
     /** Set by people in BuenAdoptante (adopter_flags.reason). */
-    marks?: Array<'inaccurate_information' | 'duplicate' | 'verified_identity'>;
+    marks?: Array<'inaccurate_information' | 'verified_identity'>;
+    /**
+     * A rescuer reported this profile as a duplicate of that one (adopter_flags reason
+     * `duplicate`, target_adopter_id): an OPEN question — what the API reports as
+     * `duplicate`. A report closed by a merge or a «mantener separados» is not reported.
+     */
+    duplicateOf?: string;
     /** BuenAdoptante found another profile that may be the same person (a pending duplicate candidate). */
     possibleDuplicate?: boolean;
     history: PastRecord[];
@@ -188,9 +194,9 @@ const DEFS: ScenarioDef[] = [
     {
         key: 'multiple_profiles',
         title: 'Dos perfiles con el mismo nombre y email',
-        registered: 'Dos perfiles «Laura Díaz» con el email laura.diaz.demo@example.com: uno con el teléfono 11 5550-3110, calificado 3 y marcado como duplicado; el otro sin calificar.',
+        registered: 'Dos perfiles «Laura Díaz» con el email laura.diaz.demo@example.com: uno con el teléfono 11 5550-3110, calificado 3 y marcado como duplicado del otro (todavía sin resolver); el otro sin calificar.',
         profiles: [
-            { id: 'demo-api-laura-a', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110', marks: ['duplicate'], history: [{ type: 'adoption', rating: 3, daysAgo: 320 }] },
+            { id: 'demo-api-laura-a', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110', duplicateOf: 'demo-api-laura-b', history: [{ type: 'adoption', rating: 3, daysAgo: 320 }] },
             { id: 'demo-api-laura-b', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', history: [{ type: 'adoption_request', daysAgo: 240 }] },
         ],
         person: { fullName: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110' },
@@ -326,7 +332,7 @@ function computed(p: Registered, now: Date, cfg: AlertConfig) {
     if (placed >= cfg.threshold) alerts.push({ type: 'too_many_adoptions', count: placed, periodDays: cfg.periodDays });
     const flags: string[] = [];
     if (p.marks?.includes('inaccurate_information')) flags.push('inaccurate');
-    if (p.marks?.includes('duplicate')) flags.push('duplicate');
+    if (p.duplicateOf) flags.push('duplicate');
     if (p.possibleDuplicate) flags.push('possible_duplicate');
     if (p.marks?.includes('verified_identity')) flags.push('verified_identity');
     return { avg, records, lastRecordAt: isoDay(now, last), alerts, flags };

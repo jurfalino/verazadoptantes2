@@ -109,7 +109,7 @@ export interface NotificationTemplateParams {
         viaContract?: string };
     /** The renamer: `actorName` (the owner's team) undid their rename — back to `restoredName`; `revertedName` stays as «Conocido/a como». */
     profile_rename_undone: { actorName: string; restoredName?: string; revertedName?: string };
-    /** The owner's team: `actorName` set `personName`'s age (`age`, digits) and/or marked them a minor (`minor: '1'`). */
+    /** The owner's team: `actorName` set `personName`'s age (`age`, digits) or, with no age, marked them a minor (`minor: '1'`). */
     profile_age_changed: { actorName: string; personName?: string; age?: string; minor?: string };
 }
 
@@ -657,24 +657,21 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         required: ['actorName'],
         es: p => {
             const who = plainName(p.personName, 'es');
-            const minor = p.minor === '1' ? ' Figura como menor de edad: los pedidos y las adopciones se registran en los adultos de su hogar.' : '';
             if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
             const body = p.age !== undefined ? `${p.actorName} indicó que ${who} tiene ${p.age} años.` : p.minor === '1' ? `${p.actorName} indicó que ${who} es menor de edad.` : `${p.actorName} quitó la edad de ${who}.`;
-            return { title: `Edad cambiada: ${who}`, body: `${body}${minor}` };
+            return { title: `Edad cambiada: ${who}`, body };
         },
         en: p => {
             const who = plainName(p.personName, 'en');
-            const minor = p.minor === '1' ? ' They show as a minor: requests and adoptions are recorded on the adults of their household.' : '';
             if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
             const body = p.age !== undefined ? `${p.actorName} said ${who} is ${p.age} years old.` : p.minor === '1' ? `${p.actorName} said ${who} is a minor.` : `${p.actorName} removed ${who}'s age.`;
-            return { title: `Age changed: ${who}`, body: `${body}${minor}` };
+            return { title: `Age changed: ${who}`, body };
         },
         pt: p => {
             const who = plainName(p.personName, 'pt');
-            const minor = p.minor === '1' ? ' Aparece como menor de idade: os pedidos e as adoções são registrados nos adultos do seu lar.' : '';
             if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
             const body = p.age !== undefined ? `${p.actorName} indicou que ${who} tem ${p.age} anos.` : p.minor === '1' ? `${p.actorName} indicou que ${who} é menor de idade.` : `${p.actorName} removeu a idade de ${who}.`;
-            return { title: `Idade alterada: ${who}`, body: `${body}${minor}` };
+            return { title: `Idade alterada: ${who}`, body };
         },
     },
     household_member_disputed: {

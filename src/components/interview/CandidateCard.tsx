@@ -23,7 +23,7 @@ export default function CandidateCard({ c, selected = false, onSelect, selectLab
                     {badge && <span className="mt-1 inline-flex text-[11px] font-semibold px-1.5 py-0.5 rounded bg-teal-50 text-teal-800">{badge}</span>}
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    {c.avgRating != null && <RatingBadge rating={c.avgRating} size="sm" />}
+                    <RatingBadge rating={c.avgRating} />
                     <a href={`/adopter/${c.adopterId}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-teal-700 hover:underline">
                         {t('interview.view_profile')}
                     </a>

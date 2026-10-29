@@ -12,7 +12,7 @@
  *
  * One block per home, one housemate per line so a name never wraps away from
  * its rating — written by PersonStanding, as on a household row and «¿Es este
- * perfil?». A minor shows «Menor de edad» instead of a rating. Names are
+ * perfil?». A minor shows «Menor de edad» before the rating. Names are
  * plain text: the search card is itself a link. Gift-only lines are left out
  * (a gift recipient doesn't live there). Renders nothing with no housemates.
  */

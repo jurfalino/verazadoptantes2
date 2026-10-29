@@ -28,7 +28,7 @@ import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { formatRelativeTime } from '@/lib/dates';
 import { pairKey } from '@/domain/dedupPair';
-import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import { householdErrorCopy } from '@/lib/householdCopy';
 import { resolveMergeRequest, cancelMergeRequest } from '@/app/actions/mergeRequests';
 import { sendPairMessage } from '@/app/actions/pairMessages';
@@ -215,11 +215,6 @@ export default function PendingDedup() {
         } else if (result.error === 'identity_required') {
             // The row didn't know to ask (a rescan changed the match): ask now.
             setIdentityAsk({ pair, keep });
-        } else if (result.error === MINOR_SURVIVOR_HAS_ACTIVITY) {
-            // Not stale: the row stays, and keeping the other profile works.
-            toast.error(t('errors.generic') || 'Error',
-                t('myAdopters.pending_d_err_minor_survivor') || 'No se puede conservar el perfil de un menor de edad: el otro tiene registros o alertas, que van en un adulto. Elegí conservar el otro perfil.',
-                result.errorId ?? resolveErrorId(new Error(`mergePendingDedupPair: ${result.error}`), 'PendingDedup'));
         } else if (result.error === 'household_refused') {
             // «alguien de su hogar» refused by the household rules (full, too many homes…): say why; the row stays.
             toast.warning(householdErrorCopy(t, result.reason).message, result.errorId ? `ID: ${result.errorId}` : undefined);

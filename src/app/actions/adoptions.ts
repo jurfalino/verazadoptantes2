@@ -19,7 +19,6 @@ import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDel
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { historyKindFor } from '@/lib/profilePrivilege';
-import { PROFILE_IS_MINOR, isProfileIsMinorError } from '@/domain/profileIdentity';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
 export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
@@ -195,12 +194,6 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
         }
     } catch (error) {
         if (error instanceof Error && error.message.startsWith(SAVE_BUSY)) throw error; // already logged, keeps its id
-        if (isProfileIsMinorError(error)) {
-            // A minor's profile gets no records: an expected rule, not a failure — no Error ID
-            // (audit A3); the screen shows «Es menor de edad…» as a validation message.
-            logger.info('saveAdoption: refused — the profile is a minor', { adoptionId: data.id, adopterId: data.adopterId, recordType: data.recordType ?? null });
-            throw new Error(PROFILE_IS_MINOR);
-        }
         if (isActivePlacementConflict(error)) {
             // Someone adopted or fostered this animal between our read and our
             // write — one active placement per animal (drizzle/0078). The

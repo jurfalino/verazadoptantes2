@@ -5,12 +5,12 @@
  * member's row, «¿Es este perfil?», and the household line of a search result /
  * form, contract or Pendientes match card (CardHouseholdLine).
  *
- * - `PersonStanding`: «Menor de edad» for a minor (who carries no rating or
- *   alerts), else the rating (★ + its word: colour is never the only signal)
- *   or «Sin calificación», and the open alerts (AlertSummary) when there are any.
+ * - `PersonStanding`: «Menor de edad» first for a minor (an informational
+ *   marker only — Jon, 2026-10-28), then the rating (★ + its word: colour is
+ *   never the only signal) or «Sin calificación», and the open alerts
+ *   (AlertSummary) when there are any — the same for everyone.
  * - `PersonActivity`: the person's activity counted as their own «Actividad»
- *   header counts it (ActivityCountsLine), «sin actividad» when none — and
- *   nothing for a minor with none (their records go on the adults).
+ *   header counts it (ActivityCountsLine), «sin actividad» when none.
  *
  * One renderer, so the same fact never reads two ways («Sin calificación» here,
  * nothing there; «0 adopciones» here, «sin actividad» there).
@@ -31,20 +31,18 @@ export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alert
     minorTestId?: string;
     alertsTestId?: string;
 }) {
-    const { t } = useLanguage();
-    if (isMinor) return <MinorTag testId={minorTestId} />;
     return (
         <>
-            {rating != null && rating >= 1
-                ? <RatingBadge rating={rating} variant="inline" size="sm" label="short" />
-                : <span className="text-xs text-stone-500 whitespace-nowrap" data-testid="person-unrated">{t('adopter.hh_link_unrated')}</span>}
+            {isMinor && <MinorTag testId={minorTestId} />}
+            {/* The one rating pill (or «Sin calificación»), as in the profile header (Jon, 2026-10-28). */}
+            <RatingBadge rating={rating} />
             {/* The profile header's flag pill: one kind as itself, two as «2 alertas» (audit B2, fix round 2 item 9). */}
             <AlertSummary kinds={openAlerts} testId={alertsTestId} />
         </>
     );
 }
 
-export function PersonActivity({ activity, isMinor, testId = 'person-activity' }: { activity: ActivityCounts; isMinor: boolean; testId?: string }) {
+export function PersonActivity({ activity, testId = 'person-activity' }: { activity: ActivityCounts; testId?: string }) {
     const { t } = useLanguage();
     if (activityParts(activity).length > 0) {
         return (
@@ -54,6 +52,5 @@ export function PersonActivity({ activity, isMinor, testId = 'person-activity' }
             </span>
         );
     }
-    if (isMinor) return null;
     return <span className="text-xs text-stone-500" data-testid={testId}>{t('adopter.hh_no_activity')}</span>;
 }

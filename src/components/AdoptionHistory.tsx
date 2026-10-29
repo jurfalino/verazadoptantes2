@@ -8,8 +8,6 @@ import { useState, useEffect, type ComponentType } from 'react';
 import { ClipboardList, Pencil } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
-import { StarIcon } from '@/components/StarIcon';
-import { getRatingColors } from '@/lib/ratingColors';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { getAdoptionDeleteImpact } from '@/app/actions/adoptions';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -105,7 +103,7 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
     }
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, avgRating = null, editFormComponent: EditComponent }: { adoptions: Adoption[], avgRating?: number | null, adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { formatShortDate } = useDateFormat();
     const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
@@ -129,10 +127,6 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     // G — Activity summary above the timeline
     // The same rule (and words) as each person in «Familiares / Convivientes».
     const summaryCounts = countActivity(initialAdoptions);
-    const ratedAdoptions = initialAdoptions.filter(a => a.rating != null && Number(a.rating) > 0);
-    const avgRating = ratedAdoptions.length > 0
-        ? (ratedAdoptions.reduce((s, a) => s + Number(a.rating), 0) / ratedAdoptions.length)
-        : null;
 
     // Check for editAdoption query param to auto-expand
     const editAdoptionParam = searchParams.get('editAdoption');
@@ -240,13 +234,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
             {/* G — Activity summary: counts + avg rating */}
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600">
                 <ActivityCountsLine counts={summaryCounts} />
-                {avgRating != null && (
-                    <span className="ml-auto inline-flex items-center gap-1 font-semibold">
-                        <StarIcon className={`w-3 h-3 ${getRatingColors(avgRating).text}`} />
-                        <span>{avgRating.toFixed(1)}</span>
-                        <span className="font-normal text-stone-500">{t('stats.rating_avg_short') || 'promedio'}</span>
-                    </span>
-                )}
+                {/* The person's rating: the one rating pill (Jon, 2026-10-28). */}
+                <span className="ml-auto"><RatingBadge rating={avgRating} /></span>
             </div>
 
             <div id="adoption-history" className="relative pb-6 scroll-mt-4">
@@ -340,17 +329,10 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 title={canEdit ? t('common.edit') : undefined}
                             >
                                 <div className="p-3 md:p-4">
-                                    {/* A+B — 3-column header: Rating | Verb+Animal | Date */}
+                                    {/* Header: Verb+Animal | Date. The record's own rating is the one rating pill, on its
+                                        own line under the verb (Jon, 2026-10-28: one look everywhere — the labelled pill
+                                        doesn't fit the old 48px rating column at 390). */}
                                     <div className="flex items-start gap-2 md:gap-3">
-                                        {/* Rating column — fixed-width slot creates vertical scan axis */}
-                                        <div className="flex-shrink-0 w-12 md:w-14 pt-0.5 flex justify-center">
-                                            {adoption.rating != null && adoption.rating > 0 ? (
-                                                <RatingBadge rating={adoption.rating} size="sm" />
-                                            ) : (
-                                                <span className="text-stone-300 text-xs select-none" aria-hidden>—</span>
-                                            )}
-                                        </div>
-
                                         {/* Verb + animal — fluid middle. Record-type icon now lives in
                                             the timeline beacon to the left of the card; the verb leads
                                             the column directly. */}
@@ -410,6 +392,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             {dateStr}
                                         </div>
                                     </div>
+                                    {adoption.rating != null && adoption.rating > 0 && (
+                                        <div className="mt-1.5" data-testid="record-rating"><RatingBadge rating={adoption.rating} /></div>
+                                    )}
 
                                     {/* Animal details (sex, age, neutered, color, microchip) */}
                                     {(adoption.estimatedBirthDate || adoption.age || adoption.sex || adoption.color || adoption.microchip || adoption.neutered != null) && (

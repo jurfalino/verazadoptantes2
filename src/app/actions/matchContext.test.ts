@@ -6,8 +6,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 
-const { state } = vi.hoisted(() => ({ state: { db: null as unknown, user: 'rescuer@example.com' } }));
-vi.mock('./_db', () => ({ getDb: async () => state.db, getUser: async () => state.user }));
+const { state } = vi.hoisted(() => ({ state: { db: null as unknown, user: 'rescuer@example.com', admins: [] as string[] } }));
+vi.mock('./_db', () => ({ getDb: async () => state.db, getUser: async () => state.user, checkIsAdminAsync: async (email: string) => state.admins.includes(email) }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/lib/logger', async (orig) => ({ ...(await orig<typeof import('@/lib/logger')>()), logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') }, generateErrorId: () => 'gen12345' }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
@@ -41,6 +41,7 @@ beforeEach(() => {
     state.db = asyncDb(m.db);
     sqlite = m.sqlite as unknown as typeof sqlite;
     state.user = 'rescuer@example.com';
+    state.admins = ['admin@example.com'];
     sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, is_minor) VALUES ('lucas', 'Lucas', '5', 'o@example.com', 1), ('pedro', 'Pedro', '5', 'o@example.com', 0)`).run();
     sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, rating) VALUES ('r1', 'pedro', 'observation', 2)`).run();
     sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, created_at) VALUES ('f1', 'pedro', 'o@example.com', 'inaccurate_information', 1)`).run();
@@ -77,8 +78,22 @@ describe('getMatchContext — never more than the duplicate search', () => {
         const withStanding = await getMatchContext('pedro', { standing: true });
         expect(withStanding).toMatchObject({ ok: false, name: null });
         expect(withStanding.standing).toBeUndefined();
-        // Without standing (MatchCompare's presence hints) it still answers: the admin
-        // «Combinaciones cuestionadas» rows compare exactly the absorbed, merged-away profile.
+    });
+
+    it('a merged-away profile without standing: a rescuer (not an admin) gets nothing — no name, no presence hints', async () => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 1000, contact_entries = '[{"type":"phone","value":"11 5555-0000"}]' WHERE id = 'pedro'`).run();
+        expect(await getMatchContext('pedro')).toEqual({ ok: false, name: null, has: { phone: false, email: false, id: false, social: false, address: false } });
+    });
+
+    it('a merged-away profile without standing: an admin gets it — the «Combinaciones cuestionadas» rows compare exactly the absorbed profile', async () => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 1000, contact_entries = '[{"type":"phone","value":"11 5555-0000"}]' WHERE id = 'pedro'`).run();
+        state.user = 'admin@example.com';
+        expect(await getMatchContext('pedro')).toMatchObject({ ok: true, name: 'Pedro', has: { phone: true } });
+        // With standing it is skipped whoever asks (the duplicate search skips it too).
+        expect(await getMatchContext('pedro', { standing: true })).toMatchObject({ ok: false, name: null });
+    });
+
+    it('a live profile without standing answers any signed-in rescuer, as before', async () => {
         expect(await getMatchContext('pedro')).toMatchObject({ ok: true, name: 'Pedro' });
     });
 

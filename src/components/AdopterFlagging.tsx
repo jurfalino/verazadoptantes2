@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { minorRefusalMessage } from '@/lib/errorMessage';
 import { flagAdopter, findAdopters, getDuplicateCandidates } from '@/app/actions';
 import type { DuplicateCandidate, DiscoveryMatch } from '@/app/actions';
 import { useRouter } from 'next/navigation';
@@ -16,7 +15,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
-import { openAlertKindsOfRows } from '@/domain/flags';
+import { isInaccurateReason, openAlertKindsOfRows } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import { Modal, ModalActions } from '@/components/ui/Modal';
@@ -119,7 +118,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
     const isFlaggedAsDuplicate = alertKinds.includes('duplicate');
 
-    const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information' || f.reason === 'inaccurate');
+    const inaccurateFlags = existingFlags.filter(f => isInaccurateReason(f.reason));
     const isFlaggedAsInaccurate = alertKinds.includes('inaccurate');
 
     // Verification flags - include adoption-based verification
@@ -195,10 +194,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 }
             } catch (e) {
                 console.error(e);
-                // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
-                const minor = minorRefusalMessage(e, t, 'alert');
-                if (minor) toast.warning(minor);
-                else toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
+                toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
             } finally {
                 setSubmitLoading(false);
             }
@@ -250,10 +246,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             }
         } catch (e) {
             console.error(e);
-            // A minor's profile: the rule, as a validation message — no Error ID (audit A3).
-            const minor = minorRefusalMessage(e, t, 'alert');
-            if (minor) toast.warning(minor);
-            else toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
+            toast.error(t('errors.generic'), t('errors.report_error'), resolveErrorId(e, 'AdopterFlagging'));
         } finally {
             setSubmitLoading(false);
         }

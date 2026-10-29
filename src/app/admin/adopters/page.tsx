@@ -192,7 +192,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
         avgRating: sql<number | null>`AVG(${adoptions.rating})`,
     })
         .from(adopters)
-        .leftJoin(adoptions, and(eq(adoptions.adopterId, adopters.id), sql`${adoptions.rating} IS NOT NULL`))
+        .leftJoin(adoptions, and(eq(adoptions.adopterId, adopters.id), sql`${adoptions.rating} > 0`))
         .where(isNull(adopters.deletedAt))
         .groupBy(adopters.id);
 

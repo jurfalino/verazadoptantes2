@@ -108,8 +108,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     const disputeAuditId = searchParams.get('dispute')?.trim() || null;
     // The email's «Deshacer» lands here: ask first, never act on the link itself.
     const undoRenameParam = searchParams.get(UNDO_RENAME_PARAM)?.trim() || null;
-    // «Menor de edad»: no «¿Qué pasó con …?», no new records or alerts (the server refuses them too).
-    const minor = !isNew && !!identity?.isMinor;
     const toast = useShowToast();
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
@@ -526,8 +524,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && (
                     <div id="adoptions-section" data-testid="adoptions-list">
                         {/* Visit-intent prompt sits above the section title — context-setting,
-                            not part of the activity list. A minor gets none: the header card says why (minor-note, audit B5). */}
-                        {minor ? null : (
+                            not part of the activity list. */}
                         <VisitIntentCard
                             adopterId={id}
                             adopterName={adopter?.name}
@@ -541,9 +538,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             piiOptInEligible={piiOptInEligible}
                             pinned={pinnedVisitIntent}
                         />
-                        )}
-                        {/* A minor's «Actividad» stays hidden unless something is already there (never buried). */}
-                        {(!minor || adoptions.length > 0) && (
                         <CollapsibleSection
                             title={t('adoption.title')}
                             count={adoptions.length}
@@ -552,7 +546,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             {/* AdoptionFormWizard renders here only for URL-driven autoOpen flows
                                 (?newAdoption=...). The closed-state "Registrar Actividad" CTA was
                                 removed in v2.14.8 — VisitIntentCard above is the canonical entry. */}
-                            {!minor && <AdoptionFormWizard
+                            <AdoptionFormWizard
                                 adopterId={id}
                                 adopterName={adopter?.name || ''}
                                 avgRating={avgRating ?? null}
@@ -563,10 +557,11 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 currentUser={currentUser}
                                 adopterAddress={adopter?.contactInfo || ''}
                                 piiOptInEligible={piiOptInEligible}
-                            />}
+                            />
                             <AdoptionHistory
                                 adoptions={adoptions as any}
                                 originLabels={originLabels}
+                                avgRating={avgRating ?? null}
                                 adopterId={id}
                                 currentUser={currentUser}
                                 isAdmin={isAdmin}
@@ -580,7 +575,6 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 editFormComponent={AdoptionFormEditV2}
                             />
                         </CollapsibleSection>
-                        )}
                     </div>
                 )}
 
@@ -842,7 +836,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                 <div className="space-y-1 text-teal-800 break-words">
                                                                     <div><span className="font-semibold">{t('adoption.animal_name')}:</span> <span className="break-all">{changes.animalName}</span> ({changes.species})</div>
                                                                     <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
-                                                                    <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} variant="inline" size="sm" /></div>
+                                                                    {!!changes.rating && <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} /></div>}
                                                                     {changes.details && <div className="text-xs italic mt-1 line-clamp-3 break-words" title={changes.details}>"{changes.details}"</div>}
                                                                 </div>
                                                             )}

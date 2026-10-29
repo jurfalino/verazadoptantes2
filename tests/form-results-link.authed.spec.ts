@@ -252,7 +252,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await page.goto(`/adopter/${row.auto_adopter_id}`);
         await dismissCountryBanner(page);
         // Households as profiles: Tomás is a profile in the applicant's household — his card links to it,
-        // says «Hijo/a · 3 años» and carries the minor tag (no rating, no alerts).
+        // says «Hijo/a · 3 años» and carries the minor tag (a minor is rated like anyone else; he has no records yet, so no stars).
         const tomas = page.getByTestId('household-member').filter({ hasText: 'Tomás López' });
         await expect(tomas).toHaveCount(1, { timeout: 30_000 });
         await expect(tomas.getByTestId('household-member-label')).toContainText(/3 years old|3 años|3 anos/);

@@ -35,7 +35,7 @@ import { MINOR_AGE_LIMIT } from '@/domain/households';
 
 export type ProfileIdentityError =
     | 'not_authenticated' | 'not_found' | 'invalid' | 'conflict' | 'busy' | 'failed'
-    | 'has_activity' | 'not_authorized' | 'not_undoable' | 'already_undone' | 'superseded'
+    | 'not_authorized' | 'not_undoable' | 'already_undone' | 'superseded'
     /** Final fix S5: this person made RENAME_RATE_LIMIT renames within the last hour. */
     | 'rate_limited';
 
@@ -155,7 +155,6 @@ export async function changeProfileAge(input: {
         switch (res.status) {
             case 'missing': return { ok: false, error: 'not_found' };
             case 'busy': return { ok: false, error: 'busy', errorId: res.errorId };
-            case 'has_activity': return { ok: false, error: 'has_activity' };
             case 'conflict': return { ok: false, error: 'conflict' };
             case 'unchanged': return { ok: true, age, isMinor: age !== null ? age < MINOR_AGE_LIMIT : input.isMinor };
             case 'changed':

@@ -12,6 +12,7 @@ import { deserializeContactEntries } from '@/lib/contactEntries';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { getRatingDisplayLevel, getRatingLabelKey } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
+import { openAlertKinds } from '@/domain/flags';
 import { normalizeDocumentId, type CandidateNames } from '@/domain/apiExactMatch';
 import { phoneDuplicateTokens } from '@/domain/phoneNumber';
 import type { ProfileSummary, SearchRequest } from './schemas';
@@ -181,10 +182,10 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             if (t !== null && (last === null || t > last)) last = t;
         }
         const f = e?.flags;
-        const flags: ProfileSummary['flags'] = [];
-        if (f?.inaccurate) flags.push('inaccurate');
-        // Any duplicate report (open or closed), as the API has always said — not the app's open-only rule.
-        if (e?.duplicateReported) flags.push('duplicate');
+        // `inaccurate` and `duplicate` are the person's open alerts, by the app's one rule
+        // (openAlertKinds — the profile header's): a duplicate report only while it is open,
+        // never one closed by a merge or a «mantener separados» (Jon, 2026-10-28).
+        const flags: ProfileSummary['flags'] = [...openAlertKinds(f)];
         if (f?.systemDuplicate) flags.push('possible_duplicate');
         if (f?.verified_identity) flags.push('verified_identity');
         if (f?.verified_address) flags.push('verified_address');

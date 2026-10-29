@@ -30,7 +30,8 @@ const KIND: Record<AlertKind, { tone: 'error' | 'warning' | 'purple'; Icon: Luci
 };
 
 const SIZE = {
-    sm: { box: 'gap-1 px-2 py-0.5 text-[11px]', icon: 'w-3 h-3' },
+    // The line-height is pinned so a row's pills (this and RatingBadge, the same box) line up whatever the parent's font.
+    sm: { box: 'gap-1 px-2 py-0.5 text-[11px] leading-4', icon: 'w-3 h-3' },
     md: { box: 'gap-1.5 px-3 py-1.5 text-xs', icon: 'w-3.5 h-3.5' },
 } as const;
 

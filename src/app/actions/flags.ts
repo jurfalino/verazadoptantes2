@@ -5,8 +5,6 @@ import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
-import { assertNotMinor } from '@/lib/minors';
-import { PROFILE_IS_MINOR, isProfileIsMinorError } from '@/domain/profileIdentity';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
@@ -23,8 +21,6 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         const db = await getDb();
         if (!db) throw new Error("No database");
         const flaggedBy = await getUser();
-        // A minor's profile gets no alerts (households as profiles): they go on the adults.
-        await assertNotMinor(db, adopterId, { op: 'flagAdopter', flaggedBy, reason });
 
         const id = crypto.randomUUID();
         await db.insert(adopterFlags).values({
@@ -73,11 +69,6 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
 
         return { success: true, id };
     } catch (error) {
-        if (isProfileIsMinorError(error)) {
-            // An expected rule, not a failure: no Error ID (audit A3) — alerts go on the household's adults.
-            logger.info('flagAdopter: refused — the profile is a minor', { adopterId, reason });
-            throw new Error(PROFILE_IS_MINOR);
-        }
         const errorId = logger.error('Flag adopter failed', error, { adopterId, reason });
         throw new Error(`Failed to flag adopter (Error ID: ${errorId})`);
     }

@@ -13,7 +13,7 @@
  * - Notices run after the response and never throw.
  */
 import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
-import { adopterFlags, adopterHistory, adopters, adoptions, notifications } from '@/db/schema';
+import { adopterHistory, adopters, notifications } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -24,7 +24,6 @@ import { historyKindForOwner, isPrivilegedOnProfile } from '@/lib/profilePrivile
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { actorNameOf, teamsOf } from '@/lib/householdNotices';
 import { currentAge, isMinor } from '@/domain/households';
-import { openAlertKindsOfRows } from '@/domain/flags';
 import type { NotificationType } from '@/domain/constants';
 import { realOwner } from '@/domain/dedupPair';
 import { ageColumns, parseNameChange, renameEntries, sameName, RENAME_NOTICE_WINDOW_MS } from '@/domain/profileIdentity';
@@ -182,38 +181,19 @@ export async function undoRename(db: Db, historyId: string, actor: string): Prom
     return { status: 'undone', adopterId: state.adopterId, restored: res.to, reverted: res.from, ...(res.warningErrorId ? { warningErrorId: res.warningErrorId } : {}) };
 }
 
-/** Records on the profile, or open alerts — what a minor must not have. */
-export async function profileHasActivity(db: Db, adopterId: string): Promise<boolean> {
-    const [record, flags] = await Promise.all([
-        db.select({ id: adoptions.id }).from(adoptions).where(eq(adoptions.adopterId, adopterId)).limit(1).get(),
-        db.select({ reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
-            .from(adopterFlags).where(eq(adopterFlags.adopterId, adopterId)).orderBy(desc(adopterFlags.createdAt)).limit(50).all(),
-    ]);
-    if (record) return true;
-    return openAlertKindsOfRows((flags as Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }>)
-        .map(f => ({ adopterId, ...f }))).length > 0;
-}
-
 export type AgeResult =
     | { status: 'changed'; from: { age: number | null; minor: boolean }; to: { age: number | null; minor: boolean }; name: string; ownerEmail: string | null; historyId: string | null; warningErrorId?: string }
     | { status: 'unchanged' }
     | { status: 'missing' }
-    | { status: 'has_activity' }
     /** Final fix P1: the age / box shown when the form opened is no longer what is stored. */
     | { status: 'conflict' }
     | { status: 'busy'; errorId: string };
 
 /**
  * Set the age (as told today) and «Es menor de edad». With an age the box
- * follows it; the box counts only with no age. Marking a profile minor is
- * refused while it has records or open alerts: a minor's profile hides the
- * «¿Qué pasó con …?» actions and refuses new records, so marking an adult with
- * a history as a child would bury it (anyone signed in can change an age).
- * The activity check and the write are not atomic: a record landing in
- * between can end up on a profile just marked minor. That is the rare,
- * harmless side — the AUTHORITATIVE rule is the other way round: every record
- * and alert insert refuses a minor (src/lib/minors.ts), so nothing new lands
- * on a minor once the mark is in.
+ * follows it; the box counts only with no age. «Menor de edad» is an
+ * informational marker only (Jon, 2026-10-28): any profile can be marked,
+ * whatever its records or alerts.
  */
 export async function setProfileAge(db: Db, input: {
     adopterId: string; age: number | null; isMinor: boolean; actor: string; today?: Date;
@@ -234,10 +214,6 @@ export async function setProfileAge(db: Db, input: {
         if (input.expected && (input.expected.age !== was.age || input.expected.isMinor !== was.minor)) {
             logger.info('setProfileAge: conflict — the age changed since the form opened', ctx);
             return { status: 'conflict' };
-        }
-        if (nextMinor && !was.minor && await profileHasActivity(db, adopterId)) {
-            logger.info('setProfileAge: refused — the profile has records or alerts', ctx);
-            return { status: 'has_activity' };
         }
         const won = await db.update(adopters).set({ age: next.age, ageAsOf: next.ageAsOf, isMinor: next.isMinor, updatedAt: new Date() })
             .where(and(

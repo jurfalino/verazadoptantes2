@@ -7,7 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -66,8 +66,7 @@ export default function ContractResultsMatchCard({
                 router.refresh();
             } else {
                 // A merge rule's refusal says why (households as profiles); anything else, the generic line. Always with its id.
-                const why = result.error === MINOR_SURVIVOR_HAS_ACTIVITY ? t('errors.merge_minor_survivor')
-                    : result.error === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
+                const why = result.error === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
                     : (t('errors.attach_contract_failed') || undefined);
                 toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', why,
                     result.errorId ?? resolveErrorId(new Error(`attachContractToExistingAdopter: ${result.error}`), 'ContractResultsMatchCard'));

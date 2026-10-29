@@ -7,6 +7,7 @@ import { adopterDisplayName } from '@/lib/adopterDisplay';
 import { useShowToast } from '@/components/ui/Toast';
 import { handledAsStale, userFacingMessage } from '@/lib/errorMessage';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { RatingBadge } from '@/components/RatingBadge';
 
 /**
  * "Calificaciones vs. notas" tab of Calidad de datos: activity records whose
@@ -303,7 +304,7 @@ export default function RatingsAuditPanel() {
                                                 <option value={NONE}>Sin calificación</option>
                                             </select>
                                         ) : (
-                                            <span className="text-sm font-semibold text-stone-700">★{r.rating}</span>
+                                            !!r.rating && <RatingBadge rating={r.rating} />
                                         )}
                                         {/* Same cell as the rating: "change it" and "it's fine" are one decision. */}
                                         {canEdit && (

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import type { OpenAlertKind } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
-import { HOUSEHOLD_NOT_CONVERTED, MINOR_SURVIVOR_HAS_ACTIVITY } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import { useShowToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
@@ -100,9 +100,7 @@ export default function FormResultMatchCard({
                 result.error === 'already_linked' ? L('link_error_already_linked')
                 : result.error === 'busy' ? L('link_error_busy')
                 : result.error === 'target_unavailable' ? L('link_error_unavailable')
-                // Households as profiles: the merge into this profile was refused (a minor kept with records
-                // on the other side; or household data not converted yet).
-                : result.error === MINOR_SURVIVOR_HAS_ACTIVITY ? t('errors.merge_minor_survivor')
+                // Households as profiles: the merge into this profile was refused (household data not converted yet).
                 : result.error === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
                 : L('link_error');
             fail(result.errorId ?? resolveErrorId(new Error(`linkFormToExistingAdopter: ${result.error}`), 'FormResultMatchCard'), message);

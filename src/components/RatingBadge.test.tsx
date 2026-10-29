@@ -19,14 +19,22 @@ import { RatingBadge } from './RatingBadge';
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('RatingBadge', () => {
-    it('pill and inline read the same: number · short word', () => {
-        const pill = text(renderToStaticMarkup(<RatingBadge rating={4} size="md" label="short" />));
-        const inline = text(renderToStaticMarkup(<RatingBadge rating={4} variant="inline" size="sm" label="short" />));
-        expect(pill).toBe('4.0 · Bueno');
-        expect(inline).toBe('4.0 · Bueno');
+    it('one look: the pill «★ 4.0 · Bueno», the AlertPill sm box', () => {
+        const html = renderToStaticMarkup(<RatingBadge rating={4} />);
+        expect(text(html)).toBe('4.0 · Bueno');
+        expect(html).toContain('data-testid="rating-value"');
+        for (const cls of ['rounded-full', 'border', 'px-2', 'py-0.5', 'text-[11px]', 'leading-4']) expect(html).toContain(cls);
     });
-    it('no label: just the number', () => {
-        expect(text(renderToStaticMarkup(<RatingBadge rating={2.5} />))).toBe('2.5');
+    it('a decimal keeps one decimal and the word', () => {
+        expect(text(renderToStaticMarkup(<RatingBadge rating={2.5} />))).toBe('2.5 · Regular');
+    });
+    it('unrated (null, 0, out of range): the neutral «Sin calificación» pill, same box', () => {
+        for (const r of [null, undefined, 0, '', 7]) {
+            const html = renderToStaticMarkup(<RatingBadge rating={r as number | null} />);
+            expect(text(html)).toBe('Sin calificación');
+            expect(html).toContain('data-testid="person-unrated"');
+            for (const cls of ['rounded-full', 'border', 'px-2', 'py-0.5', 'text-[11px]', 'leading-4']) expect(html).toContain(cls);
+        }
     });
     it('the old «search» label set is gone from every locale', async () => {
         const [{ en }, { pt }] = await Promise.all([import('@/i18n/locales/en'), import('@/i18n/locales/pt')]);

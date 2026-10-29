@@ -21,7 +21,8 @@
  *   text field, else «Cancelar» (`data-modal-cancel`): an accidental Enter never
  *   confirms anything. Tab stays inside it, and closing gives the focus back to
  *   what opened it — the ⋯ button when a menu item opened it (lib/dialogFocus;
- *   fix round 2, item 8). Only the topmost dialog answers Escape and Tab.
+ *   fix round 2, item 8). Only the topmost dialog answers Escape and Tab,
+ *   and never a key something inside it already handled (`defaultPrevented`).
  *   The portal waits for the client, so the server renders nothing.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
@@ -29,10 +30,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { Button } from '@/components/ui/Button';
-import { dialogOpener, openDialogs, returnFocusTarget, tabTrapTarget } from '@/lib/dialogFocus';
-
-/** What Tab can land on inside the dialog. */
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { FOCUSABLE, dialogOpener, modalKeyAction, openDialogs, returnFocusTarget, tabTrapTarget } from '@/lib/dialogFocus';
 
 const WIDTH = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg' } as const;
 
@@ -69,9 +67,11 @@ export function Modal({ title, onClose, busy = false, testId, size = 'md', child
         const first = (sel: string) => panel?.querySelector<HTMLElement>(sel);
         (first('[data-autofocus]') ?? first('textarea, input[type="text"], input[type="email"], input[type="search"], input:not([type])') ?? first('[data-modal-cancel]') ?? first('button'))?.focus();
         const onKey = (e: KeyboardEvent) => {
-            if (!openDialogs.isTop(id)) return;
-            if (e.key === 'Escape' && !latest.current.busy) { latest.current.onClose(); return; }
-            if (e.key !== 'Tab' || !panel) return;
+            // Already handled (a menu inside the dialog closing on Escape, keeping its own Tab): not ours.
+            if (e.defaultPrevented) return;
+            const action = modalKeyAction(e, { isTop: openDialogs.isTop(id), busy: latest.current.busy });
+            if (action === 'close') { latest.current.onClose(); return; }
+            if (action !== 'tab' || !panel) return;
             const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(el => el.getClientRects().length > 0);
             const active = document.activeElement instanceof HTMLElement && panel.contains(document.activeElement) ? document.activeElement : null;
             const next = tabTrapTarget(focusables, active, e.shiftKey);

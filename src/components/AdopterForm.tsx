@@ -11,7 +11,7 @@ import type { ProfileIdentityView } from "@/domain/profileIdentity";
 import ProfileAgeEditor from "@/components/ProfileAgeEditor";
 import { MinorTag } from "@/components/MinorTag";
 import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from "@/components/ui/AnchoredMenu";
-import { CalendarDays, GitMerge, Info, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
+import { CalendarDays, GitMerge, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
 import { hasStrongMatch } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
@@ -1424,16 +1424,13 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                 setShowReportMenu(false);
                                                             }}
                                                             title={t('common.share') || 'Share profile'} desc={t('common.copy_link') || 'Copy link or share'} />
-                                                        {/* A minor gets no alerts (a duplicate report is one): the server refuses it too. */}
-                                                        {!identity?.isMinor && (
-                                                            <AnchoredMenuItem icon={GitMerge} testId="profile-report-duplicate"
-                                                                onClick={() => {
-                                                                    setShowReportMenu(false);
-                                                                    if (!session?.user) { openLogin(); return; }
-                                                                    flaggingRef.current?.openAction('duplicate');
-                                                                }}
-                                                                title={t('flagging.menu_duplicate') || 'Report duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
-                                                        )}
+                                                        <AnchoredMenuItem icon={GitMerge} testId="profile-report-duplicate"
+                                                            onClick={() => {
+                                                                setShowReportMenu(false);
+                                                                if (!session?.user) { openLogin(); return; }
+                                                                flaggingRef.current?.openAction('duplicate');
+                                                            }}
+                                                            title={t('flagging.menu_duplicate') || 'Report duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
                                                         <AnchoredMenuItem icon={PencilLine} testId="profile-report-inaccuracy"
                                                             onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
                                                             title={t('flagging.menu_inaccuracy') || 'Report inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'} />
@@ -1447,32 +1444,23 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                     )}
                                 </div>
                             </div>
-                            {/* Verdict — the rating is the single most important at-a-glance
-                                signal on a vetting tool, so it's promoted (md, with label) to its
-                                own prominent row right under the name, not buried in the meta row. */}
-                            {/* A minor's tag takes the rating's slot (final fix P7, audit B5: the same place as on a row or a card), with
-                                why there's no rating or activity as a callout inside this card. A legacy rating stays off the header. */}
-                            {!isNew && identity?.isMinor && (
-                                <div className="mt-2 space-y-2">
-                                    <MinorTag />
-                                    <p className="flex items-start gap-2 rounded-xl border px-3 py-2 text-xs" data-testid="minor-note"
-                                        style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--text-secondary)' }}>
-                                        <Info className="w-4 h-4 mt-px shrink-0" style={{ color: 'var(--status-info-text)' }} aria-hidden="true" />
-                                        <span>{t('adopter.minor_note')}</span>
-                                    </p>
-                                </div>
-                            )}
-                            {!isNew && !identity?.isMinor && avgRating !== null && avgRating !== undefined && (
-                                <div className="mt-2">
-                                    <div
-                                        role="button"
-                                        tabIndex={0}
-                                        data-testid="rating-badge"
-                                        onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                        className={`inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full ${TAP_TARGET_44}`}
-                                    >
-                                        <RatingBadge rating={avgRating} size="md" label="short" />
-                                    </div>
+                            {/* Verdict — the rating, right under the name: the one rating pill, the same size as on a
+                                household row or a card (Jon, 2026-10-28), «Sin calificación» when unrated. A minor's tag
+                                sits before it (audit B5) — an informational marker only (Jon, 2026-10-28). */}
+                            {!isNew && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="profile-rating-row">
+                                    {identity?.isMinor && <MinorTag />}
+                                    {avgRating !== null && avgRating !== undefined ? (
+                                        <span
+                                            role="button"
+                                            tabIndex={0}
+                                            data-testid="rating-badge"
+                                            onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                            className={`inline-flex cursor-pointer hover:opacity-90 transition-opacity rounded-full ${TAP_TARGET_44}`}
+                                        >
+                                            <RatingBadge rating={avgRating} />
+                                        </span>
+                                    ) : <RatingBadge rating={null} />}
                                 </div>
                             )}
                             {/* Metadata row */}
