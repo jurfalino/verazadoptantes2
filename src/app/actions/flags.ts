@@ -13,7 +13,7 @@ import { historyKindFor } from '@/lib/profilePrivilege';
 import { FLAG_REASONS } from '@/domain/constants';
 
 export type FlagAdopterResult =
-    /** `already`: an open duplicate flag already covers this pair (either direction) — its id, nothing new written or sent. */
+    /** `already`: an open duplicate flag (its id) or a pending merge request ('') already covers this pair — nothing new written or sent. */
     | { success: true; id: string; already?: true }
     /**
      * A duplicate flag refused: 'invalid_target' (the same profile, or one that
@@ -51,9 +51,10 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
             const { pairUnderReview, pairSettledSeparate, loadPairVerdict, teamOf } = await import('@/lib/pairVerdict');
             if (await pairSettledSeparate(db, adopterId, targetAdopterId)) return refuse('settled_separate');
             const review = await pairUnderReview(db, adopterId, targetAdopterId);
-            if (review.flagId) {
-                logger.info('flagAdopter: the pair already has an open duplicate flag, no second one', { adopterId, targetAdopterId, actor: flaggedBy, flagId: review.flagId });
-                return { success: true, id: review.flagId, already: true };
+            // Already up for review — an open flag, or a pending merge request (round 5): no second flag, no notices.
+            if (review.flagId || review.requestPending) {
+                logger.info('flagAdopter: the pair is already up for review, no second flag', { adopterId, targetAdopterId, actor: flaggedBy, flagId: review.flagId, requestPending: review.requestPending });
+                return { success: true, id: review.flagId ?? '', already: true };
             }
             const { isAdminAsync } = await import('@/config/admins');
             if (!(await isAdminAsync(flaggedBy))) {

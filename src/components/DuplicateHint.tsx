@@ -177,7 +177,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
     );
     const openLink = (
         <button type="button" onClick={onOpenFull} disabled={disabled} data-testid="dup-hint-open-full"
-            className="inline-flex items-center justify-center gap-1 min-h-[44px] px-2 rounded-xl text-[13px] font-semibold hover:underline disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" style={{ color: 'var(--accent)' }}>
+            className="inline-flex items-center justify-center gap-1 min-h-[44px] px-2 rounded-xl text-[13px] font-semibold hover:underline disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]" style={{ color: 'var(--accent)' }}>
             {t('adopter.dup_hint_open_full')}
             <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
         </button>

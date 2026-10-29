@@ -352,6 +352,14 @@ describe('duplicate flags tell the owners (flagAdopter / flagAdopterAsDuplicate)
         expect(notify.admins).toHaveLength(1);
     });
 
+    it('«Reportar → Duplicado» on a pair with a pending merge request: no flag, no notices (round 5)', async () => {
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at) VALUES ('mr1', 'jonatan', 'maria', ?, ?, 'pending', 1)`).run(OWNER, OTHER);
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'))).toEqual({ success: true, id: '', already: true });
+        expect(flagsOn('maria')).toEqual([]);
+        expect(notify.create).toEqual([]);
+        expect(notify.admins).toEqual([]);
+    });
+
     it('a duplicate flag on itself, or on a profile that does not exist or was merged away: refused, nothing written or sent', async () => {
         expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'maria'))).toEqual({ success: false, error: 'invalid_target', errorId: 'gen12345' });
         expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'nobody'))).toMatchObject({ success: false, error: 'invalid_target' });
@@ -389,7 +397,7 @@ describe('already recorded as two people (F3 option a): «Ya figuran como person
     };
     const sources: Array<[string, () => void]> = [
         ['they share a home', () => shareHome()],
-        ['«Mantener separados» in Pendientes (a dismissed candidate)', () => sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES ('c1', 'maria', 'jonatan', '["phone"]', 60, 'medium', 'dismissed', 1)`).run()],
+        ['«Mantener separados» by a rescuer in Pendientes (a candidate they dismissed)', () => sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at, resolved_by) VALUES ('c1', 'maria', 'jonatan', '["phone"]', 60, 'medium', 'dismissed', 1, ?)`).run(OTHER)],
         ['«Viven juntos» (the kept-separate household marker on a flag)', () => sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('f1', 'jonatan', ?, 'duplicate', 'maria', 'Kept separate: household', 1)`).run(STRANGER)],
     ];
 
@@ -413,6 +421,21 @@ describe('already recorded as two people (F3 option a): «Ya figuran como person
     it('housemates who share an email are NOT settled (as «Pendientes» never hides them); a gift household never settles', async () => {
         shareHome();
         sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: MATCH_PHONE }, { id: 'j2', type: 'email', value: 'MARIA@example.com' }]));
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'continue' });
+    });
+
+    it('an ADMIN ruling (a declined request, its markers and the candidate it dismissed) is not settled: still askable — case 4 (round 5)', async () => {
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status, created_at) VALUES ('mr1', 'jonatan', 'maria', ?, NULL, 'admin_declined', 1)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at, resolved_by) VALUES ('c1', 'maria', 'jonatan', '["phone"]', 60, 'medium', 'dismissed', 1, ?)`).run(ADMIN);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('f1', 'jonatan', ?, 'duplicate', 'maria', 'Kept separate: mr1', 1)`).run(STRANGER);
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'review_admins' });
+        // A flag on it is refused for having been said no to — not as settled.
+        expect(await as(STRANGER, () => flagAdopter('maria', 'duplicate', 'x', 'jonatan'))).toMatchObject({ success: false, error: 'said_no' });
+        expect(await askAdminsToReviewPair({ currentId: 'maria', matchId: 'jonatan' })).toEqual({ ok: true, already: false });
+    });
+
+    it('an admin pressing «Mantener separados» with no ruling recorded: not settled either (the pair is open as before)', async () => {
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at, resolved_by) VALUES ('c1', 'maria', 'jonatan', '["phone"]', 60, 'medium', 'dismissed', 1, ?)`).run(ADMIN);
         expect(await windowFor('jonatan')).toMatchObject({ action: 'continue' });
     });
 
