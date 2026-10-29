@@ -52,6 +52,8 @@ import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED
 /** The section's anchor: request notifications link to /my-adopters#pendientes. */
 const SECTION_ID = 'pendientes';
 const PAGE_SIZE = 10;
+/** Room above a focused pair: the sticky nav (64px) plus a gap. */
+const FOCUS_ROW_OFFSET = 80;
 
 type Identity = 'same' | 'household';
 
@@ -103,10 +105,17 @@ export default function PendingDedup() {
      * row's action keeps them.
      */
     const [merged, setMerged] = useState<MergedInfo[]>([]);
+    /** The pair a profile's «Revisar» linked to (?pair=): opened, scrolled to and outlined. */
+    const [focusId, setFocusId] = useState<string | null>(null);
+    /** The page the focused pair's load already fetched, so moving to it doesn't load it twice. */
+    const loadedByFocus = useRef<number | null>(null);
 
     const load = useCallback(async () => {
+        if (loadedByFocus.current === page) { loadedByFocus.current = null; return; }
         try {
-            const data = await getPendingDuplicatesForUser(page, PAGE_SIZE);
+            const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
+            const data = await getPendingDuplicatesForUser(page, PAGE_SIZE, false, focusPair);
+            if (data.page && data.page !== page) { loadedByFocus.current = data.page; setPage(data.page); }
             setPairs(data.pairs);
             setTotal(data.total);
             // A reload after an action keeps the row the viewer is working on
@@ -121,10 +130,12 @@ export default function PendingDedup() {
                 // The group, not request.direction: a declined row seen by the
                 // decliner also reads direction 'received'.
                 const firstReceived = data.pairs.find(p => p.group === 'received');
-                if (firstReceived) setOpenId(firstReceived.candidateId);
-                if (linked || firstReceived) {
+                const focused = data.focusCandidateId;
+                if (focused) setFocusId(focused);
+                if (focused ?? firstReceived) setOpenId((focused ?? firstReceived!.candidateId));
+                if (linked || focused || firstReceived) {
                     setOpen(true);
-                    scrollToSection.current = linked;
+                    scrollToSection.current = linked || !!focused;
                 }
             }
         } catch (e) {
@@ -141,8 +152,11 @@ export default function PendingDedup() {
     useEffect(() => {
         if (!open || !scrollToSection.current || !sectionRef.current) return;
         scrollToSection.current = false;
-        sectionRef.current.scrollIntoView({ block: 'start' });
-    }, [open, pairs]);
+        const row = focusId ? sectionRef.current.querySelector(`[data-candidate-id="${CSS.escape(focusId)}"]`) : null;
+        // The focused pair: its top just below the sticky nav (h-16) — scrollIntoView left it under the nav.
+        if (row) window.scrollTo({ top: row.getBoundingClientRect().top + window.scrollY - FOCUS_ROW_OFFSET });
+        else sectionRef.current.scrollIntoView({ block: 'start' });
+    }, [open, pairs, focusId]);
 
     // A #pendientes link followed while already on the page.
     useEffect(() => {
@@ -443,6 +457,7 @@ export default function PendingDedup() {
                                         key={pair.candidateId}
                                         pair={pair}
                                         open={openId === pair.candidateId}
+                                        highlight={focusId === pair.candidateId}
                                         onToggle={() => setOpenId(id => (id === pair.candidateId ? null : pair.candidateId))}
                                         keep={keepOf(pair)}
                                         onKeep={s => setKeepChoice(prev => ({ ...prev, [pair.candidateId]: s }))}

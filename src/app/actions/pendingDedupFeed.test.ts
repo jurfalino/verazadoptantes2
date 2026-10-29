@@ -40,7 +40,7 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
 }));
 
-import { getPendingDuplicatesForUser, mergePendingDedupPair, dismissDuplicateCandidate, hidePendingPair, type PendingDedupPair } from './duplicates';
+import { getDuplicateCandidates, getPendingDuplicatesForUser, mergePendingDedupPair, dismissDuplicateCandidate, hidePendingPair, type PendingDedupPair } from './duplicates';
 import { pairKey } from '@/domain/dedupPair';
 import { resolveMergeRequest } from './mergeRequests';
 import { deleteOwnAdopter } from './adopters';
@@ -567,5 +567,37 @@ describe('getPendingDuplicatesForUser — the row and the click agree (pairChoic
         const p = pairOf((await feed(MATE)).pairs, 'cand-older-mine');
         expect(p).toMatchObject({ actionByKeep: { new: null, existing: null }, keepOptions: { new: false, existing: false }, defaultKeep: 'existing' });
         expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine'))).toMatchObject({ success: false, error: 'not_found' });
+    });
+});
+
+describe("a profile's «Revisar» lands on its pair", () => {
+    it('the feed returns the page holding the focused pair, and its id', async () => {
+        // STRANGER's list, strongest first: cand-newer-mine (90), cand-anon (85), cand-older-mine (80).
+        const r = await as(STRANGER, () => getPendingDuplicatesForUser(1, 1, false, pairKey('s-old', 'o-new')));
+        expect(r).toMatchObject({ page: 3, focusCandidateId: 'cand-older-mine', total: 3 });
+        expect(r.pairs.map(p => p.candidateId)).toEqual(['cand-older-mine']);
+    });
+
+    it('a pair not on the list leaves the asked page as it was', async () => {
+        const r = await as(STRANGER, () => getPendingDuplicatesForUser(1, 1, false, pairKey('o-low', 's-low')));
+        expect(r).toMatchObject({ page: 1 });
+        expect(r.focusCandidateId).toBeUndefined();
+    });
+
+    it("the banner offers «Revisar» only when the pair is on the viewer's list", async () => {
+        const onList = async (user: string) =>
+            (await as(user, () => getDuplicateCandidates('s-old'))).find(c => c.otherAdopterId === 'o-new')?.onViewerList;
+        expect(await onList(STRANGER)).toBe(true); // created this profile
+        expect(await onList(OWNER)).toBe(true); // created the other one
+        expect(await onList(ADMIN)).toBe(false); // an admin who created neither: not on their list
+        await as(STRANGER, () => hidePendingPair(pairKey('s-old', 'o-new')));
+        expect(await onList(STRANGER)).toBe(false); // taken off their list
+    });
+
+    it('a merged-away profile is not offered as a possible duplicate', async () => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 3000 WHERE id = 'o-new'`).run();
+        const others = (await as(STRANGER, () => getDuplicateCandidates('s-old'))).map(c => c.otherAdopterId);
+        expect(others).not.toContain('o-new');
+        expect(others).toContain('anon-new');
     });
 });
