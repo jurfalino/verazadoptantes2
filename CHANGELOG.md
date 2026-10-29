@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.5] - 2026-10-28
+
+### Changed — one rating look, minors simplified
+- Rating: one pill everywhere a rating is shown («★ 4.0 · Bueno», same size and colour on every screen). A person
+  with no rating shows «Sin calificación» in the same pill shape. In Actividad, a record's rating sits under its
+  description instead of in a narrow left column.
+- «Menor de edad» uses the same pill shape, in purple. Minors are an informational marker only: they can be rated,
+  have records, be flagged and be picked like anyone else.
+- Public API: flags follow the app's rule — `duplicate` means an open duplicate report only.
+
+### Fixed
+- The rating average ignores empty ratings (an empty rating is saved as empty, never 0), so the header and
+  Actividad always show the same average.
+- The duplicate check never shows a regular user a profile that was merged away.
+- Dialogs: one Escape closes one layer; focus returns to the button that opened it.
+
 ## [2.58.4] - 2026-10-28
 
 ### Fixed — final consistency round
