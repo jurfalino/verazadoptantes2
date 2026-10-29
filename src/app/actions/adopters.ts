@@ -20,6 +20,7 @@ import {
     contactEntriesToBlob,
     parseBlobToContactEntries,
     foldContactEntries,
+    contactEntryKey,
     stripRenameMarks,
     contactCapExceeded,
     contactEntriesJsonCount,
@@ -183,8 +184,10 @@ export async function appendToExistingAdopter(
                         updates.contactEntries = JSON.stringify(merged);
                         updates.contactInfo = contactEntriesToBlob(merged) || null;
                         // The history names only what was really added (not copies folded into an existing entry).
+                        // An entry that was already there (by id, or — a legacy entry without one — by key) is not «added».
                         const baseIds = new Set(base.map(e => e.id).filter(Boolean));
-                        const added = merged.filter(e => !e.id || !baseIds.has(e.id));
+                        const baseKeys = new Set(base.map(contactEntryKey));
+                        const added = merged.filter(e => !(e.id && baseIds.has(e.id)) && !baseKeys.has(contactEntryKey(e)));
                         if (added.length) appendedFields.contactInfo = contactEntriesToBlob(added);
                     }
                 }

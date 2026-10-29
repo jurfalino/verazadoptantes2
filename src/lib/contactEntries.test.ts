@@ -5,6 +5,7 @@ import {
     sameContact,
     foldContactEntries,
     contactCoveredBy,
+    sameContactSet,
     categorizeContactText,
     contactEntriesToBlob,
     parseBlobToContactEntries,
@@ -745,9 +746,28 @@ describe('contactMatchKeys / sameContact / foldContactEntries — the duplicate 
         expect(foldContactEntries(base, [two], { stricterVisibility: true }).map(e => e.value)).toEqual(['+54 9 11 6312-0851', '11 6312-0851 / 11 4444-5555']);
         const profile = { contactEntries: JSON.stringify(base), contactInfo: null };
         expect(newContactsForProfile([two], profile).map(e => e.value)).toEqual(['11 6312-0851 / 11 4444-5555']);
-        // The other way round, one of its numbers IS wholly held by it.
+        // The other way round: its number IS held by the two-number entry — but only an
+        // identical set is dropped (round 8), so the single number stays as its own entry.
         expect(contactCoveredBy(base[0], two)).toBe(true);
-        expect(foldContactEntries([two], [base[0]], { stricterVisibility: true })).toHaveLength(1);
+        expect(sameContactSet(base[0], two)).toBe(false);
+        expect(foldContactEntries([two], [base[0]], { stricterVisibility: true }).map(e => e.value)).toEqual(['11 6312-0851 / 11 4444-5555', '+54 9 11 6312-0851']);
+    });
+
+    it('round 8: survivor «A / B / C» + incoming «B / C» → both kept; the same set in other formats → one', () => {
+        const abc: ContactEntry = { type: 'phone', value: '11 6312-0851 / 11 4444-5555 / 11 7777-8888' };
+        expect(foldContactEntries([abc], [{ type: 'phone', value: '11 4444-5555 / 11 7777-8888' }], { stricterVisibility: true })).toHaveLength(2);
+        expect(foldContactEntries([abc], [{ type: 'phone', value: '+54 9 11 7777-8888, +54 9 11 6312-0851, 11 4444 5555' }], { stricterVisibility: true })).toHaveLength(1);
+        // The preview agrees: a typed single number against «A / B» is listed (it will be its own entry).
+        const profile = { contactEntries: JSON.stringify([{ id: 'p', type: 'phone', value: '11 6312-0851 / 11 4444-5555' }]), contactInfo: null };
+        expect(newContactsForProfile([{ type: 'phone', value: '6312-0851' }], profile).map(e => e.value)).toEqual(['6312-0851']);
+    });
+
+    it('round 8: «phones» with no digits are text — «ver notas» never dedupes against «llamar tarde»', () => {
+        const notes: ContactEntry = { type: 'phone', value: 'ver notas' };
+        expect(foldContactEntries([notes], [{ type: 'phone', value: 'llamar tarde' }], { stricterVisibility: true }).map(e => e.value)).toEqual(['ver notas', 'llamar tarde']);
+        expect(foldContactEntries([notes], [{ type: 'phone', value: ' Ver notas ' }], { stricterVisibility: true })).toHaveLength(1);
+        expect(mergeContactEntries([notes], [{ type: 'phone', value: 'llamar tarde' }])).toHaveLength(2);
+        expect(sameContact(notes, { type: 'phone', value: 'llamar tarde' })).toBe(false);
     });
 
     it('S1: the same handle on different networks, or with one side missing a network, are different contacts', () => {

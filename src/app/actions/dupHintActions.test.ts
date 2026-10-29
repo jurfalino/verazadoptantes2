@@ -489,6 +489,18 @@ describe('the same phone saved twice in the existing paths (round 4)', () => {
         const refs = sqlite.prepare(`SELECT entry_ref AS r FROM pii_access_grants WHERE adopter_id = 'jonatan' AND grantee_email = ? AND scope = 'entry' AND revoked_at IS NULL`).all(OWNER).map(g => g.r);
         expect(refs).toContain(hashEntryValue('phone', '6312-0851'));
         expect(refs).not.toContain(hashEntryValue('phone', '11 6312-0851 / 11 4444-5555'));
+        // Round 8 (R7-1): the number they brought stays as its own entry, so their grant still matches it.
+        const phones = contactsOf('jonatan').filter(c => c.type === 'phone');
+        expect(phones.map(c => c.value)).toEqual(['11 6312-0851 / 11 4444-5555', '6312-0851']);
+        expect(refs).toContain(hashEntryValue('phone', phones[1].value));
+    });
+
+    it('round 8: appendToExistingAdopter on a legacy profile (contacts only as text, no entry ids) names only what was added', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = NULL, contact_info = '+54 9 11 6312-0851' WHERE id = 'maria'`).run();
+        expect(await appendToExistingAdopter('maria', { contactEntries: JSON.stringify([{ type: 'phone', value: '11 6312-0851' }, { type: 'email', value: 'otra@example.com' }]) })).toMatchObject({ success: true });
+        const history = sqlite.prepare(`SELECT changes FROM adopter_history WHERE adopter_id = 'maria' ORDER BY rowid DESC LIMIT 1`).get()!.changes as string;
+        expect(history).toContain('otra@example.com');
+        expect(history).not.toContain('6312-0851');
     });
 
     it('M1 in appendToExistingAdopter: a typed two-number entry against one of its numbers is added whole', async () => {

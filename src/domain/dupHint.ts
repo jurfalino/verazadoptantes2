@@ -11,7 +11,7 @@
  * - `visibleDupHintMatches`: «No es esta persona» hides a match for as long as
  *   the typed value stays the same (local only, no server write).
  */
-import { contactCoveredBy, contactMatchKeys, sameContact, type ContactEntry } from '@/lib/contactEntries';
+import { contactMatchKeys, sameContact, sameContactSet, type ContactEntry } from '@/lib/contactEntries';
 import { mergeOwnersToTell, realOwner } from '@/domain/dedupPair';
 
 export type DupHintType = 'phone' | 'email' | 'social' | 'id';
@@ -72,17 +72,17 @@ export function entryMatchesTyped(entry: { type: string; value: string; platform
 
 /**
  * Does «Continuar» still need to add the value being typed to the match? Not
- * when one of the match's entries already holds all of it (contactCoveredBy:
- * «+54 9 11 6312-0851» already holds «11 6312-0851»). The confirmation's
+ * when one of the match's entries already holds exactly it (sameContactSet:
+ * «+54 9 11 6312-0851» is «11 6312-0851»). The confirmation's
  * «Se agregará» and the action itself both ask this, so they can't disagree.
  */
 export function typedIsNewFor(matchEntries: ReadonlyArray<{ type: string; value: string; platform?: string }>, type: DupHintType, typed: string, platform?: string): boolean {
     const v = typed.trim();
     if (!v) return false;
-    // Merging, not detecting: the match must hold ALL of it (contactCoveredBy) — a typed
-    // «11 6312-0851 / 11 4444-5555» against «+54 9 11 6312-0851» still adds the second number.
+    // Merging, not detecting: an entry of the match must hold exactly it (sameContactSet) —
+    // otherwise it is saved as its own entry, as the merge keeps it.
     const entry = { type, value: v, ...(platform ? { platform: platform as ContactEntry['platform'] } : {}) };
-    return !matchEntries.some(e => contactCoveredBy(entry, e as Pick<ContactEntry, 'type' | 'value' | 'platform'>));
+    return !matchEntries.some(e => sameContactSet(entry, e as Pick<ContactEntry, 'type' | 'value' | 'platform'>));
 }
 
 /** «No es esta persona» answers, for one typed value. */

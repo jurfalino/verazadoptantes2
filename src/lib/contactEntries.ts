@@ -367,9 +367,11 @@ export function deriveLocality(entry: ContactEntry): string {
 
 /** The identity `mergeContactEntries` de-duplicates on: type + normalized value (+ network for socials). */
 export function contactEntryKey(e: Pick<ContactEntry, 'type' | 'value' | 'platform'>): string {
-    return e.type === 'social'
-        ? `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`
-        : `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
+    if (e.type === 'social') return `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`;
+    // A «phone» with no digits at all («ver notas», «llamar tarde») is text: compared as text,
+    // never as the same empty number (round 8).
+    if (e.type === 'phone' && !/\d/.test(e.value ?? '')) return `phone-text|${(e.value ?? '').trim().toLowerCase()}`;
+    return `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
 }
 
 /**
@@ -436,13 +438,24 @@ export function contactCoveredBy(a: Pick<ContactEntry, 'type' | 'value' | 'platf
 }
 
 /**
+ * The two entries hold exactly the same contact — for phones, the same SET of
+ * numbers (each holds every number of the other, by the matcher's keys). What
+ * merging and appending require before dropping an incoming entry (round 8):
+ * survivor «A / B» + absorbed «A» keeps «A» as its own entry, so the team that
+ * brought it never loses sight of it (its grant matches that entry).
+ */
+export function sameContactSet(a: Pick<ContactEntry, 'type' | 'value' | 'platform'>, b: Pick<ContactEntry, 'type' | 'value' | 'platform'>): boolean {
+    return contactCoveredBy(a, b) && contactCoveredBy(b, a);
+}
+
+/**
  * Fold `incoming` (an absorbed profile's contacts, or what the new-profile form
  * typed) into `base` (the profile that stays). An incoming contact the base
- * already holds (contactCoveredBy — every number of it, same network) is NOT
- * added a second time: the kept entry keeps its own formatting and id and gains
- * the incoming phone's messaging apps (WhatsApp / Telegram, union). A partial
- * overlap (a two-number entry sharing one number) is kept as its own entry:
- * nothing is lost.
+ * already holds exactly (sameContactSet — the same numbers, same network) is
+ * NOT added a second time: the kept entry keeps its own formatting and id and gains
+ * the incoming phone's messaging apps (WhatsApp / Telegram, union). Any other
+ * overlap (a two-number entry sharing one number, either way) is kept as its
+ * own entry: nothing is lost, and nobody loses sight of what they brought.
  *
  * `stricterVisibility` — only when both lists are profiles being MERGED
  * (mergeAdopters): the kept entry stays public only if BOTH copies were. A
@@ -456,8 +469,8 @@ export function foldContactEntries(base: ContactEntry[], incoming: ContactEntry[
     for (const e of incoming) {
         if (!e?.value?.trim()) continue;
         if (e.type === 'alias') { added.push(e); continue; }
-        const holder = kept.find(k => k.type !== 'alias' && contactCoveredBy(e, k))
-            ?? added.find(k => k.type !== 'alias' && contactCoveredBy(e, k));
+        const holder = kept.find(k => k.type !== 'alias' && sameContactSet(e, k))
+            ?? added.find(k => k.type !== 'alias' && sameContactSet(e, k));
         if (!holder) { added.push(e); continue; }
         if (holder.type === 'phone' && e.apps?.length) {
             const apps = [...new Set([...(holder.apps ?? []), ...e.apps])];
@@ -915,7 +928,7 @@ export function stripRenameMarks<T extends ContactEntry>(entries: readonly T[]):
  * perfil de X?» lists under «Se agregará» (fix round 2, item 20). Mirrors the
  * server's append (appendToExistingAdopter → foldContactEntries): the
  * profile's typed list, else its legacy text read as entries; a typed contact
- * counts as already there only when one entry holds all of it (contactCoveredBy). A masked contact (`masked: true`) can't be compared, so a
+ * counts as already there only when one entry holds exactly it (sameContactSet). A masked contact (`masked: true`) can't be compared, so a
  * typed one is never assumed to be it — unless the duplicate engine matched on
  * that same email (`matchValues`: the query's own normalized tokens).
  * Blank and repeated typed entries count once.
@@ -927,15 +940,15 @@ export function newContactsForProfile(
 ): ContactEntry[] {
     const stored = deserializeContactEntries(profile.contactEntries);
     const base = stored.length ? stored : parseBlobToContactEntries(profile.contactInfo);
-    // The same rule the save folds with (contactCoveredBy / foldContactEntries):
-    // «11 6312-0851» typed against «+54 9 11 6312-0851» adds nothing; a typed
-    // entry with a number the profile doesn't hold is listed.
+    // The same rule the save folds with (sameContactSet / foldContactEntries):
+    // «11 6312-0851» typed against «+54 9 11 6312-0851» adds nothing; any typed
+    // entry not holding exactly an entry's numbers is listed (it is saved as its own).
     const known: Array<Pick<ContactEntry, 'type' | 'value' | 'platform'>> = base.filter(e => !e.masked && e.value?.trim());
     for (const v of matchValues) if (v.type === 'email' && v.value) known.push({ type: 'email', value: v.value });
     const out: ContactEntry[] = [];
     for (const e of typed) {
         if (!e.value?.trim()) continue;
-        if (known.some(k => contactCoveredBy(e, k))) continue;
+        if (known.some(k => sameContactSet(e, k))) continue;
         known.push(e);
         out.push(e);
     }
