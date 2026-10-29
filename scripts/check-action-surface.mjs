@@ -361,7 +361,21 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // which stored entry (by position) equals the typed value — nothing beyond what was typed.
 // Read-only; the typed value is never logged.
 // 170 = 169 + 1.
-const EXPECTED_ACTIONS = 170;
+// «Ya está en otro perfil» → continue / flag by ownership (Jon 2026-10-29; coordinator sign-off
+// «dup-hint continue»): +2 in src/app/actions/dupHintActions.ts, exported from the barrel.
+// - continueWithMatchedProfile({ currentId, matchId, typed? }): MERGES the profile being edited
+//   into the matched one. Session required; never trusts the window — re-decides from the
+//   database (decideDupHintAction via src/lib/dupHintFacts.ts): only when the caller or their team
+//   loaded the profile being edited, or the caller is an admin; refused when the match has no real
+//   owner, after a «no» on the pair (declined / admin ruled separate) or while the pair is up for
+//   review. Then the same merge, D40 access and notices as «Pendientes» (mergeChosenPair). `typed`
+//   goes through addContactEntry (its own validation) on the caller's profile first.
+// - askAdminsToReviewPair({ currentId, matchId }): files the «Pendientes» dispute (a merge request
+//   to the admins) — only when the pair verdict says «no» for this viewer; one pending per pair.
+//   (mergePendingDedupPair can't be reused: it needs a candidate or flag row this pair may not have.)
+// Both answer codes only, never another profile's data.
+// 172 = 170 + 2.
+const EXPECTED_ACTIONS = 172;
 
 let manifest;
 try {

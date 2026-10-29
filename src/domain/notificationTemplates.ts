@@ -41,6 +41,8 @@ export interface NotificationTemplateParams {
     deletion_request: { requesterName: string };
     /** `reason` is the FLAG_REASONS code (admins read it as is today). */
     adopter_flagged: { reporterName: string; reason: string };
+    /** To both profiles' owner teams when someone flags them as one person; a missing name reads «un perfil». */
+    duplicate_flagged: { reporterName: string; nameA?: string; nameB?: string };
     /** `disputable`: '1' when attaching folded another profile in and the notice links to «¿No es la misma persona?» (D50). */
     contract_attached: { actorName: string; profileName: string; animalName?: string; disputable?: string };
     form_attached: { actorName: string; profileName: string; disputable?: string };
@@ -313,6 +315,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         es: p => ({ title: '🚩 Adoptante reportado', body: `${p.reporterName} reportó un adoptante. Motivo: ${p.reason}` }),
         en: p => ({ title: '🚩 Adopter reported', body: `${p.reporterName} reported an adopter. Reason: ${p.reason}` }),
         pt: p => ({ title: '🚩 Adotante denunciado', body: `${p.reporterName} denunciou um adotante. Motivo: ${p.reason}` }),
+    },
+    duplicate_flagged: {
+        required: ['reporterName'],
+        es: p => ({ title: 'Posible duplicado en tu perfil', body: `${p.reporterName} cree que ${p.nameA || 'un perfil'} y ${p.nameB || 'otro perfil'} son la misma persona.` }),
+        en: p => ({ title: 'Possible duplicate on your profile', body: `${p.reporterName} thinks ${p.nameA || 'a profile'} and ${p.nameB || 'another profile'} are the same person.` }),
+        pt: p => ({ title: 'Possível duplicado no seu perfil', body: `${p.reporterName} acha que ${p.nameA || 'um perfil'} e ${p.nameB || 'outro perfil'} são a mesma pessoa.` }),
     },
     contract_attached: {
         required: ['actorName', 'profileName'],

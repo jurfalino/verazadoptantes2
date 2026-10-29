@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { NO_DISMISSED, dismissDupHintMatch, dupHintSearchInput, entryMatchesTyped, visibleDupHintMatches } from './dupHint';
+import { NO_DISMISSED, decideDupHintAction, dismissDupHintMatch, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, visibleDupHintMatches, type DupHintFacts } from './dupHint';
+import { decideDedupAction, mergeOwnersToTell } from './dedupPair';
+import { ratingAfterMerge } from './ratings';
 
 describe('dupHintSearchInput — what the engine is asked for one typed identifier', () => {
     it('one list per strong type (emails and socials lower-cased, ids as identity numbers)', () => {
@@ -58,3 +60,92 @@ describe('«No es esta persona» — hidden while the typed value stays the same
     });
 });
 
+
+describe('decideDupHintAction — what the «Ver perfil» window offers (Jon 2026-10-29)', () => {
+    const base: DupHintFacts = { isAdmin: false, currentTeamOwned: true, matchHasOwner: true, declinedForTeam: false, adminRuledSeparate: false, pending: false };
+    const with_ = (over: Partial<DupHintFacts>) => decideDupHintAction({ ...base, ...over });
+
+    it('case 1: the viewer or their team loaded the profile being edited → continue', () => {
+        expect(with_({})).toBe('continue');
+    });
+    it('case 2: someone else loaded it → flag (also when the viewer loaded the match)', () => {
+        expect(with_({ currentTeamOwned: false })).toBe('flag');
+    });
+    it('case 3: the match has no real owner → flag, even when the profile being edited is the viewer\'s (D42)', () => {
+        expect(with_({ matchHasOwner: false })).toBe('flag');
+        expect(with_({ matchHasOwner: false, currentTeamOwned: false })).toBe('flag');
+    });
+    it('case 4: they already said no — the other owner declined, or an admin ruled them separate → review_admins', () => {
+        expect(with_({ declinedForTeam: true })).toBe('review_admins');
+        expect(with_({ adminRuledSeparate: true })).toBe('review_admins');
+        expect(with_({ adminRuledSeparate: true, currentTeamOwned: false })).toBe('review_admins');
+    });
+    it('case 5: already up for review → pending', () => {
+        expect(with_({ pending: true })).toBe('pending');
+        expect(with_({ pending: true, currentTeamOwned: false })).toBe('pending');
+    });
+    it('priority: said no > pending > ownerless > 1 / 2', () => {
+        expect(with_({ declinedForTeam: true, pending: true, matchHasOwner: false })).toBe('review_admins');
+        expect(with_({ pending: true, matchHasOwner: false })).toBe('pending');
+        expect(with_({ matchHasOwner: false, currentTeamOwned: true })).toBe('flag');
+    });
+    it('admins choose freely (D24): continue, whatever was said, pending or owned', () => {
+        for (const over of [{}, { currentTeamOwned: false }, { matchHasOwner: false }, { declinedForTeam: true }, { adminRuledSeparate: true }, { pending: true }]) {
+            expect(with_({ isAdmin: true, ...over })).toBe('continue');
+        }
+    });
+});
+
+describe('dupHintMergePlan — who «Sí, continuar» tells', () => {
+    const ME = 'me@example.com', MATE = 'mate@example.com', OTHER = 'Other@Example.com', ADMIN = 'admin@example.com';
+
+    it('my profile into someone else\'s: they hear it (the rescuer notice), normalized', () => {
+        expect(dupHintMergePlan({ actor: ME, isAdmin: false, currentTeamOwned: true, matchTeamOwned: false, currentAddedBy: ME, matchAddedBy: OTHER }))
+            .toEqual({ viaAdmin: false, notifyOwner: OTHER, told: ['other@example.com'] });
+    });
+    it('both the team\'s: nobody is told', () => {
+        expect(dupHintMergePlan({ actor: ME, isAdmin: false, currentTeamOwned: true, matchTeamOwned: true, currentAddedBy: MATE, matchAddedBy: ME }))
+            .toEqual({ viaAdmin: false, notifyOwner: null, told: [] });
+    });
+    it('an admin merging two other owners\' profiles: both hear it (notifyMergeOwners), never the admin', () => {
+        expect(dupHintMergePlan({ actor: ADMIN, isAdmin: true, currentTeamOwned: false, matchTeamOwned: false, currentAddedBy: 'gatitos@example.com', matchAddedBy: OTHER }))
+            .toEqual({ viaAdmin: true, notifyOwner: null, told: ['other@example.com', 'gatitos@example.com'] });
+        // An ownerless match: only the other owner.
+        expect(dupHintMergePlan({ actor: ADMIN, isAdmin: true, currentTeamOwned: false, matchTeamOwned: false, currentAddedBy: 'gatitos@example.com', matchAddedBy: 'anonymous' }).told)
+            .toEqual(['gatitos@example.com']);
+    });
+    it('an admin whose own profile folds into someone else\'s: the rescuer path, one person told (singular)', () => {
+        expect(dupHintMergePlan({ actor: ADMIN, isAdmin: true, currentTeamOwned: true, matchTeamOwned: false, currentAddedBy: ADMIN, matchAddedBy: OTHER }))
+            .toEqual({ viaAdmin: false, notifyOwner: OTHER, told: ['other@example.com'] });
+    });
+    it('agrees with decideDedupAction (keep = the match) when the viewer created the profile being edited', () => {
+        const side = (id: string, addedBy: string, teamOwned: boolean) => ({ id, addedBy, createdAt: 1, deleted: false, teamOwned });
+        for (const [matchBy, matchTeam] of [[OTHER, false], [MATE, true], [ME, true]] as const) {
+            const d = decideDedupAction(ME, side('cur', ME, true), side('match', matchBy, matchTeam), 'detected', 'match');
+            const plan = dupHintMergePlan({ actor: ME, isAdmin: false, currentTeamOwned: true, matchTeamOwned: matchTeam, currentAddedBy: ME, matchAddedBy: matchBy });
+            expect(d.kind).toBe('merge');
+            expect(plan.notifyOwner).toBe(d.kind === 'merge' ? d.notifyOwner : 'x');
+        }
+    });
+});
+
+describe('mergeOwnersToTell — the one rule for who an admin\'s merge tells', () => {
+    it('real owners only, normalized, once each, never the actor or someone skipped', () => {
+        expect(mergeOwnersToTell('A@x.com', 'a@x.com', 'admin@x.com')).toEqual(['a@x.com']);
+        expect(mergeOwnersToTell('a@x.com', 'b@x.com', 'A@X.com')).toEqual(['b@x.com']);
+        expect(mergeOwnersToTell('anonymous', null, 'admin@x.com')).toEqual([]);
+        expect(mergeOwnersToTell('a@x.com', 'b@x.com', 'admin@x.com', ['B@x.com'])).toEqual(['a@x.com']);
+    });
+});
+
+describe('ratingAfterMerge — the rating the profile that stays will have', () => {
+    it('both profiles\' records together, as the average is computed — never the average of the averages', () => {
+        // 4 and 4 here, one 1 there: (4+4+1)/3 = 3, not (4+1)/2 = 2.5.
+        expect(ratingAfterMerge([{ rating: 4 }, { rating: 4 }], [{ rating: 1 }])).toBe(3);
+        // Unrated records (null, 0) don't count.
+        expect(ratingAfterMerge([{ rating: 4 }, { rating: 0 }], [{ rating: null }])).toBe(4);
+        // Nothing rated on either side: unrated.
+        expect(ratingAfterMerge([], [{ rating: null }])).toBeNull();
+        expect(ratingAfterMerge([], [{ rating: 2 }])).toBe(2);
+    });
+});

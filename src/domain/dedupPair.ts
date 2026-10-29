@@ -55,6 +55,30 @@ export function realOwner(addedBy: string | null | undefined): string | null {
 }
 
 /**
+ * Who an admin's merge tells (notifyMergeOwners): every real owner of either
+ * profile, normalized, once each, never the admin who merged nor anyone in
+ * `skip`.
+ */
+export function mergeOwnersToTell(
+    primaryAddedBy: string | null | undefined,
+    secondaryAddedBy: string | null | undefined,
+    actor: string | null | undefined,
+    skip: readonly string[] = [],
+): string[] {
+    const norm = (e: string) => e.trim().toLowerCase();
+    const out = new Set([actor ?? '', ...skip].map(norm));
+    const owners: string[] = [];
+    for (const e of [primaryAddedBy, secondaryAddedBy]) {
+        if (!e || !e.includes('@')) continue;
+        const k = norm(e);
+        if (out.has(k)) continue;
+        out.add(k);
+        owners.push(k);
+    }
+    return owners;
+}
+
+/**
  * Merge directly or ask?
  *
  * With `keepId` (the side the rescuer chose to keep, D24): both sides

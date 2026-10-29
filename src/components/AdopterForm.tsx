@@ -19,6 +19,7 @@ import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
 import { Modal, ModalActions, ModalText } from "@/components/ui/Modal";
+import { ContinueMergeDialog } from "@/components/ContinueMergeDialog";
 import { MatchCard } from "@/components/MatchCardParts";
 import { AdopterName } from "@/components/AdopterName";
 import { isNamelessAdopter } from "@/lib/adopterDisplay";
@@ -1680,62 +1681,20 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
 
             {/* «Continuar con este perfil»: the typed data goes into that profile — the shared dialog (audit B8). */}
             {pendingMerge && (
-                <Modal title={(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
-                    onClose={() => setPendingMerge(null)} busy={!!continueBusyId} testId="continue-merge-dialog">
-                    <ModalText>{t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}</ModalText>
-                    <ContinueMergePreview
-                        // What the typed data would ADD to that profile (fix round 2, item 20): the typed contacts
-                        // it doesn't already show (newContactsForProfile mirrors the server's merge), else — no
-                        // contact chips — the typed text; plus the household text.
-                        newContacts={contactEntries.length ? newContactsForProfile(contactEntries, pendingMerge.match.adopter, pendingMerge.match.matchValues) : []}
-                        typedText={contactEntries.length ? '' : (data.contactInfo?.trim() ?? '')}
-                        family={data.familyMembers?.trim() ?? ''}
-                    />
-                    <ModalActions
-                        onCancel={() => setPendingMerge(null)}
-                        busy={!!continueBusyId}
-                        confirm={{ label: t('adopter.merge_confirm_action') || 'Sí, continuar', tone: 'primary', testId: 'continue-merge-confirm', onClick: () => { void confirmMerge(); } }}
-                    />
-                </Modal>
+                <ContinueMergeDialog
+                    name={pendingMerge.adopterName}
+                    // What the typed data would ADD to that profile (fix round 2, item 20): the typed contacts
+                    // it doesn't already show (newContactsForProfile mirrors the server's merge), else — no
+                    // contact chips — the typed text; plus the household text.
+                    newContacts={contactEntries.length ? newContactsForProfile(contactEntries, pendingMerge.match.adopter, pendingMerge.match.matchValues) : []}
+                    typedText={contactEntries.length ? '' : (data.contactInfo?.trim() ?? '')}
+                    family={data.familyMembers?.trim() ?? ''}
+                    busy={!!continueBusyId}
+                    onCancel={() => setPendingMerge(null)}
+                    onConfirm={() => { void confirmMerge(); }}
+                />
             )}
 
-        </div>
-    );
-}
-
-/** «Se agregará: …» in «¿Continuar con el perfil de X?», or «No hay información nueva…» when nothing would be added. */
-function ContinueMergePreview({ newContacts, typedText, family }: { newContacts: ContactEntry[]; typedText: string; family: string }) {
-    const { t } = useLanguage();
-    if (newContacts.length === 0 && !typedText && !family) {
-        return (
-            <ModalText testId="continue-merge-nothing-new">{t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}</ModalText>
-        );
-    }
-    return (
-        <div className="rounded-xl px-3 py-3 bg-amber-50 border border-amber-100">
-            <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
-                {t('adopter.merge_confirm_preview') || 'Se agregará:'}
-            </p>
-            <ul className="space-y-1.5 text-sm text-stone-800" data-testid="continue-merge-new">
-                {newContacts.map(e => (
-                    <li key={e.id ?? `${e.type}|${e.value}`}>
-                        <span className="text-xs font-medium text-stone-500">{t(`adopter.ce_type_${e.type}`)}: </span>
-                        <span className="[overflow-wrap:anywhere]">{e.value.trim()}</span>
-                    </li>
-                ))}
-                {typedText && (
-                    <li>
-                        <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
-                        <span className="[overflow-wrap:anywhere]">{typedText}</span>
-                    </li>
-                )}
-                {family && (
-                    <li>
-                        <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
-                        <span className="[overflow-wrap:anywhere]">{family}</span>
-                    </li>
-                )}
-            </ul>
         </div>
     );
 }

@@ -15,24 +15,33 @@
  * - «Ver perfil» opens a window over the page (the shared Modal), so whatever
  *   is being typed stays. Its body (`DupHintProfile`) is the match card's:
  *   MatchCardHeader, their contacts as «¿Es este perfil?» shows them (masked by
- *   the server, the one typed marked «coincide»), their activity, then:
- *     1. «Es la misma persona» → flags the pair for admin review
- *        (flagAdopterAsDuplicate) — only on a saved profile (`excludeAdopterId`).
- *        Flag, never merge (segregation of duties): merging soft-deletes a
- *        record another rescuer may own; an admin decides.
- *     2. «No es esta persona» → closes the window and drops that row while the
- *        typed value stays the same. Local only: no server write, no toast.
- *     3. «Abrir perfil completo en otra pestaña» → writes the search-match
- *        grant (grantSearchMatchAccess) so the new tab renders unmasked, then
- *        opens it; the composer is untouched.
+ *   the server, the one typed marked «coincide»), their activity, then what
+ *   the server decided this viewer may do (`match.action`, Jon 2026-10-29,
+ *   prototype proto-shots/dato-coincide-v3.html — decideDupHintAction):
+ *     - 'continue' (the viewer or their team loaded the profile being edited,
+ *       or an admin): «Continuar con este perfil» → the new-profile form's
+ *       confirmation (ContinueMergeDialog: what it adds, the rating after,
+ *       who is told) → continueWithMatchedProfile, then the profile that
+ *       stayed opens with «Listo: … ahora es este perfil».
+ *     - 'flag' (someone else loaded it, or the match has no owner):
+ *       «Marcar como posible duplicado» (flagAdopterAsDuplicate — the owners
+ *       and the admins are told) and «Abrir perfil para agregar datos».
+ *     - 'review_admins' (they already said no): «Pedir revisión a un
+ *       administrador» (askAdminsToReviewPair, the «Pendientes» dispute).
+ *     - 'pending' (already up for review): only said.
+ *   Always: «No es esta persona» → closes the window and drops that row while
+ *   the typed value stays the same (local only, no server write, no toast);
+ *   «Abrir perfil completo en otra pestaña» → writes the search-match grant
+ *   (grantSearchMatchAccess) so the new tab renders unmasked, then opens it.
  *
  * Data: getDuplicateHintMatches — the same detection the hint always ran,
- * enriched on the server into the «¿Es este perfil?» card data.
+ * enriched on the server into the «¿Es este perfil?» card data and the window's answer.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, Check, CheckCircle2 } from 'lucide-react';
-import { getDuplicateHintMatches, grantSearchMatchAccess, flagAdopterAsDuplicate, countAdoptersBySocialHandle } from '@/app/actions';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, ArrowUpRight, Check, CheckCircle2, Flag, ShieldQuestion } from 'lucide-react';
+import { getDuplicateHintMatches, grantSearchMatchAccess, flagAdopterAsDuplicate, countAdoptersBySocialHandle, continueWithMatchedProfile, askAdminsToReviewPair } from '@/app/actions';
 import type { DupHintMatch } from '@/app/actions/households';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
@@ -50,16 +59,27 @@ import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactE
 import { SUMMARY_CONTACT_TYPES, MAX_SUMMARY_CONTACTS } from '@/domain/householdLinks';
 import { openAlertKinds } from '@/domain/flags';
 import { NO_DISMISSED, dismissDupHintMatch, isDupHintType, visibleDupHintMatches, type DupHintDismissed } from '@/domain/dupHint';
+import { CONTACT_ENTRIES_FULL } from '@/lib/contactEntries';
+import { joinNames } from '@/lib/householdCopy';
+import { ContinueMergeDialog } from '@/components/ContinueMergeDialog';
+import { rememberContinued } from '@/components/ContinuedProfileBanner';
 
 interface Props {
     /** Strong identifier type the user just typed. Address/alias/other are no-op. */
     type: ContactEntryType;
     /** The typed value. Empty string clears the hint. Whitespace is ignored. */
     value: string;
-    /** The profile being edited: never a match, and «Es la misma persona» needs it. */
+    /** The profile being edited: never a match, and every answer in the window needs it. */
     excludeAdopterId?: string;
+    /** The network picked for a social handle: saved with the value on «Continuar». */
+    platform?: string;
+    /** WhatsApp / Telegram picked for a phone: saved with the value on «Continuar». */
+    apps?: string[];
     className?: string;
 }
+
+/** What a row says once answered: «✓ Marcado» / «✓ Enviado a los administradores». */
+export type DupHintDone = 'flagged' | 'sent';
 
 // A social handle on more than this many records is almost certainly a shared /
 // rescuer contact mis-entered on adopters, not a real duplicate (dedup spec §4).
@@ -70,9 +90,9 @@ const WARNING_BOX = { background: 'var(--status-warning-bg)', borderColor: 'var(
 const matchName = (m: DupHintMatch, nameless: string) => m.adopter?.name?.trim() || m.adopterName?.trim() || nameless;
 
 /** The inline box: header + one compact row per match. Presentational. */
-export function DupHintBox({ matches, flagged, onView, className = '' }: {
+export function DupHintBox({ matches, done, onView, className = '' }: {
     matches: readonly DupHintMatch[];
-    flagged: ReadonlySet<string>;
+    done: ReadonlyMap<string, DupHintDone>;
     onView: (adopterId: string) => void;
     className?: string;
 }) {
@@ -99,9 +119,11 @@ export function DupHintBox({ matches, flagged, onView, className = '' }: {
                             <div className="mt-0.5 flex flex-wrap gap-1"><RatingBadge rating={m.rating ?? m.avgRating} /></div>
                             <CardHouseholdLine lines={m.householdLine} className="mt-1" />
                         </div>
-                        {flagged.has(m.adopterId) ? (
-                            <span className="shrink-0 inline-flex items-center gap-1 min-h-[44px] pr-1 text-[13px] font-semibold text-teal-700" data-testid="dup-hint-flagged">
-                                <Check className="w-4 h-4" aria-hidden="true" />{t('adopter.dup_hint_flagged')}
+                        {done.has(m.adopterId) ? (
+                            <span className="shrink-0 inline-flex items-center gap-1 min-h-[44px] pr-1 text-[13px] font-semibold text-teal-700 text-right"
+                                data-testid={done.get(m.adopterId) === 'sent' ? 'dup-hint-sent' : 'dup-hint-flagged'}>
+                                <Check className="w-4 h-4 shrink-0" aria-hidden="true" />
+                                {done.get(m.adopterId) === 'sent' ? t('adopter.dup_hint_review_sent') : t('adopter.dup_hint_flagged')}
                             </span>
                         ) : (
                             <Button type="button" variant="secondary" size="compact" layoutClassName="shrink-0" onClick={() => onView(m.adopterId)} data-testid="dup-hint-view">
@@ -115,14 +137,16 @@ export function DupHintBox({ matches, flagged, onView, className = '' }: {
     );
 }
 
-/** The window's body: the match card + the three answers. Presentational. */
-export function DupHintProfile({ match, canFlag, flagging = false, opening = false, onSame, onNotThis, onOpenFull }: {
+/** The window's body: the match card + the answers the server decided (`match.action`). Presentational. */
+export function DupHintProfile({ match, canAct, busy = null, onContinue, onFlag, onReview, onNotThis, onOpenFull }: {
     match: DupHintMatch;
-    /** A saved profile is being edited: «Es la misma persona» can flag the pair. */
-    canFlag: boolean;
-    flagging?: boolean;
-    opening?: boolean;
-    onSame: () => void;
+    /** A saved profile is being edited: the window's answer (continue / flag / review) can be given. */
+    canAct: boolean;
+    /** Which answer is running (its button spins; all are disabled). */
+    busy?: 'flag' | 'review' | 'open' | null;
+    onContinue: () => void;
+    onFlag: () => void;
+    onReview: () => void;
     onNotThis: () => void;
     onOpenFull: () => void;
 }) {
@@ -133,9 +157,25 @@ export function DupHintProfile({ match, canFlag, flagging = false, opening = fal
         .map((entry, index) => ({ entry, matched: matched.has(index) }))
         .filter(c => SUMMARY_CONTACT_TYPES.includes(c.entry.type))
         .slice(0, MAX_SUMMARY_CONTACTS);
-    const busy = flagging || opening;
+    const disabled = !!busy;
+    const action = canAct ? match.action : null;
+    const note = (text: string, testId: string) => (
+        <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }} data-testid={testId}>{text}</p>
+    );
+    const notThis = (
+        <Button type="button" variant="secondary" fullWidth onClick={onNotThis} disabled={disabled} data-testid="dup-hint-not-this">
+            {t('formResults.not_this_person')}
+        </Button>
+    );
+    const openLink = (
+        <button type="button" onClick={onOpenFull} disabled={disabled} data-testid="dup-hint-open-full"
+            className="inline-flex items-center justify-center gap-1 min-h-[44px] px-2 rounded-xl text-[13px] font-semibold text-teal-700 hover:underline disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
+            {t('adopter.dup_hint_open_full')}
+            <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
+        </button>
+    );
     return (
-        <div className="space-y-3 min-w-0" data-testid="dup-hint-profile">
+        <div className="space-y-3 min-w-0" data-testid="dup-hint-profile" data-action={action ?? 'none'}>
             <MatchCardHeader
                 person={{
                     id: match.adopterId, name,
@@ -157,28 +197,99 @@ export function DupHintProfile({ match, canFlag, flagging = false, opening = fal
             )}
             {match.activity && <div><PersonActivity activity={match.activity} testId="dup-hint-activity" /></div>}
             <div className="flex flex-col gap-2 pt-1">
-                {canFlag && (
-                    <Button type="button" fullWidth onClick={onSame} disabled={busy} loading={flagging} data-testid="dup-hint-same"
-                        icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
-                        {t('formResults.same_person')}
-                    </Button>
+                {action === 'continue' && (
+                    <>
+                        {match.alreadyPending && note(t('adopter.dup_hint_pending'), 'dup-hint-pending-note')}
+                        <Button type="button" fullWidth onClick={onContinue} disabled={disabled} data-testid="dup-hint-continue"
+                            icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
+                            {t('adopter.dup_action_continue_with_existing')}
+                        </Button>
+                        {notThis}
+                        {openLink}
+                    </>
                 )}
-                <Button type="button" variant="secondary" fullWidth onClick={onNotThis} disabled={busy} data-testid="dup-hint-not-this">
-                    {t('formResults.not_this_person')}
-                </Button>
-                <button type="button" onClick={onOpenFull} disabled={busy} data-testid="dup-hint-open-full"
-                    className="inline-flex items-center justify-center gap-1 min-h-[44px] px-2 rounded-xl text-[13px] font-semibold text-teal-700 hover:underline disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
-                    {t('adopter.dup_hint_open_full')}
-                    <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
-                </button>
+                {action === 'flag' && (
+                    <>
+                        {match.loadedByOther && note(t('adopter.dup_hint_cant_join'), 'dup-hint-cant-join')}
+                        <Button type="button" fullWidth onClick={onFlag} disabled={disabled} loading={busy === 'flag'} data-testid="dup-hint-flag"
+                            icon={<Flag className="w-4 h-4" aria-hidden="true" />}>
+                            {t('adopter.dup_hint_flag_action')}
+                        </Button>
+                        <p className="-mt-1 text-center text-xs" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-flag-told">{t('adopter.dup_hint_flag_told')}</p>
+                        <Button type="button" variant="secondary" fullWidth onClick={onOpenFull} disabled={disabled} loading={busy === 'open'} data-testid="dup-hint-open-to-add"
+                            icon={<ArrowUpRight className="w-4 h-4" aria-hidden="true" />}>
+                            {t('adopter.dup_hint_open_to_add')}
+                        </Button>
+                        {notThis}
+                    </>
+                )}
+                {action === 'review_admins' && (
+                    <>
+                        {note(t('adopter.dup_hint_said_no'), 'dup-hint-said-no')}
+                        <Button type="button" fullWidth onClick={onReview} disabled={disabled} loading={busy === 'review'} data-testid="dup-hint-review"
+                            icon={<ShieldQuestion className="w-4 h-4" aria-hidden="true" />}>
+                            {t('myAdopters.pending_d_action_dispute')}
+                        </Button>
+                        {notThis}
+                        {openLink}
+                    </>
+                )}
+                {action === 'pending' && (
+                    <>
+                        {note(t('adopter.dup_hint_pending'), 'dup-hint-pending-note')}
+                        {notThis}
+                        {openLink}
+                    </>
+                )}
+                {action === null && (
+                    <>
+                        {notThis}
+                        {openLink}
+                    </>
+                )}
             </div>
         </div>
     );
 }
 
-export default function DuplicateHint({ type, value, excludeAdopterId, className }: Props) {
+/** «¿Continuar con el perfil de X?» for a match: the shared dialog, with the rating after and who is told. */
+export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfirm }: {
+    match: DupHintMatch;
+    busy: boolean;
+    /** Shown under the preview when «Sí, continuar» failed (already in words, with its id). */
+    failure: string | null;
+    onCancel: () => void;
+    onConfirm: () => void;
+}) {
+    const { t } = useLanguage();
+    const told = match.toldNames ?? [];
+    const toldLine = told.length === 0 ? null
+        : told.length === 1 ? t('adopter.dup_hint_confirm_told_one').replace('{name}', told[0])
+            : t('adopter.dup_hint_confirm_told_many').replace('{names}', joinNames(t, told));
+    return (
+        <ContinueMergeDialog
+            name={matchName(match, t('adopter.nameless'))}
+            newContacts={match.preview?.newContacts ?? []}
+            records={match.preview?.records ?? 0}
+            busy={busy}
+            onCancel={onCancel}
+            onConfirm={onConfirm}
+            testId="dup-hint-confirm"
+            confirmTestId="dup-hint-confirm-yes"
+        >
+            <p className="flex flex-wrap items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }} data-testid="dup-hint-rating-after">
+                {t('adopter.dup_hint_rating_after')} <RatingBadge rating={match.preview?.ratingAfter ?? null} />
+            </p>
+            {toldLine && <p className="text-xs [overflow-wrap:anywhere]" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-confirm-told">{toldLine}</p>}
+            {failure && <p role="alert" className="text-sm font-medium [overflow-wrap:anywhere]" style={{ color: 'var(--status-error-text)' }} data-testid="dup-hint-confirm-failed">{failure}</p>}
+        </ContinueMergeDialog>
+    );
+}
+
+export default function DuplicateHint({ type, value, excludeAdopterId, platform, apps, className }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
+    const router = useRouter();
     const [matches, setMatches] = useState<DupHintMatch[]>([]);
     const [handleCount, setHandleCount] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -187,10 +298,14 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
     // «No es esta persona», for the value it was answered on.
     const [dismissed, setDismissed] = useState<DupHintDismissed>(NO_DISMISSED);
     const [openId, setOpenId] = useState<string | null>(null);
-    const [flagging, setFlagging] = useState(false);
-    const [opening, setOpening] = useState(false);
-    // Pairs already flagged here: no second flag row on a double tap, and «✓ Marcado» without a reload.
-    const [flagged, setFlagged] = useState<ReadonlySet<string>>(new Set());
+    const [busy, setBusy] = useState<'flag' | 'review' | 'open' | null>(null);
+    // «Continuar con este perfil» → its confirmation (the match id), and a failure said in it.
+    const [confirmId, setConfirmId] = useState<string | null>(null);
+    const [continuing, setContinuing] = useState(false);
+    const [continueFailure, setContinueFailure] = useState<string | null>(null);
+    // Rows answered here: no second flag / request on a double tap, and «✓ …» without a reload.
+    const [done, setDone] = useState<ReadonlyMap<string, DupHintDone>>(new Map());
+    const markDone = (adopterId: string, what: DupHintDone) => setDone(prev => new Map(prev).set(adopterId, what));
     const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -215,7 +330,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
 
         (async () => {
             try {
-                const res = await getDuplicateHintMatches({ type, value: v, excludeAdopterId });
+                const res = await getDuplicateHintMatches({ type, value: v, excludeAdopterId, ...(type === 'social' && platform ? { platform } : {}) });
                 if (ctl.signal.aborted) return;
                 // A failed check is logged on the server (errorId); the hint is advisory, so the composer carries on.
                 if (res.failed) {
@@ -244,7 +359,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
         return () => {
             ctl.abort();
         };
-    }, [type, value, excludeAdopterId]);
+    }, [type, value, excludeAdopterId, platform]);
 
     if (loading) {
         return (
@@ -279,22 +394,22 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
     };
 
     const handleOpenFull = async (adopterId: string) => {
-        setOpening(true);
+        setBusy('open');
         try {
             // Awaited, so the new tab loads unmasked; a new tab keeps the composer as it is.
             const res = await grantSearchMatchAccess({ adopterId, query: value.trim() });
             if (!res.ok) console.warn('[DuplicateHint] grantSearchMatchAccess refused — the profile opens masked', { adopterId, error: res.error });
             window.open(`/adopter/${adopterId}`, '_blank', 'noopener,noreferrer');
         } catch (e) {
-            toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'DuplicateHint.openFull'));
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', undefined, resolveErrorId(e, 'DuplicateHint.openFull'));
         } finally {
-            setOpening(false);
+            setBusy(null);
         }
     };
 
-    const handleSame = async (m: DupHintMatch) => {
-        if (!excludeAdopterId || flagged.has(m.adopterId)) return;
-        setFlagging(true);
+    const handleFlag = async (m: DupHintMatch) => {
+        if (!excludeAdopterId || done.has(m.adopterId)) return;
+        setBusy('flag');
         try {
             const res = await flagAdopterAsDuplicate({
                 currentAdopterId: excludeAdopterId,
@@ -302,37 +417,103 @@ export default function DuplicateHint({ type, value, excludeAdopterId, className
                 matchedAdopterName: m.adopterName,
             });
             if (res.ok) {
-                toast.success('🚩', t('adopter.dup_hint_flag_success'));
-                setFlagged(prev => new Set(prev).add(m.adopterId));
+                // Already up for review: nothing new was sent, so it doesn't say «Les avisamos».
+                if (res.already) toast.info(t('adopter.dup_hint_pending'));
+                else toast.success('🚩', t('adopter.dup_hint_flag_success'));
+                markDone(m.adopterId, 'flagged');
                 setOpenId(null);
             } else {
                 // `internal_error:<errorId>`: the id was logged server-side.
-                const errorId = res.error.includes(':') ? res.error.split(':')[1] : undefined;
+                const errorId = res.error.includes(':') ? res.error.split(':')[1] : resolveErrorId(new Error(`flagAdopterAsDuplicate: ${res.error}`), 'DuplicateHint.flag');
                 toast.error(t('errors.generic') || 'Error', t('adopter.dup_hint_flag_failed'), errorId);
             }
         } catch (e) {
-            console.error('[DuplicateHint] flagAdopterAsDuplicate threw:', { excludeAdopterId, matchedAdopterId: m.adopterId, error: e });
-            toast.error(t('errors.generic') || 'Error', t('errors.flag_duplicate_failed') || undefined, resolveErrorId(e, 'DuplicateHint'));
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('errors.flag_duplicate_failed') || undefined, resolveErrorId(e, 'DuplicateHint.flag'));
         } finally {
-            setFlagging(false);
+            setBusy(null);
         }
     };
 
+    const handleReview = async (m: DupHintMatch) => {
+        if (!excludeAdopterId || done.has(m.adopterId)) return;
+        setBusy('review');
+        try {
+            const res = await askAdminsToReviewPair({ currentId: excludeAdopterId, matchId: m.adopterId });
+            if (res.ok) {
+                toast.success('✓', t('myAdopters.pending_d_disputed'));
+                markDone(m.adopterId, 'sent');
+                setOpenId(null);
+            } else {
+                toast.error(t('errors.generic') || 'Error', t('adopter.dup_hint_review_failed'), res.errorId);
+            }
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('adopter.dup_hint_review_failed'), resolveErrorId(e, 'DuplicateHint.review'));
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const confirmContinue = async (m: DupHintMatch) => {
+        if (!excludeAdopterId || continuing) return;
+        setContinuing(true);
+        setContinueFailure(null);
+        const failed = (errorId: string) => {
+            setContinueFailure(t('adopter.dup_hint_join_failed').replace('{id}', errorId));
+            setContinuing(false);
+        };
+        try {
+            const typed = value.trim();
+            const res = await continueWithMatchedProfile({
+                currentId: excludeAdopterId,
+                matchId: m.adopterId,
+                ...(typed && isDupHintType(type) ? { typed: { type, value: typed, ...(platform ? { platform } : {}), ...(apps?.length ? { apps } : {}) } } : {}),
+            });
+            if (res.ok) {
+                rememberContinued(res.matchId, { name: res.currentName, told: res.told });
+                router.push(`/adopter/${res.matchId}`);
+                return;
+            }
+            if (res.error === CONTACT_ENTRIES_FULL) {
+                // An expected rule (the profile holds the most contacts it can), not a failure.
+                setContinueFailure(t('adopter.ce_add_full'));
+                setContinuing(false);
+                return;
+            }
+            failed(res.errorId);
+        } catch (e) {
+            // An old tab: the «nueva versión» notice says it; no second message here.
+            if (handledAsStale(e)) { setContinuing(false); return; }
+            failed(resolveErrorId(e, 'DuplicateHint.continue'));
+        }
+    };
+
+    const confirming = confirmId ? visible.find(m => m.adopterId === confirmId) ?? null : null;
+
     return (
         <>
-            <DupHintBox matches={visible} flagged={flagged} onView={setOpenId} className={`mt-2 ${className ?? ''}`} />
+            <DupHintBox matches={visible} done={done} onView={setOpenId} className={`mt-2 ${className ?? ''}`} />
             {open && (
-                <Modal title={t('adopter.hh_candidate_title')} onClose={() => setOpenId(null)} busy={flagging} testId="dup-hint-window">
+                <Modal title={t('adopter.hh_candidate_title')} onClose={() => setOpenId(null)} busy={!!busy} testId="dup-hint-window">
                     <DupHintProfile
                         match={open}
-                        canFlag={!!excludeAdopterId}
-                        flagging={flagging}
-                        opening={opening}
-                        onSame={() => handleSame(open)}
+                        canAct={!!excludeAdopterId}
+                        busy={busy}
+                        onContinue={() => { setContinueFailure(null); setConfirmId(open.adopterId); setOpenId(null); }}
+                        onFlag={() => handleFlag(open)}
+                        onReview={() => handleReview(open)}
                         onNotThis={() => handleNotThis(open.adopterId)}
                         onOpenFull={() => handleOpenFull(open.adopterId)}
                     />
                 </Modal>
+            )}
+            {confirming && (
+                <DupHintContinueDialog
+                    match={confirming}
+                    busy={continuing}
+                    failure={continueFailure}
+                    onCancel={() => { setConfirmId(null); setContinueFailure(null); }}
+                    onConfirm={() => { void confirmContinue(confirming); }}
+                />
             )}
         </>
     );

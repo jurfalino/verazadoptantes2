@@ -12,6 +12,7 @@
  *   the typed value stays the same (local only, no server write).
  */
 import { normalizeIdValue, normalizeSocialHandle } from '@/lib/tokenizer';
+import { mergeOwnersToTell, realOwner } from '@/domain/dedupPair';
 
 export type DupHintType = 'phone' | 'email' | 'social' | 'id';
 
@@ -101,4 +102,80 @@ export function visibleDupHintMatches<T extends { adopterId: string }>(matches: 
     const v = value.trim();
     if (!v || dismissed.value !== v || dismissed.ids.length === 0) return [...matches];
     return matches.filter(m => !dismissed.ids.includes(m.adopterId));
+}
+
+// ─────────────── What the window offers (Jon 2026-10-29, prototype dato-coincide-v3) ───────────────
+
+/**
+ * What the «Ver perfil» window offers for one match, decided on the server
+ * (getDuplicateHintMatches) and re-decided by every action it leads to:
+ * - 'continue': «Continuar con este perfil» — the match keeps everything of
+ *   the profile being edited (case 1: the viewer or their team loaded it, or
+ *   the viewer is an admin).
+ * - 'flag': «Marcar como posible duplicado» — someone else loaded the profile
+ *   being edited (case 2), or the match has no real owner (case 3, D42: never
+ *   absorbed into an ownerless profile without an admin).
+ * - 'review_admins': «Ya dijeron que no son la misma persona» — the other
+ *   owner declined the viewer team's request on this pair, or an admin ruled
+ *   them separate (case 4): only the admins can be asked.
+ * - 'pending': an open duplicate flag or a pending merge request already
+ *   covers the pair (case 5): no second flag, no second notice.
+ */
+export type DupHintAction = 'continue' | 'flag' | 'review_admins' | 'pending';
+
+export interface DupHintFacts {
+    isAdmin: boolean;
+    /** The viewer or a teammate loaded the profile being edited (isOwnerOrOrgMate). */
+    currentTeamOwned: boolean;
+    /** The match has a real owner (realOwner(addedBy)). */
+    matchHasOwner: boolean;
+    /** PairVerdict.declinedForTeam. */
+    declinedForTeam: boolean;
+    /** PairVerdict.adminRuledSeparate. */
+    adminRuledSeparate: boolean;
+    /** An open duplicate flag (either direction) or a pending merge request on the pair. */
+    pending: boolean;
+}
+
+/**
+ * Priority 4 (said no) > 5 (pending) > 3 (ownerless) > 1 / 2. Admins choose
+ * freely (D24): always 'continue' — a pending flag or request is only said
+ * («Ya está marcado para revisar.»), and their merge closes it.
+ */
+export function decideDupHintAction(f: DupHintFacts): DupHintAction {
+    if (f.isAdmin) return 'continue';
+    if (f.declinedForTeam || f.adminRuledSeparate) return 'review_admins';
+    if (f.pending) return 'pending';
+    if (!f.matchHasOwner) return 'flag';
+    return f.currentTeamOwned ? 'continue' : 'flag';
+}
+
+/**
+ * «Continuar con este perfil»: the match survives, the profile being edited is
+ * absorbed — with the same notices as «Pendientes» (mergePendingDedupPair):
+ * - a rescuer merge (the absorbed side is the team's, the kept side is the
+ *   team's or has a real owner): the kept side's owner hears it when foreign
+ *   (`notifyOwner`, adopter_merged_by_rescuer);
+ * - otherwise an admin's (`viaAdmin`): whoever loaded either profile hears it
+ *   (notifyMergeOwners), never the admin.
+ * `told`: exactly who those notices go to (emails, normalized) — the
+ * confirmation's «Le avisamos a …» line is built from it.
+ */
+export function dupHintMergePlan(input: {
+    actor: string;
+    isAdmin: boolean;
+    currentTeamOwned: boolean;
+    matchTeamOwned: boolean;
+    currentAddedBy: string | null;
+    matchAddedBy: string | null;
+}): { viaAdmin: boolean; notifyOwner: string | null; told: string[] } {
+    const matchOwner = realOwner(input.matchAddedBy);
+    const rescuerMerge = input.currentTeamOwned && (input.matchTeamOwned || !!matchOwner);
+    const notifyOwner = rescuerMerge && !input.matchTeamOwned ? matchOwner : null;
+    const viaAdmin = input.isAdmin && !rescuerMerge;
+    const norm = (e: string) => e.trim().toLowerCase();
+    const told = viaAdmin
+        ? mergeOwnersToTell(input.matchAddedBy, input.currentAddedBy, input.actor)
+        : notifyOwner && norm(notifyOwner) !== norm(input.actor) ? [norm(notifyOwner)] : [];
+    return { viaAdmin, notifyOwner, told };
 }

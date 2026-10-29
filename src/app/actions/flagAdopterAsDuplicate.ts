@@ -1,7 +1,8 @@
 'use server';
 
-import { getUser } from './_db';
+import { getDb, getUser } from './_db';
 import { flagAdopter } from './flags';
+import { pairUnderReview } from '@/lib/pairVerdict';
 import { FLAG_REASONS } from '@/domain/constants';
 import { logger } from '@/lib/logger';
 
@@ -22,13 +23,19 @@ import { logger } from '@/lib/logger';
  *
  * Thin wrapper over `flagAdopter` (reason=DUPLICATE, target=matched
  * adopter id). `flagAdopter` already inserts an adopter_flags row,
- * writes to adopter_history, audit-logs, and notifies admins via push.
+ * writes to adopter_history, audit-logs, and notifies admins and both
+ * profiles' owner teams.
+ *
+ * Once per pair (case 5, «Ya está marcado para revisar»): when an open
+ * duplicate flag (either direction) or a pending merge request already covers
+ * the pair, nothing is written and nobody is told again — `already: true`
+ * (with the open flag's id when there is one).
  */
 export async function flagAdopterAsDuplicate(input: {
     currentAdopterId: string;
     matchedAdopterId: string;
     matchedAdopterName: string;
-}): Promise<{ ok: true; flagId: string } | { ok: false; error: string }> {
+}): Promise<{ ok: true; flagId: string; already?: true } | { ok: false; error: string }> {
     const user = await getUser();
     if (!user) return { ok: false, error: 'unauthenticated' };
 
@@ -38,6 +45,15 @@ export async function flagAdopterAsDuplicate(input: {
     if (currentAdopterId === matchedAdopterId) return { ok: false, error: 'same_adopter' };
 
     try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const review = await pairUnderReview(db, currentAdopterId, matchedAdopterId);
+        if (review.flagId || review.requestPending) {
+            logger.info('flagAdopterAsDuplicate: the pair is already up for review, no second flag', {
+                currentAdopterId, matchedAdopterId, user, openFlag: !!review.flagId, requestPending: review.requestPending,
+            });
+            return { ok: true, flagId: review.flagId ?? '', already: true };
+        }
         // Details payload captures provenance for admin review: which rescuer
         // raised the flag and what name the match had. Match values aren't
         // included to avoid re-logging PII the flag-bearer already knows.

@@ -65,3 +65,16 @@ export function getRatingDisplayLevel(rating: number): 0 | RatingLevel {
 export function ratingBansAdopting(avgRating: number | null | undefined): boolean {
     return avgRating != null && getRatingDisplayLevel(avgRating) === 1;
 }
+
+/**
+ * The rating a profile will have once another is merged into it: a merge
+ * moves every record of the absorbed profile onto the survivor, so it is the
+ * same rule (computeAvgRating) over both profiles' records together — never
+ * the average of the two averages.
+ */
+export function ratingAfterMerge(
+    survivor: { rating: number | null | undefined }[],
+    absorbed: { rating: number | null | undefined }[],
+): number | null {
+    return computeAvgRating([...survivor, ...absorbed]);
+}

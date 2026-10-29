@@ -9,12 +9,12 @@
  */
 
 import { and, eq, or } from 'drizzle-orm';
-import { adopters, mergeDisputes, mergeRequests } from '@/db/schema';
+import { adopterFlags, adopters, mergeDisputes, mergeRequests } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { getTeamEmails, isOwnerOrOrgMate, normEmail } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
-import { mergeNeedsAdmins, pairVerdict, type MergeDisputeStatus, type MergeRequestStatus, type PairVerdict } from '@/domain/dedupPair';
+import { isOpenDuplicateFlag, mergeNeedsAdmins, pairVerdict, type MergeDisputeStatus, type MergeRequestStatus, type PairVerdict } from '@/domain/dedupPair';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -57,4 +57,30 @@ export async function refuseDisputedMerge(db: Db, input: { keepId: string; absor
     const refused = mergeNeedsAdmins(verdict, keepTeamOwned);
     if (refused) logger.info('refuseDisputedMerge: the admins decide this pair', { primaryId: input.keepId, secondaryId: input.absorbedId, actor: input.actor, ...verdict });
     return refused;
+}
+
+/**
+ * Is the pair (a, b) already up for review? `flagId`: an open duplicate flag
+ * on it, either direction (isOpenDuplicateFlag: not merged, not kept
+ * separate); `requestPending`: a pending merge request on it, either
+ * orientation. Two bounded queries, never `IN (…)`. Throws on a DB error —
+ * the caller decides.
+ */
+export async function pairUnderReview(db: Db, a: string, b: string): Promise<{ flagId: string | null; requestPending: boolean }> {
+    const [flags, request] = await Promise.all([
+        db.select({ id: adopterFlags.id, adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
+            .from(adopterFlags).where(and(eq(adopterFlags.reason, 'duplicate'), or(
+                and(eq(adopterFlags.adopterId, a), eq(adopterFlags.targetAdopterId, b)),
+                and(eq(adopterFlags.adopterId, b), eq(adopterFlags.targetAdopterId, a)),
+            ))).all() as Promise<Array<{ id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null }>>,
+        db.select({ id: mergeRequests.id }).from(mergeRequests).where(and(
+            or(
+                and(eq(mergeRequests.primaryId, a), eq(mergeRequests.secondaryId, b)),
+                and(eq(mergeRequests.primaryId, b), eq(mergeRequests.secondaryId, a)),
+            ),
+            eq(mergeRequests.status, 'pending'),
+        )).get() as Promise<{ id: string } | undefined>,
+    ]);
+    const open = flags.find(f => isOpenDuplicateFlag(f));
+    return { flagId: open?.id ?? null, requestPending: !!request };
 }

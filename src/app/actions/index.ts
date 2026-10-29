@@ -51,6 +51,7 @@ export { changeProfileName, changeProfileAge, undoProfileRename, getRenameUndoOp
 export type { ChangeProfileNameResult, ChangeProfileAgeResult, UndoProfileRenameResult, RenameUndoOption, ProfileIdentityError } from './profileIdentity';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
 export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
+export { continueWithMatchedProfile, askAdminsToReviewPair } from './dupHintActions';
 
 // Enrichment
 // enrichAdopters: import from './enrichAdopters' (server-only helper, not an action).

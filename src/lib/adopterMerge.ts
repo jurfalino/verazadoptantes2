@@ -21,7 +21,7 @@ import { knownAsNames, preserveRenameAliases, withRenameAliases } from '@/domain
 import { deserializeHouseholdMembers, serializeHouseholdMembers, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
-import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
+import { MERGED_FLAG_DETAILS_PREFIX, mergeOwnersToTell } from '@/domain/dedupPair';
 import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
@@ -904,13 +904,9 @@ export async function notifyMergeOwners(
     opts: { skip?: readonly string[] } = {},
 ): Promise<number> {
     // Normalized: notifications are keyed (bell, email) by the lowercased
-    // email, and `added_by` keeps whatever case it was written with.
-    const norm = (e: string) => e.trim().toLowerCase();
-    const skip = new Set([actorEmail ?? '', ...(opts.skip ?? [])].map(norm));
-    const owners = [...new Set([merge.primaryAddedBy, merge.secondaryAddedBy]
-        .filter((e): e is string => !!e && e.includes('@'))
-        .map(norm))]
-        .filter(e => !skip.has(e));
+    // email, and `added_by` keeps whatever case it was written with. The one
+    // rule for who hears it (the dup hint's «Les avisamos a …» uses it too).
+    const owners = mergeOwnersToTell(merge.primaryAddedBy, merge.secondaryAddedBy, actorEmail, opts.skip ?? []);
     if (!owners.length) return 0;
     const { createNotification } = await import('@/app/actions/notifications');
     // D31: each side's owner and date, when the absorbed profile is known.

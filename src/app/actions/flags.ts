@@ -10,6 +10,7 @@ import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
 import { runAfterResponse } from '@/lib/background';
 import { historyKindFor } from '@/lib/profilePrivilege';
+import { FLAG_REASONS } from '@/domain/constants';
 
 export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string) {
     const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
@@ -51,13 +52,27 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
 
         logAudit({ userEmail: flaggedBy, action: 'flag_created', target: adopterId, details: { reason, details } });
 
-        // Notify admins (after the response, kept alive — see src/lib/background.ts)
+        // Notify admins (after the response, kept alive — see src/lib/background.ts).
+        // A duplicate flag with a target also tells both profiles' owner teams
+        // first (duplicate_flagged); an owner who is an admin gets only that one.
         await runAfterResponse('flagAdopter.notifyAdmins', async () => {
+            let ownersTold: string[] = [];
+            if (reason === FLAG_REASONS.DUPLICATE && targetAdopterId) {
+                try {
+                    const { notifyDuplicateFlagOwners } = await import('@/lib/duplicateFlagNotices');
+                    ownersTold = await notifyDuplicateFlagOwners({ adopterId, targetAdopterId, flaggedBy });
+                } catch (e) {
+                    logger.warn('flagAdopter: duplicate owner notices not sent', {
+                        adopterId, targetAdopterId, actor: flaggedBy, error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }
             const [{ notifyAdmins, resolveDisplayName }, { notificationContent }] = await Promise.all([
                 import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
             ]);
             const displayName = await resolveDisplayName(flaggedBy);
             await notifyAdmins({
+                skip: ownersTold,
                 actorEmail: flaggedBy,
                 type: 'adopter_flagged',
                 ...notificationContent({ key: 'adopter_flagged', params: { reporterName: displayName, reason } }),
@@ -65,7 +80,7 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
                 icon: '🚩',
                 metadata: { adopterId, reason, details },
             });
-        }, { adopterId, flaggedBy });
+        }, { adopterId, targetAdopterId: targetAdopterId ?? null, flaggedBy });
 
         return { success: true, id };
     } catch (error) {
