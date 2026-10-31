@@ -1,7 +1,8 @@
 export const runtime = 'edge';
 
 import { getDb } from '@/app/actions/_db';
-import { dataRequests } from '@/db/schema';
+import { adopters, dataRequests } from '@/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -38,6 +39,24 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Database unavailable' }, { status: 500 });
         }
 
+        // A report about a profile must name a live one (a made-up id would still reach every admin).
+        if (adopterId) {
+            const live = await db.select({ id: adopters.id, deletedAt: adopters.deletedAt })
+                .from(adopters).where(eq(adopters.id, adopterId)).get() as { id: string; deletedAt: Date | null } | undefined;
+            if (!live || live.deletedAt) {
+                return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+            }
+        }
+
+        // One open report per person per profile tells people once: a repeat is
+        // kept (it may add detail) but sends nothing — as requestAdopterDeletion does.
+        const alreadyOpen = adopterId ? !!(await db.select({ id: dataRequests.id }).from(dataRequests).where(and(
+            eq(dataRequests.adopterId, adopterId),
+            eq(dataRequests.requesterEmail, requester),
+            eq(dataRequests.requestType, requestType),
+            eq(dataRequests.status, 'pending'),
+        )).get()) : false;
+
         const { resolveDisplayName } = await import('@/app/actions/notifications');
         const requesterName = await resolveDisplayName(requester);
 
@@ -50,11 +69,11 @@ export async function POST(req: NextRequest) {
             requestType,
             details,
         });
-        logger.info('Data request filed', { adopterId, requester, requestType });
+        logger.info('Data request filed', { adopterId, requester, requestType, repeat: alreadyOpen });
 
         // «La información es incorrecta» tells everyone who can fix the profile,
         // then the admins (after the response, kept alive — see src/lib/background.ts).
-        if ((requestType as RequestType) === 'inaccuracy' && adopterId) {
+        if ((requestType as RequestType) === 'inaccuracy' && adopterId && !alreadyOpen) {
             const profileId = adopterId;
             await runAfterResponse('dataRequest.notifyInaccuracy', async () => {
                 let told: string[] = [];

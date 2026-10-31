@@ -40,7 +40,7 @@ export async function notifyInaccuracyReportEditors(input: { adopterId: string; 
     const adopterName = row?.name?.trim() || null;
     const owner = realOwner(row?.addedBy);
     if (!owner) return { told: [], adopterName };
-    const [team, { editors }] = await Promise.all([getOrgMemberEmailsFor(owner), loadApprovers(adopterId)]);
+    const [team, { editors }] = await Promise.all([getOrgMemberEmailsFor(normEmail(owner)), loadApprovers(adopterId)]);
     const recipients = inaccuracyReportRecipients([[owner], team, editors], reporter);
     if (recipients.length === 0) return { told: [], adopterName };
     const { createNotification, resolveDisplayName } = await import('@/app/actions/notifications');
