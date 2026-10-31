@@ -9,9 +9,9 @@
  *
  * - The inline box (`DupHintBox`): compact, attached to the field, in the
  *   warning tone. One row per match (≤3): the name (plain text), their rating
- *   (RatingBadge, «Sin calificación» when unrated), their household line only
- *   when a housemate has a problem (CardHouseholdLine — the one rendering), and
- *   «Ver perfil». The contact just typed is NOT repeated (it is in the field).
+ *   (RatingBadge, «Sin calificación» when unrated) and «Ver perfil». No
+ *   household line here or in the window (Jon 2026-10-31: «we don't want it
+ *   there»). The contact just typed is NOT repeated (it is in the field).
  * - «Ver perfil» opens a window over the page (the shared Modal), so whatever
  *   is being typed stays. Its body (`DupHintProfile`) is the match card's:
  *   MatchCardHeader, their contacts as «¿Es este perfil?» shows them (masked by
@@ -50,7 +50,6 @@ import { useShowToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { RatingBadge } from '@/components/RatingBadge';
-import { CardHouseholdLine } from '@/components/CardHouseholdLine';
 import { MatchCardHeader } from '@/components/MatchCardParts';
 import { PersonActivity } from '@/components/PersonStanding';
 import { MatchesPill } from '@/components/LinkedProfileSummary';
@@ -123,7 +122,6 @@ export function DupHintBox({ matches, done, onView, className = '' }: {
                                 {matchName(m, t('adopter.nameless'))}
                             </div>
                             <div className="mt-0.5 flex flex-wrap gap-1"><RatingBadge rating={m.rating ?? m.avgRating} /></div>
-                            <CardHouseholdLine lines={m.householdLine} className="mt-1" />
                         </div>
                         {done.has(m.adopterId) ? (
                             <span className="shrink-0 inline-flex items-center gap-1 min-h-[44px] pr-1 text-[13px] font-semibold text-right" style={{ color: 'var(--accent)' }}
@@ -190,7 +188,6 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
                     rating: match.rating ?? match.avgRating,
                     openAlerts: match.openAlerts ?? openAlertKinds(match.flags),
                     isMinor: !!match.isMinor,
-                    households: match.householdLine,
                 }}
                 thumbnail={match.thumbnail}
                 newTab

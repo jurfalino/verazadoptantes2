@@ -8,9 +8,9 @@ import { ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, 
  * the phone already sits on two profiles the admin owns (masked for this
  * viewer) — case 2, «Marcar como posible duplicado»:
  *
- *   1. The compact inline box: two rows (name, rating, «Ver perfil»), the
- *      household line only on the one whose housemate is 1★, the typed phone
- *      never repeated.
+ *   1. The compact inline box: two rows (name, rating, «Ver perfil»), no
+ *      household line — not even on the one whose housemate is 1★ (Jon
+ *      2026-10-31) — the typed phone never repeated.
  *   2. «Ver perfil» opens a window over the page: the match card, the phone
  *      that matched marked «coincide»; «No es esta persona» closes it and that
  *      row is gone — the typed phone still in the field.
@@ -48,7 +48,7 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         UNO_ID = await createProfileViaApi(admin, { name: UNO, phone: PHONE });
         DOS_ID = await createProfileViaApi(admin, { name: DOS, phone: PHONE });
         insertProfile({ id: ANCHOR, name: `Duphint Ana ${stamp}`, owner: OWNER });
-        // Dos lives with someone rated 1★: the problem that brings the household line.
+        // Dos lives with someone rated 1★: the problem that would bring the household line on a search card — never here.
         insertProfile({ id: HOUSEMATE, name: `Duphint Pedro ${stamp}`, owner: ADMIN_EMAIL });
         insertHousehold(HH, DOS_ID, [{ id: `${HH}-m1`, adopterId: HOUSEMATE, addedBy: ADMIN_EMAIL }]);
         execD1(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-duphint-fixture-ev-${stamp}', '${HOUSEMATE}', 'observation', 1, '${ADMIN_EMAIL}', strftime('%s','now','-3 days'))`);
@@ -77,8 +77,7 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         await expect(box.getByTestId('dup-hint-view')).toHaveCount(2);
         const dos = box.locator(`[data-adopter-id="${DOS_ID}"]`);
         const uno = box.locator(`[data-adopter-id="${UNO_ID}"]`);
-        await expect(dos.getByTestId('card-household-line')).toHaveCount(1);
-        await expect(uno.getByTestId('card-household-line')).toHaveCount(0);
+        await expect(box.getByTestId('card-household-line')).toHaveCount(0);
         // (The names carry the stamp, so look for the number as written.)
         await expect(box).not.toContainText(PHONE);
         await expect(box).not.toContainText(`-${PHONE.slice(-4)}`);
@@ -88,7 +87,7 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         const win = page.getByTestId('dup-hint-window');
         await expect(win).toBeVisible();
         await expect(win.getByTestId('dup-hint-window-head')).toContainText(DOS);
-        await expect(win.getByTestId('card-household-line')).toHaveCount(1);
+        await expect(win.getByTestId('card-household-line')).toHaveCount(0);
         await expect(win.getByTestId('dup-hint-contact').getByTestId('contact-matches')).toHaveCount(1);
         // Case 2: someone else loaded the profile being edited — flag, never continue.
         await expect(win.getByTestId('dup-hint-cant-join')).toBeVisible();
