@@ -1425,11 +1425,23 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                                 flaggingRef.current?.openAction('duplicate');
                                                             }}
                                                             title={t('flagging.menu_duplicate') || 'Report duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
-                                                        <AnchoredMenuItem icon={PencilLine} testId="profile-report-inaccuracy"
-                                                            onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
-                                                            title={t('flagging.menu_inaccuracy') || 'Report inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'} />
+                                                        {/* Only for people who can't fix it themselves (Jon 2026-10-31): whoever can edit
+                                                            every detail — owner, their team, admins — just edits it. */}
+                                                        {!canEditAllHousehold && (
+                                                            <AnchoredMenuItem icon={PencilLine} testId="profile-report-inaccuracy"
+                                                                onClick={() => {
+                                                                    setShowReportMenu(false);
+                                                                    if (!session?.user) { openLogin(); return; }
+                                                                    flaggingRef.current?.openAction('inaccuracy');
+                                                                }}
+                                                                title={t('flagging.menu_inaccuracy') || 'Report inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'The information is wrong'} />
+                                                        )}
                                                         <AnchoredMenuItem icon={Trash2} danger testId="profile-request-removal"
-                                                            onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
+                                                            onClick={() => {
+                                                                setShowReportMenu(false);
+                                                                if (!session?.user) { openLogin(); return; }
+                                                                flaggingRef.current?.openAction('deletion');
+                                                            }}
                                                             title={t('flagging.menu_deletion') || 'Request removal'} desc={t('flagging.menu_deletion_desc') || 'Remove my data from this platform'} />
                                                     </AnchoredMenu>
                                                 </div>

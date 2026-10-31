@@ -89,9 +89,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const [hasSearched, setHasSearched] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [systemSuggestions, setSystemSuggestions] = useState<DuplicateCandidate[]>([]);
-    // Data-request form fields (for inaccuracy/deletion — open to anyone)
-    const [requesterName, setRequesterName] = useState('');
-    const [requesterEmail, setRequesterEmail] = useState('');
+    // Inaccuracy / deletion: who is asking comes from the session (the API reads it).
     const [dataRequestSubmitted, setDataRequestSubmitted] = useState(false);
     
     // Tap-to-expand context hints for flags
@@ -208,9 +206,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             return;
         }
 
-        // Inaccuracy / Deletion flow — uses data-request API (no auth needed)
+        // Inaccuracy / Deletion flow — the data-request API (signed in; it knows who is asking)
         if (reason === 'inaccuracy' || reason === 'deletion') {
-            if (!requesterName.trim() || !details.trim()) return;
+            if (!details.trim()) return;
             setSubmitLoading(true);
             try {
                 const res = await fetch('/api/data-request', {
@@ -218,8 +216,6 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         adopterId,
-                        requesterName: requesterName.trim(),
-                        requesterEmail: requesterEmail.trim() || null,
                         requestType: reason,
                         details: details.trim(),
                     }),
@@ -265,8 +261,6 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
         setReason('duplicate');
         setTargetAdopter(null);
         setSearchTerm('');
-        setRequesterName('');
-        setRequesterEmail('');
         setDataRequestSubmitted(false);
     };
 
@@ -421,7 +415,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                     {t('flagging.request_received') || 'Request received'}
                                 </p>
                                 <p className="text-sm text-stone-500 mb-6">
-                                    {t('flagging.request_review_time') || 'We will review your request within 10 business days.'}
+                                    {reason === 'inaccuracy'
+                                        ? t('flagging.inaccuracy_sent')
+                                        : (t('flagging.request_review_time') || 'We will review your request within 10 business days.')}
                                 </p>
                                 <Button type="button" onClick={resetAndClose}>{t('common.close') || 'Close'}</Button>
                             </div>
@@ -535,31 +531,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                     </div>
                                 )}
 
-                                {/* Inaccuracy / Deletion — contact info form */}
+                                {/* Inaccuracy / Deletion — what happens next; no name or email to type, we know who is asking */}
                                 {(reason === 'inaccuracy' || reason === 'deletion') && (
-                                    <div className="space-y-4">
-                                        <p className="text-sm text-stone-600">
-                                            {reason === 'inaccuracy'
-                                                ? (t('flagging.inaccuracy_desc') || 'If this profile contains incorrect information about you, let us know:')
-                                                : (t('flagging.deletion_desc') || 'To request removal of your data from this platform, please provide your details:')}
-                                        </p>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <input
-                                                type="text"
-                                                placeholder={t('flagging.your_name') || 'Your name *'}
-                                                value={requesterName}
-                                                onChange={e => setRequesterName(e.target.value)}
-                                                className="min-h-[44px] px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
-                                            />
-                                            <input
-                                                type="email"
-                                                placeholder={t('flagging.your_email') || 'Your email (optional)'}
-                                                value={requesterEmail}
-                                                onChange={e => setRequesterEmail(e.target.value)}
-                                                className="min-h-[44px] px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
-                                            />
-                                        </div>
-                                    </div>
+                                    <p className="text-sm text-stone-600">
+                                        {reason === 'inaccuracy'
+                                            ? (t('flagging.inaccuracy_desc') || 'Tell us what information on this profile is wrong.')
+                                            : (t('flagging.deletion_desc') || 'Tell us why this data should be removed.')}
+                                    </p>
                                 )}
 
                                 {/* Details field — shown for all reason types */}
@@ -588,7 +566,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                     confirm={{
                                         label: reason === 'deletion' ? (t('flagging.submit_deletion') || 'Submit Removal Request') : (t('flagging.submit') || 'Submit Report'),
                                         onClick: () => { void handleSubmit(); },
-                                        disabled: (reason === 'duplicate' && !targetAdopter) || ((reason === 'inaccuracy' || reason === 'deletion') && (!requesterName.trim() || !details.trim())),
+                                        disabled: (reason === 'duplicate' && !targetAdopter) || ((reason === 'inaccuracy' || reason === 'deletion') && !details.trim()),
                                         testId: 'flag-submit',
                                     }} />
                             </div>

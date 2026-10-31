@@ -26,6 +26,7 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     deletion_request: { requesterName: 'Ana' },
     adopter_flagged: { reporterName: 'Ana', reason: 'dangerous' },
     duplicate_flagged: { reporterName: 'Ana', nameA: 'María García López', nameB: 'Jonatan Urfalino' },
+    inaccuracy_reported: { reporterName: 'Ana', adopterName: 'Carla Gómez' },
     contract_attached: { actorName: 'Ana', profileName: 'Carla', animalName: 'Luna' },
     form_attached: { actorName: 'Ana', profileName: 'Carla' },
     form_submission_owner: { submitterName: 'Juana', animalName: 'Luna', matchCount: '2' },
