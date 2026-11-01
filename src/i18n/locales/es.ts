@@ -1048,7 +1048,7 @@ export const es = {
         no_images: 'Aún no hay imágenes.',
         caption_placeholder: 'Descripción...',
         placeholder_name_aliases: 'Nombre Completo (y Apodos/Alias)',
-        family_members: 'Hogar',
+        family_members: 'Familiares / Convivientes',
         placeholder_family: 'Enumere otros familiares, cónyuges o personas que vivan en el mismo hogar...',
         no_family: 'No hay nadie más registrado en su hogar.',
         family_notes: 'Notas',

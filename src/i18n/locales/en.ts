@@ -1041,7 +1041,7 @@ export const en = {
         no_images: 'No images uploaded yet.',
         caption_placeholder: 'Caption...',
         placeholder_name_aliases: 'Full Name (and Nicknames/Aliases)',
-        family_members: 'Household',
+        family_members: 'Family Members / Households',
         placeholder_family: 'List other family members, spouses, or people living in the same home...',
         no_family: 'Nobody else is listed in their household.',
         family_notes: 'Notes',

@@ -1048,7 +1048,7 @@ export const pt = {
         no_images: 'Ainda não há imagens.',
         caption_placeholder: 'Descrição...',
         placeholder_name_aliases: 'Nome Completo (e Apelidos/Alias)',
-        family_members: 'Lar',
+        family_members: 'Familiares / Coabitantes',
         placeholder_family: 'Liste outros familiares, cônjuges ou pessoas que morem no mesmo lar...',
         no_family: 'Não há mais ninguém registrado no seu lar.',
         family_notes: 'Notas',
