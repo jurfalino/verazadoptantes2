@@ -41,7 +41,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { getDuplicateCandidates, getPendingDuplicatesForUser, mergePendingDedupPair, dismissDuplicateCandidate, hidePendingPair, type PendingDedupPair } from './duplicates';
-import { pairKey } from '@/domain/dedupPair';
+import { KEPT_SEPARATE_FLAG_DETAILS_PREFIX, MERGED_FLAG_DETAILS_PREFIX, pairKey } from '@/domain/dedupPair';
 import { resolveMergeRequest } from './mergeRequests';
 import { deleteOwnAdopter } from './adopters';
 
@@ -630,6 +630,22 @@ describe('«Revisar» on a «posible duplicado» notice never lands on an empty 
         expect((await feed(STRANGER, true)).pairs.map(p => p.candidateId)).toContain('flag-i4');
         // Someone with no profile on it and no request on it: not on their list.
         expect((await feed(MATE, true)).pairs.map(p => p.candidateId)).not.toContain('flag-i4');
+    });
+
+    it("over 100 newer SETTLED flags on the viewer's own profiles never push out an open one (review 2026-11-01)", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('s6-mine', 'Lucía Fernández', '5', ?, 100, 100), ('s6-other', 'Lucia Fernandez', '5', ?, 200, 200)`).run(OWNER, STRANGER);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('flag-s6', 's6-other', ?, 'duplicate', 's6-mine', NULL, 1)`).run(STRANGER);
+        const adopter = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 100, 100)`);
+        const flag = sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES (?, ?, ?, 'duplicate', ?, ?, ?)`);
+        for (let i = 0; i < 120; i++) {
+            adopter.run(`s6-a-${i}`, `Ana Mía ${i}`, OWNER);
+            adopter.run(`s6-b-${i}`, `Ana Otra ${i}`, STRANGER);
+            const details = i % 2 === 0 ? `${MERGED_FLAG_DETAILS_PREFIX}s6-a-${i}` : `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}x`;
+            flag.run(`s6-flag-${i}`, `s6-b-${i}`, STRANGER, `s6-a-${i}`, details, 10_000 + i);
+        }
+        const r = await as(OWNER, () => getPendingDuplicatesForUser(1, 10, true, pairKey('s6-mine', 's6-other')));
+        expect(r.focusCandidateId).toBe('flag-s6');
+        expect(r.pairs.map(p => p.candidateId)).not.toContain('s6-flag-0');
     });
 
     it('a teammate party to a request on a flagged pair keeps it, even when the request\'s own candidate was set aside', async () => {

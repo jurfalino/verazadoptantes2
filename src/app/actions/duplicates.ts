@@ -4,7 +4,7 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, MERGED_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
@@ -1161,6 +1161,10 @@ export async function getPendingDuplicatesForUser(
             // Newest first within the cap: a flag raised now (its owners were just told «Revisar») is always read.
             }).from(adopterFlags).where(and(
                 eq(adopterFlags.reason, 'duplicate'),
+                // Open flags only, in SQL too (isOpenDuplicateFlag's rule), so settled ones never fill the cap.
+                sql`${adopterFlags.targetAdopterId} IS NOT NULL AND ${adopterFlags.targetAdopterId} <> ${adopterFlags.adopterId}`,
+                sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
+                    AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
                 sql`(${ownSide(adopterFlags.adopterId)} OR ${ownSide(adopterFlags.targetAdopterId)} OR ${requestOnPair})`,
             )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
