@@ -651,7 +651,10 @@ export default function SpreadsheetImportWizard() {
         // Phase 1 — EXACT identical-record match. One server scan fingerprints all
         // existing records and returns which import rows are byte-for-byte the same
         // person (any field combo, incl. address-only). An identical row defaults to
-        // "actualizar" — never a duplicate — and skips the fuzzy call below.
+        // "actualizar" — never a duplicate. Since 2.58.8 it still runs the fuzzy call
+        // below (up to 3 attempts), only to list the other profiles it also matches
+        // («también coincide»): ~110–200 D1 queries per row on a Catpuccino-sized
+        // database (measured 2026-11-01, EM review I3).
         const fpByIndex: Record<number, string> = {};
         for (const t of targets) {
             const g = splitGroupedContacts(t.eff);
