@@ -916,7 +916,7 @@ export const es = {
         dup_hint_done_told_many: 'Les avisamos a {names}.',
         dup_hint_join_failed: 'No se pudo unir los perfiles (error {id}).',
         dup_hint_join_failed_saved: 'No se pudo unir los perfiles. El dato quedó guardado en este perfil.',
-        dup_hint_not_a_match: 'Estos dos perfiles no comparten ningún dato, así que no se pueden unir desde acá.',
+        dup_hint_not_a_match: 'Estos dos perfiles no comparten ningún dato, así que no se pueden unir desde acá (código {id}).',
         dup_hint_cant_join_no_owner: 'El perfil de {name} no tiene un responsable, así que no podés unir los dos vos. Podés:',
         dup_hint_review_already: 'Ya se lo pedimos a los administradores.',
         // «Ya está en otro perfil» → «Continuar con este perfil»: the profile being edited is absorbed (UX C1).

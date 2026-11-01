@@ -159,7 +159,8 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
     /** The network was picked in this window: the chips stay, showing the pick. */
     platformAsk?: boolean;
     /** Which answer is running (its button spins; all are disabled). */
-    busy?: 'flag' | 'review' | 'open' | null;
+    /** 'checking': a re-check is running (a network picked in the window), so nothing can be pressed on stale data. */
+    busy?: 'flag' | 'review' | 'open' | 'checking' | null;
     onContinue: () => void;
     onFlag: () => void;
     onReview: () => void;
@@ -413,6 +414,15 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
         };
     }, [type, value, excludeAdopterId, platform]);
 
+    // After a re-check, a window whose match is gone (or now a failure / a shared handle) closes,
+    // so the next re-check shows its spinner again.
+    useEffect(() => {
+        if (!openId || loading) return;
+        const sharedHandle = type === 'social' && handleCount > SHARED_HANDLE_WARN;
+        const stillThere = !failedId && !sharedHandle && visibleDupHintMatches(matches, dismissed, value).some(m => m.adopterId === openId);
+        if (!stillThere) { setOpenIdState(null); setPickedInWindow(false); }
+    }, [openId, loading, failedId, handleCount, matches, dismissed, value, type]);
+
     // A re-check while the window is open (a network picked in it) keeps the window and the matches on screen.
     if (loading && !openId) {
         return (
@@ -550,7 +560,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
             }
             if (res.error === 'not_a_match') {
                 // The two profiles share no contact (EM review I1): never joined from here.
-                setContinueFailure(t('adopter.dup_hint_not_a_match'));
+                setContinueFailure(t('adopter.dup_hint_not_a_match').replace('{id}', res.errorId));
                 setContinuing(false);
                 return;
             }
@@ -587,7 +597,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                         platform={(platform as SocialPlatform | undefined) ?? null}
                         onPickPlatform={type === 'social' && onPickPlatform ? (p) => { setPickedInWindow(true); onPickPlatform(p); } : undefined}
                         platformAsk={pickedInWindow}
-                        busy={busy}
+                        busy={busy ?? (loading ? 'checking' : null)}
                         onContinue={() => { setContinueFailure(null); setConfirmId(open.adopterId); setOpenId(null); }}
                         onFlag={() => handleFlag(open)}
                         onReview={() => handleReview(open)}

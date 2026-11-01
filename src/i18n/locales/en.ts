@@ -909,7 +909,7 @@ export const en = {
         dup_hint_done_told_many: 'We let {names} know.',
         dup_hint_join_failed: 'The profiles could not be joined (error {id}).',
         dup_hint_join_failed_saved: 'The profiles could not be joined. The detail was saved on this profile.',
-        dup_hint_not_a_match: 'These two profiles do not share any detail, so they cannot be joined from here.',
+        dup_hint_not_a_match: 'These two profiles do not share any detail, so they cannot be joined from here (code {id}).',
         dup_hint_cant_join_no_owner: 'Nobody is responsible for the profile of {name}, so you cannot join the two yourself. You can:',
         dup_hint_review_already: 'We already asked the admins.',
         merge_absorb_title: 'Join the profile of {current} with the one of {name}?',
