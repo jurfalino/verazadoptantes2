@@ -526,6 +526,12 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                 setContinuing(false);
                 return;
             }
+            if (res.error === 'not_a_match') {
+                // The two profiles share no contact (EM review I1): never joined from here.
+                setContinueFailure(t('adopter.dup_hint_not_a_match'));
+                setContinuing(false);
+                return;
+            }
             if (res.error === 'platform_required') {
                 setContinueFailure(t('adopter.ce_social_which'));
                 setContinuing(false);

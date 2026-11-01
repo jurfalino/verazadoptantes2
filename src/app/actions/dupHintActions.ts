@@ -30,7 +30,7 @@ import { normEmail } from '@/lib/orgMembership';
 import { createMergeRequest } from '@/lib/mergeRequests';
 import { mergeChosenPair } from '@/lib/pairMerge';
 import { decideDupHintMatch, loadDupHintViewer, profileRow } from '@/lib/dupHintFacts';
-import { dupHintMergePlan, isDupHintType, typedIsNewFor, DUP_HINT_MAX_VALUE } from '@/domain/dupHint';
+import { dupHintMergePlan, dupHintPairMatches, isDupHintType, typedIsNewFor, DUP_HINT_MAX_VALUE } from '@/domain/dupHint';
 import { CONTACT_ENTRIES_FULL, deserializeContactEntries, detectSocialPlatform, parseBlobToContactEntries, type MessagingApp, type SocialPlatform } from '@/lib/contactEntries';
 
 const id64 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 64) : '');
@@ -74,11 +74,22 @@ export async function continueWithMatchedProfile(input: {
         const [viewer, match] = await Promise.all([loadDupHintViewer(db, actor, currentId), profileRow(db, matchId)]);
         const current = viewer.current;
         if (!current || !match || match.deletedAt) return refuse('not_found');
+        // Both profiles' contacts as the hint reads them (the entries, else the legacy text).
+        const entriesOf = (row: { contactEntries: string | null; contactInfo: string | null }) => {
+            const parsed = deserializeContactEntries(row.contactEntries);
+            return parsed.length > 0 ? parsed : parseBlobToContactEntries(row.contactInfo);
+        };
         const decision = await decideDupHintMatch(db, { ...viewer, current }, { id: match.id, addedBy: match.addedBy });
         // Already recorded as two people (a shared home, «Mantener separados», «Viven juntos»): never merged here.
         if (decision.action === 'settled') return refuse('settled_separate');
         // Cases 2–5 are someone else's call (or already someone's): never merged from here.
         if (decision.action !== 'continue') return refuse(`not_allowed:${decision.action}`);
+        // The ids are free arguments (EM review I1): only a pair that really matches is joined —
+        // the typed value is one of the match's contacts, or the two already share one
+        // (dupHintPairMatches). Checked before anything is saved or merged, admins included.
+        // Never logs the typed value or any contact.
+        const matchEntries = entriesOf(match);
+        if (!dupHintPairMatches(entriesOf(current), matchEntries, input?.typed ?? null)) return refuse('not_a_match');
         const plan = dupHintMergePlan({
             actor, isAdmin: viewer.isAdmin,
             currentTeamOwned: viewer.currentTeamOwned, matchTeamOwned: decision.matchTeamOwned,
@@ -90,8 +101,6 @@ export async function continueWithMatchedProfile(input: {
         // has it as the matcher compares it (typedIsNewFor: «+54 9 11 6312-0851»
         // is «11 6312-0851»): the merge would keep both copies.
         const typed = input?.typed;
-        const matchParsed = deserializeContactEntries(match.contactEntries);
-        const matchEntries = matchParsed.length > 0 ? matchParsed : parseBlobToContactEntries(match.contactInfo);
         let typedSaved = false;
         if (typed && isDupHintType(typed.type) && typeof typed.value === 'string' && typed.value.trim()
             && typedIsNewFor(matchEntries, typed.type, typed.value.trim(), typeof typed.platform === 'string' ? typed.platform : undefined)) {

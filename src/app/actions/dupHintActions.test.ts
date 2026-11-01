@@ -170,6 +170,15 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
 });
 
 describe('continueWithMatchedProfile — «Sí, continuar»', () => {
+    // A pair the hint would really show (EM review I1: «Continuar» only joins profiles that match):
+    // Jonatan also carries María's email. Folded on the merge, so every list below is unchanged.
+    beforeEach(() => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([
+            { id: 'j1', type: 'phone', value: MATCH_PHONE, addedBy: OTHER },
+            { id: 'j2', type: 'email', value: 'maria@example.com', addedBy: OTHER },
+        ]));
+    });
+
     it('MATCH survives with CURRENT\'s contacts and no second copy of the typed phone; the foreign owner hears it; the told names come back', async () => {
         const res = await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'phone', value: TYPED } });
         expect(res).toEqual({ ok: true, matchId: 'jonatan', currentName: 'María García López', told: ['other-rescuer'] });
@@ -278,6 +287,40 @@ describe('continueWithMatchedProfile — «Sí, continuar»', () => {
         // Nothing typed was saved anywhere either.
         expect(contactsOf('maria').map(c => c.value)).not.toContain(TYPED);
         expect(notify.create).toEqual([]);
+    });
+
+    it('two profiles that share nothing: refused as not_a_match, nothing typed saved, nothing merged, nobody told (EM review I1)', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries) VALUES ('victima', 'Otra Persona', '5', ?, 1, 1, ?)`)
+            .run(OTHER, JSON.stringify([{ id: 'v1', type: 'phone', value: '+54 11 4000 9999', addedBy: OTHER }]));
+        const { logger } = await import('@/lib/logger');
+        vi.mocked(logger.warn).mockClear();
+        const before = contactsOf('maria');
+        // With a typed value the victim does not have, and with none at all — as an admin too.
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'victima', typed: { type: 'email', value: 'nuevo@example.com' } }))
+            .toEqual({ ok: false, error: 'not_a_match', errorId: 'gen12345' });
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'victima' })).toEqual({ ok: false, error: 'not_a_match', errorId: 'gen12345' });
+        expect(await as(ADMIN, () => continueWithMatchedProfile({ currentId: 'maria', matchId: 'victima' }))).toMatchObject({ ok: false, error: 'not_a_match' });
+        expect(deleted('maria')).toBe(false);
+        expect(deleted('victima')).toBe(false);
+        expect(contactsOf('maria')).toEqual(before);
+        expect(contactsOf('victima').map(c => c.value)).toEqual(['+54 11 4000 9999']);
+        expect(notify.create).toEqual([]);
+        // Logged with who and which pair, never the typed value.
+        const refusal = vi.mocked(logger.warn).mock.calls.find(([, c]) => (c as Record<string, unknown>)?.reason === 'not_a_match');
+        expect(refusal?.[1]).toMatchObject({ currentId: 'maria', matchId: 'victima', actor: OWNER });
+        expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain('nuevo@example.com');
+    });
+
+    it('the typed phone written differently from the match\'s («11 6312-0851» vs «+54 9 11 6312-0851»): still a match', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: '+54 9 11 6312-0851', addedBy: OTHER }]));
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'phone', value: '11 6312-0851' } })).toMatchObject({ ok: true });
+        expect(deleted('maria')).toBe(true);
+    });
+
+    it('two profiles sharing an email, nothing typed: still a match', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'jonatan'`).run(JSON.stringify([{ id: 'j1', type: 'phone', value: MATCH_PHONE, addedBy: OTHER }, { id: 'j2', type: 'email', value: 'MARIA@example.com', addedBy: OTHER }]));
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan' })).toMatchObject({ ok: true });
+        expect(deleted('maria')).toBe(true);
     });
 
     it('no session, the same id twice, or a profile that is gone: refused', async () => {

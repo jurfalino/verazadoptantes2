@@ -916,6 +916,7 @@ export const pt = {
         dup_hint_done_told_many: 'Avisamos {names}.',
         dup_hint_join_failed: 'Não foi possível unir os perfis (erro {id}).',
         dup_hint_join_failed_saved: 'Não foi possível unir os perfis. O dado ficou salvo neste perfil.',
+        dup_hint_not_a_match: 'Estes dois perfis não compartilham nenhum dado, então não podem ser unidos daqui.',
         dup_hint_cant_join_no_owner: 'Este perfil não tem um responsável, então você não pode uni-los. Você pode:',
         dup_hint_review_already: 'Já pedimos aos administradores.',
         dup_hint_confirm_absorbed: 'O perfil de {name} deixa de existir separadamente.',

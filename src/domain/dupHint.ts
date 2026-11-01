@@ -85,6 +85,34 @@ export function typedIsNewFor(matchEntries: ReadonlyArray<{ type: string; value:
     return !matchEntries.some(e => sameContactSet(entry, e as Pick<ContactEntry, 'type' | 'value' | 'platform'>));
 }
 
+/**
+ * Do the two profiles really match? (EM review I1: «Continuar» merged any two
+ * profiles by id.) Yes when either:
+ * - the value being typed is one of the match's own contacts, by the hint's
+ *   own «coincide» rule (entryMatchesTyped: «11 6312-0851» is
+ *   «+54 9 11 6312-0851»); or
+ * - the profile being edited and the match already share a phone, email,
+ *   handle or id number — one of the duplicate matcher's keys (contactMatchKeys,
+ *   the ones starting with «~»). A shared address, note, alias name or a
+ *   «phone» with no digits is not evidence: housemates share an address.
+ * The server action refuses anything else as `not_a_match`.
+ */
+export function dupHintPairMatches(
+    currentEntries: ReadonlyArray<{ type: string; value: string; platform?: string }>,
+    matchEntries: ReadonlyArray<{ type: string; value: string; platform?: string }>,
+    typed?: { type: unknown; value: unknown } | null,
+): boolean {
+    if (typed && isDupHintType(typed.type) && typeof typed.value === 'string' && typed.value.trim()) {
+        const t = typed.type;
+        const v = typed.value.trim().slice(0, DUP_HINT_MAX_VALUE);
+        if (matchEntries.some(e => entryMatchesTyped(e, t, v))) return true;
+    }
+    const strongKeys = (e: { type: string; value: string; platform?: string }) =>
+        contactMatchKeys(e as Pick<ContactEntry, 'type' | 'value' | 'platform'>).filter(k => k.startsWith('~'));
+    const matchKeys = new Set(matchEntries.flatMap(strongKeys));
+    return matchKeys.size > 0 && currentEntries.some(e => strongKeys(e).some(k => matchKeys.has(k)));
+}
+
 /** «No es esta persona» answers, for one typed value. */
 export type DupHintDismissed = { value: string; ids: readonly string[] };
 
