@@ -124,11 +124,11 @@ export async function GET(request: Request) {
         const userFlaggedEnriched = await Promise.all(
             userFlagged.map(async (flag: typeof userFlagged[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                         .from(adopters).where(eq(adopters.id, flag.adopterId)).get()
                         .catch(logFallback('flag adopter fetch', { flagId: flag.flagId, adopterId: flag.adopterId }, undefined)),
                     flag.targetAdopterId
-                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                             .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get()
                             .catch(logFallback('flag target fetch', { flagId: flag.flagId, adopterId: flag.targetAdopterId }, undefined))
                         : null,
@@ -142,10 +142,12 @@ export async function GET(request: Request) {
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
                     adopter1AddedBy: adopter1?.addedBy ?? null,
+                    adopter1CreatedAt: adopter1?.createdAt ? new Date(adopter1.createdAt).getTime() : null,
                     adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
                     adopter2AddedBy: adopter2?.addedBy ?? null,
+                    adopter2CreatedAt: adopter2?.createdAt ? new Date(adopter2.createdAt).getTime() : null,
                 };
             })
         );
@@ -170,10 +172,10 @@ export async function GET(request: Request) {
         const candidatesEnriched = await Promise.all(
             candidates.map(async (c: typeof candidates[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                         .from(adopters).where(eq(adopters.id, c.adopter1Id)).get()
                         .catch(logFallback('candidate adopter1 fetch', { candidateId: c.id, adopterId: c.adopter1Id }, undefined)),
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                         .from(adopters).where(eq(adopters.id, c.adopter2Id)).get()
                         .catch(logFallback('candidate adopter2 fetch', { candidateId: c.id, adopterId: c.adopter2Id }, undefined)),
                     avgRatingFor(db, c.adopter1Id).catch(logFallback('candidate avgRating1', { candidateId: c.id, adopterId: c.adopter1Id }, null)),
@@ -186,10 +188,12 @@ export async function GET(request: Request) {
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
                     adopter1AddedBy: adopter1?.addedBy ?? null,
+                    adopter1CreatedAt: adopter1?.createdAt ? new Date(adopter1.createdAt).getTime() : null,
                     adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
                     adopter2AddedBy: adopter2?.addedBy ?? null,
+                    adopter2CreatedAt: adopter2?.createdAt ? new Date(adopter2.createdAt).getTime() : null,
                 };
             })
         );

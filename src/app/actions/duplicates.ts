@@ -4,7 +4,7 @@ import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandida
 import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupAction, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
@@ -1358,10 +1358,8 @@ export async function getPendingDuplicatesForUser(
             if (a.deletedAt || b.deletedAt) continue; // merged elsewhere meanwhile
 
             // Newer record is the "new" side; older is the merge primary.
-            const aMs = a.createdAt?.getTime() ?? 0;
-            const bMs = b.createdAt?.getTime() ?? 0;
-            const newOne = aMs >= bMs ? a : b;
-            const oldOne = aMs >= bMs ? b : a;
+            const oldOne = keepByAge({ row: a, createdAt: a.createdAt?.getTime() ?? 0 }, { row: b, createdAt: b.createdAt?.getTime() ?? 0 }).row;
+            const newOne = oldOne === a ? b : a;
             const request = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
             const matchTypes = JSON.parse(c.matchTypes || '[]') as string[];
             const source = matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected';
