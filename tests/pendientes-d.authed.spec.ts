@@ -121,7 +121,7 @@ test.describe('Pendientes de revisar (layout D)', () => {
             // The older profile (theirs) is kept by default; keeping it needs no consent (D41).
             await expect(row.getByTestId('dedup-keep-existing')).toHaveAttribute('aria-checked', 'true');
             const merge = row.getByTestId('dedup-merge');
-            await expect(merge).toHaveText(/^(Merge profiles|Combinar perfiles|Combinar perfis)$/);
+            await expect(merge).toHaveText(/^(Join profiles|Unir perfiles|Unir perfis)$/);
             await merge.click();
 
             // Her adopter moves to the other rescuer's list: that is confirmed first (D25).
@@ -187,7 +187,7 @@ test.describe('Pendientes de revisar (layout D)', () => {
             await row.getByTestId('dedup-keep-new').click();
             await expect(row.getByTestId('dedup-keep-new')).toHaveAttribute('aria-checked', 'true');
             const merge = row.getByTestId('dedup-merge');
-            await expect(merge).toHaveText(/^(Request merge|Pedir combinar|Pedir para combinar)$/);
+            await expect(merge).toHaveText(/^(Ask to join|Pedir unir|Pedir para unir)$/);
             await merge.click();
             await expect(page.getByText(/Request sent to|Pedido enviado a|Pedido enviado para/).first()).toBeVisible({ timeout: 30_000 });
             await expect(row).toHaveAttribute('data-group', 'sent', { timeout: 30_000 });

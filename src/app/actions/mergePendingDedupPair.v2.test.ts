@@ -429,7 +429,7 @@ describe('«¿Es la misma persona?» (D35)', () => {
         expect(await mergePendingDedupPair('cand-hh', { identity: 'household' })).toEqual({ success: true, outcome: 'household' });
         expect(requests()).toEqual([expect.objectContaining({ status: 'declined', resolved_by_email: STRANGER, requester_email: OWNER })]);
         expect(notify.create).toEqual([expect.objectContaining({
-            type: 'merge_request_resolved', userId: OWNER, title: 'stranger rechazó combinar dos perfiles', url: '/my-adopters#pendientes',
+            type: 'merge_request_resolved', userId: OWNER, title: 'stranger rechazó unir dos perfiles', url: '/my-adopters#pendientes',
         })]);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the drizzle handle under test
         expect(await createMergeRequest(state.db as any, {

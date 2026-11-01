@@ -16,9 +16,9 @@ import { ALWAYS_ON_CATEGORIES, isEmailEnabled, visibleCategories, type EmailCate
 
 /** Spanish fallbacks (es is the default locale) for a key a locale lacks. */
 const CATEGORY_FALLBACK: Record<EmailCategory, { label: string; desc: string }> = {
-    requests: { label: 'Pedidos que necesitan tu respuesta', desc: 'Pedidos de combinación de perfiles y de acceso a datos de contacto.' },
+    requests: { label: 'Pedidos que necesitan tu respuesta', desc: 'Pedidos para unir perfiles y de acceso a datos de contacto.' },
     forms: { label: 'Formularios y contratos', desc: 'Formularios y contratos recibidos o vinculados a tus perfiles.' },
-    merges: { label: 'Duplicados y combinaciones', desc: 'Duplicados detectados y perfiles combinados.' },
+    merges: { label: 'Duplicados y uniones', desc: 'Duplicados detectados y perfiles unidos.' },
     contact_access: { label: 'Acceso a datos de contacto', desc: 'Respuestas a tus pedidos de acceso a datos de contacto.' },
     profile_changes: { label: 'Cambios en tus perfiles', desc: 'Transferencias de perfiles, contactos agregados, cambios de nombre y de edad, y avisos del hogar (quién se sumó, se quitó o convive con quién).' },
     api: { label: 'API', desc: 'Registros y accesos de tus claves de API.' },

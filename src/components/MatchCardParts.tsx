@@ -11,6 +11,7 @@
  *       Convive con …                               ← its household line
  *   «Qué coincide y qué no» (MatchCompare)          ← the caller's
  *   [Es la misma persona] [Ver perfil completo →] [No es esta persona]   ← MatchCardActions
+ *   (a new tab: «Abrir perfil ↗» — OpenProfileLink — in place of «Ver perfil completo →»)
  *
  * The header is the household row's (their photo, else the teal initial; the name as a link with a 44px hit area,
  * PersonStanding: the matched person's own rating and alerts, or «Menor de
@@ -25,6 +26,7 @@ import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { PersonStanding } from '@/components/PersonStanding';
 import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { Button, buttonClasses } from '@/components/ui/Button';
 import type { HouseholdLine } from '@/domain/households';
 
@@ -99,11 +101,14 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
                     {sameLabel || t('formResults.same_person')}
                 </Button>
             )}
-            <Link href={`/adopter/${encodeURIComponent(profileId)}`} {...(newTab ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                data-testid={viewTestId} className={`${buttonClasses({ variant: 'secondary', size: 'compact' })} ${layout}`}>
-                {t('formResults.view_full_profile')}
-                <ArrowRight className="w-4 h-4" aria-hidden="true" />
-            </Link>
+            {newTab
+                // A new tab: «Abrir perfil ↗», the same link on every surface (point B, Jon 2026-11-01).
+                ? <OpenProfileLink href={`/adopter/${encodeURIComponent(profileId)}`} testId={viewTestId} className={`justify-center ${layout}`} />
+                : <Link href={`/adopter/${encodeURIComponent(profileId)}`}
+                    data-testid={viewTestId} className={`${buttonClasses({ variant: 'secondary', size: 'compact' })} ${layout}`}>
+                    {t('formResults.view_full_profile')}
+                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                </Link>}
             {onNotThis && (
                 <Button type="button" variant="secondary" size="compact" onClick={onNotThis} disabled={busy} data-testid={notThisTestId} layoutClassName={`${layout} sm:ml-auto`}>
                     {t('formResults.not_this_person')}

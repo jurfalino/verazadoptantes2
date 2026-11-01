@@ -7,8 +7,8 @@
  * that just vanished. Not a `dedup-row`: nothing on it can be acted on again.
  */
 
-import Link from 'next/link';
-import { Check, ExternalLink } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 import { fill, ownerName, T_MUTED, T_PRIMARY, type T } from './ui';
 
@@ -52,17 +52,12 @@ export default function MergedRow({ info, t }: { info: MergedInfo; t: T }) {
                 <Check className="w-5 h-5" strokeWidth={3} aria-hidden="true" />
             </span>
             <span className={`flex-1 min-w-0 text-[14px] break-words ${T_PRIMARY}`}>
-                <span className="font-bold text-[var(--status-success-text)]">{t('myAdopters.pending_d_merged_done') || 'Combinados'}</span>
+                <span className="font-bold text-[var(--status-success-text)]">{t('myAdopters.pending_d_merged_done') || 'Unidos'}</span>
                 <span className={T_MUTED}> — </span>
                 {keptSentence(info, t)}
             </span>
-            {/* New tab, like the row's other «Ver perfil»: the list stays as it is. */}
-            <Link href={`/adopter/${encodeURIComponent(info.keptId)}`} target="_blank" rel="noopener noreferrer" data-testid="dedup-merged-view"
-                className="inline-flex items-center gap-1 min-h-[44px] px-2 text-[13px] font-semibold text-[var(--accent)] hover:underline underline-offset-2">
-                {t('adopter.dup_action_view') || 'Ver perfil'}
-                <ExternalLink className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                <span className="sr-only">{t('common.opens_new_tab') || '(abre en una pestaña nueva)'}</span>
-            </Link>
+            {/* «Abrir perfil ↗», a new tab like the row's other one: the list stays as it is (point B). */}
+            <OpenProfileLink href={`/adopter/${encodeURIComponent(info.keptId)}`} testId="dedup-merged-view" />
         </div>
     );
 }

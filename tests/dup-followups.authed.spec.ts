@@ -57,9 +57,9 @@ test.describe.serial('duplicate follow-ups: same survivor, no self, every sheet 
 
         await page.goto('/admin/data-quality');
         await page.getByRole('button', { name: /Duplicados/ }).click();
-        const card = page.locator('div').filter({ hasText: OLDER }).filter({ hasText: NEWER }).filter({ has: page.getByRole('button', { name: /Fusionar|Combinar|Merge/ }) }).last();
+        const card = page.locator('div').filter({ hasText: OLDER }).filter({ hasText: NEWER }).filter({ has: page.getByRole('button', { name: /^(Unir|Merge)$/ }) }).last();
         await expect(card).toBeVisible({ timeout: 60_000 });
-        await card.getByRole('button', { name: /Fusionar|Combinar|Merge/ }).first().click();
+        await card.getByRole('button', { name: /^(Unir|Merge)$/ }).first().click();
         const olderCard = page.locator(`[data-testid="dmm-profile"][data-adopter-id="${OLDER_ID}"]`);
         await expect(olderCard).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
         await expect(page.locator(`[data-testid="dmm-profile"][data-adopter-id="${NEWER_ID}"]`)).toHaveAttribute('aria-pressed', 'false');

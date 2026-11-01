@@ -65,7 +65,7 @@ type Pending =
 
 /** Refusals that mean the row on screen is stale: say why, then reload. */
 const STALE_REFUSALS: Record<string, { key: string; fallback: string }> = {
-    declined_before: { key: 'myAdopters.pending_d_err_declined_before', fallback: 'Ya te rechazaron este pedido. Podés escribirle o combinar conservando su perfil.' },
+    declined_before: { key: 'myAdopters.pending_d_err_declined_before', fallback: 'Ya te rechazaron este pedido. Podés escribirle o unir conservando su perfil.' },
     request_pending: { key: 'myAdopters.pending_d_err_request_pending', fallback: 'Ya hay un pedido abierto sobre estos perfiles. Actualizamos la lista.' },
     keep_not_allowed: { key: 'myAdopters.pending_d_err_keep_not_allowed', fallback: 'Ese perfil ya no se puede conservar. Actualizamos la lista.' },
     identity_not_applicable: { key: 'myAdopters.pending_d_err_identity_not_applicable', fallback: 'Estos perfiles cambiaron. Actualizamos la lista.' },
@@ -203,14 +203,14 @@ export default function PendingDedup() {
         }
     };
 
-    const merge = (pair: PendingDedupPair, keep: KeepSide, identity?: Identity) => run(pair, 'errors.merge_failed', 'No se pudieron combinar los perfiles.', async () => {
+    const merge = (pair: PendingDedupPair, keep: KeepSide, identity?: Identity) => run(pair, 'errors.merge_failed', 'No se pudieron unir los perfiles.', async () => {
         // Always the chosen survivor's id: the server re-decides with it
         // (pairChoices) and never falls back to rules the row didn't show.
         const result = await mergePendingDedupPair(pair.candidateId, { keepId: sideOf(pair, keep).id, ...(identity ? { identity } : {}) });
         setConfirm(null);
         setIdentityAsk(null);
         if (result.success && result.outcome === 'merged') {
-            markMerged(pair, keep, t('myAdopters.pending_dedup_merged') || 'Perfiles combinados');
+            markMerged(pair, keep, t('myAdopters.pending_dedup_merged') || 'Perfiles unidos');
         } else if (result.success && result.outcome === 'disputed') {
             // D49: after a rejection (or an admin's ruling) nothing merges here;
             // the admins decide. The reload shows the row under «Enviados».
@@ -242,7 +242,7 @@ export default function PendingDedup() {
                 result.errorId ?? resolveErrorId(new Error(`mergePendingDedupPair: ${result.error}`), 'PendingDedup'));
             await load();
         } else {
-            toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || 'No se pudieron combinar los perfiles.',
+            toast.error(t('errors.generic') || 'Error', t('errors.merge_failed') || 'No se pudieron unir los perfiles.',
                 result.errorId ?? resolveErrorId(new Error(`mergePendingDedupPair: ${result.error}`), 'PendingDedup'));
         }
     });
@@ -286,8 +286,8 @@ export default function PendingDedup() {
             setConfirm(null);
             if (result.success) {
                 markMerged(pair, decision === 'accept' ? requesterKeep : otherSide(requesterKeep), decision === 'accept'
-                    ? (t('myAdopters.pending_dedup_merged') || 'Perfiles combinados')
-                    : (t('myAdopters.pending_d_flipped') || 'Perfiles combinados: se conservó el tuyo'));
+                    ? (t('myAdopters.pending_dedup_merged') || 'Perfiles unidos')
+                    : (t('myAdopters.pending_d_flipped') || 'Perfiles unidos: se conservó el tuyo'));
                 return;
             }
             toast.error(t('errors.generic') || 'Error', t('myAdopters.pending_dedup_request_failed') || 'No se pudo completar la acción.',
@@ -430,7 +430,7 @@ export default function PendingDedup() {
                 </h2>
             </button>
             <p className="text-sm text-stone-500 mt-1 mb-3 ml-6">
-                {t('myAdopters.pending_dedup_subtitle') || 'Encontramos perfiles que podrían ser la misma persona. Decidí si combinarlos.'}
+                {t('myAdopters.pending_dedup_subtitle') || 'Encontramos perfiles que podrían ser la misma persona. Decidí si unirlos.'}
             </p>
             {open && (
                 <>

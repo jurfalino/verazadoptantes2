@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import MatchCompare from '@/components/MatchCompare';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
 import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, findIdenticalRowsOtherMatches, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
@@ -1668,7 +1669,7 @@ export default function SpreadsheetImportWizard() {
                                             </span>
                                             <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}{r.status === 'updated' && r.message && <span className="text-stone-400 font-normal"> · {r.message}</span>}</span>
                                             {r.id
-                                                ? <a href={`/adopter/${r.id}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-teal-600 hover:underline">Ver perfil →</a>
+                                                ? <OpenProfileLink href={`/adopter/${encodeURIComponent(r.id)}`} className="flex-shrink-0" />
                                                 : <span className="flex-shrink-0 text-stone-400">{r.status === 'updated' ? 'actualizado' : 'creado'}</span>}
                                         </div>
                                         {sourceRowText(r.index) && <div className="text-[11px] text-stone-400 truncate pl-12" title={sourceRowText(r.index)}>{sourceRowText(r.index)}</div>}
@@ -1682,7 +1683,7 @@ export default function SpreadsheetImportWizard() {
                             <p className="text-xs text-stone-400">
                                 {cancelled
                                     ? 'Cancelaste la importación. Lo ya creado quedó guardado — reanudá para crear las filas restantes (no duplica lo ya creado).'
-                                    : 'Los posibles duplicados con registros existentes quedan marcados para revisar/fusionar en cada perfil. Reimportar la misma planilla vuelve a crear registros.'}
+                                    : 'Los posibles duplicados con registros existentes quedan marcados para revisar/unir en cada perfil. Reimportar la misma planilla vuelve a crear registros.'}
                             </p>
                             <div className="flex-shrink-0 flex items-center gap-2">
                                 {cancelled && resumable && (
@@ -2044,7 +2045,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                                         className="text-stone-400 hover:text-stone-600 flex-shrink-0 w-4 text-center">{expanded ? '▾' : '▸'}</button>
                                 )}
                                 <MatchBadge match={match} isExact={isExact} />
-                                <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                <OpenProfileLink href={`/adopter/${encodeURIComponent(match.adopterId)}`} />
                                 <div className="ml-auto"><ActionToggle action={action} onAction={onAction} /></div>
                                 {otherMatches && otherMatches.length > 0 && (
                                     <div className="basis-full flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 mt-0.5 border-t border-stone-200" data-testid="sheet-also-matches">
@@ -2052,7 +2053,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                                         {otherMatches.map(o => (
                                             <span key={o.adopterId} className="inline-flex items-center gap-2" data-testid="sheet-also-match">
                                                 <span className="font-semibold text-stone-700">{o.adopterName?.trim() || 'Sin nombre'}</span>
-                                                <button type="button" onClick={() => window.open(`/adopter/${o.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                                <OpenProfileLink href={`/adopter/${encodeURIComponent(o.adopterId)}`} />
                                                 {onChooseMatch && (
                                                     <button type="button" onClick={() => onChooseMatch(o)} className="text-teal-700 hover:underline" data-testid="sheet-also-match-choose">Actualizar este</button>
                                                 )}

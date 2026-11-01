@@ -354,7 +354,7 @@ describe('«No convive» memory follows merges (D48)', () => {
             actorEmail: ADMIN, type: 'household_member_disputed',
             metadata: expect.objectContaining({ householdId: 'hh-ana', profileId: 'marta' }),
         })]);
-        expect(notify.admins[0].body).toContain('combinar');
+        expect(notify.admins[0].body).toContain('Al unir perfiles');
     });
 
     it('the other direction: the absorbed profile\'s correction lands on a household the survivor lives in — also a dispute', async () => {

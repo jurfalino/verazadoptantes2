@@ -1,9 +1,9 @@
 /**
- * D52: a pair combined in «Pendientes» stays as «✓ Combinados — se conservó
- * {nombre} (de {dueño}) · Ver perfil ↗» — naming the profile that stayed and
+ * D52: a pair joined in «Pendientes» stays as «✓ Unidos — se conservó
+ * {nombre} (de {dueño}) · Abrir perfil ↗» — naming the profile that stayed and
  * whose it is, with a link to it.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 import MergedRow, { keptSentence, mergedInfo } from './MergedRow';
@@ -16,6 +16,9 @@ const tFor = (dict: Record<string, unknown>) => (path: string): string => {
     for (const k of path.split('.')) cur = (cur as Record<string, unknown> | undefined)?.[k];
     return typeof cur === 'string' ? cur : '';
 };
+
+// «Abrir perfil ↗» (OpenProfileLink) reads the app's own t: Spanish here.
+vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t: tFor(es as unknown as Record<string, unknown>), locale: 'es' }) }));
 
 const side = (id: string, over: Partial<PendingDedupSide> = {}): PendingDedupSide => ({
     id, name: 'Carla Gómez', contactInfo: null, contactEntries: null, source: 'form', createdAt: null,
@@ -41,11 +44,13 @@ describe('MergedRow (D52)', () => {
         const html = renderToStaticMarkup(<MergedRow info={mergedInfo(pair, theirs, t)} t={t} />);
         expect(html).toContain('data-testid="dedup-merged-row"');
         expect(html).not.toContain('data-testid="dedup-row"');
-        expect(html).toContain('Combinados');
+        expect(html).toContain('Unidos');
         expect(html).toContain('Se conservó Carla Gómez (de María)');
         expect(html).toContain('data-testid="dedup-merged-view"');
         expect(html).toContain('href="/adopter/theirs-id"');
-        expect(html).toContain('Ver perfil');
+        // «Abrir perfil ↗»: the new-tab link everywhere (point B).
+        expect(html).toContain('Abrir perfil');
+        expect(html).toContain('target="_blank"');
     });
 
     it('keeps the group, so a list reload leaves it under the same heading', () => {

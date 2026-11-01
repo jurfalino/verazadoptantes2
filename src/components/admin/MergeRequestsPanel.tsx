@@ -47,7 +47,7 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
                 // A dispute row stands for its whole pair (oneRowPerPair): nothing of it stays.
                 const key = pairKey(row.primary.id, row.secondary.id);
                 setItems(prev => prev.filter(r => r.id !== row.id && !(row.dispute && pairKey(r.primary.id, r.secondary.id) === key)));
-                toast.success('✓', decision === 'accept' ? (t('admin.merge_req_merged') || 'Perfiles combinados') : (t('admin.merge_req_declined') || 'Pedido rechazado'));
+                toast.success('✓', decision === 'accept' ? (t('admin.merge_req_merged') || 'Perfiles unidos') : (t('admin.merge_req_declined') || 'Pedido rechazado'));
             } else {
                 toast.error(t('errors.generic') || 'Error', failed, res.errorId ?? resolveErrorId(new Error(`resolveMergeRequest: ${res.error}`), 'MergeRequestsPanel'));
             }
@@ -74,7 +74,7 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
 
     return (
         <div className="max-w-3xl">
-            <h1 className="text-2xl font-bold text-stone-900 mb-1">{t('admin.nav_merge_requests') || 'Pedidos de combinación'}</h1>
+            <h1 className="text-2xl font-bold text-stone-900 mb-1">{t('admin.nav_merge_requests') || 'Pedidos para unir'}</h1>
             <p className="text-sm text-stone-500 mb-6">
                 {t('admin.merge_req_subtitle') || 'Pedidos para unir dos perfiles de adoptantes. Los pendientes primero, del más antiguo al más nuevo.'}
             </p>
@@ -83,7 +83,7 @@ export default function MergeRequestsPanel({ requests, disputes }: { requests: M
 
             {items.length === 0 ? (
                 <div className="rounded-xl border border-stone-200 bg-white p-6 text-sm text-stone-500">
-                    {t('admin.merge_req_empty') || 'No hay pedidos de combinación pendientes.'}
+                    {t('admin.merge_req_empty') || 'No hay pedidos para unir pendientes.'}
                 </div>
             ) : (
                 <ul className="space-y-3">
@@ -138,7 +138,7 @@ function RequestRow({ row: r, busy, locked, now, t, formatShortDate, onResolve }
             <AdminPairCompare kept={r.primary} absorbed={r.secondary} matchTypes={r.matchTypes} testIdPrefix="merge-request" t={t} formatShortDate={formatShortDate} />
             {/* A review request (D49) carries both positions: who wants them combined, and who said they are not the same person. */}
             <div className="min-w-0 text-stone-600">
-                <span className="font-medium">{r.dispute ? (t('admin.merge_req_review_by') || 'Pide revisión (quiere combinarlos)') : (t('admin.merge_req_requested_by') || 'Pidió')}: </span><BreakableEmail email={r.requesterEmail} />
+                <span className="font-medium">{r.dispute ? (t('admin.merge_req_review_by') || 'Pide revisión (quiere unirlos)') : (t('admin.merge_req_requested_by') || 'Pidió')}: </span><BreakableEmail email={r.requesterEmail} />
             </div>
             {r.createdAt != null && (
                 <div className="text-xs text-stone-500">

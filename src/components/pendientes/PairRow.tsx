@@ -15,9 +15,9 @@
  * actionByKeep, request.canMessage), and every click goes up as an action.
  */
 
-import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
-import { ChevronDown, Copy, ExternalLink, Inbox, Mail, Send, XCircle } from 'lucide-react';
+import { ChevronDown, Copy, Inbox, Mail, Send, XCircle } from 'lucide-react';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 import MatchCompare, { AdminScore, entriesAsShown } from '@/components/MatchCompare';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
@@ -100,7 +100,7 @@ function stateLine(pair: PendingDedupPair, t: T, age: (epochS: number) => string
     const someone = t('myAdopters.pending_dedup_a_user') || 'Un usuario';
     if (!r || pair.group === 'pair') return ownershipLine(pair, t);
     if (pair.group === 'received') {
-        return fill(t('myAdopters.pending_d_line_received') || '{name} te pide combinar · {when}', { name: r.counterpartName || someone, when: age(r.createdAt) });
+        return fill(t('myAdopters.pending_d_line_received') || '{name} te pide unir · {when}', { name: r.counterpartName || someone, when: age(r.createdAt) });
     }
     if (pair.group === 'sent') {
         if (r.dispute) return fill(t('myAdopters.pending_d_line_sent_dispute') || 'Revisión pedida a un administrador · {when}', { when: age(r.createdAt) });
@@ -193,13 +193,8 @@ function SideHead({ side, badge, t, formatShortDate, onRequestAccess }: {
                 {meta && <span className={T_MUTED}>· {meta}</span>}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 text-[12px]">
-                {/* New tab: the comparison you are mid-way through stays on screen. */}
-                <Link href={`/adopter/${side.id}`} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 min-h-[44px] font-semibold text-[var(--accent)] hover:underline underline-offset-2">
-                    {t('adopter.dup_action_view') || 'Ver perfil'}
-                    <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
-                    <span className="sr-only">{t('common.opens_new_tab') || '(abre en una pestaña nueva)'}</span>
-                </Link>
+                {/* «Abrir perfil ↗», a new tab: the comparison you are mid-way through stays on screen (point B). */}
+                <OpenProfileLink href={`/adopter/${encodeURIComponent(side.id)}`} className="-ml-1" />
                 {/* Locked values in this block belong to whoever added this profile. */}
                 {!side.canSeeContact && (
                     <button type="button" onClick={() => onRequestAccess(side)}

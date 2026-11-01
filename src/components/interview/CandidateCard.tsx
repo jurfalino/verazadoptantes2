@@ -1,4 +1,5 @@
 'use client';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import type { CandidateSummary } from '@/domain/interview/types';
@@ -24,9 +25,8 @@ export default function CandidateCard({ c, selected = false, onSelect, selectLab
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <RatingBadge rating={c.avgRating} />
-                    <a href={`/adopter/${c.adopterId}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-teal-700 hover:underline">
-                        {t('interview.view_profile')}
-                    </a>
+                    {/* «Abrir perfil ↗», the new-tab link everywhere (point B). */}
+                    <OpenProfileLink href={`/adopter/${encodeURIComponent(c.adopterId)}`} />
                 </div>
             </div>
             {onSelect && (

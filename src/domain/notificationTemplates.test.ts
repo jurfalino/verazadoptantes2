@@ -99,14 +99,14 @@ describe('renderNotification', () => {
             .toEqual({ title: 'Juana aplicó para Luna — 2 coincidencias', body: 'Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.' });
         // merge request declined: «rechazó» (D30)
         expect(renderNotification({ key: 'merge_request_declined', params: { actorName: 'owner', survivorName: 'A', absorbedName: 'B' } }, 'es')!.title)
-            .toBe('owner rechazó combinar dos perfiles');
+            .toBe('owner rechazó unir dos perfiles');
     });
 
     it('a merge of two profiles with the same name names it once (audit C8), different names keep «A → B»', () => {
         const same = { actorName: 'Ana', survivorName: 'Carla Ruiz', absorbedName: ' Carla Ruiz ' };
         expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'es')!.title).toBe('Se unieron dos perfiles de Carla Ruiz');
-        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'en')!.title).toBe('Two profiles of Carla Ruiz were merged');
-        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'pt')!.title).toBe('Dois perfis de Carla Ruiz foram combinados');
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'en')!.title).toBe('Two profiles of Carla Ruiz were joined');
+        expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: same }, 'pt')!.title).toBe('Dois perfis de Carla Ruiz foram unidos');
         expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: { actorName: 'Ana', survivorName: 'Carla Ruiz', absorbedName: 'Carla R.' } }, 'es')!.title)
             .toBe('Se unieron dos perfiles: Carla R. → Carla Ruiz');
     });
@@ -138,11 +138,11 @@ describe('renderNotification', () => {
         // A merge carried the person back (Task 6): said so, in every locale.
         const viaMerge = { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez', viaMerge: '1' };
         expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'es')!.body)
-            .toBe('Al combinar perfiles, Jon volvió a dejar a Marta Paez en el hogar de Pedro Paez, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
+            .toBe('Al unir perfiles, Jon volvió a dejar a Marta Paez en el hogar de Pedro Paez, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.');
         expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'en')!.body)
-            .toBe("By merging profiles, Jon put Marta Paez back in Pedro Paez's household after someone said they don't live there. Please review who is right.");
+            .toBe("By joining profiles, Jon put Marta Paez back in Pedro Paez's household after someone said they don't live there. Please review who is right.");
         expect(renderNotification({ key: 'household_member_disputed', params: viaMerge }, 'pt')!.body)
-            .toBe('Ao combinar perfis, Jon colocou de novo Marta Paez no lar de Pedro Paez, depois que alguém indicou que não mora lá. Revise quem tem razão.');
+            .toBe('Ao unir perfis, Jon colocou de novo Marta Paez no lar de Pedro Paez, depois que alguém indicou que não mora lá. Revise quem tem razão.');
     });
 
     it('household_contribution: a member or a contact on one, per locale (D54)', () => {
@@ -180,7 +180,7 @@ describe('renderNotification', () => {
         expect(pt.body).toContain("«Julieta Paz (de María, 22 out '26)»");
         // No owner, no date: just the name.
         const bare = renderNotification({ key: 'merge_request_declined', params: { byAdmin: '1', survivorName: 'A', absorbedName: '' } }, 'es')!;
-        expect(bare).toEqual({ title: 'Un administrador rechazó combinar dos perfiles', body: '«sin nombre» y «A» siguen como perfiles separados.' });
+        expect(bare).toEqual({ title: 'Un administrador rechazó unir dos perfiles', body: '«sin nombre» y «A» siguen como perfiles separados.' });
     });
 
     it('disputes (D49, D50): the admin request, the hint on a merge notice, and both outcomes', () => {
@@ -189,7 +189,7 @@ describe('renderNotification', () => {
         expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: { actorName: 'Jon', disputable: '1', ...sides } }, 'es')!.body)
             .toMatch(/¿No es la misma persona\? Avisale a un administrador desde el perfil\.$/);
         expect(renderNotification({ key: 'adopter_merged_by_rescuer', params: { actorName: 'Jon', ...sides } }, 'es')!.body).not.toMatch(/administrador/);
-        expect(renderNotification({ key: 'merge_dispute_resolved', params: { outcome: 'kept', ...sides } }, 'en')!.title).toBe('An administrator kept a merge');
+        expect(renderNotification({ key: 'merge_dispute_resolved', params: { outcome: 'kept', ...sides } }, 'en')!.title).toBe('An administrator kept a join');
         expect(renderNotification({ key: 'merge_dispute_resolved', params: { outcome: 'sideways', ...sides } }, 'es')).toBeNull();
     });
 

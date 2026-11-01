@@ -11,7 +11,7 @@ export default async function AdminDataQualityPage() {
                 <h2 className="text-2xl font-semibold text-stone-900">Calidad de datos</h2>
                 <p className="text-stone-500 text-sm">
                     Registros que probablemente necesiten limpieza. Las listas son en vivo: cada fila desaparece
-                    automáticamente al limpiar la nota o fusionar el duplicado.
+                    automáticamente al limpiar la nota o unir el duplicado.
                 </p>
             </header>
             <DataQualityReport data={data} />

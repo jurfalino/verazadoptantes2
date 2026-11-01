@@ -82,7 +82,7 @@ test.describe('sheet import: the same person on several rows', () => {
         await page.getByRole('button', { name: /Importar 2 →/ }).click({ timeout: 60000 });
         await expect(page.getByText('Importación completa')).toBeVisible({ timeout: 60000 });
         await expect(page.getByText(/1 fila de la misma persona se agrupó/)).toBeVisible();
-        const href = await page.getByRole('link', { name: /Ver perfil/ }).first().getAttribute('href');
+        const href = await page.getByRole('link', { name: /Abrir perfil|Open profile/ }).first().getAttribute('href');
         await page.goto(href!);
         await expect(page.getByText(/1155550181|11 5555-0181/).first()).toBeVisible({ timeout: 30000 });
         await expect(page.getByText(/1155550182|11 5555-0182/).first()).toBeVisible();

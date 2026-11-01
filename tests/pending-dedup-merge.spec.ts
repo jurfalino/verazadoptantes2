@@ -56,7 +56,7 @@ test('the owner merges a pending pair from /my-adopters; the older profile survi
     await expect(card).toHaveCount(1, { timeout: 30_000 });
     await openRow(card);
     // Both profiles are hers: nothing moves to another list, so no confirmation.
-    await card.getByTestId('dedup-merge').filter({ hasText: /^(Merge profiles|Combinar perfiles|Mesclar perfis|Combinar perfis)$/ }).click();
+    await card.getByTestId('dedup-merge').filter({ hasText: /^(Join profiles|Unir perfiles|Unir perfis)$/ }).click();
     await expect(card).toHaveCount(0, { timeout: 30_000 });
 
     await expect.poll(() => isNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${NEW}'`)[0]?.deleted_at), { timeout: 30_000 })
@@ -86,7 +86,7 @@ test('a foreign profile is never absorbed into hers: the button asks its owner i
     await openRow(card);
     // Hers stays by default (the older one), so the click asks the other rescuer, and the button says so.
     const button = card.getByTestId('dedup-merge');
-    await expect(button).toHaveText(/^(Request merge|Pedir combinar|Pedir para combinar)$/);
+    await expect(button).toHaveText(/^(Ask to join|Pedir unir|Pedir para unir)$/);
     await button.click();
     await expect(page.getByText(/Request sent to|Pedido enviado a|Pedido enviado para/).first()).toBeVisible({ timeout: 30_000 });
     await expect(card.getByTestId('dedup-request-status')).toBeVisible({ timeout: 30_000 });

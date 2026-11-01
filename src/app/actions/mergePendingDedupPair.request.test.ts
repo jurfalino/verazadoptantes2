@@ -188,7 +188,7 @@ describe('mergePendingDedupPair — merge or request', () => {
             type: 'adopter_merged', userId: OWNER,
             title: 'Se unieron dos perfiles: Ana Díaz → Ana Diaz',
             // D31: each side names its owner and date.
-            body: "stranger combinó su perfil «Ana Díaz (de stranger, 31 dic '69)» con el tuyo «Ana Diaz (de owner, 31 dic '69)» porque son la misma persona. Todo quedó en tu perfil. ¿No es la misma persona? Avisale a un administrador desde el perfil.",
+            body: "stranger unió su perfil «Ana Díaz (de stranger, 31 dic '69)» con el tuyo «Ana Diaz (de owner, 31 dic '69)» porque son la misma persona. Todo quedó en tu perfil. ¿No es la misma persona? Avisale a un administrador desde el perfil.",
             url: expect.stringMatching(/^\/adopter\/o-old\?dispute=[\w-]+$/), icon: '🔗',
             template: expect.objectContaining({ key: 'adopter_merged_by_rescuer' }),
         })]);

@@ -118,7 +118,7 @@ describe('createMergeRequest', () => {
         });
         expect(recipients().sort()).toEqual([MATE, OWNER].sort());
         for (const n of notify.create) {
-            expect(n).toMatchObject({ type: 'merge_request', url: '/my-adopters#pendientes', title: 'stranger pidió combinar dos perfiles' });
+            expect(n).toMatchObject({ type: 'merge_request', url: '/my-adopters#pendientes', title: 'stranger pidió unir dos perfiles' });
             expect(n.body).toContain('Carla Gómez');
             expect(n.body).toContain('Carla Gomez');
             // D31: which one stays, each with its owner (a name, never the address).
@@ -179,7 +179,7 @@ describe('createMergeRequest', () => {
         expect(request(idOf(res)).owner_email).toBeNull();
         expect(notify.create).toEqual([]);
         expect(notify.admins).toHaveLength(1);
-        expect(notify.admins[0]).toMatchObject({ actorEmail: REQUESTER, type: 'merge_request', title: 'stranger pidió combinar dos perfiles' });
+        expect(notify.admins[0]).toMatchObject({ actorEmail: REQUESTER, type: 'merge_request', title: 'stranger pidió unir dos perfiles' });
     });
 });
 
@@ -255,7 +255,7 @@ describe('answerMergeRequest — decline and admin decisions', () => {
         expect(candidate('cand-1')).toEqual({ status: 'pending', resolved_by: null });
         expect(recipients()).toEqual([REQUESTER]);
         expect(notify.create[0]).toMatchObject({
-            type: 'merge_request_resolved', url: '/my-adopters#pendientes', title: 'owner rechazó combinar dos perfiles',
+            type: 'merge_request_resolved', url: '/my-adopters#pendientes', title: 'owner rechazó unir dos perfiles',
         });
         expect(notify.create[0].body).not.toContain('administrador');
         expect(mergeSpy).not.toHaveBeenCalled();

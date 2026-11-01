@@ -405,7 +405,7 @@ test.describe('Duplicate mass-merge and undo', () => {
         await expect(card.getByTestId('dup-created-by').first()).toBeVisible({ timeout: 30000 });
         await expect(card).toContainText('testuser@example.com');
         // The merge window offers to notify (checked by default).
-        await card.getByRole('button', { name: /^Merge$/ }).click();
+        await card.getByRole('button', { name: /^(Unir|Merge)$/ }).click();
         await expect(page.getByTestId('dmm-notify').locator('input')).toBeChecked();
         await page.keyboard.press('Escape');
 

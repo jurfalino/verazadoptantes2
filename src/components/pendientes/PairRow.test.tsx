@@ -78,7 +78,7 @@ describe('PairRow — «Pedir revisión a un administrador» (D49)', () => {
 
     it('an admin who was rejected still merges keeping theirs (D43)', () => {
         const html = render(declinedSent('merge'), as(es));
-        expect(html).toContain('Combinar conservando el de María');
+        expect(html).toContain('Unir conservando el de María');
         expect(html).not.toContain(es.myAdopters.pending_d_action_dispute);
     });
 

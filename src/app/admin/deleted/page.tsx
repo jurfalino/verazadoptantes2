@@ -59,7 +59,7 @@ export default function AdminDeletedPage() {
     useEffect(() => { load(); }, [load]);
 
     const reasonLabel = (h: string | null) =>
-        h === 'MERGED' ? (isEs ? 'Fusionado' : 'Merged')
+        h === 'MERGED' ? (isEs ? 'Unido' : 'Joined')
             : h === 'DELETED' ? (isEs ? 'Eliminación solicitada' : 'Deletion request')
                 : (isEs ? 'Eliminado' : 'Deleted');
 
@@ -134,8 +134,8 @@ export default function AdminDeletedPage() {
                 <h2 className="text-2xl font-semibold text-stone-900">🗑️ {isEs ? 'Eliminados (Papelera)' : 'Deleted (Trash)'}</h2>
                 <p className="text-stone-500 text-sm mt-1">
                     {isEs
-                        ? 'Registros ocultos por fusión o por solicitud de eliminación. Restauralos o purgalos definitivamente.'
-                        : 'Records hidden by merge or deletion request. Restore them, or purge permanently.'}
+                        ? 'Registros ocultos por unión con otro perfil o por solicitud de eliminación. Restauralos o purgalos definitivamente.'
+                        : 'Records hidden by a join with another profile or by a deletion request. Restore them, or purge permanently.'}
                 </p>
             </div>
 

@@ -35,7 +35,7 @@ export default function MergeDisputesSection({ disputes }: { disputes: MergeDisp
     const [confirming, setConfirming] = useState<{ row: MergeDisputeAdminRow; decision: 'undo' | 'keep' } | null>(null);
 
     async function resolve(row: MergeDisputeAdminRow, decision: 'undo' | 'keep') {
-        const failed = t('admin.merge_dispute_failed') || 'No se pudo resolver la combinación cuestionada. Volvé a intentar.';
+        const failed = t('admin.merge_dispute_failed') || 'No se pudo resolver la unión cuestionada. Volvé a intentar.';
         setBusyId(row.id);
         try {
             const res = await resolveMergeDispute(row.id, decision);
@@ -43,10 +43,10 @@ export default function MergeDisputesSection({ disputes }: { disputes: MergeDisp
                 setItems(prev => prev.filter(d => d.id !== row.id));
                 toast.success('✓', res.status === 'closed'
                     // Moot: the merge was undone elsewhere or its survivor merged away since.
-                    ? (t('admin.merge_dispute_closed') || 'Esa combinación ya se había deshecho o cambió: la dimos por revisada')
+                    ? (t('admin.merge_dispute_closed') || 'Esa unión ya se había deshecho o cambió: la dimos por revisada')
                     : res.status === 'undone'
-                        ? (t('admin.merge_dispute_undone') || 'Combinación deshecha: vuelven a ser dos perfiles')
-                        : (t('admin.merge_dispute_kept') || 'Se mantuvo la combinación'));
+                        ? (t('admin.merge_dispute_undone') || 'Unión deshecha: vuelven a ser dos perfiles')
+                        : (t('admin.merge_dispute_kept') || 'Se mantuvo la unión'));
             } else if (res.error === 'not_open') {
                 // Another admin answered first: nothing left to do here.
                 setItems(prev => prev.filter(d => d.id !== row.id));
@@ -71,7 +71,7 @@ export default function MergeDisputesSection({ disputes }: { disputes: MergeDisp
                 {t('admin.merge_disputes_title')} <span className="text-stone-500 font-normal">· {items.length}</span>
             </h2>
             <p className="text-sm text-stone-500 mb-3">
-                {t('admin.merge_disputes_subtitle') || 'Combinaciones que un rescatista dice que no son la misma persona.'}
+                {t('admin.merge_disputes_subtitle') || 'Uniones que un rescatista dice que no son la misma persona.'}
             </p>
             <ul className="space-y-3">
                 {items.map(d => (
@@ -119,11 +119,11 @@ function DisputeRow({ row: d, busy, locked, t, formatShortDate, onResolve }: {
             </div>
             {/* «Qué coincide y qué no» (audit A4): the survivor as it was before the merge, the absorbed profile as it is. */}
             <AdminPairCompare kept={d.survivor} absorbed={d.absorbed} matchTypes={d.matchTypes} testIdPrefix="merge-dispute" t={t} formatShortDate={formatShortDate} />
-            {line(t('admin.merge_dispute_merged_by') || 'Combinó', d.mergedBy, d.mergedAt)}
+            {line(t('admin.merge_dispute_merged_by') || 'Unió', d.mergedBy, d.mergedAt)}
             {line(t('admin.merge_dispute_raised_by') || 'Cuestionó', d.raisedBy, d.createdAt)}
             <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="primary" size="compact" data-testid="merge-dispute-undo" onClick={() => onResolve(d, 'undo')} disabled={locked}>
-                    {busy ? (t('common.processing') || 'Procesando...') : (t('admin.merge_dispute_undo') || 'Deshacer combinación')}
+                    {busy ? (t('common.processing') || 'Procesando...') : (t('admin.merge_dispute_undo') || 'Deshacer unión')}
                 </Button>
                 <Button variant="secondary" size="compact" data-testid="merge-dispute-keep" onClick={() => onResolve(d, 'keep')} disabled={locked}>
                     {t('admin.merge_dispute_keep') || 'Mantener'}

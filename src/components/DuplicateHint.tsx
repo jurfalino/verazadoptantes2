@@ -19,14 +19,14 @@
  *   the server decided this viewer may do (`match.action`, Jon 2026-10-29,
  *   prototype proto-shots/dato-coincide-v3.html — decideDupHintAction):
  *     - 'continue' (the viewer or their team loaded the profile being edited,
- *       or an admin): «Continuar con este perfil» → the shared confirmation
+ *       or an admin): «Unir con este perfil» → the shared confirmation
  *       in its absorb mode (ContinueMergeDialog: «¿Unir el perfil de … con el
  *       de …?», what it adds, the rating after, who is told — UX C1) →
  *       continueWithMatchedProfile, then the profile that
- *       stayed opens with «Listo: … ahora es este perfil».
+ *       stayed opens with «Listo: el perfil de … se unió a este».
  *     - 'flag' (someone else loaded it, or the match has no owner):
  *       «Marcar como posible duplicado» (flagAdopterAsDuplicate — the owners
- *       and the admins are told) and «Abrir perfil para agregar datos».
+ *       and the admins are told) and «Abrir perfil ↗».
  *     - 'review_admins' (they already said no): «Pedir revisión a un
  *       administrador» (askAdminsToReviewPair, the «Pendientes» dispute).
  *     - 'pending' (already up for review): only said.
@@ -34,7 +34,7 @@
  *       separados», «Viven juntos»): «Ya figuran como personas distintas.»
  *   Always: «No es esta persona» → closes the window and drops that row while
  *   the typed value stays the same (local only, no server write, no toast);
- *   «Abrir perfil completo en otra pestaña» → writes the search-match grant
+ *   «Abrir perfil ↗» (OpenProfileLink) → writes the search-match grant
  *   (grantSearchMatchAccess) so the new tab renders unmasked, then opens it.
  *
  * Data: getDuplicateHintMatches — the same detection the hint always ran,
@@ -43,7 +43,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowUpRight, Check, CheckCircle2, Flag, ShieldQuestion } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Flag, ShieldQuestion } from 'lucide-react';
 import { getDuplicateHintMatches, grantSearchMatchAccess, flagAdopterAsDuplicate, countAdoptersBySocialHandle, continueWithMatchedProfile, askAdminsToReviewPair } from '@/app/actions';
 import type { DupHintMatch } from '@/app/actions/households';
 import { useLanguage } from '@/context/LanguageContext';
@@ -64,6 +64,7 @@ import { NO_DISMISSED, dismissDupHintMatch, isDupHintType, visibleDupHintMatches
 import { CONTACT_ENTRIES_FULL } from '@/lib/contactEntries';
 import { joinNames } from '@/lib/householdCopy';
 import { ContinueMergeDialog } from '@/components/ContinueMergeDialog';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
 import type { SocialPlatform } from '@/lib/contactEntries';
 import { rememberContinued } from '@/components/ContinuedProfileBanner';
@@ -184,13 +185,8 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
             {t('formResults.not_this_person')}
         </Button>
     );
-    const openLink = (
-        <button type="button" onClick={onOpenFull} disabled={disabled} data-testid="dup-hint-open-full"
-            className="inline-flex items-center justify-center gap-1 min-h-[44px] px-2 rounded-xl text-[13px] font-semibold hover:underline disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]" style={{ color: 'var(--accent)' }}>
-            {t('adopter.dup_hint_open_full')}
-            <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
-        </button>
-    );
+    // «Abrir perfil ↗»: the same new-tab link on every surface and for every role (point B, Jon 2026-11-01).
+    const openLink = <OpenProfileLink onClick={onOpenFull} disabled={disabled} testId="dup-hint-open-full" className="self-center" />;
     return (
         <div className="space-y-3 min-w-0" data-testid="dup-hint-profile" data-action={action ?? 'none'}>
             <MatchCardHeader
@@ -229,7 +225,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
                         )}
                         <Button type="button" fullWidth onClick={onContinue} disabled={disabled || needsPlatform} data-testid="dup-hint-continue"
                             icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
-                            {t('adopter.dup_action_continue_with_existing')}
+                            {t('adopter.dup_action_join_with_existing')}
                         </Button>
                         {notThis}
                         {openLink}
@@ -252,11 +248,9 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
                                 <p className="-mt-1 text-center text-xs" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-flag-told">{t('adopter.dup_hint_flag_told')}</p>
                             </>
                         )}
-                        <Button type="button" variant="secondary" fullWidth onClick={onOpenFull} disabled={disabled} loading={busy === 'open'} data-testid="dup-hint-open-to-add"
-                            icon={<ArrowUpRight className="w-4 h-4" aria-hidden="true" />}>
-                            {t('adopter.dup_hint_open_to_add')}
-                        </Button>
                         {notThis}
+                        {/* The same «Abrir perfil ↗» the owner sees, not a big button (point B). */}
+                        <OpenProfileLink onClick={onOpenFull} disabled={disabled} testId="dup-hint-open-to-add" className="self-center" />
                     </>
                 )}
                 {action === 'review_admins' && (
@@ -296,7 +290,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
 }
 
 /**
- * «Continuar con este perfil»'s confirmation: the shared dialog in its absorb mode (UX C1) — the profile being
+ * «Unir con este perfil»'s confirmation: the shared dialog in its absorb mode (UX C1) — the profile being
  * edited stops existing, said in its title and first line — with the rating after and who is told.
  */
 export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfirm }: {
@@ -352,7 +346,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
     const [pickedInWindow, setPickedInWindow] = useState(false);
     // Opening or closing the window starts its network ask afresh.
     const setOpenId = (adopterId: string | null) => { setOpenIdState(adopterId); setPickedInWindow(false); };
-    // «Continuar con este perfil» → its confirmation (the match id), and a failure said in it.
+    // «Unir con este perfil» → its confirmation (the match id), and a failure said in it.
     const [confirmId, setConfirmId] = useState<string | null>(null);
     const [continuing, setContinuing] = useState(false);
     const [continueFailure, setContinueFailure] = useState<string | null>(null);

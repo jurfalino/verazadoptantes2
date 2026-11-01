@@ -1,7 +1,7 @@
 /**
  * Disputes about a merge that already happened (D50, spec 2026-10-25
  * pendientes D, addendum 2026-10-26): the owner team of either profile says
- * «No es la misma persona», the admins see it and undo the merge (the existing
+ * «No es la misma persona», the admins see it and undo the join (the existing
  * unmergeAdopters, by the merge's audit id) or keep it; both rescuers hear the
  * outcome. Real SQL, the real immediate merge (mergePendingDedupPair), real
  * mergeAdopters / unmergeAdopters behind passthrough spies; the session is the
@@ -216,13 +216,13 @@ describe('resolveMergeDispute (D50)', () => {
         expect(await getMergeDisputeOption(auditId)).toEqual({ canRaise: false, status: 'undone' });
     });
 
-    it('«Mantener»: the merge stands, the dispute is closed, both told; nobody can reopen it', async () => {
+    it('«Mantener»: the join stands, the dispute is closed, both told; nobody can reopen it', async () => {
         expect(await as(ADMIN, () => resolveMergeDispute(disputeId, 'keep'))).toEqual({ success: true, status: 'kept' });
         expect(unmergeSpy).not.toHaveBeenCalled();
         expect(deleted('theirs-new')).toBe(true);
         expect(disputes()[0]).toMatchObject({ status: 'kept', resolved_by: ADMIN });
         expect(notify.create.map(n => n.userId).sort()).toEqual([OWNER, STRANGER]);
-        expect(notify.create[0]).toMatchObject({ type: 'merge_dispute_resolved', title: 'Un administrador mantuvo una combinación' });
+        expect(notify.create[0]).toMatchObject({ type: 'merge_dispute_resolved', title: 'Un administrador mantuvo una unión' });
         expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'already_decided' });
         expect(await as(MATE, () => raiseMergeDispute(auditId))).toMatchObject({ success: false, error: 'already_decided' });
         expect(disputes()).toHaveLength(1);

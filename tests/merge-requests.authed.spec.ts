@@ -115,7 +115,7 @@ test('#pendientes opens the section; an admin\'s «Combinar perfiles» merges an
     await expect(card.getByTestId('dedup-created-by')).toContainText(`mergereq-owner-${stamp}`);
     // An admin's choice needs nobody's consent: the button merges, it doesn't ask.
     const merge = card.getByTestId('dedup-merge');
-    await expect(merge).toHaveText(/^(Merge profiles|Combinar perfiles|Combinar perfis)$/);
+    await expect(merge).toHaveText(/^(Join profiles|Unir perfiles|Unir perfis)$/);
     await merge.click();
     // The admin keeps his own profile: nothing moves to another list, so no confirmation.
     await expect(card).toHaveCount(0, { timeout: 30_000 });
@@ -155,7 +155,7 @@ test('a rescuer\'s request goes to the other owner, can be cancelled, and an adm
         // ── Keeping hers would absorb the owner's profile: the button asks.
         let card = await openPendingCard(rp, NAME);
         await expect(card.getByTestId('dedup-keep-existing')).toHaveAttribute('aria-checked', 'true');
-        await expect(card.getByTestId('dedup-merge')).toHaveText(/^(Request merge|Pedir combinar|Pedir para combinar)$/);
+        await expect(card.getByTestId('dedup-merge')).toHaveText(/^(Ask to join|Pedir unir|Pedir para unir)$/);
         await card.getByTestId('dedup-merge').click();
         await expect(rp.getByText(/Request sent to|Pedido enviado a|Pedido enviado para/).first()).toBeVisible({ timeout: 30_000 });
         await expect(card).toHaveAttribute('data-group', 'sent', { timeout: 30_000 });
@@ -182,7 +182,7 @@ test('a rescuer\'s request goes to the other owner, can be cancelled, and an adm
 
         // ── Ask again: a fresh pending request.
         card = await openPendingCard(rp, NAME);
-        await expect(card.getByTestId('dedup-merge')).toHaveText(/^(Request merge|Pedir combinar|Pedir para combinar)$/);
+        await expect(card.getByTestId('dedup-merge')).toHaveText(/^(Ask to join|Pedir unir|Pedir para unir)$/);
         await card.getByTestId('dedup-merge').click();
         await expect(card.getByTestId('dedup-cancel-request')).toBeVisible({ timeout: 30_000 });
         await expect.poll(() => pendingRequestIds().length, { timeout: 30_000 }).toBe(1);

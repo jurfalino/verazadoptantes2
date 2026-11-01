@@ -124,11 +124,13 @@ describe('DupHintProfile — the window', () => {
         expect(html).toContain('data-testid="dup-hint-activity"');
     });
 
-    it("case 1 'continue': «Continuar con este perfil», «No es esta persona», then the open-full link — in that order", () => {
+    it("case 1 'continue': «Unir con este perfil», «No es esta persona», then «Abrir perfil ↗» — in that order (point B)", () => {
         const html = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct {...handlers} />);
         expect(ids(html)).toEqual(['dup-hint-continue', 'dup-hint-not-this', 'dup-hint-open-full']);
-        expect(text(html)).toContain('Continuar con este perfil');
-        expect(text(html)).toContain('Abrir perfil completo en otra pestaña');
+        expect(text(html)).toContain('Unir con este perfil');
+        expect(text(html)).not.toContain('Continuar con este perfil');
+        expect(text(html)).toContain('Abrir perfil');
+        expect(text(html)).not.toContain('Abrir perfil completo');
         expect(html).not.toContain('data-testid="dup-hint-pending-note"');
         // An admin on a pair already up for review: said, and «Continuar» stays.
         const admin = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, alreadyPending: true }} canAct {...handlers} />);
@@ -136,15 +138,16 @@ describe('DupHintProfile — the window', () => {
         expect(ids(admin)[0]).toBe('dup-hint-continue');
     });
 
-    it("case 2 'flag': who loaded it, «Marcar como posible duplicado» + who is told, «Abrir perfil para agregar datos», «No es esta persona»", () => {
+    it("case 2 'flag': who loaded it, «Marcar como posible duplicado» + who is told, «No es esta persona», then the same «Abrir perfil ↗» link the owner sees", () => {
         const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'other_owner', cantJoinName: 'Lucía Fernández' }} canAct {...handlers} />);
-        expect(ids(html)).toEqual(['dup-hint-flag', 'dup-hint-open-to-add', 'dup-hint-not-this']);
+        expect(ids(html)).toEqual(['dup-hint-flag', 'dup-hint-not-this', 'dup-hint-open-to-add']);
         const said = text(html);
         // It names the profile being edited (UX I5): under Jonatan's card it read as being about Jonatan.
         expect(said).toContain('El perfil de Lucía Fernández lo cargó otra persona, así que no podés unir los dos vos. Podés:');
         expect(said).toContain('Marcar como posible duplicado');
         expect(said).toContain('Les avisamos a quienes cargaron cada perfil y a los administradores.');
-        expect(said).toContain('Abrir perfil para agregar datos');
+        expect(said).toContain('Abrir perfil');
+        expect(said).not.toContain('Abrir perfil para agregar datos');
         expect(said.indexOf('lo cargó otra persona')).toBeLessThan(said.indexOf('Marcar como posible duplicado'));
         expect(html).not.toContain('data-testid="dup-hint-continue"');
         // Case 3 (the match has no owner, the profile being edited is mine): no «Lo cargó otra persona».
@@ -166,7 +169,7 @@ describe('DupHintProfile — the window', () => {
     it('a said-no pair this viewer can\'t ask about: «Ya dijeron que no…», no flag (the server refuses one)', () => {
         const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'other_owner', saidNo: true }} canAct {...handlers} />);
         expect(text(html)).toContain('Ya dijeron que no son la misma persona.');
-        expect(ids(html)).toEqual(['dup-hint-open-to-add', 'dup-hint-not-this']);
+        expect(ids(html)).toEqual(['dup-hint-not-this', 'dup-hint-open-to-add']);
     });
 
     it("case 4 'review_admins': «Ya dijeron que no…» and «Pedir revisión a un administrador» — never «Continuar»", () => {

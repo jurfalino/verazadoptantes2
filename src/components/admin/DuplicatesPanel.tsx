@@ -284,7 +284,7 @@ export default function DuplicatesPanel() {
         const survivorIds = new Set<string>();
         try {
             for (let i = 0; i < candidateIds.length; i += MERGE_CHUNK) {
-                setBulkProgress(`Fusionando… ${merged + skipped}/${candidateIds.length}`);
+                setBulkProgress(`Uniendo… ${merged + skipped}/${candidateIds.length}`);
                 const batch = candidateIds.slice(i, i + MERGE_CHUNK);
                 const res = await fetch('/api/admin/duplicates/merge', {
                     method: 'POST',
@@ -310,9 +310,9 @@ export default function DuplicatesPanel() {
             setBulkProgress('');
         }
         if (failures.length > 0) {
-            alert(`Se fusionaron ${merged} pares, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+            alert(`Se unieron ${merged} pares, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
         }
-        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} fusionado${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}`, primaryIds: [...survivorIds] } : null);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} unido${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}`, primaryIds: [...survivorIds] } : null);
         clearSelection();
         fetchData();
     }
@@ -450,7 +450,7 @@ export default function DuplicatesPanel() {
         const data = await res.json() as { error?: string; results?: Array<{ success: boolean; auditId?: string }> };
         if (res.ok) {
             const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
-            setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil fusionado', primaryIds: [primaryId] } : null);
+            setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil unido', primaryIds: [primaryId] } : null);
             setMergeTarget(null);
             clearSelection();
             fetchData();
@@ -491,10 +491,10 @@ export default function DuplicatesPanel() {
             return;
         }
         if (failed.length > 0 || transportError) {
-            alert(`Se fusionaron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${mergeErrorText(f.error)}`).join('\n')}${transportError ? `\n• ${mergeErrorText(transportError)}` : ''}`);
+            alert(`Se unieron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${mergeErrorText(f.error)}`).join('\n')}${transportError ? `\n• ${mergeErrorText(transportError)}` : ''}`);
         }
         const auditIds = okResults.filter(r => r.auditId).map(r => r.auditId!);
-        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}`, primaryIds: [primaryId] } : null);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} unido${auditIds.length === 1 ? '' : 's'}`, primaryIds: [primaryId] } : null);
         setMassMergeCluster(null);
         clearSelection();
         fetchData();
@@ -527,7 +527,7 @@ export default function DuplicatesPanel() {
                 failures.push(...(data.results || []).filter(r => !r.success).map(r => r.error ?? 'unknown'));
             }
             if (failures.length > 0) {
-                alert(`Se deshicieron ${undone} fusiones, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+                alert(`Se deshicieron ${undone} uniones, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
             }
             if (undone > 0 || failures.length === 0) {
                 setLastMerge(null);
@@ -653,7 +653,7 @@ export default function DuplicatesPanel() {
                         className="px-3 py-1.5 text-xs font-medium text-stone-500 bg-stone-100 rounded-lg hover:bg-stone-200 hover:text-stone-700 disabled:opacity-50"
                         title={lastMerge.label}
                     >
-                        {undoing ? 'Deshaciendo…' : '↩︎ Deshacer última fusión'}
+                        {undoing ? 'Deshaciendo…' : '↩︎ Deshacer última unión'}
                     </button>
                 </div>
             )}
@@ -820,7 +820,7 @@ export default function DuplicatesPanel() {
                         disabled={!!bulkProgress || undoing}
                         className="px-4 py-1.5 text-sm font-semibold bg-teal-500 rounded-lg hover:bg-teal-400 disabled:opacity-50"
                     >
-                        {bulkProgress || `Fusionar cada par (${selectedPairs.size})`}
+                        {bulkProgress || `Unir cada par (${selectedPairs.size})`}
                     </button>
                     {/* Secondary: pool EVERY selected record into ONE survivor —
                         only for a single person's cluster, never for clearing
@@ -935,8 +935,8 @@ function MassMergeModal({ records, onMerge, onClose }: {
                 onClick={e => e.stopPropagation()}
             >
                 <div className="p-6 border-b border-stone-200">
-                    <h3 className="text-xl font-semibold text-stone-900">Fusionar grupo de duplicados</h3>
-                    <p className="text-sm text-stone-500 mt-1">Elegí qué perfil conservar; los seleccionados se fusionan dentro de él.</p>
+                    <h3 className="text-xl font-semibold text-stone-900">Unir grupo de duplicados</h3>
+                    <p className="text-sm text-stone-500 mt-1">Elegí qué perfil conservar; los seleccionados se suman a él.</p>
                 </div>
 
                 <div className="p-6 space-y-2">
@@ -972,7 +972,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                                             onChange={() => toggle(rec.id)}
                                             className="rounded border-stone-300 text-red-600 focus:ring-red-500"
                                         />
-                                        Fusionar
+                                        Unir
                                     </label>
                                 )}
                             </div>
@@ -981,7 +981,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
 
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm mt-4">
                         <p className="text-amber-700">
-                            Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong><AdopterNameLabel name={primary?.name ?? null} /></strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
+                            Se unirán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong><AdopterNameLabel name={primary?.name ?? null} /></strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
                         </p>
                         <label className="flex items-start gap-2 mt-3 text-stone-700 cursor-pointer">
                             <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} className="mt-0.5 h-4 w-4 rounded" />
@@ -989,7 +989,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                         </label>
                         {secondaryIds.length > MASS_MERGE_SELECTION_MAX && (
                             <p className="text-red-700 font-medium mt-2">
-                                Máximo {MASS_MERGE_SELECTION_MAX} perfiles por fusión — destildá {secondaryIds.length - MASS_MERGE_SELECTION_MAX} o hacelo en tandas.
+                                Máximo {MASS_MERGE_SELECTION_MAX} perfiles por unión — destildá {secondaryIds.length - MASS_MERGE_SELECTION_MAX} o hacelo en tandas.
                             </p>
                         )}
                     </div>
@@ -1009,7 +1009,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                         disabled={merging || secondaryIds.length === 0 || secondaryIds.length > MASS_MERGE_SELECTION_MAX}
                         className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
-                        {merging ? 'Fusionando…' : `Fusionar ${secondaryIds.length || ''}`}
+                        {merging ? 'Uniendo…' : `Unir ${secondaryIds.length || ''}`}
                     </button>
                 </div>
             </div>
@@ -1059,7 +1059,7 @@ function CandidateCard({
                         type="checkbox"
                         checked={!!selected}
                         onChange={onToggleSelect}
-                        aria-label="Seleccionar para fusión múltiple"
+                        aria-label="Seleccionar para unir varios"
                         className="mt-1 h-5 w-5 flex-shrink-0 rounded border-stone-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
                     />
                 )}
@@ -1110,7 +1110,7 @@ function CandidateCard({
                             onClick={onMerge}
                             className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700"
                         >
-                            Merge
+                            Unir
                         </button>
                     )}
                     {onDismiss && (

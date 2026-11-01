@@ -47,7 +47,7 @@ export default function ConfirmCombine({ mode, entriesOnly = false, kept, absorb
 }) {
     const title = mode === 'flip'
         ? (t('myAdopters.pending_d_confirm_flip_title') || '¿Conservar el tuyo?')
-        : (t('myAdopters.pending_d_confirm_title') || '¿Combinar perfiles?');
+        : (t('myAdopters.pending_d_confirm_title') || '¿Unir perfiles?');
     return (
         <PendientesDialog title={title} onClose={onCancel} busy={busy} testId="dedup-confirm-dialog" t={t}>
             <p className={`text-[15px] font-semibold ${T_PRIMARY}`}>
@@ -78,7 +78,7 @@ export default function ConfirmCombine({ mode, entriesOnly = false, kept, absorb
             </p>
             <div className="mt-6">
                 <ModalActions onCancel={onCancel} busy={busy}
-                    confirm={{ label: t('myAdopters.pending_d_confirm_action') || 'Combinar', onClick: onConfirm, tone: 'primary', testId: 'dedup-confirm' }} />
+                    confirm={{ label: t('myAdopters.pending_d_confirm_action') || 'Unir', onClick: onConfirm, tone: 'primary', testId: 'dedup-confirm' }} />
             </div>
         </PendientesDialog>
     );

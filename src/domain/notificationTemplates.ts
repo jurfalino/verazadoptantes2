@@ -157,8 +157,8 @@ const sameMergedName = (p: MergeSides) => {
 };
 const MERGED_TITLE: Record<NotificationLocale, (p: MergeSides) => string> = {
     es: p => sameMergedName(p) ? `Se unieron dos perfiles de ${plainName(p.survivorName, 'es')}` : `Se unieron dos perfiles: ${plainName(p.absorbedName, 'es')} → ${plainName(p.survivorName, 'es')}`,
-    en: p => sameMergedName(p) ? `Two profiles of ${plainName(p.survivorName, 'en')} were merged` : `Two profiles were merged: ${plainName(p.absorbedName, 'en')} → ${plainName(p.survivorName, 'en')}`,
-    pt: p => sameMergedName(p) ? `Dois perfis de ${plainName(p.survivorName, 'pt')} foram combinados` : `Dois perfis foram combinados: ${plainName(p.absorbedName, 'pt')} → ${plainName(p.survivorName, 'pt')}`,
+    en: p => sameMergedName(p) ? `Two profiles of ${plainName(p.survivorName, 'en')} were joined` : `Two profiles were joined: ${plainName(p.absorbedName, 'en')} → ${plainName(p.survivorName, 'en')}`,
+    pt: p => sameMergedName(p) ? `Dois perfis de ${plainName(p.survivorName, 'pt')} foram unidos` : `Dois perfis foram unidos: ${plainName(p.absorbedName, 'pt')} → ${plainName(p.survivorName, 'pt')}`,
 };
 /**
  * «se conserva X y Y se suma al otro» — which one stays (D31), in the words of the
@@ -454,82 +454,82 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     merge_request: {
         required: ['requesterName', 'survivorName', 'absorbedName'],
         es: p => p.dispute === '1'
-            ? { title: `${p.requesterName} pide que un administrador revise dos perfiles`, body: `El otro rescatista rechazó combinarlos, pero ${p.requesterName} cree que son la misma persona: ${KEEPS.es(p)}. Podés aprobar o rechazar el pedido.` }
-            : { title: `${p.requesterName} pidió combinar dos perfiles`, body: `Pidió combinar dos perfiles porque serían la misma persona: ${KEEPS.es(p)}. Podés aceptar o rechazar el pedido.` },
+            ? { title: `${p.requesterName} pide que un administrador revise dos perfiles`, body: `El otro rescatista rechazó unirlos, pero ${p.requesterName} cree que son la misma persona: ${KEEPS.es(p)}. Podés aprobar o rechazar el pedido.` }
+            : { title: `${p.requesterName} pidió unir dos perfiles`, body: `Pidió unir dos perfiles porque serían la misma persona: ${KEEPS.es(p)}. Podés aceptar o rechazar el pedido.` },
         en: p => p.dispute === '1'
-            ? { title: `${p.requesterName} asks an administrator to review two profiles`, body: `The other rescuer declined to merge them, but ${p.requesterName} believes they are the same person: ${KEEPS.en(p)}. You can approve or decline the request.` }
-            : { title: `${p.requesterName} asked to merge two profiles`, body: `They asked to merge two profiles because they would be the same person: ${KEEPS.en(p)}. You can accept or decline the request.` },
+            ? { title: `${p.requesterName} asks an administrator to review two profiles`, body: `The other rescuer declined to join them, but ${p.requesterName} believes they are the same person: ${KEEPS.en(p)}. You can approve or decline the request.` }
+            : { title: `${p.requesterName} asked to join two profiles`, body: `They asked to join two profiles because they would be the same person: ${KEEPS.en(p)}. You can accept or decline the request.` },
         pt: p => p.dispute === '1'
-            ? { title: `${p.requesterName} pede que um administrador revise dois perfis`, body: `O outro resgatista recusou combiná-los, mas ${p.requesterName} acredita que são a mesma pessoa: ${KEEPS.pt(p)}. Você pode aprovar ou recusar o pedido.` }
-            : { title: `${p.requesterName} pediu para combinar dois perfis`, body: `Pediu para combinar dois perfis porque seriam a mesma pessoa: ${KEEPS.pt(p)}. Você pode aceitar ou recusar o pedido.` },
+            ? { title: `${p.requesterName} pede que um administrador revise dois perfis`, body: `O outro resgatista recusou uni-los, mas ${p.requesterName} acredita que são a mesma pessoa: ${KEEPS.pt(p)}. Você pode aprovar ou recusar o pedido.` }
+            : { title: `${p.requesterName} pediu para unir dois perfis`, body: `Pediu para unir dois perfis porque seriam a mesma pessoa: ${KEEPS.pt(p)}. Você pode aceitar ou recusar o pedido.` },
     },
     merge_request_accepted: {
         required: ['survivorName', 'absorbedName'],
-        es: p => withWho(p, 'es', who => ({ title: MERGED_TITLE.es(p), body: `${who} aceptó combinar los perfiles: ${KEEPS.es(p)}. Todo quedó en un solo perfil.` })),
-        en: p => withWho(p, 'en', who => ({ title: MERGED_TITLE.en(p), body: `${who} accepted merging the profiles: ${KEEPS.en(p)}. Everything is now in one profile.` })),
-        pt: p => withWho(p, 'pt', who => ({ title: MERGED_TITLE.pt(p), body: `${who} aceitou combinar os perfis: ${KEEPS.pt(p)}. Tudo ficou em um só perfil.` })),
+        es: p => withWho(p, 'es', who => ({ title: MERGED_TITLE.es(p), body: `${who} aceptó unir los perfiles: ${KEEPS.es(p)}. Todo quedó en un solo perfil.` })),
+        en: p => withWho(p, 'en', who => ({ title: MERGED_TITLE.en(p), body: `${who} accepted joining the profiles: ${KEEPS.en(p)}. Everything is now in one profile.` })),
+        pt: p => withWho(p, 'pt', who => ({ title: MERGED_TITLE.pt(p), body: `${who} aceitou unir os perfis: ${KEEPS.pt(p)}. Tudo ficou em um só perfil.` })),
     },
     merge_request_flipped: {
         required: ['survivorName', 'absorbedName'],
-        es: p => withWho(p, 'es', who => ({ title: MERGED_TITLE.es(p), body: `${who} aceptó combinar los perfiles conservando ${survivorLabel(p, 'es')}: ${absorbedLabel(p, 'es')} quedó en ese perfil.` })),
-        en: p => withWho(p, 'en', who => ({ title: MERGED_TITLE.en(p), body: `${who} accepted merging the profiles but kept ${survivorLabel(p, 'en')}: ${absorbedLabel(p, 'en')} is now part of that profile.` })),
-        pt: p => withWho(p, 'pt', who => ({ title: MERGED_TITLE.pt(p), body: `${who} aceitou combinar os perfis mantendo ${survivorLabel(p, 'pt')}: ${absorbedLabel(p, 'pt')} ficou nesse perfil.` })),
+        es: p => withWho(p, 'es', who => ({ title: MERGED_TITLE.es(p), body: `${who} aceptó unir los perfiles conservando ${survivorLabel(p, 'es')}: ${absorbedLabel(p, 'es')} quedó en ese perfil.` })),
+        en: p => withWho(p, 'en', who => ({ title: MERGED_TITLE.en(p), body: `${who} accepted joining the profiles but kept ${survivorLabel(p, 'en')}: ${absorbedLabel(p, 'en')} is now part of that profile.` })),
+        pt: p => withWho(p, 'pt', who => ({ title: MERGED_TITLE.pt(p), body: `${who} aceitou unir os perfis mantendo ${survivorLabel(p, 'pt')}: ${absorbedLabel(p, 'pt')} ficou nesse perfil.` })),
     },
     merge_request_declined: {
         required: ['survivorName', 'absorbedName'],
-        es: p => withWho(p, 'es', who => ({ title: `${who} rechazó combinar dos perfiles`, body: KEPT_APART.es(p) })),
-        en: p => withWho(p, 'en', who => ({ title: `${who} declined to merge two profiles`, body: KEPT_APART.en(p) })),
-        pt: p => withWho(p, 'pt', who => ({ title: `${who} recusou combinar dois perfis`, body: KEPT_APART.pt(p) })),
+        es: p => withWho(p, 'es', who => ({ title: `${who} rechazó unir dos perfiles`, body: KEPT_APART.es(p) })),
+        en: p => withWho(p, 'en', who => ({ title: `${who} declined to join two profiles`, body: KEPT_APART.en(p) })),
+        pt: p => withWho(p, 'pt', who => ({ title: `${who} recusou unir dois perfis`, body: KEPT_APART.pt(p) })),
     },
     merge_request_answered_by_teammate: {
         required: ['actorName', 'requesterName', 'outcome', 'survivorName', 'absorbedName'],
         es: p => teammateAnswer(p, {
-            accepted: [`${p.actorName} aceptó el pedido de ${p.requesterName}`, `Se combinaron los perfiles: ${KEEPS.es(p)}.`],
-            flipped: [`${p.actorName} aceptó el pedido de ${p.requesterName}`, `Se combinaron los perfiles conservando ${survivorLabel(p, 'es')}: ${absorbedLabel(p, 'es')} quedó en ese perfil.`],
+            accepted: [`${p.actorName} aceptó el pedido de ${p.requesterName}`, `Se unieron los perfiles: ${KEEPS.es(p)}.`],
+            flipped: [`${p.actorName} aceptó el pedido de ${p.requesterName}`, `Se unieron los perfiles conservando ${survivorLabel(p, 'es')}: ${absorbedLabel(p, 'es')} quedó en ese perfil.`],
             declined: [`${p.actorName} rechazó el pedido de ${p.requesterName}`, KEPT_APART.es(p)],
         }),
         en: p => teammateAnswer(p, {
-            accepted: [`${p.actorName} accepted ${p.requesterName}'s request`, `The profiles were merged: ${KEEPS.en(p)}.`],
-            flipped: [`${p.actorName} accepted ${p.requesterName}'s request`, `The profiles were merged keeping ${survivorLabel(p, 'en')}: ${absorbedLabel(p, 'en')} is now part of that profile.`],
+            accepted: [`${p.actorName} accepted ${p.requesterName}'s request`, `The profiles were joined: ${KEEPS.en(p)}.`],
+            flipped: [`${p.actorName} accepted ${p.requesterName}'s request`, `The profiles were joined keeping ${survivorLabel(p, 'en')}: ${absorbedLabel(p, 'en')} is now part of that profile.`],
             declined: [`${p.actorName} declined ${p.requesterName}'s request`, KEPT_APART.en(p)],
         }),
         pt: p => teammateAnswer(p, {
-            accepted: [`${p.actorName} aceitou o pedido de ${p.requesterName}`, `Os perfis foram combinados: ${KEEPS.pt(p)}.`],
-            flipped: [`${p.actorName} aceitou o pedido de ${p.requesterName}`, `Os perfis foram combinados mantendo ${survivorLabel(p, 'pt')}: ${absorbedLabel(p, 'pt')} ficou nesse perfil.`],
+            accepted: [`${p.actorName} aceitou o pedido de ${p.requesterName}`, `Os perfis foram unidos: ${KEEPS.pt(p)}.`],
+            flipped: [`${p.actorName} aceitou o pedido de ${p.requesterName}`, `Os perfis foram unidos mantendo ${survivorLabel(p, 'pt')}: ${absorbedLabel(p, 'pt')} ficou nesse perfil.`],
             declined: [`${p.actorName} recusou o pedido de ${p.requesterName}`, KEPT_APART.pt(p)],
         }),
     },
     adopter_merged_by_rescuer: {
         required: ['actorName', 'survivorName', 'absorbedName'],
-        es: p => ({ title: MERGED_TITLE.es(p), body: `${p.actorName} combinó su perfil ${absorbedLabel(p, 'es')} con el tuyo ${survivorLabel(p, 'es')} porque son la misma persona. Todo quedó en tu perfil.${disputeHint(p, 'es')}` }),
-        en: p => ({ title: MERGED_TITLE.en(p), body: `${p.actorName} merged their profile ${absorbedLabel(p, 'en')} into yours, ${survivorLabel(p, 'en')}, because they are the same person. Everything is now in your profile.${disputeHint(p, 'en')}` }),
-        pt: p => ({ title: MERGED_TITLE.pt(p), body: `${p.actorName} combinou o perfil ${absorbedLabel(p, 'pt')} com o seu ${survivorLabel(p, 'pt')} porque são a mesma pessoa. Tudo ficou no seu perfil.${disputeHint(p, 'pt')}` }),
+        es: p => ({ title: MERGED_TITLE.es(p), body: `${p.actorName} unió su perfil ${absorbedLabel(p, 'es')} con el tuyo ${survivorLabel(p, 'es')} porque son la misma persona. Todo quedó en tu perfil.${disputeHint(p, 'es')}` }),
+        en: p => ({ title: MERGED_TITLE.en(p), body: `${p.actorName} joined their profile ${absorbedLabel(p, 'en')} with yours, ${survivorLabel(p, 'en')}, because they are the same person. Everything is now in your profile.${disputeHint(p, 'en')}` }),
+        pt: p => ({ title: MERGED_TITLE.pt(p), body: `${p.actorName} uniu o perfil ${absorbedLabel(p, 'pt')} com o seu ${survivorLabel(p, 'pt')} porque são a mesma pessoa. Tudo ficou no seu perfil.${disputeHint(p, 'pt')}` }),
     },
     adopter_merged_by_admin: {
         required: ['survivorName', 'absorbedName'],
         es: p => ({ title: MERGED_TITLE.es(p), body: `Un administrador los unió porque son la misma persona: ${KEEPS.es(p)}. Todo lo registrado en los dos quedó en este perfil.${disputeHint(p, 'es')}` }),
-        en: p => ({ title: MERGED_TITLE.en(p), body: `An administrator merged them because they are the same person: ${KEEPS.en(p)}. Everything recorded in both is now in this profile.${disputeHint(p, 'en')}` }),
-        pt: p => ({ title: MERGED_TITLE.pt(p), body: `Um administrador os combinou porque são a mesma pessoa: ${KEEPS.pt(p)}. Tudo o que foi registrado nos dois ficou neste perfil.${disputeHint(p, 'pt')}` }),
+        en: p => ({ title: MERGED_TITLE.en(p), body: `An administrator joined them because they are the same person: ${KEEPS.en(p)}. Everything recorded in both is now in this profile.${disputeHint(p, 'en')}` }),
+        pt: p => ({ title: MERGED_TITLE.pt(p), body: `Um administrador os uniu porque são a mesma pessoa: ${KEEPS.pt(p)}. Tudo o que foi registrado nos dois ficou neste perfil.${disputeHint(p, 'pt')}` }),
     },
     merge_disputed: {
         required: ['raiserName', 'survivorName', 'absorbedName'],
-        es: p => ({ title: `${p.raiserName} dice que no son la misma persona`, body: `Pide revisar dos perfiles que ya se combinaron: ${KEEPS.es(p)}. Podés deshacer la combinación o mantenerla.` }),
-        en: p => ({ title: `${p.raiserName} says they are not the same person`, body: `They ask to review two profiles that were already merged: ${KEEPS.en(p)}. You can undo the merge or keep it.` }),
-        pt: p => ({ title: `${p.raiserName} diz que não são a mesma pessoa`, body: `Pede para revisar dois perfis que já foram combinados: ${KEEPS.pt(p)}. Você pode desfazer a combinação ou mantê-la.` }),
+        es: p => ({ title: `${p.raiserName} dice que no son la misma persona`, body: `Pide revisar dos perfiles que ya se unieron: ${KEEPS.es(p)}. Podés deshacer la unión o mantenerla.` }),
+        en: p => ({ title: `${p.raiserName} says they are not the same person`, body: `They ask to review two profiles that were already joined: ${KEEPS.en(p)}. You can undo the join or keep it.` }),
+        pt: p => ({ title: `${p.raiserName} diz que não são a mesma pessoa`, body: `Pede para revisar dois perfis que já foram unidos: ${KEEPS.pt(p)}. Você pode desfazer a união ou mantê-la.` }),
     },
     merge_dispute_resolved: {
         required: ['outcome', 'survivorName', 'absorbedName'],
         es: p => disputeOutcome(p, {
-            undone: ['Un administrador separó dos perfiles', `Revisó si eran la misma persona y deshizo la combinación: ${KEPT_APART.es(p)}`],
-            kept: ['Un administrador mantuvo una combinación', `Revisó si eran la misma persona y la combinación queda: ${KEEPS.es(p)}.`],
+            undone: ['Un administrador separó dos perfiles', `Revisó si eran la misma persona y deshizo la unión: ${KEPT_APART.es(p)}`],
+            kept: ['Un administrador mantuvo una unión', `Revisó si eran la misma persona y la unión queda: ${KEEPS.es(p)}.`],
         }),
         en: p => disputeOutcome(p, {
-            undone: ['An administrator separated two profiles', `They reviewed whether it was the same person and undid the merge: ${KEPT_APART.en(p)}`],
-            kept: ['An administrator kept a merge', `They reviewed whether it was the same person and the merge stands: ${KEEPS.en(p)}.`],
+            undone: ['An administrator separated two profiles', `They reviewed whether it was the same person and undid the join: ${KEPT_APART.en(p)}`],
+            kept: ['An administrator kept a join', `They reviewed whether it was the same person and the join stands: ${KEEPS.en(p)}.`],
         }),
         pt: p => disputeOutcome(p, {
-            undone: ['Um administrador separou dois perfis', `Revisou se era a mesma pessoa e desfez a combinação: ${KEPT_APART.pt(p)}`],
-            kept: ['Um administrador manteve uma combinação', `Revisou se era a mesma pessoa e a combinação continua: ${KEEPS.pt(p)}.`],
+            undone: ['Um administrador separou dois perfis', `Revisou se era a mesma pessoa e desfez a união: ${KEPT_APART.pt(p)}`],
+            kept: ['Um administrador manteve uma união', `Revisou se era a mesma pessoa e a união continua: ${KEEPS.pt(p)}.`],
         }),
     },
     pair_message: {
@@ -554,15 +554,15 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         required: ['actorName'],
         es: p => ({
             title: `Convivencia en disputa: ${plainName(p.linkedName, 'es')}`,
-            body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar` : `${p.actorName} volvió a agregar`} a ${plainName(p.linkedName, 'es')} en el hogar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.`,
+            body: `${p.viaMerge === '1' ? `Al unir perfiles, ${p.actorName} volvió a dejar` : `${p.actorName} volvió a agregar`} a ${plainName(p.linkedName, 'es')} en el hogar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.`,
         }),
         en: p => ({
             title: `Household link disputed: ${plainName(p.linkedName, 'en')}`,
-            body: `${p.viaMerge === '1' ? `By merging profiles, ${p.actorName} put` : `${p.actorName} added`} ${plainName(p.linkedName, 'en')} back in ${plainName(p.hostName, 'en')}'s household, after ${plainName(p.linkedName, 'en')}'s team said they don't live together. Please review who is right.`,
+            body: `${p.viaMerge === '1' ? `By joining profiles, ${p.actorName} put` : `${p.actorName} added`} ${plainName(p.linkedName, 'en')} back in ${plainName(p.hostName, 'en')}'s household, after ${plainName(p.linkedName, 'en')}'s team said they don't live together. Please review who is right.`,
         }),
         pt: p => ({
             title: `Convivência em disputa: ${plainName(p.linkedName, 'pt')}`,
-            body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo` : `${p.actorName} adicionou de novo`} ${plainName(p.linkedName, 'pt')} no lar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.`,
+            body: `${p.viaMerge === '1' ? `Ao unir perfis, ${p.actorName} colocou de novo` : `${p.actorName} adicionou de novo`} ${plainName(p.linkedName, 'pt')} no lar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.`,
         }),
     },
     household_contribution: {
@@ -693,9 +693,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     household_member_disputed: {
         required: ['actorName'],
-        es: p => ({ title: `Convivencia en disputa: ${plainName(p.personName, 'es')}`, body: `${p.viaMerge === '1' ? `Al combinar perfiles, ${p.actorName} volvió a dejar a ${plainName(p.personName, 'es')} en el` : `${p.actorName} volvió a agregar a ${plainName(p.personName, 'es')} al`} hogar ${householdOf(p.hostName, 'es')}, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.` }),
-        en: p => ({ title: `Household disputed: ${plainName(p.personName, 'en')}`, body: `${p.viaMerge === '1' ? `By merging profiles, ${p.actorName} put ${plainName(p.personName, 'en')} back in` : `${p.actorName} added ${plainName(p.personName, 'en')} back to`} ${householdOf(p.hostName, 'en')} household after someone said they don't live there. Please review who is right.` }),
-        pt: p => ({ title: `Convivência em disputa: ${plainName(p.personName, 'pt')}`, body: `${p.viaMerge === '1' ? `Ao combinar perfis, ${p.actorName} colocou de novo ${plainName(p.personName, 'pt')} no` : `${p.actorName} adicionou de novo ${plainName(p.personName, 'pt')} ao`} lar ${householdOf(p.hostName, 'pt')}, depois que alguém indicou que não mora lá. Revise quem tem razão.` }),
+        es: p => ({ title: `Convivencia en disputa: ${plainName(p.personName, 'es')}`, body: `${p.viaMerge === '1' ? `Al unir perfiles, ${p.actorName} volvió a dejar a ${plainName(p.personName, 'es')} en el` : `${p.actorName} volvió a agregar a ${plainName(p.personName, 'es')} al`} hogar ${householdOf(p.hostName, 'es')}, después de que alguien indicara que no vive ahí. Revisá quién tiene razón.` }),
+        en: p => ({ title: `Household disputed: ${plainName(p.personName, 'en')}`, body: `${p.viaMerge === '1' ? `By joining profiles, ${p.actorName} put ${plainName(p.personName, 'en')} back in` : `${p.actorName} added ${plainName(p.personName, 'en')} back to`} ${householdOf(p.hostName, 'en')} household after someone said they don't live there. Please review who is right.` }),
+        pt: p => ({ title: `Convivência em disputa: ${plainName(p.personName, 'pt')}`, body: `${p.viaMerge === '1' ? `Ao unir perfis, ${p.actorName} colocou de novo ${plainName(p.personName, 'pt')} no` : `${p.actorName} adicionou de novo ${plainName(p.personName, 'pt')} ao`} lar ${householdOf(p.hostName, 'pt')}, depois que alguém indicou que não mora lá. Revise quem tem razão.` }),
     },
 };
 
