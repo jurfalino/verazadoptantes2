@@ -95,6 +95,10 @@ describe('dupHintPairMatches — «Continuar» only joins two profiles that real
         expect(dupHintPairMatches(none, ig, { type: 'social', value: '@Ana.Perez', platform: 'instagram' })).toBe(true);
         expect(dupHintPairMatches(none, ig, { type: 'social', value: 'ana.perez', platform: 'facebook' })).toBe(false);
     });
+    it('a handle with no network on either side is not evidence', () => {
+        expect(dupHintPairMatches(side([{ type: 'social', value: 'ana' }]), side([{ type: 'social', value: 'ana' }]))).toBe(false);
+        expect(dupHintPairMatches(none, side([{ type: 'social', value: 'ana' }]), { type: 'social', value: 'ana' })).toBe(false);
+    });
     it('a saved link without a network takes it from its URL', () => {
         const legacy = side([{ type: 'social', value: 'https://instagram.com/ana.perez' }]);
         expect(dupHintPairMatches(none, legacy, { type: 'social', value: 'ana.perez', platform: 'instagram' })).toBe(true);

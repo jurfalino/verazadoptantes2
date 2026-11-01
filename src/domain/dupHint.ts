@@ -110,7 +110,8 @@ export type PairSide = { entries: ReadonlyArray<PairEntry>; country?: string | n
  * a handle on the same network — a saved link's network read from its URL, and
  * a handle whose network isn't known yet (typed before the network is picked)
  * matching by handle alone: the window then asks for the network, and
- * «Continuar» can't run without it. Emails and ids normalized as the matcher
+ * «Continuar» can't run without it (but never when neither side knows its
+ * network). Emails and ids normalized as the matcher
  * does. Anything else is never evidence.
  */
 function sameIdentifier(a: PairEntry, aCountry: string | null | undefined, b: PairEntry, bCountry: string | null | undefined): boolean {
@@ -120,6 +121,8 @@ function sameIdentifier(a: PairEntry, aCountry: string | null | undefined, b: Pa
     if (a.type === 'social') {
         const network = (e: PairEntry) => e.platform || detectSocialPlatform(e.value) || '';
         const na = network(a), nb = network(b);
+        // Neither side knows its network: a bare handle («ana») alone is too thin to delete a profile.
+        if (!na && !nb) return false;
         if (na && nb && na !== nb) return false;
     }
     const strong = (e: PairEntry) => contactMatchKeys(e as Pick<ContactEntry, 'type' | 'value' | 'platform'>).filter(k => k.startsWith('~'));
