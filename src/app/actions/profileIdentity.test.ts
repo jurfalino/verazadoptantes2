@@ -259,7 +259,7 @@ describe('changeProfileAge is retired (EM review I2: age editing is gone until a
         const { fileURLToPath } = await import('node:url');
         const barrel = readFileSync(fileURLToPath(new URL('./index.ts', import.meta.url)), 'utf8');
         expect(barrel).not.toMatch(/\bchangeProfileAge\b/);
-        // So nothing a signed-in stranger sends changes Lucas's age.
+        // The door is gone (not exported, not in the barrel), and Lucas's age is untouched.
         expect(minorNow('lucas')).toBe(false);
         expect(sqlite.prepare("SELECT age, is_minor FROM adopters WHERE id = 'lucas'").get()).toMatchObject({ age: null, is_minor: 0 });
     });
