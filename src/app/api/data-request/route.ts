@@ -80,20 +80,21 @@ export async function POST(req: NextRequest) {
                 let adopterName: string | null = null;
                 try {
                     const { notifyInaccuracyReportEditors } = await import('@/lib/inaccuracyReportNotices');
-                    ({ told, adopterName } = await notifyInaccuracyReportEditors({ adopterId: profileId, reporter: requester }));
+                    ({ told, adopterName } = await notifyInaccuracyReportEditors({ adopterId: profileId, reporter: requester, details }));
                 } catch (e) {
                     logger.warn('dataRequest: inaccuracy notices to editors not sent', {
                         adopterId: profileId, actor: requester, error: e instanceof Error ? e.message : String(e),
                     });
                 }
-                const [{ notifyAdmins }, { notificationContent }] = await Promise.all([
-                    import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+                const [{ notifyAdmins }, { notificationContent }, { noticeDetails }] = await Promise.all([
+                    import('@/app/actions/notifications'), import('@/domain/notificationTemplates'), import('@/lib/inaccuracyReportNotices'),
                 ]);
+                const quoted = noticeDetails(details);
                 await notifyAdmins({
                     skip: told,
                     actorEmail: requester,
                     type: 'inaccuracy_reported',
-                    ...notificationContent({ key: 'inaccuracy_reported', params: { reporterName: requesterName, ...(adopterName ? { adopterName } : {}) } }),
+                    ...notificationContent({ key: 'inaccuracy_reported', params: { reporterName: requesterName, ...(adopterName ? { adopterName } : {}), ...(quoted ? { details: quoted } : {}) } }),
                     url: '/admin/data-requests',
                     icon: '✏️',
                     metadata: { adopterId: profileId },
