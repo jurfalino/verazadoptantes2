@@ -12,6 +12,17 @@ export type ProfileHouseholds = {
     giftForms: GiftRecipientView[];
     /** The giver's team or an admin: «Crear perfil de {nombre}». */
     canCreateGift: boolean;
+    /**
+     * The header's housemate alerts («Conviviente con calificación 2.0»,
+     * «Conviviente con alertas»), decided on the server from the same line a
+     * search card reads (householdLinesFor → housemateLowRating /
+     * housemateHasAlerts). Only the two answers reach the browser — never the
+     * housemates' names — and only for a signed-in viewer, as on search.
+     */
+    housemateAlert: HousemateAlertSummary;
 };
 
-export const EMPTY_PROFILE_HOUSEHOLDS: ProfileHouseholds = { views: [], giftForms: [], canCreateGift: false };
+export type HousemateAlertSummary = { lowRating: number | null; hasAlerts: boolean };
+export const NO_HOUSEMATE_ALERT: HousemateAlertSummary = { lowRating: null, hasAlerts: false };
+
+export const EMPTY_PROFILE_HOUSEHOLDS: ProfileHouseholds = { views: [], giftForms: [], canCreateGift: false, housemateAlert: { lowRating: null, hasAlerts: false } };

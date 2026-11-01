@@ -8,8 +8,9 @@
  */
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { getHouseholdsFor } from '@/lib/households';
-import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profileHouseholds';
+import { getHouseholdsFor, householdLinesFor } from '@/lib/households';
+import { EMPTY_PROFILE_HOUSEHOLDS, NO_HOUSEMATE_ALERT, type ProfileHouseholds } from '@/domain/profileHouseholds';
+import { housemateHasAlerts, housemateLowRating, type HouseholdLine } from '@/domain/households';
 
 export { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds };
 
@@ -25,10 +26,13 @@ export async function readProfileHouseholds(
         const db = await getDb();
         if (!db) return EMPTY_PROFILE_HOUSEHOLDS;
         const { giftRecipientsForViewer, mayCreateGiftRecipient } = await import('@/lib/householdPeople');
-        const [views, gifts, adopter] = await Promise.all([
+        const [views, gifts, adopter, lines] = await Promise.all([
             getHouseholdsFor(db, viewer || null, adopterId),
             giftRecipientsForViewer(db, viewer || null, adopterId),
             loaded,
+            // The header's housemate alerts read exactly what a search card reads (bounded per card; never
+            // throws) — for a signed-in viewer only, as search does (the line names people).
+            viewer ? householdLinesFor(db, viewer, [adopterId]) : Promise.resolve({} as Record<string, HouseholdLine[]>),
         ]);
         // A form whose recipient already has a profile is shown by its gift household (P5), not twice.
         const giftForms = gifts.filter(g => !g.profileId);
@@ -39,7 +43,9 @@ export async function readProfileHouseholds(
                 return false;
             });
         }
-        return { views, giftForms, canCreateGift };
+        const mine = lines[adopterId] ?? [];
+        const housemateAlert = mine.length ? { lowRating: housemateLowRating(mine), hasAlerts: housemateHasAlerts(mine) } : NO_HOUSEMATE_ALERT;
+        return { views, giftForms, canCreateGift, housemateAlert };
     } catch (e) {
         logger.warn('profileHouseholds: read failed, the profile shows no households', { ...ctx, error: errMsg(e) });
         return EMPTY_PROFILE_HOUSEHOLDS;

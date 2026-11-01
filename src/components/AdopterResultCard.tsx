@@ -15,7 +15,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import { MinorTag } from './MinorTag';
-import { CardHouseholdLine } from './CardHouseholdLine';
+import { HousemateAlertChips, HousemateList, hasHousemateAlert, useHousemateList } from './HousemateAlert';
 import { AlertSummary, PeriodAlertPills } from './AlertPill';
 import { openAlertKinds } from '@/domain/flags';
 import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
@@ -146,8 +146,15 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
 
     // The two "too many …" risk chips. Promoted on mobile to sit right under the
     // rating (C layout); on desktop they stay inline in the stats band below.
-    const riskFlagChips = <PeriodAlertPills alerts={res.flags} />;
-    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests);
+    // …then the housemate alerts («Conviviente con calificación 2.0», «Conviviente con alertas» — Jon
+    // 2026-11-01): alerts like them, so they ride in the same row on both layouts. The row is drawn twice
+    // (mobile / desktop, CSS-hidden), so the open state lives here, each copy has its own test id, and the
+    // list they open is drawn once, under the card's body.
+    const housemates = useHousemateList(res.households);
+    const housemateChips = (testId: string) => (
+        <HousemateAlertChips lines={res.households} open={housemates.open} onToggle={housemates.toggle} listId={housemates.listId} testId={testId} />
+    );
+    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests || hasHousemateAlert(res.households));
 
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
@@ -248,7 +255,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 full-width. Both hidden on desktop (rating flags live in the stats
                 band; contact lives in the middle column). */}
             {hasRiskFlags && (
-                <div className="md:hidden flex flex-wrap gap-1.5 mb-2">{riskFlagChips}</div>
+                <div className="md:hidden flex flex-wrap gap-1.5 mb-2"><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert-m')}</div>
             )}
             <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={contactText || undefined}>
                 {contactNode}
@@ -281,7 +288,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     {/* Desktop: the alerts (risk chips) first, inline in the stats band. On mobile
                         they're promoted above (right after the rating), so hidden here —
                         `md:contents` lets them flow into this flex cluster on ≥md. */}
-                    <span className="hidden md:contents">{riskFlagChips}</span>
+                    <span className="hidden md:contents"><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert')}</span>
                     {/* Then the flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01). */}
                     <AlertSummary kinds={openAlertKinds(res.flags)} />
                     {res.flags.systemDuplicate && !res.flags.duplicate && (
@@ -372,8 +379,8 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 );
             })()}
 
-            {/* «Vive con N personas»: only when a housemate has a low rating or an alert (option B). */}
-            <CardHouseholdLine lines={res.households} />
+            {/* Who they live with, opened from a housemate alert chip above (either layout's). */}
+            {housemates.open && hasHousemateAlert(res.households) && <HousemateList lines={res.households} id={housemates.listId} className="mt-2" />}
 
             {/* Dates Row - bottom right */}
             {showMetadata && (addedDate || updatedDate) && (

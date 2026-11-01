@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canRemoveMembership, currentAge, householdForAdd, householdLineGroups, householdLineSummary, separateHomes, householdNameKey, isMinor, membershipLabel, type HouseholdLine } from './households';
+import { canRemoveMembership, currentAge, householdForAdd, householdLineGroups, housemateHasAlerts, housemateLowRating, separateHomes, householdNameKey, isMinor, membershipLabel, type HouseholdLine } from './households';
 import { NO_PERIOD_ALERTS, type PeriodAlert } from './periodAlerts';
 
 // Pedro's household: Marta is Pedro's partner, Lucas is Pedro's child. Pedro is
@@ -160,51 +160,48 @@ describe('householdLineGroups (the card line: «Convive con» / «En otro hogar,
     });
 });
 
-describe('householdLineSummary (the card line, option B — Jon 2026-10-28)', () => {
+describe('housemateLowRating / housemateHasAlerts (the housemate alert chips — Jon 2026-11-01)', () => {
     const alert = (count: number, periodDays = 90): PeriodAlert => ({ count, threshold: 3, periodDays, actualSpanDays: 10 });
     const line = (profileId: string, over: Partial<HouseholdLine> = {}): HouseholdLine =>
         ({ name: profileId, profileId, rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1', ...over });
 
-    it('a housemate with only FLAGS (Inexacto, Duplicado) → no line', () => {
-        const s = householdLineSummary([line('pedro', { openAlerts: ['inaccurate', 'duplicate'], rating: 4 })]);
-        expect(s.show).toBe(false);
-        expect(s.worstRating).toBeNull();
-        expect(s.alerts).toEqual(NO_PERIOD_ALERTS);
+    it('the LOWEST low rating among the housemates, in any non-gift home', () => {
+        expect(housemateLowRating([line('pedro', { rating: 1 })])).toBe(1);
+        expect(housemateLowRating([line('a', { rating: 2 }), line('b', { rating: 1.2, householdId: 'h2' }), line('c', { rating: 4 })])).toBe(1.2);
+        expect(housemateLowRating([line('a', { rating: 2.4 }), line('b', { rating: 5 })])).toBe(2.4);
     });
-    it('a 1★ or 2★ housemate → the line, with the lowest low rating', () => {
-        expect(householdLineSummary([line('pedro', { rating: 1 })])).toMatchObject({ show: true, worstRating: 1, housemateCount: 1 });
-        expect(householdLineSummary([line('a', { rating: 2.4 }), line('b', { rating: 4 })])).toMatchObject({ show: true, worstRating: 2.4, housemateCount: 2 });
-        expect(householdLineSummary([line('a', { rating: 2 }), line('b', { rating: 1.2 })]).worstRating).toBe(1.2);
+    it('flags or alerts only → no rating chip', () => {
+        expect(housemateLowRating([line('pedro', { openAlerts: ['inaccurate', 'duplicate'], rating: 4 })])).toBeNull();
+        expect(housemateLowRating([line('pedro', { alerts: { tooManyAdoptions: alert(9), tooManyRequests: null } })])).toBeNull();
     });
-    it('an alert → the line; one alert per kind, the highest count', () => {
-        const s = householdLineSummary([
-            line('a', { alerts: { tooManyAdoptions: alert(5), tooManyRequests: null } }),
-            line('b', { alerts: { tooManyAdoptions: alert(7), tooManyRequests: alert(3, 30) } }),
-            line('c', { rating: 5 }),
-        ]);
-        expect(s.show).toBe(true);
-        expect(s.worstRating).toBeNull();
-        expect(s.alerts.tooManyAdoptions?.count).toBe(7);
-        expect(s.alerts.tooManyRequests?.count).toBe(3);
-        expect(s.housemateCount).toBe(3);
+    it('2.5 (reads «Regular»), 3★ and up, unrated, nobody → null', () => {
+        expect(housemateLowRating([line('a', { rating: 2.5 }), line('b', { rating: 3 }), line('c', { rating: 5 }), line('d'), line('e', { rating: 0 })])).toBeNull();
+        expect(housemateLowRating(undefined)).toBeNull();
+        expect(housemateLowRating([])).toBeNull();
     });
-    it('3★ and up (2.5 reads «Regular»), or unrated, with no alerts → no line', () => {
-        expect(householdLineSummary([line('a', { rating: 3 }), line('b', { rating: 2.5 }), line('c', { rating: 5 }), line('d')]).show).toBe(false);
-        expect(householdLineSummary([line('a', { rating: 0 })]).show).toBe(false);
-        expect(householdLineSummary(undefined)).toMatchObject({ show: false, housemateCount: 0, homes: [] });
+    it('a gift-only housemate never raises it', () => {
+        expect(housemateLowRating([line('rosa', { isGift: true, rating: 1 })])).toBeNull();
+        expect(housemateLowRating([line('rosa', { isGift: true, rating: 1 }), line('ana', { rating: 2 })])).toBe(2);
     });
-    it('counts distinct housemates across the non-gift homes; a gift-only housemate never counts nor triggers', () => {
-        const s = householdLineSummary([
-            line('pedro', { rating: 1 }), line('marta'), line('ana', { householdId: 'h2' }),
-            line('rosa', { householdId: 'g1', isGift: true, rating: 1, alerts: { tooManyAdoptions: alert(9), tooManyRequests: null } }),
-        ]);
-        expect(s.housemateCount).toBe(3);
-        expect(s.homes.map(h => h.map(p => p.profileId))).toEqual([['pedro', 'marta'], ['ana']]);
-        expect(s.alerts.tooManyAdoptions).toBeNull();
-        expect(householdLineSummary([line('rosa', { isGift: true, rating: 1 })]).show).toBe(false);
+
+    it('an ALERT of their own on a housemate → the alerts chip (either kind)', () => {
+        expect(housemateHasAlerts([line('a', { alerts: { tooManyAdoptions: alert(5), tooManyRequests: null } })])).toBe(true);
+        expect(housemateHasAlerts([line('a', { rating: 5 }), line('b', { householdId: 'h2', alerts: { tooManyAdoptions: null, tooManyRequests: alert(3, 30) } })])).toBe(true);
+    });
+    it('flags only → no alerts chip; a low rating alone → none either', () => {
+        expect(housemateHasAlerts([line('pedro', { openAlerts: ['inaccurate', 'duplicate'] })])).toBe(false);
+        expect(housemateHasAlerts([line('pedro', { rating: 1 })])).toBe(false);
+        expect(housemateHasAlerts(undefined)).toBe(false);
+    });
+    it('a gift-only housemate with alerts → no alerts chip', () => {
+        expect(housemateHasAlerts([line('rosa', { isGift: true, alerts: { tooManyAdoptions: alert(9), tooManyRequests: null } })])).toBe(false);
+    });
+    it('independent: one home can raise both', () => {
+        const lines = [line('pedro', { rating: 2 }), line('ana', { alerts: { tooManyAdoptions: alert(4), tooManyRequests: null } })];
+        expect(housemateLowRating(lines)).toBe(2);
+        expect(housemateHasAlerts(lines)).toBe(true);
     });
 });
-
 describe('household add target and home dividers (Task 8; addendum 2026-10-27)', () => {
     const home = (id: string, isAnchor: boolean) => ({ id, self: { isAnchor } });
     it('a block\'s «Agregar» adds into THAT household, always (explicit id)', () => {

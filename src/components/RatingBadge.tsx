@@ -1,7 +1,7 @@
 'use client';
 
 import { getRatingColors } from '@/lib/ratingColors';
-import { getRatingLabelKey } from '@/domain/ratings';
+import { formatRating, getRatingLabelKey } from '@/domain/ratings';
 import { useLanguage } from '@/context/LanguageContext';
 import { StarIcon } from '@/components/StarIcon';
 
@@ -43,7 +43,7 @@ export function RatingBadge({ rating }: { rating: number | string | null | undef
     }
 
     const colors = getRatingColors(numRating);
-    const display = numRating % 1 !== 0 ? numRating.toFixed(1) : `${numRating}.0`;
+    const display = formatRating(numRating);
     const labelText = t(`ratings.${getRatingLabelKey(numRating)}` as any) || ''; // "Peligroso"
 
     return (

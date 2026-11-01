@@ -73,8 +73,10 @@ describe('DupHintBox — the compact inline notice', () => {
         expect(html.match(/data-testid="dup-hint-view"/g)).toHaveLength(2);
         expect(text(html)).toContain('Sin calificación');
         // No household line, even on Jonatan's row whose housemate is 1★.
-        expect(html).not.toContain('data-testid="card-household-line"');
-        expect(text(html)).not.toContain('Vive con');
+        // No housemate chip either, even on Jonatan's row whose housemate is 1★ (duplicate cards show no home).
+        expect(html).not.toContain('data-alert="housemate_low_rating"');
+        expect(html).not.toContain('data-alert="housemate_alerts"');
+        expect(text(html)).not.toContain('Conviviente');
         // Warning tone through theme tokens, not raw amber classes.
         expect(html).toContain('var(--status-warning-bg)');
         expect(html).not.toMatch(/amber-/);
@@ -118,7 +120,9 @@ describe('DupHintProfile — the window', () => {
     it('the match card: header without the household line, contacts with the typed one «coincide», activity', () => {
         const html = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct {...handlers} />);
         expect(html).toContain('data-testid="dup-hint-window-head"');
-        expect(html).not.toContain('data-testid="card-household-line"');
+        // The window shows no home: no housemate chip for Jonatan's 1★ housemate (Jon 2026-10-31).
+        expect(html).not.toContain('data-alert="housemate_low_rating"');
+        expect(text(html)).not.toContain('Conviviente');
         expect(html.match(/data-testid="dup-hint-contact"/g)).toHaveLength(2);
         expect(html.match(/data-testid="contact-matches"/g)).toHaveLength(1);
         expect(html).toContain('data-testid="dup-hint-activity"');

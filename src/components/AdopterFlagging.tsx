@@ -19,6 +19,8 @@ import { isOpenDuplicateFlag } from '@/domain/dedupPair';
 import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
+import type { HousemateAlertSummary } from '@/domain/profileHouseholds';
+import { formatRating } from '@/domain/ratings';
 import { Modal, ModalActions } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 
@@ -73,7 +75,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     );
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> } }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: () => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -267,13 +269,18 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
 
     const [showDuplicateHint, setShowDuplicateHint] = useState(false);
+    // Someone in their home (Jon 2026-11-01): the same two alerts the cards carry, decided on the
+    // server by the same rules (housemateLowRating / housemateHasAlerts — readProfileHouseholds).
+    const housemateLow = housemateAlert?.lowRating ?? null;
+    const housemateAlerts = !!housemateAlert?.hasAlerts;
+    const hasHousemateAlert = housemateLow != null || housemateAlerts;
 
     return (
         <>
             {/* Flag Pills — split into warnings and verifications */}
             <div className="space-y-2 mb-4">
                 {/* ⚠ Warnings: things that need attention */}
-                {((isFlaggedAsDuplicate && !hasDuplicateBanner) || tooManyAdoptions || tooManyRequests) && (
+                {((isFlaggedAsDuplicate && !hasDuplicateBanner) || tooManyAdoptions || tooManyRequests || hasHousemateAlert) && (
                     // gap-y-3: wrapped rows of 32px pills keep their 44px tap targets apart.
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
                         {/* Alerts first (computed from the records)… */}
@@ -288,6 +295,18 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         {tooManyRequests && (
                             <AlertPill kind="too_many_requests" size="md" onClick={() => setShowRequestsHint(!showRequestsHint)} pressed={showRequestsHint}>
                                 {t('flags.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
+                            </AlertPill>
+                        )}
+
+                        {/* …the housemate alerts: tapping one scrolls to «Familiares / Convivientes», where everyone is listed… */}
+                        {housemateLow != null && (
+                            <AlertPill kind="housemate_low_rating" size="md" wrap onClick={onHousemateAlert} testId="profile-housemate-alert-rating">
+                                {t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateLow))}
+                            </AlertPill>
+                        )}
+                        {housemateAlerts && (
+                            <AlertPill kind="housemate_alerts" size="md" wrap onClick={onHousemateAlert} testId="profile-housemate-alert-alerts">
+                                {t('flags.housemate_alerts')}
                             </AlertPill>
                         )}
 

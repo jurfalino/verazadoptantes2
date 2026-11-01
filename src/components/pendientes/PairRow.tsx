@@ -22,7 +22,8 @@ import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicate
 import MatchCompare, { AdminScore, entriesAsShown } from '@/components/MatchCompare';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { MinorTag } from '@/components/MinorTag';
-import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import { HousemateAlert } from '@/components/HousemateAlert';
+import { RatingBadge } from '@/components/RatingBadge';
 import {
     AbsorbedBadge, KeptBadge, T_MUTED, T_PRIMARY,
     combineTheirsSide, fill, otherSide, ownerName, sideById, sideOf, movesToOtherList, type KeepSide, type T,
@@ -186,6 +187,12 @@ function SideHead({ side, badge, t, formatShortDate, onRequestAccess }: {
         <div className="min-w-0 normal-case tracking-normal font-normal space-y-1">
             {badge === 'kept' && <div><KeptBadge t={t} /></div>}
             {badge === 'absorbed' && <div><AbsorbedBadge t={t} /></div>}
+            {/* The person's own rating first, as on every card (Jon 2026-11-01, point C), then the
+                housemate alerts — tapping one lists who they live with, under this row. */}
+            <div className="flex flex-wrap items-center gap-1.5 empty:hidden" data-testid="dedup-side-standing">
+                {side.rating !== undefined && <RatingBadge rating={side.rating} />}
+                <HousemateAlert lines={side.households} testId={`dedup-housemate-alert-${side.id}`} />
+            </div>
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px]">
                 {side.isMine
                     ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[var(--accent-badge-bg)] text-[var(--accent)]">{t('myAdopters.pending_d_mine_tag') || 'Tuyo'}</span>
@@ -203,9 +210,7 @@ function SideHead({ side, badge, t, formatShortDate, onRequestAccess }: {
                     </button>
                 )}
             </div>
-            {/* Who they live with, as everywhere (final fix P2). «Menor de edad» sits under the name, in the
-                rating slot (audit B5/B6) — MatchCompare's nameStanding. */}
-            <CardHouseholdLine lines={side.households} className="mt-1" />
+            {/* «Menor de edad» sits under the name, in the rating slot (audit B5/B6) — MatchCompare's nameStanding. */}
         </div>
     );
 }

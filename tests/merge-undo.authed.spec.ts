@@ -304,12 +304,12 @@ test.describe('Duplicate mass-merge and undo', () => {
         await expect(page.getByText(ACC_NAME).first()).toBeVisible({ timeout: 30000 });
     });
 
-    test("searching a housemate's name shows only THEIR card; the household line appears only when the other person has a problem", async ({ page }) => {
+    test("searching a housemate's name shows only THEIR card; the housemate alert appears only when the other person is 1★/2★", async ({ page }) => {
         // Households as profiles (Jon, 2026-10-26): a search returns only the
         // people who match. The relative is a profile of their own. Option B
         // (Jon, 2026-10-28): their card says nothing about the home unless a
-        // housemate is rated 1★/2★ or has an alert — then «Vive con 1 persona»
-        // with the rating, and opening it names the housemate.
+        // housemate is rated 1★/2★ (or has an alert of their own) — then the alert
+        // «Conviviente con calificación 1.0» (Jon 2026-11-01), and opening it names the housemate.
         const HH = 'test-household-fixture-1';
         const HH_NAME = 'HouseholdFixture Titular';
         const REL = 'test-household-fixture-2';
@@ -347,18 +347,18 @@ test.describe('Duplicate mass-merge and undo', () => {
 
         // The titular is unrated, no alerts: nothing about the home.
         let card = await search();
-        await expect(card.getByTestId('card-household-line')).toHaveCount(0);
+        await expect(card.locator('[data-alert^="housemate_"]')).toHaveCount(0);
 
-        // Rated 1★: the line, closed — then opened, naming the titular, without leaving the results.
+        // Rated 1★: the alert, closed — then opened, naming the titular, without leaving the results.
         execD1(`INSERT OR REPLACE INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-hh-fixture-ev-1', '${HH}', 'observation', 1, 'gatitosolivos@gmail.com', strftime('%s','now'))`);
         card = await search();
-        const line = card.getByTestId('card-household-line');
-        await expect(line).toBeVisible({ timeout: 30000 });
-        await expect(line).toContainText('1.0');
-        await expect(line).not.toContainText(HH_NAME);
+        const chip = card.locator('[data-alert="housemate_low_rating"]').filter({ visible: true });
+        await expect(chip).toHaveCount(1, { timeout: 30000 });
+        await expect(chip).toContainText('1.0');
+        await expect(card).not.toContainText(HH_NAME);
         const before = page.url();
-        await line.getByTestId('card-household-toggle').click();
-        await expect(line.getByTestId('card-household-list')).toContainText(HH_NAME);
+        await chip.click();
+        await expect(card.getByTestId('card-household-list')).toContainText(HH_NAME);
         expect(page.url()).toBe(before);
         execD1(`DELETE FROM adopter_events WHERE id = 'test-hh-fixture-ev-1'`);
     });

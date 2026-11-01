@@ -7,8 +7,8 @@
  * is the structure — every surface renders it, only its container differs.
  * One order on every card:
  *
- *   (P) Pedro Paez ★ 4.0 · Bueno  [1 alerta]        ← MatchCardHeader
- *       Convive con …                               ← its household line
+ *   (P) Pedro Paez ★ 4.0 · Bueno  [⌂ Conviviente con calificación 2.0] [Duplicado]  ← MatchCardHeader
+ *       (tapping the housemate chip opens who they live with, under the row)
  *   «Qué coincide y qué no» (MatchCompare)          ← the caller's
  *   [Es la misma persona] [Ver perfil completo →] [No es esta persona]   ← MatchCardActions
  *   (a new tab: «Abrir perfil ↗» — OpenProfileLink — in place of «Ver perfil completo →»)
@@ -25,7 +25,7 @@ import type { ReactNode } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { PersonStanding } from '@/components/PersonStanding';
-import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import { HousemateAlert } from '@/components/HousemateAlert';
 import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { Button, buttonClasses } from '@/components/ui/Button';
 import type { HouseholdLine } from '@/domain/households';
@@ -65,10 +65,13 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
                         className="relative min-w-0 font-semibold text-[15px] text-teal-700 hover:underline [overflow-wrap:anywhere] after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']" data-testid={`${testId}-name`}>
                         {nameNode ?? name}
                     </a>
-                    {showStanding && <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`} />}
+                    {/* The housemate alerts sit in the person's own alert row, before the flags (Jon 2026-11-01). */}
+                    {showStanding
+                        ? <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`}
+                            alerts={<HousemateAlert lines={person.households} testId={`${testId}-housemate-alert`} />} />
+                        : <HousemateAlert lines={person.households} testId={`${testId}-housemate-alert`} />}
                 </div>
             </div>
-            <CardHouseholdLine lines={person.households} className="mt-1 pl-10" />
         </div>
     );
 }
@@ -120,7 +123,7 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
 
 /**
  * The whole card's structure, the same on every surface (audit B6): header
- * (name + standing, household line) → «Qué coincide y qué no» → the actions. Compare and actions span the card's
+ * (name + standing, housemate alerts) → «Qué coincide y qué no» → the actions. Compare and actions span the card's
  * full width (no indent) everywhere. `leading` sits before the header (the
  * post import's selection mark).
  */

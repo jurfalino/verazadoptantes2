@@ -2,8 +2,9 @@
 
 /**
  * How a person stands, wherever ONE person is summed up in a line: a household
- * member's row, «¿Es este perfil?» and a match card's header. (A card's
- * household line draws its housemates without flags — CardHouseholdLine.)
+ * member's row, «¿Es este perfil?» and a match card's header. A card's
+ * housemate alerts («Conviviente con …», HousemateAlert) come in through
+ * `alerts`: after the rating, before the flags — alerts first, as everywhere.
  *
  * - `PersonStanding`: «Menor de edad» first for a minor (an informational
  *   marker only — Jon, 2026-10-28), then the rating (★ + its word: colour is
@@ -21,22 +22,26 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { MinorTag } from '@/components/MinorTag';
 import { AlertSummary } from '@/components/AlertPill';
 import type { OpenAlertKind } from '@/domain/flags';
+import type { ReactNode } from 'react';
 import { ActivityCountsLine } from '@/components/ActivityCountsLine';
 import { activityParts, type ActivityCounts } from '@/domain/activityCounts';
 
-export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alertsTestId = 'person-alerts' }: {
+export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alertsTestId = 'person-alerts', alerts }: {
     rating: number | null | undefined;
     /** Open alerts, one per kind (openAlertKinds — the profile header's rule). */
     openAlerts: readonly OpenAlertKind[];
     isMinor: boolean;
     minorTestId?: string;
     alertsTestId?: string;
+    /** The card's ALERTS about this person (the housemate chips), drawn before the flags. */
+    alerts?: ReactNode;
 }) {
     return (
         <>
             {isMinor && <MinorTag testId={minorTestId} />}
             {/* The one rating pill (or «Sin calificación»), as in the profile header (Jon, 2026-10-28). */}
             <RatingBadge rating={rating} />
+            {alerts}
             {/* The flags, one neutral chip each by name — never «Inexacto», never «N alertas» (rescuerFlagKinds). */}
             <AlertSummary kinds={openAlerts} testId={alertsTestId} />
         </>

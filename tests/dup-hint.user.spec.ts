@@ -77,7 +77,7 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         await expect(box.getByTestId('dup-hint-view')).toHaveCount(2);
         const dos = box.locator(`[data-adopter-id="${DOS_ID}"]`);
         const uno = box.locator(`[data-adopter-id="${UNO_ID}"]`);
-        await expect(box.getByTestId('card-household-line')).toHaveCount(0);
+        await expect(box.locator('[data-alert^="housemate_"]')).toHaveCount(0);
         // (The names carry the stamp, so look for the number as written.)
         await expect(box).not.toContainText(PHONE);
         await expect(box).not.toContainText(`-${PHONE.slice(-4)}`);
@@ -87,7 +87,7 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         const win = page.getByTestId('dup-hint-window');
         await expect(win).toBeVisible();
         await expect(win.getByTestId('dup-hint-window-head')).toContainText(DOS);
-        await expect(win.getByTestId('card-household-line')).toHaveCount(0);
+        await expect(win.locator('[data-alert^="housemate_"]')).toHaveCount(0);
         await expect(win.getByTestId('dup-hint-contact').getByTestId('contact-matches')).toHaveCount(1);
         // Case 2: someone else loaded the profile being edited — flag, never continue.
         // The sentence names the profile being edited, not the match above it (UX I5).

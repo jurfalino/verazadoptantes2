@@ -10,21 +10,23 @@
  * - `sm`: a line about a person (rows, cards, lists).
  *
  * An ALERT (computed from the person's records) keeps its status colour:
- * «N adopciones en N días» = warning, «Pidió en N rescates…» = purple.
+ * «N adopciones en N días» = warning, «Pidió en N rescates…» = purple, and
+ * the two about someone in their home («Conviviente con calificación 2.0»,
+ * «Conviviente con alertas» — HousemateAlertChips) = warning with the home icon.
  * A FLAG (a rescuer's report: «Duplicado», «Inexacto») is not an alert (Jon,
  * 2026-11-01): a neutral grey outlined chip with a flag icon and the flag's
  * own name, drawn after the alerts and never counted as «N alertas». Which
  * flags a rescuer surface draws at all is rescuerFlagKinds (no «Inexacto»).
  * Colours are CSS variables: theme-safe.
  */
-import type { ReactNode } from 'react';
-import { AlertTriangle, Flag, type LucideIcon } from 'lucide-react';
+import type { MouseEvent, ReactNode } from 'react';
+import { AlertTriangle, Flag, Home, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { rescuerFlagKinds, type OpenAlertKind } from '@/domain/flags';
 import { periodAlertDays, type PeriodAlerts } from '@/domain/periodAlerts';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 
-export type AlertKind = OpenAlertKind | 'too_many_adoptions' | 'too_many_requests';
+export type AlertKind = OpenAlertKind | 'too_many_adoptions' | 'too_many_requests' | 'housemate_low_rating' | 'housemate_alerts';
 
 /** `null` tone = a flag: the neutral outlined chip. */
 const KIND: Record<AlertKind, { tone: 'warning' | 'purple' | null; Icon: LucideIcon }> = {
@@ -32,6 +34,9 @@ const KIND: Record<AlertKind, { tone: 'warning' | 'purple' | null; Icon: LucideI
     duplicate: { tone: null, Icon: Flag },
     too_many_adoptions: { tone: 'warning', Icon: AlertTriangle },
     too_many_requests: { tone: 'purple', Icon: AlertTriangle },
+    // Someone in their home (HousemateAlertChips): the warning tone with the home icon.
+    housemate_low_rating: { tone: 'warning', Icon: Home },
+    housemate_alerts: { tone: 'warning', Icon: Home },
 };
 
 const FLAG_STYLE = { background: 'transparent', color: 'var(--text-secondary)', borderColor: 'var(--text-faint, var(--border-default))' } as const;
@@ -42,25 +47,35 @@ const SIZE = {
     md: { box: 'gap-1.5 px-3 py-1.5 text-xs', icon: 'w-3.5 h-3.5' },
 } as const;
 
-export function AlertPill({ kind, children, size = 'sm', onClick, pressed, testId }: {
+export function AlertPill({ kind, children, size = 'sm', onClick, pressed, expanded, controls, wrap = false, testId }: {
     kind: AlertKind;
     children: ReactNode;
     size?: keyof typeof SIZE;
     /** A button (the profile header's pills open their hint). */
-    onClick?: () => void;
+    onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
     pressed?: boolean;
+    /** A disclosure button instead (aria-expanded / aria-controls): the housemate chips open the household list. */
+    expanded?: boolean;
+    controls?: string;
+    /** Long words: one line where there is room, wrapped inside the row where there isn't (never past the card). */
+    wrap?: boolean;
     testId?: string;
 }) {
     const { tone, Icon } = KIND[kind];
     const sz = SIZE[size];
-    const cls = `inline-flex items-center ${sz.box} rounded-full border ${tone ? 'font-semibold' : 'font-medium'} whitespace-nowrap`;
+    const weight = tone ? 'font-semibold' : 'font-medium';
+    const cls = wrap
+        ? `inline-flex items-start max-w-full text-left ${sz.box} rounded-2xl border ${weight}`
+        : `inline-flex items-center ${sz.box} rounded-full border ${weight} whitespace-nowrap`;
     const style = tone
         ? { background: `var(--status-${tone}-bg)`, color: `var(--status-${tone}-text)`, borderColor: `var(--status-${tone}-border)` }
         : FLAG_STYLE;
-    const body = <><Icon className={`${sz.icon} shrink-0`} strokeWidth={2.25} aria-hidden="true" />{children}</>;
+    // Wrapped: the icon stays on the first line (its 12px box centred on the 16px line — 2px, half-grid micro-spacing).
+    const body = <><Icon className={`${sz.icon} shrink-0 ${wrap ? 'mt-0.5' : ''}`} strokeWidth={2.25} aria-hidden="true" />{wrap ? <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span> : children}</>;
     if (onClick) {
+        const aria = expanded === undefined ? { 'aria-pressed': pressed } : { 'aria-expanded': expanded, 'aria-controls': controls };
         return (
-            <button type="button" onClick={onClick} aria-pressed={pressed} data-testid={testId} data-alert={kind}
+            <button type="button" onClick={onClick} {...aria} data-testid={testId} data-alert={kind}
                 // 44px to the touch (TAP_TARGET_44) at the pill's own size.
                 className={`${cls} ${TAP_TARGET_44} transition-all hover:opacity-90 ${pressed ? 'shadow-inner' : ''}`} style={style}>
                 {body}

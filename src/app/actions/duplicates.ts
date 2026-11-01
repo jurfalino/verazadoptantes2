@@ -716,8 +716,10 @@ export interface PendingDedupSide {
     teamOwned: boolean;
     /** «Menor de edad» (final fix P2: the same tag as every card showing one person). */
     isMinor?: boolean;
-    /** Who they live with, with live ratings (final fix P2: the same line as search and «¿Es este perfil?»). */
+    /** Who they live with, with live ratings and alerts: the housemate alert chips, as on search and «¿Es este perfil?». */
     households?: HouseholdLine[];
+    /** The person's own average rating, shown at the top of the side as on every card (point C); null = unrated, undefined = not read. */
+    rating?: number | null;
 }
 
 /**
@@ -1443,8 +1445,17 @@ export async function getPendingDuplicatesForUser(
         const sidesShown = [...new Set(pairs.flatMap(p => [p.newAdopter.id, p.existingAdopter.id]))];
         if (sidesShown.length) {
             const { householdLinesFor, HOUSEHOLD_LINE_CARDS } = await import('@/lib/households');
-            const lines = await householdLinesFor(db, viewer, sidesShown.slice(0, HOUSEHOLD_LINE_CARDS));
+            const { countsFor } = await import('@/lib/profileSummary');
+            // Each side's own rating (point C, Jon 2026-11-01): one indexed read per side, the same source every
+            // card's rating comes from, capped like the household lines (the first HOUSEHOLD_LINE_CARDS sides).
+            // countsFor never throws (logs its own fallback); a side past the cap shows no rating pill.
+            const capped = sidesShown.slice(0, HOUSEHOLD_LINE_CARDS);
+            const [lines, counts] = await Promise.all([
+                householdLinesFor(db, viewer, capped),
+                Promise.all(capped.map(id => countsFor(db, id, { actorEmail, adopterId: id, op: 'getPendingDuplicatesForUser' }, { activity: false }))),
+            ]);
             for (const built of sideCache.values()) if (lines[built.id]?.length) built.households = lines[built.id];
+            capped.forEach((id, i) => { const built = sideCache.get(id); if (built) built.rating = counts[i].rating; });
         }
 
         return { pairs, total, lowHidden, page, focusCandidateId };

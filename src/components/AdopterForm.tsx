@@ -1529,6 +1529,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             tooManyRequests={requestsDensity.count >= requestsThreshold ? { count: requestsDensity.count, actualSpanDays: requestsDensity.timeSpanDays, periodDays: requestsPeriodDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate } : undefined}
                             hasDuplicateBanner={hasDuplicateBanner}
                             compareSource={{ ...compareSource, kind: 'profile' }}
+                            // The housemate alerts (Jon 2026-11-01): here a tap goes to the section that lists everyone.
+                            housemateAlert={enableHousehold ? households.housemateAlert : undefined}
+                            onHousemateAlert={() => document.getElementById('profile-household-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                         />
                     </div>
                 )}
@@ -1592,8 +1595,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     </div>
 
 
-                    {/* Family Members (Full Width) */}
-                    <div className="md:col-span-2 min-w-0">
+                    {/* Family Members (Full Width). The header's housemate alerts scroll here (clear of the h-16 sticky nav). */}
+                    <div id="profile-household-section" className="md:col-span-2 min-w-0 scroll-mt-20">
                         <h3 className="text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adopter.family_members')}</h3>
                         {!isNew && enableHousehold && adopterId ? (
                             <div className="space-y-3">

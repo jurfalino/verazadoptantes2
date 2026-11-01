@@ -191,6 +191,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 phone: g.phone ? maskContactEntries([{ type: 'phone', value: g.phone }], NO_ACCESS_VISIBILITY).entries[0]?.value ?? null : null,
             }),
             canCreateGift: false,
+            // Two answers, no names: the same for a stranger.
+            housemateAlert: households.housemateAlert,
         };
     }, [previewAsStranger, households]);
     /** profileId → name of everyone in a home shown on this profile (history names who was added, B17). */

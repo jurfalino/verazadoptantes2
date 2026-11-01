@@ -37,6 +37,11 @@ export function getRatingLabelKey(rating: number): string {
  * «Regular»). Unrated (null, 0, outside 1–5) is never low: ratings are never
  * inferred.
  */
+/** A rating as every card writes it: one decimal («2.0», «2.3») — RatingBadge and the housemate chip share it. */
+export function formatRating(rating: number): string {
+    return rating % 1 !== 0 ? rating.toFixed(1) : `${rating}.0`;
+}
+
 export function isLowRating(rating: number | null | undefined): boolean {
     if (rating == null) return false;
     const n = Number(rating);

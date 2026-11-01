@@ -8,7 +8,7 @@ import type { Relationship } from '@/lib/householdMembers';
 import { realOwner } from './dedupPair';
 import type { OpenAlertKind } from './flags';
 import { isLowRating } from './ratings';
-import type { PeriodAlert, PeriodAlerts } from './periodAlerts';
+import type { PeriodAlerts } from './periodAlerts';
 
 /** Households read per profile (bounded reads; a person in more is logged). */
 export const MAX_HOUSEHOLDS_PER_PROFILE = 10;
@@ -219,51 +219,36 @@ export function householdLineGroups(lines: ReadonlyArray<HouseholdLine> | null |
     return [...groups.values()];
 }
 
-/** Does this housemate have a problem the card line is about: a low rating (1★/2★) or an alert? Flags never count. */
-export function housemateHasProblem(line: Pick<HouseholdLine, 'rating' | 'alerts'>): boolean {
-    return isLowRating(line.rating) || !!line.alerts?.tooManyAdoptions || !!line.alerts?.tooManyRequests;
-}
-
-export type HouseholdLineSummary = {
-    /** False → the card says nothing about the home. */
-    show: boolean;
-    /** «Vive con {n} personas»: distinct housemates across the non-gift homes. */
-    housemateCount: number;
-    /** The lowest LOW rating among them (isLowRating), else null: the collapsed row's rating pill. */
-    worstRating: number | null;
-    /** One alert per kind for the collapsed row: of the housemates with that alert, the highest count. */
-    alerts: PeriodAlerts;
-    /** Everyone, grouped per home (householdLineGroups): the opened line. */
-    homes: HouseholdLine[][];
-};
+/** The fields the housemate alerts read: never names, never flags. */
+export type HousemateAlertLine = Pick<HouseholdLine, 'rating' | 'alerts' | 'isGift'>;
 
 /**
- * The card's household line (option B, Jon 2026-10-28): it appears only when a
- * housemate has a problem — a low rating or an alert (housemateHasProblem);
- * flags («Inexacto», «Duplicado») never make it appear. Gift-only lines are
- * left out of everything.
+ * «Conviviente con calificación {rating}» (Jon, 2026-11-01, option B): the
+ * LOWEST low rating (isLowRating: 1★/2★) among the people in the person's
+ * non-gift homes, or null. Several low-rated housemates still make ONE chip.
+ * Only the rating counts here: a housemate's alerts are housemateHasAlerts'
+ * own chip, and flags («Inexacto», «Duplicado») never count. Gift-only lines
+ * are left out (a gift recipient doesn't live there).
  */
-export function householdLineSummary(lines: ReadonlyArray<HouseholdLine> | null | undefined): HouseholdLineSummary {
-    const homes = householdLineGroups(lines);
-    const people = homes.flat();
-    const ids = new Set(people.map(p => p.profileId));
-    let worstRating: number | null = null;
-    for (const p of people) {
-        if (isLowRating(p.rating) && (worstRating == null || (p.rating as number) < worstRating)) worstRating = p.rating;
+export function housemateLowRating(lines: ReadonlyArray<HousemateAlertLine> | null | undefined): number | null {
+    let lowest: number | null = null;
+    for (const l of lines ?? []) {
+        if (l.isGift || !isLowRating(l.rating)) continue;
+        const r = Number(l.rating);
+        if (lowest == null || r < lowest) lowest = r;
     }
-    const worst = (pick: (a: PeriodAlerts) => PeriodAlert | null): PeriodAlert | null =>
-        people.reduce<PeriodAlert | null>((best, p) => {
-            const a = p.alerts ? pick(p.alerts) : null;
-            return a && (!best || a.count > best.count) ? a : best;
-        }, null);
-    const alerts: PeriodAlerts = { tooManyAdoptions: worst(a => a.tooManyAdoptions), tooManyRequests: worst(a => a.tooManyRequests) };
-    return {
-        show: people.some(housemateHasProblem),
-        housemateCount: ids.size,
-        worstRating,
-        alerts,
-        homes,
-    };
+    return lowest;
+}
+
+/**
+ * «Conviviente con alertas» (Jon, 2026-11-01): someone in the person's
+ * non-gift homes has one of their OWN alerts — the system-computed period
+ * alerts («N adopciones en N días», «Pidió en N rescates…»). Flags never
+ * count; gift-only lines are left out. Independent of housemateLowRating:
+ * a home can raise both chips.
+ */
+export function housemateHasAlerts(lines: ReadonlyArray<HousemateAlertLine> | null | undefined): boolean {
+    return (lines ?? []).some(l => !l.isGift && (!!l.alerts?.tooManyAdoptions || !!l.alerts?.tooManyRequests));
 }
 
 /**

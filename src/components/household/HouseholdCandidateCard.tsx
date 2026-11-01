@@ -5,8 +5,9 @@
  * (households as profiles, prototype A2/A3; also the importer's relatives):
  * the candidate's live summary as this viewer may see it (contacts masked by
  * the server), the contact that matched what was typed marked «coincide», and
- * the candidate's own household line — so a relative of a flagged person is
- * recognised before saving. Answering «Sí» links that profile; «No» moves on.
+ * the candidate's own housemate alerts («Conviviente con calificación 2.0»,
+ * «Conviviente con alertas»; tapping one lists who they live with) — so a
+ * relative of a low-rated person is recognised before saving. Answering «Sí» links that profile; «No» moves on.
  */
 import { Check, HelpCircle, Home, Info } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -14,7 +15,7 @@ import { openAlertKinds } from '@/domain/flags';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { useLanguage } from '@/context/LanguageContext';
 import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
-import { CardHouseholdLine } from '@/components/CardHouseholdLine';
+import { HousemateAlert } from '@/components/HousemateAlert';
 import { MatchesPill } from '@/components/LinkedProfileSummary';
 import { ContactRow } from '@/components/ContactRow';
 import { deserializeContactEntries, type ContactEntry } from '@/lib/contactEntries';
@@ -80,7 +81,8 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                             <a href={`/adopter/${encodeURIComponent(candidate.adopterId)}`} target="_blank" rel="noopener noreferrer"
                                 data-testid={`${testId}-link`} className={`font-semibold text-[15px] text-teal-700 hover:underline break-words ${TAP_TARGET_44}`}>{name}</a>
-                            <PersonStanding rating={candidate.rating ?? candidate.avgRating} openAlerts={alerts} isMinor={minor} alertsTestId={`${testId}-alerts`} />
+                            <PersonStanding rating={candidate.rating ?? candidate.avgRating} openAlerts={alerts} isMinor={minor} alertsTestId={`${testId}-alerts`}
+                                alerts={<HousemateAlert lines={candidate.householdLine} testId={`${testId}-housemate-alert`} />} />
                             {candidate.activity && <PersonActivity activity={candidate.activity} testId={`${testId}-activity`} />}
                         </div>
                         {shown.length > 0 && (
@@ -94,11 +96,10 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                 </div>
                 {homes.length > 0 ? (
                     <>
-                        <CardHouseholdLine lines={candidate.householdLine} className="mt-3" />
-                        <div className="mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg border" data-testid={`${testId}-elsewhere`}
+                        <div className="mt-3 flex items-start gap-2 text-xs px-3 py-2 rounded-lg border" data-testid={`${testId}-elsewhere`}
                             style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--status-info-text)' }}>
                             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
-                            {/* The housemates are named once, in the line above when one has a problem (audit B15, option B). */}
+                            {/* The housemates are named once, in the list the housemate alert opens (audit B15, option B). */}
                             <span className="min-w-0 break-words">{fill(t('adopter.hh_candidate_elsewhere'), { name: firstName(name) || name })}</span>
                         </div>
                     </>
