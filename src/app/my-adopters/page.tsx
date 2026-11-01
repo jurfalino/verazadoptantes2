@@ -15,8 +15,8 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
-import { AlertPill } from '@/components/AlertPill';
-import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
+import { MyAdoptersFlagBadges, hasHousemateChip } from '@/components/MyAdoptersFlagBadges';
+import type { HousemateAlertSummary } from '@/domain/profileHouseholds';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
 
@@ -68,6 +68,8 @@ interface Adopter {
     formNeedsReview?: boolean;
     /** Newest form linked to this person (submittedAt: epoch seconds). */
     latestForm?: { submissionId: string; submittedAt: number; animalName: string | null; ownedByViewer: boolean } | null;
+    /** Someone in their home (getMyAdopters → housemateAlertsFor): the two chip answers only, never names. Null when none. */
+    housemateAlert?: HousemateAlertSummary | null;
 }
 
 /** `?filtro=formularios` — kept in the URL so Back and shared links keep the view. */
@@ -319,41 +321,6 @@ function timeAgo(input: number | Date | string | null | undefined, isEs: boolean
     return isEs ? `hace ${years} año${years === 1 ? '' : 's'}` : `${years}y ago`;
 }
 
-// Alert badges: warnings only. v39+: verified_identity / verified_address
-// (positive signals) intentionally hidden from this column — the column now
-// reads "Alertas" and should only carry concerns. Verifications live on the
-// profile page; reviving them on the list belongs to a separate column if
-// we ever want them visible there again.
-function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => string }) {
-    const badges = [];
-
-    // Alerts first; then the flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01).
-    if (flags.tooManyAdoptions) {
-        badges.push(
-            <AlertPill key="too_many_adoptions" kind="too_many_adoptions">
-                {t('flags.too_many_adoptions').replace('{count}', String(flags.tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays))))}
-            </AlertPill>
-        );
-    }
-    if (flags.tooManyRequests) {
-        badges.push(
-            <AlertPill key="too_many_requests" kind="too_many_requests">
-                {t('flags.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
-            </AlertPill>
-        );
-    }
-
-    for (const kind of rescuerFlagKinds(openAlertKinds(flags))) {
-        badges.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
-    }
-
-    if (badges.length === 0) {
-        return <span className="text-xs text-stone-300">—</span>;
-    }
-
-    return <div className="flex flex-wrap gap-1">{badges}</div>;
-}
-
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
@@ -586,7 +553,9 @@ export default function MyAdoptersPage() {
                                             severity signal and rating live together (a 5-star adopter with a
                                             density flag now reads in one glance instead of jumping to a
                                             separate column). Min-height pins both states to row height. */}
-                                        <div className="col-span-2 flex flex-col items-center gap-1 min-h-[2rem]">
+                                        {/* With a housemate chip (a link with a 44px touch area around its 22px pill), 12px under
+                                            the rating keeps that area off the rating's own hint (review fix 6). */}
+                                        <div className={`col-span-2 flex flex-col items-center ${hasHousemateChip(adopter.housemateAlert) ? 'gap-3' : 'gap-1'} min-h-[2rem] min-w-0`}>
                                             {adopter.avgRating !== null ? (
                                                 <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
                                                     <RatingBadge rating={adopter.avgRating} />
@@ -594,7 +563,7 @@ export default function MyAdoptersPage() {
                                             ) : (
                                                 <RatingBadge rating={null} />
                                             )}
-                                            <FlagBadges flags={adopter.flags} t={t} />
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} t={t} />
                                         </div>
 
                                         {/* Actividad — stacked stats with labels (v38). Each line has its own word
@@ -696,7 +665,8 @@ export default function MyAdoptersPage() {
                                     </div>
 
                                     {/* Stats Row */}
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
+                                    {/* With a housemate chip, 12px between wrapped lines keeps its 44px touch area off the stats (review fix 6). */}
+                                    <div className={`flex flex-wrap items-center gap-x-3 ${hasHousemateChip(adopter.housemateAlert) ? 'gap-y-3' : 'gap-y-1'} text-xs text-stone-500`}>
                                         <span>👁 {adopter.profileViews} {adopter.profileViews === 1 ? t('stats.view_one') : t('stats.views')}</span>
                                         <span>📋 {adopter.requestCount} {adopter.requestCount === 1 ? t('stats.request_one') : t('stats.requests')}</span>
                                         <span>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? t('stats.adoption_one') : t('stats.adoptions')}</span>
@@ -711,8 +681,8 @@ export default function MyAdoptersPage() {
                                             </span>
                                         )}
                                         {/* Flags on mobile */}
-                                        <div className="flex gap-1 ml-auto">
-                                            <FlagBadges flags={adopter.flags} t={t} />
+                                        <div className="flex gap-1 ml-auto max-w-full min-w-0">
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} t={t} />
                                         </div>
                                     </div>
 

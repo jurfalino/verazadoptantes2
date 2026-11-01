@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory, notifications, animals } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory, notifications, animals, householdMemberships } from '@/db/schema';
 import { eq, ne, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -18,6 +18,18 @@ import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { computeRequestRescueDensity } from '@/domain/requestDensity';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { animalPrimaryFirst } from '@/lib/showcase';
+import { housemateAlertsFor } from '@/lib/households';
+import { raisesHousemateAlert, type HousemateAlertSummary } from '@/domain/households';
+
+/**
+ * Rows of «Mis Adoptantes» that get the housemate chips (Jon, 2026-11-01): the
+ * first this many people who are in a home at all, in the list's own order
+ * (newest first) — about a page's worth, as a search page shows. The list is
+ * not paginated (every row loads at once), so past this the rest go without
+ * (logged). The reads also share housemateAlertsFor's one query budget.
+ * Not exported: this is a 'use server' module.
+ */
+const MY_ADOPTERS_HOUSEMATE_ROWS = 50;
 
 export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
     let userEmail: string | undefined;
@@ -100,10 +112,11 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const allContractCounts: ContractCountRow[] = [];
         const allEditRows: EditRow[] = [];
         const dupPairs: DupRow[] = [];
+        const inAHome = new Set<string>();
 
         for (const idChunk of chunk(adopterIds, D1_IN_CHUNK)) {
             const inList = sql.join(idChunk.map((id) => sql`${id}`), sql`, `);
-            const [imgs, flags, counts, stats, records, forms, contracts, edits, dups] = await Promise.all([
+            const [imgs, flags, counts, stats, records, forms, contracts, edits, dups, homes] = await Promise.all([
                 db.select({
                     adopterId: adopterImages.adopterId,
                     url: adopterImages.url,
@@ -190,7 +203,19 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                         sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`,
                     ))
                     .all(),
+                // Who in this chunk is in a home at all — only they are read for the housemate chips (most
+                // people are in none). One read per chunk; a failure costs only the chips, never the list.
+                // (Promise.resolve: better-sqlite3 in dev answers a value, D1 a promise.)
+                Promise.resolve().then(() => db.selectDistinct({ adopterId: householdMemberships.adopterId })
+                    .from(householdMemberships)
+                    .where(sql`${householdMemberships.adopterId} IN (${inList})`)
+                    .all())
+                    .catch((e: unknown) => {
+                        logger.warn('getMyAdopters: household membership read failed, no housemate chips for these rows', { userEmail, rows: idChunk.length, error: e instanceof Error ? e.message : String(e) });
+                        return [] as Array<{ adopterId: string }>;
+                    }),
             ]);
+            for (const h of homes as Array<{ adopterId: string }>) inAHome.add(h.adopterId);
             allImages.push(...(imgs as ImageRow[]));
             allFlags.push(...(flags as FlagRow[]));
             allAdoptionCounts.push(...(counts as CountRow[]));
@@ -201,6 +226,17 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             allEditRows.push(...(edits as EditRow[]));
             dupPairs.push(...(dups as DupRow[]));
         }
+
+        // The housemate chips («Conviviente con calificación 2.0», «Conviviente con alertas»): each row's
+        // chip answer, read as a search card's (housemateAlertsFor — never the list, never a name, never
+        // throws), for the first MY_ADOPTERS_HOUSEMATE_ROWS rows in a home. Started here, awaited at the end.
+        const withHome = (adopterIds as string[]).filter(id => inAHome.has(id));
+        if (withHome.length > MY_ADOPTERS_HOUSEMATE_ROWS) {
+            logger.warn('getMyAdopters: housemate chip row cap hit, later rows show no housemate chips', { userEmail, inAHome: withHome.length, cap: MY_ADOPTERS_HOUSEMATE_ROWS });
+        }
+        const housemateAlertsP = withHome.length > 0
+            ? housemateAlertsFor(db, userEmail, withHome.slice(0, MY_ADOPTERS_HOUSEMATE_ROWS))
+            : Promise.resolve({} as Record<string, HousemateAlertSummary>);
 
         const adoptersWithPendingDup = new Set<string>();
         for (const p of dupPairs) {
@@ -414,7 +450,13 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             };
         });
 
-        return enrichedAdopters;
+        // Only the two answers reach the browser, and only when one raises a chip (null otherwise).
+        const housemateAlerts = await housemateAlertsP;
+        return enrichedAdopters.map((a: (typeof enrichedAdopters)[number]) => {
+            const alert = housemateAlerts[a.id];
+            const housemateAlert: HousemateAlertSummary | null = raisesHousemateAlert(alert) ? { lowRating: alert!.lowRating, hasAlerts: alert!.hasAlerts } : null;
+            return { ...a, housemateAlert };
+        });
     } catch (error) {
         // v2.25.2: rethrow (was `return []`). A thrown enrichment query used to
         // be swallowed into an empty list that the API returned as 200 OK — a

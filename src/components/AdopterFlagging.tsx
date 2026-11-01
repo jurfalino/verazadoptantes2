@@ -19,13 +19,13 @@ import { isOpenDuplicateFlag } from '@/domain/dedupPair';
 import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
-import type { HousemateAlertSummary } from '@/domain/profileHouseholds';
-
-/** Where the header's housemate chips lead: «Familiares / Convivientes» (AdopterForm's section). */
-export const HOUSEHOLD_SECTION_HREF = '#profile-household-section';
+import { HOUSEHOLD_SECTION_HREF, type HousemateAlertSummary } from '@/domain/profileHouseholds';
 import { formatRating } from '@/domain/ratings';
 import { Modal, ModalActions } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
+
+/** Where the header's housemate chips lead: «Familiares / Convivientes» (AdopterForm's section; one constant, re-review M-d/M-g). */
+export { HOUSEHOLD_SECTION_HREF };
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;

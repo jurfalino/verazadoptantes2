@@ -27,3 +27,13 @@ export type ProfileHouseholds = {
 };
 
 export const EMPTY_PROFILE_HOUSEHOLDS: ProfileHouseholds = { views: [], giftForms: [], canCreateGift: false, housemateAlert: NO_HOUSEMATE_ALERT };
+
+/**
+ * The profile's «Familiares / Convivientes» section and its heading (AdopterForm):
+ * where every housemate chip leads — the profile header's, and /my-adopters'
+ * rows' (`/adopter/{id}?ref=my-adopters` + HOUSEHOLD_SECTION_HREF). One place,
+ * so the link and the id never drift apart (re-review M-d).
+ */
+export const HOUSEHOLD_SECTION_ID = 'profile-household-section';
+export const HOUSEHOLD_SECTION_HEADING_ID = 'profile-household-heading';
+export const HOUSEHOLD_SECTION_HREF = `#${HOUSEHOLD_SECTION_ID}`;

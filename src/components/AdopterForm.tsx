@@ -28,7 +28,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
 import { KnownAsLine } from "@/components/household/KnownAsLine";
-import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from "@/domain/profileHouseholds";
+import { EMPTY_PROFILE_HOUSEHOLDS, HOUSEHOLD_SECTION_HEADING_ID, HOUSEHOLD_SECTION_ID, type ProfileHouseholds } from "@/domain/profileHouseholds";
+import { followHouseholdSectionHash, goToHouseholdSection } from "@/lib/householdSectionNav";
 import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, newContactsForProfile, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
@@ -199,6 +200,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // ENABLE_HOUSEHOLD_MEMBERS (public flag): swaps the free-text family field for
     // the structured HouseholdSection on saved profiles. Read once from /api/config.
     const [enableHousehold, setEnableHousehold] = useState(householdsEnabled);
+    // Arriving from a «Conviviente…» chip on /my-adopters (…#profile-household-section): the route streams in
+    // behind its loading screen, so the browser's own jump to the anchor misses — go there once mounted, and
+    // focus its heading (as the header's own chips do).
+    useEffect(() => followHouseholdSectionHash(window), []);
     useEffect(() => {
         let active = true;
         fetch('/api/config').then(r => r.json()).then((d) => {
@@ -1534,11 +1539,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             // A link to the section (review fix 7): smooth there, clear of the sticky nav (scroll-mt-20), and
                             // focus lands on its heading, so a keyboard or screen-reader user arrives too.
                             onHousemateAlert={(e) => {
-                                const section = document.getElementById('profile-household-section');
-                                if (!section) return; // the link's own jump
-                                e.preventDefault();
-                                section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                document.getElementById('profile-household-heading')?.focus({ preventScroll: true });
+                                // No section on the page: the link's own jump.
+                                if (goToHouseholdSection(document, { smooth: true })) e.preventDefault();
                             }}
                         />
                     </div>
@@ -1604,8 +1606,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
 
 
                     {/* Family Members (Full Width). The header's housemate alerts scroll here (clear of the h-16 sticky nav). */}
-                    <div id="profile-household-section" className="md:col-span-2 min-w-0 scroll-mt-20">
-                        <h3 id="profile-household-heading" tabIndex={-1} className="text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider focus:outline-none">{t('adopter.family_members')}</h3>
+                    <div id={HOUSEHOLD_SECTION_ID} className="md:col-span-2 min-w-0 scroll-mt-20">
+                        <h3 id={HOUSEHOLD_SECTION_HEADING_ID} tabIndex={-1} className="text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider focus:outline-none">{t('adopter.family_members')}</h3>
                         {!isNew && enableHousehold && adopterId ? (
                             <div className="space-y-3">
                                 <HouseholdSection
