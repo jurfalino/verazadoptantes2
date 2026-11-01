@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pairKey, pairVerdict, mergeNeedsAdmins, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, decideMergeDisputeRaise, decideMergeDisputeResolution, type DedupSide } from './dedupPair';
+import { pairKey, pairVerdict, mergeNeedsAdmins, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, keepByAge, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, decideMergeDisputeRaise, decideMergeDisputeResolution, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -439,5 +439,17 @@ describe('pairVerdict / mergeNeedsAdmins — one rule for every non-admin merge'
         expect(mergeNeedsAdmins({ declinedForTeam: true, adminRuledSeparate: false }, false)).toBe(true);
         expect(mergeNeedsAdmins({ declinedForTeam: true, adminRuledSeparate: false }, true)).toBe(false);
         expect(mergeNeedsAdmins({ declinedForTeam: false, adminRuledSeparate: false }, false)).toBe(false);
+    });
+});
+
+describe('keepByAge — the side a merge proposes to keep, on every screen', () => {
+    it('the profile loaded first', () => {
+        expect(keepByAge({ id: 'new', createdAt: 2000 }, { id: 'old', createdAt: 1000 }).id).toBe('old');
+        expect(keepByAge({ id: 'old', createdAt: 1000 }, { id: 'new', createdAt: 2000 }).id).toBe('old');
+    });
+    it('equal or unknown dates keep the second, as Pendientes always has', () => {
+        expect(keepByAge({ id: 'a', createdAt: 1000 }, { id: 'b', createdAt: 1000 }).id).toBe('b');
+        expect(keepByAge({ id: 'a' }, { id: 'b', createdAt: null }).id).toBe('b');
+        expect(keepByAge({ id: 'a' }, { id: 'b', createdAt: 5 }).id).toBe('a');
     });
 });

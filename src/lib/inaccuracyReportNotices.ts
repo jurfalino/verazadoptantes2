@@ -19,6 +19,14 @@ import { realOwner } from '@/domain/dedupPair';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { logger } from '@/lib/logger';
 
+/** What the reporter wrote, as the notice quotes it: one line, at most NOTICE_DETAILS_MAX characters. */
+export const NOTICE_DETAILS_MAX = 280;
+export function noticeDetails(details: string | null | undefined): string | undefined {
+    const one = (details ?? '').replace(/\s+/g, ' ').trim();
+    if (!one) return undefined;
+    return one.length > NOTICE_DETAILS_MAX ? `${one.slice(0, NOTICE_DETAILS_MAX - 1).trimEnd()}…` : one;
+}
+
 /** Owner + their team + privileged editors, normalized, once each, never the reporter. */
 export function inaccuracyReportRecipients(groups: ReadonlyArray<ReadonlyArray<string | null | undefined>>, reporter: string): string[] {
     const self = normEmail(reporter);
@@ -31,8 +39,9 @@ export function inaccuracyReportRecipients(groups: ReadonlyArray<ReadonlyArray<s
 }
 
 /** Returns who was told (normalized) and the profile's name, for the admins' notice. */
-export async function notifyInaccuracyReportEditors(input: { adopterId: string; reporter: string }): Promise<{ told: string[]; adopterName: string | null }> {
+export async function notifyInaccuracyReportEditors(input: { adopterId: string; reporter: string; details?: string | null }): Promise<{ told: string[]; adopterName: string | null }> {
     const { adopterId, reporter } = input;
+    const details = noticeDetails(input.details);
     const db = await getDb();
     if (!db) throw new Error('No database');
     const row = await db.select({ name: adopters.name, addedBy: adopters.addedBy })
@@ -47,7 +56,7 @@ export async function notifyInaccuracyReportEditors(input: { adopterId: string; 
     const reporterName = await resolveDisplayName(reporter);
     const content = notificationContent({
         key: 'inaccuracy_reported',
-        params: { reporterName, ...(adopterName ? { adopterName } : {}) },
+        params: { reporterName, ...(adopterName ? { adopterName } : {}), ...(details ? { details } : {}) },
     });
     const told: string[] = [];
     await Promise.all(recipients.map(async userId => {

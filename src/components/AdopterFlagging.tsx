@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -131,46 +132,37 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
 
 
+    // «Buscar perfil original»: never the profile you are on (Jon 2026-10-31: picking
+    // it was refused with an error), and a failed search says so — it used to look
+    // like «no results».
+    const runSearch = async (term: string) => {
+        setIsSearching(true);
+        try {
+            const response = await findAdopters({ raw: term }, { mode: 'discovery', enrich: false });
+            setSearchResults((response.results as DiscoveryMatch[]).filter(r => r.adopter.id !== adopterId));
+            setHasSearched(true);
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.search_failed'), resolveErrorId(e, 'AdopterFlagging.search'));
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
     // Debounce search
     useEffect(() => {
-        const delayDebounceFn = setTimeout(async () => {
-            if (searchTerm && reason === 'duplicate') {
-                setIsSearching(true);
-                try {
-                    const response = await findAdopters(
-                        { raw: searchTerm },
-                        { mode: 'discovery', enrich: false },
-                    );
-                    setSearchResults(response.results as DiscoveryMatch[]);
-                    setHasSearched(true);
-                } catch (error) {
-                    console.error("Search failed", error);
-                } finally {
-                    setIsSearching(false);
-                }
-            } else {
-                setSearchResults([]);
-            }
+        const delayDebounceFn = setTimeout(() => {
+            if (searchTerm && reason === 'duplicate') void runSearch(searchTerm);
+            else setSearchResults([]);
         }, 500);
 
         return () => clearTimeout(delayDebounceFn);
+        // runSearch is recreated each render; the search reruns only when the term or reason changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchTerm, reason]);
 
     const handleManualSearch = async () => {
         if (!searchTerm) return;
-        setIsSearching(true);
-        try {
-            const response = await findAdopters(
-                { raw: searchTerm },
-                { mode: 'discovery', enrich: false },
-            );
-            setSearchResults(response.results as DiscoveryMatch[]);
-            setHasSearched(true);
-        } catch (error) {
-            console.error("Search failed", error);
-        } finally {
-            setIsSearching(false);
-        }
+        await runSearch(searchTerm);
     };
 
     const handleSubmit = async () => {

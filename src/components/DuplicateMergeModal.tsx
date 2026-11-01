@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { keepByAge } from '@/domain/dedupPair';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -37,6 +38,8 @@ interface Adopter {
     avgRating?: number | null;
     /** Who registered it ("Name (email)"), when the caller knows (admin panel). */
     createdBy?: string | null;
+    /** When it was loaded (ms): the window proposes keeping the older one, as Pendientes does. */
+    createdAt?: number | null;
 }
 
 interface DuplicateMergeModalProps {
@@ -58,7 +61,8 @@ export default function DuplicateMergeModal({
     notifyOption = false,
 }: DuplicateMergeModalProps) {
     const { t } = useLanguage();
-    const [primaryId, setPrimaryId] = useState<string>(adopter1.id);
+    // The same proposal as Pendientes: keep the profile loaded first (keepByAge). The admin can switch.
+    const [primaryId, setPrimaryId] = useState<string>(() => keepByAge(adopter1, adopter2).id);
     const [merging, setMerging] = useState(false);
     const [notifyOwners, setNotifyOwners] = useState(true);
 
@@ -181,6 +185,9 @@ function ProfileCard({
         <button
             type="button"
             onClick={onSelect}
+            aria-pressed={isSelected}
+            data-testid="dmm-profile"
+            data-adopter-id={adopter.id}
             className={`text-left p-4 rounded-xl border-2 transition-all ${isSelected
                 ? 'border-teal-500 bg-teal-50/50'
                 : 'border-stone-200 hover:border-stone-300'

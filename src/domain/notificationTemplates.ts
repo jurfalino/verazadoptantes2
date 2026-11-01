@@ -44,7 +44,8 @@ export interface NotificationTemplateParams {
     /** To whoever added each profile when someone flags them as one person; a missing name reads «un perfil». */
     duplicate_flagged: { reporterName: string; nameA?: string; nameB?: string };
     /** To everyone who can edit the profile (owner, their team, admins) when someone else says something on it is wrong. */
-    inaccuracy_reported: { reporterName: string; adopterName?: string };
+    /** `details`: what the reporter wrote (trimmed to NOTICE_DETAILS_MAX), so the people who can fix it know what to fix. */
+    inaccuracy_reported: { reporterName: string; adopterName?: string; details?: string };
     /** `disputable`: '1' when attaching folded another profile in and the notice links to «¿No es la misma persona?» (D50). */
     contract_attached: { actorName: string; profileName: string; animalName?: string; disputable?: string };
     form_attached: { actorName: string; profileName: string; disputable?: string };
@@ -326,9 +327,9 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     },
     inaccuracy_reported: {
         required: ['reporterName'],
-        es: p => ({ title: 'Información incorrecta en un perfil', body: `${p.reporterName} dice que hay información incorrecta en ${p.adopterName ? `el perfil de ${p.adopterName}` : 'un perfil'}.` }),
-        en: p => ({ title: 'Wrong information on a profile', body: `${p.reporterName} says some information on ${p.adopterName ? `${p.adopterName}’s profile` : 'a profile'} is wrong.` }),
-        pt: p => ({ title: 'Informação incorreta em um perfil', body: `${p.reporterName} diz que há informação incorreta ${p.adopterName ? `no perfil de ${p.adopterName}` : 'em um perfil'}.` }),
+        es: p => ({ title: 'Información incorrecta en un perfil', body: `${p.reporterName} dice que hay información incorrecta en ${p.adopterName ? `el perfil de ${p.adopterName}` : 'un perfil'}${p.details ? `: «${p.details}»` : '.'}` }),
+        en: p => ({ title: 'Wrong information on a profile', body: `${p.reporterName} says some information on ${p.adopterName ? `${p.adopterName}’s profile` : 'a profile'} is wrong${p.details ? `: “${p.details}”` : '.'}` }),
+        pt: p => ({ title: 'Informação incorreta em um perfil', body: `${p.reporterName} diz que há informação incorreta ${p.adopterName ? `no perfil de ${p.adopterName}` : 'em um perfil'}${p.details ? `: «${p.details}»` : '.'}` }),
     },
     contract_attached: {
         required: ['actorName', 'profileName'],

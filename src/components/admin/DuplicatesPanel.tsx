@@ -34,6 +34,9 @@ interface DuplicateCandidate {
     /** Email of whoever registered each profile (names in `creatorNames`). */
     adopter1AddedBy?: string | null;
     adopter2AddedBy?: string | null;
+    /** When each profile was loaded (ms): the merge window proposes keeping the older (keepByAge). */
+    adopter1CreatedAt?: number | null;
+    adopter2CreatedAt?: number | null;
 }
 
 interface UserFlagged {
@@ -53,6 +56,9 @@ interface UserFlagged {
     /** Email of whoever registered each profile (names in `creatorNames`). */
     adopter1AddedBy?: string | null;
     adopter2AddedBy?: string | null;
+    /** When each profile was loaded (ms): the merge window proposes keeping the older (keepByAge). */
+    adopter1CreatedAt?: number | null;
+    adopter2CreatedAt?: number | null;
 }
 
 interface Counts {
@@ -541,8 +547,8 @@ export default function DuplicatesPanel() {
                 return;
             }
             setMergeTarget({
-                a1: { id: flag.adopterId, name: flag.adopter1Name ?? '', contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating, createdBy: creatorLabel(flag.adopter1AddedBy) },
-                a2: { id: flag.targetAdopterId, name: flag.adopter2Name ?? '', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating, createdBy: creatorLabel(flag.adopter2AddedBy) },
+                a1: { id: flag.adopterId, name: flag.adopter1Name ?? '', contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating, createdBy: creatorLabel(flag.adopter1AddedBy), createdAt: flag.adopter1CreatedAt ?? null },
+                a2: { id: flag.targetAdopterId, name: flag.adopter2Name ?? '', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating, createdBy: creatorLabel(flag.adopter2AddedBy), createdAt: flag.adopter2CreatedAt ?? null },
                 matchTypes: ['user_flagged'],
                 flagId: flag.flagId,
             });
@@ -550,8 +556,8 @@ export default function DuplicatesPanel() {
             const c = item as DuplicateCandidate;
             const types = JSON.parse(c.matchTypes || '[]');
             setMergeTarget({
-                a1: { id: c.adopter1Id, name: c.adopter1Name ?? '', contact: c.adopter1Contact, avgRating: c.adopter1AvgRating, createdBy: creatorLabel(c.adopter1AddedBy) },
-                a2: { id: c.adopter2Id, name: c.adopter2Name ?? '', contact: c.adopter2Contact, avgRating: c.adopter2AvgRating, createdBy: creatorLabel(c.adopter2AddedBy) },
+                a1: { id: c.adopter1Id, name: c.adopter1Name ?? '', contact: c.adopter1Contact, avgRating: c.adopter1AvgRating, createdBy: creatorLabel(c.adopter1AddedBy), createdAt: c.adopter1CreatedAt ?? null },
+                a2: { id: c.adopter2Id, name: c.adopter2Name ?? '', contact: c.adopter2Contact, avgRating: c.adopter2AvgRating, createdBy: creatorLabel(c.adopter2AddedBy), createdAt: c.adopter2CreatedAt ?? null },
                 matchTypes: types,
                 candidateId: c.id,
             });

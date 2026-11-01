@@ -126,6 +126,16 @@ export function decideDedupAction(
     return { kind: 'request', ...ids, ownerEmail: realOwner(newer.addedBy) };
 }
 
+/**
+ * Which of two profiles a merge proposes to keep, everywhere it is proposed
+ * (Pendientes, the admin «Fusionar perfiles» window): the one loaded first.
+ * Equal or unknown dates keep `b` — the order Pendientes has always used.
+ * Jon 2026-10-31: the two screens proposed opposite sides for the same pair.
+ */
+export function keepByAge<T extends { createdAt?: number | null }>(a: T, b: T): T {
+    return (a.createdAt ?? 0) >= (b.createdAt ?? 0) ? b : a;
+}
+
 /** Which sides the viewer may choose to keep (the «¿Cuál queda?» switch, D42). */
 export function keepOptions(
     actor: string | null | undefined,
