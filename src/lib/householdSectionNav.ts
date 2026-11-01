@@ -21,10 +21,11 @@ export function goToHouseholdSection(doc: Pick<Document, 'getElementById'>, opts
 
 /** Retries while the page above the section settles (photos, cards streaming in). */
 const ARRIVAL_RETRIES_MS = [0, 300, 800, 1500];
-const STOP_EVENTS = ['wheel', 'touchstart', 'keydown'] as const;
+const STOP_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
 
 type ArrivalWindow = Pick<Window, 'addEventListener' | 'removeEventListener' | 'setTimeout' | 'clearTimeout'> & {
-    location: Pick<Location, 'hash'>;
+    location: Pick<Location, 'hash' | 'pathname' | 'search'>;
+    history: Pick<History, 'state' | 'replaceState'>;
     document: Pick<Document, 'getElementById'>;
 };
 
@@ -34,7 +35,9 @@ type ArrivalWindow = Pick<Window, 'addEventListener' | 'removeEventListener' | '
  * browser's own jump to the anchor misses. Goes there once mounted and again
  * while the sections above settle — until the person scrolls, touches or
  * types — and moves focus to the heading once, the first time the section is
- * found. Returns the cleanup for a mount effect.
+ * found, which is also when the hash is dropped from the URL (replaceState, so
+ * no history entry): a later Back or reload doesn't jump to the section again.
+ * Returns the cleanup for a mount effect.
  */
 export function followHouseholdSectionHash(win: ArrivalWindow): () => void {
     if (win.location.hash !== HOUSEHOLD_SECTION_HREF) return () => {};
@@ -44,7 +47,11 @@ export function followHouseholdSectionHash(win: ArrivalWindow): () => void {
     for (const ev of STOP_EVENTS) win.addEventListener(ev, stop, { once: true, passive: true });
     const go = () => {
         if (stopped) return;
-        if (goToHouseholdSection(win.document, { smooth: false, focus: !focused })) focused = true;
+        if (!goToHouseholdSection(win.document, { smooth: false, focus: !focused })) return;
+        if (!focused) {
+            focused = true;
+            win.history.replaceState(win.history.state, '', win.location.pathname + win.location.search);
+        }
     };
     const timers = ARRIVAL_RETRIES_MS.map(ms => win.setTimeout(go, ms));
     return () => {

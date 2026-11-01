@@ -377,6 +377,7 @@ export const en = {
         too_many_requests: 'Asked at {count} rescues in {days} days',
         housemate_low_rating: 'Housemate rated {rating}',
         housemate_alerts: 'Housemate with alerts',
+        housemate_chip_of: '{chip} — {name}',
         warning_dates: '(occurred between',
         and: 'and',
         adoptions_risk: 'An unusually high frequency indicates a potential risk of hoarding or lack of tracking capacity.',

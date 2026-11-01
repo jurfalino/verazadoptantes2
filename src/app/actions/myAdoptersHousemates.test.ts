@@ -94,8 +94,10 @@ describe('getMyAdopters — each row\'s housemate chips', () => {
     });
 
     it('only the two answers reach the browser — never a housemate\'s name or id', async () => {
-        const payload = JSON.stringify((await list()).map(r => r.housemateAlert));
-        for (const leak of ['Bruno', 'Berta', 'Beto', 'bad', 'busy']) expect(payload).not.toContain(leak);
+        // The WHOLE result (every field of every row), not only housemateAlert.
+        const payload = JSON.stringify(await getMyAdopters());
+        expect(payload).toContain('Lowe Paez'); // the guard reads the real payload
+        for (const leak of ['Bruno', 'Berta', 'Beto', 'Malo', 'Mucho', '"bad"', '"busy"', '"bad2"']) expect(payload).not.toContain(leak);
         for (const r of await list()) if (r.housemateAlert) expect(Object.keys(r.housemateAlert).sort()).toEqual(['hasAlerts', 'lowRating']);
     });
 

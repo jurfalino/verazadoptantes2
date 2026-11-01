@@ -21,6 +21,8 @@ const { state, notify, faults } = vi.hoisted(() => ({
         afterEnsure: null as null | ((householdId: string) => void),
         afterAdd: null as null | ((householdId: string) => void),
         correctionThrows: false,
+        /** householdLinesFor answers nothing (its query budget cut every card). */
+        linesCut: false,
         /** Answer addContactEntry with this instead of running it. */
         contactFails: null as null | Record<string, unknown>,
     },
@@ -51,6 +53,10 @@ vi.mock('@/lib/households', async (orig) => {
             const id = await real.ensureHousehold(...args);
             const hook = faults.afterEnsure; faults.afterEnsure = null; hook?.(id);
             return id;
+        }),
+        householdLinesFor: vi.fn(async (...args: Parameters<typeof real.householdLinesFor>) => {
+            if (faults.linesCut) return {};
+            return real.householdLinesFor(...args);
         }),
         hasCorrection: vi.fn(async (...args: Parameters<typeof real.hasCorrection>) => {
             if (faults.correctionThrows) { faults.correctionThrows = false; throw new Error('D1 down'); }
@@ -143,6 +149,7 @@ beforeEach(() => {
     faults.afterAdd = null;
     faults.contactFails = null;
     faults.correctionThrows = false;
+    faults.linesCut = false;
     vi.mocked(logger.warn).mockClear();
     vi.mocked(logger.error).mockClear();
     vi.mocked(logAudit).mockClear();
@@ -531,15 +538,23 @@ describe('getHouseholdMatchCandidates — «¿Es este perfil?»', () => {
         const { results } = await getHouseholdMatchCandidates({ name: 'Marta Paez', contactEntries: [{ type: 'phone', value: MARTA_PHONE }], anchorAdopterId: 'pedro' });
         const marta = results.find(r => r.adopter.id === 'marta');
         expect(marta).toBeTruthy();
-        expect(marta!.household.lines).toEqual([expect.objectContaining({ profileId: 'rosa', name: 'Rosa Diaz', isGift: false })]);
+        expect(marta!.household!.lines).toEqual([expect.objectContaining({ profileId: 'rosa', name: 'Rosa Diaz', isGift: false })]);
         // The anchor is never its own candidate.
         expect(results.some(r => r.adopter.id === 'pedro')).toBe(false);
+    });
+
+    it('a card the household budget cut stays UNKNOWN — never the empty home that reads «no convive con nadie»', async () => {
+        faults.linesCut = true;
+        const { results } = await getHouseholdMatchCandidates({ name: 'Marta Paez', contactEntries: [{ type: 'phone', value: MARTA_PHONE }], anchorAdopterId: 'pedro' });
+        const marta = results.find(r => r.adopter.id === 'marta');
+        expect(marta).toBeTruthy();
+        expect(marta!.household).toBeUndefined();
     });
 
     it("the line shows a stranger no more than Rosa's own profile does: her name (profile names are not masked), never a contact", async () => {
         sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'rosa'`).run(JSON.stringify([{ id: 'rc', type: 'phone', value: '+54 11 7777 0909', addedBy: OTHER }]));
         const { results } = await getHouseholdMatchCandidates({ name: 'Marta Paez', contactEntries: [{ type: 'phone', value: MARTA_PHONE }] });
-        const line = results.find(r => r.adopter.id === 'marta')!.household.lines;
+        const line = results.find(r => r.adopter.id === 'marta')!.household!.lines;
         expect(line.map(l => Object.keys(l).sort())).toEqual([['alerts', 'householdId', 'isGift', 'isMinor', 'name', 'openAlerts', 'profileId', 'rating']]);
         const { getHouseholdsFor } = await import('@/lib/households');
         const onProfile = await getHouseholdsFor(state.db as Parameters<typeof getHouseholdsFor>[0], STRANGER, 'marta');
@@ -600,7 +615,7 @@ describe('getDuplicateHintMatches — the composer\'s «Ya está en otro perfil�
         expect(failed).toBeUndefined();
         const marta = results.find(r => r.adopter.id === 'marta');
         expect(marta).toBeTruthy();
-        expect(marta!.household.lines).toEqual([expect.objectContaining({ profileId: 'rosa', name: 'Rosa Diaz' })]);
+        expect(marta!.household!.lines).toEqual([expect.objectContaining({ profileId: 'rosa', name: 'Rosa Diaz' })]);
         expect(marta!.matchedEntryIndexes).toEqual([0]);
         expect(marta).toHaveProperty('rating', null);
         expect(marta).toHaveProperty('activity');

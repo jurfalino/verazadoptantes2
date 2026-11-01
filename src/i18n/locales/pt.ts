@@ -377,6 +377,7 @@ export const pt = {
         too_many_requests: 'Pediu em {count} resgates em {days} dias',
         housemate_low_rating: 'Coabitante com avaliação {rating}',
         housemate_alerts: 'Coabitante com alertas',
+        housemate_chip_of: '{chip} — {name}',
         warning_dates: '(ocorrido entre',
         and: 'e',
         adoptions_risk: 'Uma frequência anormalmente alta indica um possível risco de acúmulo ou falta de capacidade de acompanhamento.',

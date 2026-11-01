@@ -26,10 +26,12 @@ export const myAdoptersHouseholdHref = (adopterId: string) => `/adopter/${adopte
 /** Does the row draw a housemate chip? (Its rows space the chips' 44px touch areas apart: review fix 6.) */
 export const hasHousemateChip = (a: HousemateAlertSummary | null | undefined): boolean => !!a && (a.lowRating != null || a.hasAlerts);
 
-export function MyAdoptersFlagBadges({ flags, housemateAlert, adopterId, t }: {
+export function MyAdoptersFlagBadges({ flags, housemateAlert, adopterId, personName, t }: {
     flags: AdopterFlags;
     housemateAlert?: HousemateAlertSummary | null;
     adopterId: string;
+    /** The ROW's person, for the chip's accessible name — never a housemate (the row has none to name). */
+    personName: string;
     t: (key: string) => string;
 }) {
     const badges = [];
@@ -50,16 +52,19 @@ export function MyAdoptersFlagBadges({ flags, housemateAlert, adopterId, t }: {
     }
 
     const href = myAdoptersHouseholdHref(adopterId);
+    // «Conviviente con alertas — {person}»: the visible words first (label-in-name), then whose profile it opens.
+    const named = (words: string) => t('flags.housemate_chip_of').replace('{chip}', words).replace('{name}', personName);
     if (housemateAlert?.lowRating != null) {
+        const words = t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateAlert.lowRating));
         badges.push(
-            <AlertPill key="housemate_low_rating" kind="housemate_low_rating" wrap href={href} testId="my-adopters-housemate-alert-rating">
-                {t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateAlert.lowRating))}
+            <AlertPill key="housemate_low_rating" kind="housemate_low_rating" wrap href={href} ariaLabel={named(words)} testId="my-adopters-housemate-alert-rating">
+                {words}
             </AlertPill>
         );
     }
     if (housemateAlert?.hasAlerts) {
         badges.push(
-            <AlertPill key="housemate_alerts" kind="housemate_alerts" wrap href={href} testId="my-adopters-housemate-alert-alerts">
+            <AlertPill key="housemate_alerts" kind="housemate_alerts" wrap href={href} ariaLabel={named(t('flags.housemate_alerts'))} testId="my-adopters-housemate-alert-alerts">
                 {t('flags.housemate_alerts')}
             </AlertPill>
         );

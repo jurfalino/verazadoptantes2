@@ -56,7 +56,7 @@ import {
 import {
     notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed, notifyHouseholdRelationshipChanged,
 } from '@/lib/householdNotices';
-import { canRemoveMembership, currentAge, householdNameKey, isGiftHousehold, isMinor, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE, NO_CARD_HOUSEHOLD } from '@/domain/households';
+import { canRemoveMembership, currentAge, householdNameKey, isGiftHousehold, isMinor, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
 import { sameName } from '@/domain/profileIdentity';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { householdContactSchema } from './validation';
@@ -125,7 +125,8 @@ export type AddHouseholdPersonResult =
     | Fail;
 
 export type HouseholdMatchCandidate = DiscoveryMatch & {
-    household: CardHousehold;
+    /** The card's home. UNSET = not read (households off, or the query budget cut this card): the card says nothing about a home, never «nobody lives there». */
+    household?: CardHousehold;
     /** Open alerts, counted exactly as the household line counts them (ProfileCounts / openAlertKinds — final fix P6). */
     openAlerts: OpenAlertKind[];
     /** Activity by record type, counted as the candidate's own «Actividad» header and a household row count it (countsFor). */
@@ -731,7 +732,7 @@ async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ct
         Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }))),
     ]);
     return matches.map((r, i) => ({
-        ...r, household: r.households ?? lines[r.adopter.id] ?? NO_CARD_HOUSEHOLD,
+        ...r, household: r.households ?? lines[r.adopter.id],
         openAlerts: counts[i].openAlerts, activity: counts[i].activity, rating: counts[i].rating,
     }));
 }

@@ -20,6 +20,7 @@
  * Colours are CSS variables: theme-safe.
  */
 import type { MouseEvent, ReactNode } from 'react';
+import Link from 'next/link';
 import { AlertTriangle, Flag, Home, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { rescuerFlagKinds, type OpenAlertKind } from '@/domain/flags';
@@ -47,7 +48,7 @@ const SIZE = {
     md: { box: 'gap-1.5 px-3 py-1.5 text-xs', icon: 'w-3.5 h-3.5' },
 } as const;
 
-export function AlertPill({ kind, children, size = 'sm', onClick, href, onNavigate, pressed, expanded, controls, wrap = false, testId }: {
+export function AlertPill({ kind, children, size = 'sm', onClick, href, onNavigate, pressed, expanded, controls, wrap = false, testId, ariaLabel }: {
     kind: AlertKind;
     children: ReactNode;
     size?: keyof typeof SIZE;
@@ -64,6 +65,8 @@ export function AlertPill({ kind, children, size = 'sm', onClick, href, onNaviga
     /** Long words: one line where there is room, wrapped inside the row where there isn't (never past the card). */
     wrap?: boolean;
     testId?: string;
+    /** Replaces the visible words as the accessible name (it must still contain them). */
+    ariaLabel?: string;
 }) {
     const { tone, Icon } = KIND[kind];
     const sz = SIZE[size];
@@ -76,10 +79,20 @@ export function AlertPill({ kind, children, size = 'sm', onClick, href, onNaviga
         : FLAG_STYLE;
     // Wrapped: the icon stays on the first line (its 12px box centred on the 16px line — 2px, half-grid micro-spacing).
     const body = <><Icon className={`${sz.icon} shrink-0 ${wrap ? 'mt-0.5' : ''}`} strokeWidth={2.25} aria-hidden="true" />{wrap ? <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span> : children}</>;
+    const linkCls = `${cls} ${TAP_TARGET_44} transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]`;
+    // A place on ANOTHER page (the /my-adopters chips → the profile): a client-side navigation, not a full reload.
+    // prefetch off — a list of rows would otherwise prefetch every profile. A place on THIS page (#…) stays a plain <a>.
+    if (href && !href.startsWith('#')) {
+        return (
+            <Link href={href} prefetch={false} onClick={onNavigate} data-testid={testId} data-alert={kind} aria-label={ariaLabel} className={linkCls} style={style}>
+                {body}
+            </Link>
+        );
+    }
     if (href) {
         return (
-            <a href={href} onClick={onNavigate} data-testid={testId} data-alert={kind}
-                className={`${cls} ${TAP_TARGET_44} transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]`} style={style}>
+            <a href={href} onClick={onNavigate} data-testid={testId} data-alert={kind} aria-label={ariaLabel}
+                className={linkCls} style={style}>
                 {body}
             </a>
         );

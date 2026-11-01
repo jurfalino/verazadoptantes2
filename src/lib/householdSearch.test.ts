@@ -191,7 +191,7 @@ describe('«¿Es este perfil?» cards carry the household line', () => {
     it('the household add form keeps its household (same data)', async () => {
         const { results } = await getHouseholdMatchCandidates({ name: 'Lucas Paez', contactEntries: [{ type: 'phone', value: '11 4200-0003' }] });
         const lucas = results.find(r => r.adopter.id === 'lucas')!;
-        expect(lucas.household.lines.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
+        expect(lucas.household!.lines.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
     });
 });
 

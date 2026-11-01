@@ -377,6 +377,7 @@ export const es = {
         too_many_requests: 'Pidió en {count} rescates en {days} días',
         housemate_low_rating: 'Conviviente con calificación {rating}',
         housemate_alerts: 'Conviviente con alertas',
+        housemate_chip_of: '{chip} — {name}',
         warning_dates: '(ocurrido entre',
         and: 'y',
         adoptions_risk: 'Una frecuencia inusualmente alta indica un posible riesgo de acumulación o falta de capacidad de seguimiento.',

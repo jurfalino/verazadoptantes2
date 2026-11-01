@@ -18,10 +18,12 @@ function page(withSection = true) {
 
 function win(hash: string, doc: Pick<Document, 'getElementById'>) {
     const listeners = new Map<string, () => void>();
+    const replaceState = vi.fn();
     return {
-        listeners,
+        listeners, replaceState,
         w: {
-            location: { hash },
+            location: { hash, pathname: '/adopter/a1', search: '?ref=my-adopters' },
+            history: { state: { tree: 1 }, replaceState },
             document: doc,
             addEventListener: vi.fn((ev: string, fn: () => void) => { listeners.set(ev, fn); }),
             removeEventListener: vi.fn((ev: string) => { listeners.delete(ev); }),
@@ -64,12 +66,31 @@ describe('followHouseholdSectionHash — arriving from a /my-adopters chip', () 
         cleanup();
     });
 
-    it('stops as soon as the person scrolls, touches or types', () => {
+    it('once the section is found, drops the hash (replaceState, same state) so Back does not jump again — once', () => {
+        vi.useFakeTimers();
+        const { doc } = page();
+        const { w, replaceState } = win(HOUSEHOLD_SECTION_HREF, doc);
+        followHouseholdSectionHash(w);
+        expect(replaceState).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(2000);
+        expect(replaceState).toHaveBeenCalledTimes(1);
+        expect(replaceState).toHaveBeenCalledWith({ tree: 1 }, '', '/adopter/a1?ref=my-adopters');
+    });
+
+    it('a section that never appears leaves the URL alone', () => {
+        vi.useFakeTimers();
+        const { w, replaceState } = win(HOUSEHOLD_SECTION_HREF, page(false).doc);
+        followHouseholdSectionHash(w);
+        vi.advanceTimersByTime(2000);
+        expect(replaceState).not.toHaveBeenCalled();
+    });
+
+    it('stops as soon as the person scrolls, touches, clicks or types', () => {
         vi.useFakeTimers();
         const { section, doc } = page();
         const { w, listeners } = win(HOUSEHOLD_SECTION_HREF, doc);
         followHouseholdSectionHash(w);
-        expect([...listeners.keys()].sort()).toEqual(['keydown', 'touchstart', 'wheel']);
+        expect([...listeners.keys()].sort()).toEqual(['keydown', 'pointerdown', 'touchstart', 'wheel']);
         vi.advanceTimersByTime(0);
         listeners.get('keydown')!();
         vi.advanceTimersByTime(2000);

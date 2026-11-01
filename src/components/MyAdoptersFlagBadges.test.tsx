@@ -25,10 +25,10 @@ const HREF = '/adopter/x1?ref=my-adopters#profile-household-section';
 describe('MyAdoptersFlagBadges — the housemate chips on a /my-adopters row', () => {
     it('both chips are links to the profile at «Familiares / Convivientes», between the own alerts and the flags', () => {
         const flags: AdopterFlags = { ...NO_FLAGS, duplicate: true, tooManyAdoptions: { count: 3, threshold: 3, periodDays: 90, actualSpanDays: 8 } };
-        const html = renderToStaticMarkup(<MyAdoptersFlagBadges flags={flags} housemateAlert={{ lowRating: 2, hasAlerts: true }} adopterId="x1" t={t} />);
+        const html = renderToStaticMarkup(<MyAdoptersFlagBadges flags={flags} housemateAlert={{ lowRating: 2, hasAlerts: true }} adopterId="x1" personName="Lia Roca" t={t} />);
         expect(myAdoptersHouseholdHref('x1')).toBe(HREF);
-        expect(html).toMatch(new RegExp(`<a href="${HREF.replace(/[?]/g, '\\?')}"[^>]*data-testid="my-adopters-housemate-alert-rating"`));
-        expect(html).toMatch(new RegExp(`<a href="${HREF.replace(/[?]/g, '\\?')}"[^>]*data-testid="my-adopters-housemate-alert-alerts"`));
+        expect(html).toMatch(new RegExp(`<a [^>]*data-testid="my-adopters-housemate-alert-rating"[^>]*href="${HREF.replace(/[?]/g, '\\?')}"`));
+        expect(html).toMatch(new RegExp(`<a [^>]*data-testid="my-adopters-housemate-alert-alerts"[^>]*href="${HREF.replace(/[?]/g, '\\?')}"`));
         expect(text(html)).toContain('Conviviente con calificación 2.0');
         expect(text(html)).toContain('Conviviente con alertas');
         const own = html.indexOf('data-alert="too_many_adoptions"');
@@ -44,16 +44,22 @@ describe('MyAdoptersFlagBadges — the housemate chips on a /my-adopters row', (
         expect(html).not.toContain('aria-expanded');
     });
 
+    it("each chip's accessible name carries the ROW person's name after its words — never a housemate's", () => {
+        const html = renderToStaticMarkup(<MyAdoptersFlagBadges flags={NO_FLAGS} housemateAlert={{ lowRating: 2, hasAlerts: true }} adopterId="x1" personName="Lia Roca" t={t} />);
+        expect(html).toContain('aria-label="Conviviente con calificación 2.0 — Lia Roca"');
+        expect(html).toContain('aria-label="Conviviente con alertas — Lia Roca"');
+    });
+
     it('only a housemate chip → the chip, not the «—» of a row with nothing', () => {
-        const html = renderToStaticMarkup(<MyAdoptersFlagBadges flags={NO_FLAGS} housemateAlert={{ lowRating: 1.4, hasAlerts: false }} adopterId="x1" t={t} />);
+        const html = renderToStaticMarkup(<MyAdoptersFlagBadges flags={NO_FLAGS} housemateAlert={{ lowRating: 1.4, hasAlerts: false }} adopterId="x1" personName="Lia Roca" t={t} />);
         expect(text(html)).toBe('Conviviente con calificación 1.4');
         expect(html).not.toContain('data-alert="housemate_alerts"');
-        expect(html).not.toContain('—');
+        expect(html).not.toContain('>—<');
     });
 
     it('no housemate answer (none, or past the cap) → exactly the row as before', () => {
         for (const housemateAlert of [null, undefined]) {
-            const html = renderToStaticMarkup(<MyAdoptersFlagBadges flags={NO_FLAGS} housemateAlert={housemateAlert} adopterId="x1" t={t} />);
+            const html = renderToStaticMarkup(<MyAdoptersFlagBadges flags={NO_FLAGS} housemateAlert={housemateAlert} adopterId="x1" personName="Lia Roca" t={t} />);
             expect(text(html)).toBe('—');
             expect(html).not.toContain('housemate');
         }

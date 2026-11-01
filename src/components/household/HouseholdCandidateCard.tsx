@@ -58,7 +58,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
     const shown = entries.slice(0, MAX_SUMMARY_CONTACTS);
     // The same count as the household line (final fix P6).
     const alerts = candidate.openAlerts ?? openAlertKinds(candidate.flags);
-    const homes = householdLineGroups(candidate.household.lines);
+    const homes = householdLineGroups(candidate.household?.lines ?? []);
     const minor = !!candidate.isMinor;
     return (
         // A question, not a warning (audit B15): the neutral info look, and the person drawn as every other person
@@ -103,7 +103,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                             <span className="min-w-0 break-words">{fill(t('adopter.hh_candidate_elsewhere'), { name: firstName(name) || name })}</span>
                         </div>
                     </>
-                ) : (
+                ) : candidate.household && (
                     <div className="mt-3 flex items-start gap-2 text-xs text-stone-600 bg-stone-50 px-3 py-2 rounded-lg border border-stone-100">
                         <Home className="w-3.5 h-3.5 shrink-0 mt-0.5 text-teal-600" aria-hidden="true" />
                         <span className="italic text-stone-500">{t('adopter.hh_no_housemates')}</span>

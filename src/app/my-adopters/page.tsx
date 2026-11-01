@@ -563,7 +563,7 @@ export default function MyAdoptersPage() {
                                             ) : (
                                                 <RatingBadge rating={null} />
                                             )}
-                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} t={t} />
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
                                         </div>
 
                                         {/* Actividad — stacked stats with labels (v38). Each line has its own word
@@ -682,7 +682,7 @@ export default function MyAdoptersPage() {
                                         )}
                                         {/* Flags on mobile */}
                                         <div className="flex gap-1 ml-auto max-w-full min-w-0">
-                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} t={t} />
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
                                         </div>
                                     </div>
 

@@ -63,3 +63,17 @@ describe('a match card — no «Inexacto» chip', () => {
         expect(html).not.toContain('data-alert=');
     });
 });
+
+describe('AlertPill — href', () => {
+    it('another page → a real link to it (client-side navigation), same data attributes', () => {
+        const html = renderToStaticMarkup(<AlertPill kind="housemate_alerts" href="/adopter/x1?ref=my-adopters#profile-household-section" testId="chip">Conviviente con alertas</AlertPill>);
+        expect(html).toMatch(/<a [^>]*href="\/adopter\/x1\?ref=my-adopters#profile-household-section"/);
+        expect(html).toContain('data-alert="housemate_alerts"');
+        expect(html).toContain('data-testid="chip"');
+    });
+
+    it('a place on this page (#…) → a plain link', () => {
+        const html = renderToStaticMarkup(<AlertPill kind="housemate_alerts" href="#profile-household-section">Conviviente con alertas</AlertPill>);
+        expect(html).toMatch(/<a [^>]*href="#profile-household-section"/);
+    });
+});
