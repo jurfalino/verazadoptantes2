@@ -1128,7 +1128,29 @@ export async function getPendingDuplicatesForUser(
         // candidate shape here so they rank and page through the identical
         // path; one query, and their adopter rows come from the page fan-out
         // below rather than a fan-out of their own.
+        //
+        // Only flags that can pass `listed` are read, in SQL (EM I4): a side the
+        // viewer loaded (ownIds' rule: added_by = viewer, live), or a pair with
+        // a merge request the viewer is party to (loadRequestsByPair's rule:
+        // they filed it, or it asks them or a teammate). It used to read the
+        // 100 newest duplicate flags platform-wide and filter afterwards: once
+        // 100 newer flags existed on other people's profiles, an owner's open
+        // flag fell off and the notice's «Revisar» landed on an empty
+        // Pendientes. `listed` below stays the gate; this is only ever wider.
+        // Correlated EXISTS with bound scalars — never a bound id array (D1
+        // does not expand IN).
         try {
+            const ownSide = (id: typeof adopterFlags.adopterId | typeof adopterFlags.targetAdopterId) =>
+                sql`EXISTS (SELECT 1 FROM adopters o WHERE o.id = ${id} AND o.added_by = ${viewer} AND o.deleted_at IS NULL)`;
+            const party = sql.join([
+                sql`r.requester_email = ${normEmail(viewer)}`,
+                ...team.map(e => sql`r.owner_email = ${normEmail(e)}`),
+            ], sql` OR `);
+            const requestOnPair = sql`EXISTS (SELECT 1 FROM merge_requests r
+                WHERE ((r.primary_id = ${adopterFlags.adopterId} AND r.secondary_id = ${adopterFlags.targetAdopterId})
+                    OR (r.primary_id = ${adopterFlags.targetAdopterId} AND r.secondary_id = ${adopterFlags.adopterId}))
+                  AND (r.status = 'pending' OR r.status = 'declined')
+                  AND (${party}))`;
             const flags = await db.select({
                 id: adopterFlags.id,
                 adopterId: adopterFlags.adopterId,
@@ -1136,9 +1158,11 @@ export async function getPendingDuplicatesForUser(
                 reason: adopterFlags.reason,
                 details: adopterFlags.details,
                 createdAt: adopterFlags.createdAt,
-            // Newest first: a flag raised now (its owners were just told «Revisar»)
-            // must be within the cap, however many old ones there are.
-            }).from(adopterFlags).where(eq(adopterFlags.reason, 'duplicate')).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
+            // Newest first within the cap: a flag raised now (its owners were just told «Revisar») is always read.
+            }).from(adopterFlags).where(and(
+                eq(adopterFlags.reason, 'duplicate'),
+                sql`(${ownSide(adopterFlags.adopterId)} OR ${ownSide(adopterFlags.targetAdopterId)} OR ${requestOnPair})`,
+            )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
             for (const f of flags as Array<{ id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null }>) {

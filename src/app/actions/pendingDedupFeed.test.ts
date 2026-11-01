@@ -221,8 +221,9 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
 
     it('a request on a flag outside the listed flags: shown while the flag is open, not once it is settled', async () => {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('f-s', 'Eva Sol', '5', ?, 100, 100), ('f-o', 'Eva Sól', '5', ?, 200, 200)`).run(STRANGER, OWNER);
-        // 100 earlier duplicate flags between other people's profiles push
-        // flag-x past the feed's capped flag fetch.
+        // 100 duplicate flags between other people's profiles: they used to push
+        // flag-x past the feed's capped flag fetch; it now reads only flags the
+        // viewer is party to (EM I4), and the request is listed either way.
         const filler = sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES (?, ?, 'z@example.com', 'duplicate', ?, NULL, 1)`);
         for (let i = 0; i < 100; i++) filler.run(`filler-${i}`, `z-a-${i}`, `z-b-${i}`);
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('flag-x', 'f-o', ?, 'duplicate', 'f-s', NULL, 1)`).run(STRANGER);
@@ -599,5 +600,47 @@ describe("a profile's «Revisar» lands on its pair", () => {
         const others = (await as(STRANGER, () => getDuplicateCandidates('s-old'))).map(c => c.otherAdopterId);
         expect(others).not.toContain('o-new');
         expect(others).toContain('anon-new');
+    });
+});
+
+describe('«Revisar» on a «posible duplicado» notice never lands on an empty Pendientes (EM I4)', () => {
+    // 120 duplicate flags between other people's profiles, all newer than the viewer's.
+    const flagOthers = () => {
+        const adopter = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', 'z@example.com', 100, 100)`);
+        const flag = sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES (?, ?, 'z@example.com', 'duplicate', ?, NULL, ?)`);
+        for (let i = 0; i < 120; i++) {
+            adopter.run(`z-a-${i}`, `Zoe A ${i}`);
+            adopter.run(`z-b-${i}`, `Zoe B ${i}`);
+            flag.run(`z-flag-${i}`, `z-a-${i}`, `z-b-${i}`, 10_000 + i);
+        }
+    };
+
+    it("the viewer's open flag is still listed, and focused, with more than 100 newer flags on other people's profiles", async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('i4-mine', 'Lucía Fernández', '5', ?, 100, 100), ('i4-other', 'Lucia Fernandez', '5', ?, 200, 200)`).run(OWNER, STRANGER);
+        // STRANGER flagged OWNER's profile (the notice told OWNER «Revisar»); no merge request to fall back on.
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('flag-i4', 'i4-other', ?, 'duplicate', 'i4-mine', NULL, 1)`).run(STRANGER);
+        flagOthers();
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM merge_requests`).get()!.n).toBe(0);
+
+        const r = await as(OWNER, () => getPendingDuplicatesForUser(1, 10, true, pairKey('i4-mine', 'i4-other')));
+        expect(r.focusCandidateId).toBe('flag-i4');
+        expect(r.pairs.map(p => p.candidateId)).toContain('flag-i4');
+        expect(pairOf(r.pairs, 'flag-i4')).toMatchObject({ source: 'flagged' });
+        // The flagger (the other side's owner) sees it too.
+        expect((await feed(STRANGER, true)).pairs.map(p => p.candidateId)).toContain('flag-i4');
+        // Someone with no profile on it and no request on it: not on their list.
+        expect((await feed(MATE, true)).pairs.map(p => p.candidateId)).not.toContain('flag-i4');
+    });
+
+    it('a teammate party to a request on a flagged pair keeps it, even when the request\'s own candidate was set aside', async () => {
+        // Neither side is MATE's: they see the pair only through the request to their team (D16).
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('w-s', 'Eva Sol', '5', ?, 100, 100), ('w-o', 'Eva Sól', '5', ?, 200, 200)`).run(STRANGER, OWNER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES ('cand-w', 'w-o', 'w-s', '["phone"]', 80, 'high', 'dismissed', 1)`).run();
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, candidate_id, flag_id, requester_email, owner_email, status, created_at) VALUES ('mr-w', 'w-s', 'w-o', 'cand-w', NULL, ?, ?, 'pending', 5)`).run(STRANGER, OWNER);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('flag-w', 'w-s', ?, 'duplicate', 'w-o', NULL, 1)`).run(STRANGER);
+        flagOthers();
+
+        const { pairs } = await feed(MATE, true);
+        expect(pairs).toContainEqual(expect.objectContaining({ candidateId: 'flag-w', source: 'flagged', request: expect.objectContaining({ id: 'mr-w', direction: 'received' }) }));
     });
 });
