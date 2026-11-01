@@ -36,6 +36,8 @@ export type DupHintProfileRow = {
     deletedAt: Date | null;
     contactEntries: string | null;
     contactInfo: string | null;
+    /** How its phones are read (dupHintPairMatches). */
+    country: string | null;
 };
 
 export interface DupHintViewer {
@@ -50,7 +52,7 @@ export interface DupHintViewer {
 export async function profileRow(db: Db, id: string): Promise<DupHintProfileRow | null> {
     const row = await db.select({
         id: adopters.id, name: adopters.name, addedBy: adopters.addedBy, deletedAt: adopters.deletedAt,
-        contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo,
+        contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo, country: adopters.country,
     }).from(adopters).where(eq(adopters.id, id)).get() as DupHintProfileRow | undefined;
     return row ?? null;
 }

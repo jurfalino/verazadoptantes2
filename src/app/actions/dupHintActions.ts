@@ -89,7 +89,7 @@ export async function continueWithMatchedProfile(input: {
         // (dupHintPairMatches). Checked before anything is saved or merged, admins included.
         // Never logs the typed value or any contact.
         const matchEntries = entriesOf(match);
-        if (!dupHintPairMatches(entriesOf(current), matchEntries, input?.typed ?? null)) return refuse('not_a_match');
+        if (!dupHintPairMatches({ entries: entriesOf(current), country: current.country }, { entries: matchEntries, country: match.country }, input?.typed ?? null)) return refuse('not_a_match');
         const plan = dupHintMergePlan({
             actor, isAdmin: viewer.isAdmin,
             currentTeamOwned: viewer.currentTeamOwned, matchTeamOwned: decision.matchTeamOwned,

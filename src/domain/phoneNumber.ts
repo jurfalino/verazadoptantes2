@@ -248,7 +248,12 @@ export function phoneMatchesQuery(entryValue: string, query: string, country: st
 
 /** Two phone values are the same number (both read with the same country). */
 export function samePhone(a: string, b: string, country?: string | null): boolean {
-    return readPhones(a, country).some(ra => readPhones(b, country).some(rb => sameReadPhone(ra, rb)));
+    return samePhoneAcross(a, country, b, country);
+}
+
+/** samePhone when each value belongs to a record of its own country. */
+export function samePhoneAcross(a: string, aCountry: string | null | undefined, b: string, bCountry: string | null | undefined): boolean {
+    return readPhones(a, aCountry).some(ra => readPhones(b, bCountry).some(rb => sameReadPhone(ra, rb)));
 }
 
 function sameReadPhone(ra: ReadPhone, rb: ReadPhone): boolean {

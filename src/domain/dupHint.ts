@@ -13,6 +13,7 @@
  */
 import { contactMatchKeys, sameContact, sameContactSet, type ContactEntry } from '@/lib/contactEntries';
 import { mergeOwnersToTell, realOwner } from '@/domain/dedupPair';
+import { samePhoneAcross } from '@/domain/phoneNumber';
 
 export type DupHintType = 'phone' | 'email' | 'social' | 'id';
 
@@ -88,29 +89,48 @@ export function typedIsNewFor(matchEntries: ReadonlyArray<{ type: string; value:
 /**
  * Do the two profiles really match? (EM review I1: «Continuar» merged any two
  * profiles by id.) Yes when either:
- * - the value being typed is one of the match's own contacts, by the hint's
- *   own «coincide» rule (entryMatchesTyped: «11 6312-0851» is
- *   «+54 9 11 6312-0851»); or
+ * - the value being typed is one of the match's own contacts; or
  * - the profile being edited and the match already share a phone, email,
- *   handle or id number — one of the duplicate matcher's keys (contactMatchKeys,
- *   the ones starting with «~»). A shared address, note, alias name or a
- *   «phone» with no digits is not evidence: housemates share an address.
- * The server action refuses anything else as `not_a_match`.
+ *   handle or id number.
+ * Both by sameIdentifier — stricter than the hint's «coincide» marker
+ * (entryMatchesTyped), which also lights up on a shared last-8-digit ending.
+ * A shared address, note, alias name or a «phone» with no digits is not
+ * evidence: housemates share an address. The server action refuses anything
+ * else as `not_a_match`, and the window offers the flag instead.
  */
+type PairEntry = { type: string; value: string; platform?: string };
+/** One profile's side of the pair: its contacts, and the country its phones are read with. */
+export type PairSide = { entries: ReadonlyArray<PairEntry>; country?: string | null };
+
+/**
+ * The two contacts are the same identifier — strict, because a merge deletes a
+ * profile (review 2026-11-01): phones as whole numbers read with each record's
+ * country (samePhoneAcross: «11 6312-0851» is «+54 9 11 6312-0851», but
+ * «351 412-3456» is not «11 1412-3456» although their last 8 digits agree);
+ * a handle only on the same network; emails and ids normalized as the matcher
+ * does. Anything else is never evidence.
+ */
+function sameIdentifier(a: PairEntry, aCountry: string | null | undefined, b: PairEntry, bCountry: string | null | undefined): boolean {
+    if (a.type !== b.type || typeof a.value !== 'string' || typeof b.value !== 'string') return false;
+    if (a.type === 'phone') return samePhoneAcross(a.value, aCountry, b.value, bCountry);
+    if (a.type !== 'email' && a.type !== 'social' && a.type !== 'id') return false;
+    if (a.type === 'social' && (a.platform ?? '') !== (b.platform ?? '')) return false;
+    const strong = (e: PairEntry) => contactMatchKeys(e as Pick<ContactEntry, 'type' | 'value' | 'platform'>).filter(k => k.startsWith('~'));
+    const keys = new Set(strong(a));
+    return strong(b).some(k => keys.has(k));
+}
+
 export function dupHintPairMatches(
-    currentEntries: ReadonlyArray<{ type: string; value: string; platform?: string }>,
-    matchEntries: ReadonlyArray<{ type: string; value: string; platform?: string }>,
-    typed?: { type: unknown; value: unknown } | null,
+    current: PairSide,
+    match: PairSide,
+    typed?: { type: unknown; value: unknown; platform?: unknown } | null,
 ): boolean {
     if (typed && isDupHintType(typed.type) && typeof typed.value === 'string' && typed.value.trim()) {
-        const t = typed.type;
-        const v = typed.value.trim().slice(0, DUP_HINT_MAX_VALUE);
-        if (matchEntries.some(e => entryMatchesTyped(e, t, v))) return true;
+        const t: PairEntry = { type: typed.type, value: typed.value.trim().slice(0, DUP_HINT_MAX_VALUE), ...(typeof typed.platform === 'string' && typed.platform ? { platform: typed.platform } : {}) };
+        // Typed on the profile being edited: read with its country.
+        if (match.entries.some(e => sameIdentifier(t, current.country, e, match.country))) return true;
     }
-    const strongKeys = (e: { type: string; value: string; platform?: string }) =>
-        contactMatchKeys(e as Pick<ContactEntry, 'type' | 'value' | 'platform'>).filter(k => k.startsWith('~'));
-    const matchKeys = new Set(matchEntries.flatMap(strongKeys));
-    return matchKeys.size > 0 && currentEntries.some(e => strongKeys(e).some(k => matchKeys.has(k)));
+    return current.entries.some(c => match.entries.some(m => sameIdentifier(c, current.country, m, match.country)));
 }
 
 /** «No es esta persona» answers, for one typed value. */

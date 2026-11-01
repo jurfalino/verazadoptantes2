@@ -58,32 +58,51 @@ describe('typedIsNewFor — does «Continuar» still add the typed value?', () =
 });
 
 describe('dupHintPairMatches — «Continuar» only joins two profiles that really match (EM review I1)', () => {
-    const match = [{ type: 'phone', value: '+54 9 11 6312-0851' }, { type: 'email', value: 'Ana@Mail.com' }];
-    it('the typed value is one of the match\'s contacts, as the hint\'s «coincide» reads it', () => {
-        expect(dupHintPairMatches([], match, { type: 'phone', value: '11 6312-0851' })).toBe(true);
-        expect(dupHintPairMatches([], match, { type: 'email', value: 'ana@mail.com' })).toBe(true);
+    const side = (entries: Array<{ type: string; value: string; platform?: string }>, country: string | null = 'AR') => ({ entries, country });
+    const match = side([{ type: 'phone', value: '+54 9 11 6312-0851' }, { type: 'email', value: 'Ana@Mail.com' }]);
+    const none = side([]);
+    it('the typed value is one of the match\'s contacts', () => {
+        expect(dupHintPairMatches(none, match, { type: 'phone', value: '11 6312-0851' })).toBe(true);
+        expect(dupHintPairMatches(none, match, { type: 'email', value: 'ana@mail.com' })).toBe(true);
     });
     it('or the two profiles already share a phone, email, handle or id', () => {
-        expect(dupHintPairMatches([{ type: 'email', value: 'ANA@mail.com' }], match)).toBe(true);
-        expect(dupHintPairMatches([{ type: 'phone', value: '6312 0851' }], match)).toBe(true);
-        expect(dupHintPairMatches([{ type: 'id', value: '30.123.456' }], [{ type: 'id', value: '30123456' }])).toBe(true);
+        expect(dupHintPairMatches(side([{ type: 'email', value: 'ANA@mail.com' }]), match)).toBe(true);
+        expect(dupHintPairMatches(side([{ type: 'phone', value: '6312 0851' }]), match)).toBe(true);
+        expect(dupHintPairMatches(side([{ type: 'id', value: '30.123.456' }]), side([{ type: 'id', value: '30123456' }]))).toBe(true);
+        expect(dupHintPairMatches(side([{ type: 'social', value: '@ana.perez', platform: 'instagram' }]), side([{ type: 'social', value: 'ana.perez', platform: 'instagram' }]))).toBe(true);
     });
     it('nothing in common: no', () => {
-        expect(dupHintPairMatches([{ type: 'phone', value: '555-1234' }, { type: 'email', value: 'maria@example.com' }], match)).toBe(false);
-        expect(dupHintPairMatches([], match, { type: 'phone', value: '11 6312-0999' })).toBe(false);
-        expect(dupHintPairMatches([], match)).toBe(false);
+        expect(dupHintPairMatches(side([{ type: 'phone', value: '555-1234' }, { type: 'email', value: 'maria@example.com' }]), match)).toBe(false);
+        expect(dupHintPairMatches(none, match, { type: 'phone', value: '11 6312-0999' })).toBe(false);
+        expect(dupHintPairMatches(none, match)).toBe(false);
+    });
+    it('two different numbers that only share their last 8 digits are not the same phone (review 2026-11-01)', () => {
+        const rosario = side([{ type: 'phone', value: '351 412-3456' }]);
+        const caba = side([{ type: 'phone', value: '11 1412-3456' }]);
+        expect(dupHintPairMatches(rosario, caba)).toBe(false);
+        expect(dupHintPairMatches(none, caba, { type: 'phone', value: '351 412-3456' })).toBe(false);
+    });
+    it('the same handle on another network is not the same account', () => {
+        const ig = side([{ type: 'social', value: 'ana.perez', platform: 'instagram' }]);
+        const fb = side([{ type: 'social', value: 'ana.perez', platform: 'facebook' }]);
+        expect(dupHintPairMatches(ig, fb)).toBe(false);
+        expect(dupHintPairMatches(none, fb, { type: 'social', value: 'ana.perez', platform: 'instagram' })).toBe(false);
+        expect(dupHintPairMatches(none, fb, { type: 'social', value: 'ana.perez', platform: 'facebook' })).toBe(true);
+    });
+    it('phones are read with each profile\'s own country', () => {
+        expect(dupHintPairMatches(side([{ type: 'phone', value: '+54 9 11 6312-0851' }], 'CL'), side([{ type: 'phone', value: '11 6312-0851' }], 'AR'))).toBe(true);
     });
     it('a shared address, note, alias name or a «phone» with no digits is not evidence', () => {
-        const soft = [
+        const soft = side([
             { type: 'address', value: 'Av. Siempreviva 742' }, { type: 'note', value: 'llamar tarde' },
             { type: 'alias', value: 'Ana' }, { type: 'phone', value: 'ver notas' },
-        ];
+        ]);
         expect(dupHintPairMatches(soft, soft)).toBe(false);
     });
     it('a typed value of another kind, too short to be a phone, or blank: not evidence', () => {
-        expect(dupHintPairMatches([], match, { type: 'address', value: 'Av. Siempreviva 742' })).toBe(false);
-        expect(dupHintPairMatches([], [{ type: 'phone', value: '123' }], { type: 'phone', value: '123' })).toBe(false);
-        expect(dupHintPairMatches([], match, { type: 'email', value: '  ' })).toBe(false);
+        expect(dupHintPairMatches(none, match, { type: 'address', value: 'Av. Siempreviva 742' })).toBe(false);
+        expect(dupHintPairMatches(none, side([{ type: 'phone', value: '123' }]), { type: 'phone', value: '123' })).toBe(false);
+        expect(dupHintPairMatches(none, match, { type: 'email', value: '  ' })).toBe(false);
     });
 });
 

@@ -860,10 +860,10 @@ export async function getDuplicateHintMatches(
         if (dup.length === 0) return { results: [] };
         const hydrated = await hydrateDuplicateMatches(db, dup, { viewer: actor, isUnauthenticated: false });
         if (hydrated.length === 0) return { results: [] };
-        type RawRow = { contactEntries: string | null; contactInfo: string | null; addedBy: string | null };
+        type RawRow = { contactEntries: string | null; contactInfo: string | null; addedBy: string | null; country: string | null };
         const [candidates, raw, viewer] = await Promise.all([
             asCandidates(db, actor, hydrated, ctx),
-            Promise.all(hydrated.map(m => (async () => db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+            Promise.all(hydrated.map(m => (async () => db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, country: adopters.country })
                 .from(adopters).where(eq(adopters.id, m.adopter.id)).get() as Promise<RawRow | undefined>)()
                 .catch((e: unknown) => {
                     logger.warn('getDuplicateHintMatches: raw contacts D1 fallback hit, no «coincide» mark', { ...ctx, profileId: m.adopter.id, error: e instanceof Error ? e.message : String(e) });
@@ -903,7 +903,7 @@ const socialPlatformOf = (v: unknown): SocialPlatform | undefined =>
 async function dupHintWindow(
     db: Db,
     viewer: DupHintViewer | null,
-    match: { id: string; row: { contactEntries: string | null; contactInfo: string | null; addedBy: string | null } | undefined },
+    match: { id: string; row: { contactEntries: string | null; contactInfo: string | null; addedBy: string | null; country: string | null } | undefined },
     typedEntry: ContactEntry,
     ctx: Record<string, unknown>,
 ): Promise<Pick<DupHintMatch, 'action' | 'alreadyPending' | 'cantJoin' | 'cantJoinName' | 'saidNo' | 'toldNames' | 'preview'>> {
@@ -930,7 +930,7 @@ async function dupHintWindow(
             const parsed = deserializeContactEntries(r.contactEntries);
             return parsed.length > 0 ? parsed : parseBlobToContactEntries(r.contactInfo);
         };
-        if (!dupHintPairMatches(entriesOf(current), entriesOf(row), typedEntry)) {
+        if (!dupHintPairMatches({ entries: entriesOf(current), country: current.country }, { entries: entriesOf(row), country: row.country }, typedEntry)) {
             return { action: 'flag', alreadyPending: decision.alreadyPending };
         }
         const plan = dupHintMergePlan({
