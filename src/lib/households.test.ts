@@ -13,7 +13,7 @@ const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
 
 vi.mock('@/app/actions/_db', () => ({ getDb: async () => state.db, getUser: mocks.getUser }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
-vi.mock('@/config/admins', () => ({ isAdminAsync: mocks.isAdmin, isModeratorOrAdminAsync: mocks.isAdmin }));
+vi.mock('@/config/admins', () => ({ isAdminAsync: mocks.isAdmin, isModeratorOrAdminAsync: mocks.isAdmin, BOOTSTRAP_ADMIN_EMAILS: [] }));
 vi.mock('@/lib/orgMembership', async (orig) => ({
     ...(await orig()), isOrgMate: mocks.isOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor,
     isOwnerOrOrgMate: (v: string | null | undefined, o: string | null | undefined) => mocks.isOwnerOrOrgMate(v?.trim().toLowerCase(), o?.trim().toLowerCase()),
@@ -21,7 +21,7 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
 // PII gating ON, so "a stranger sees masked" actually tests masking.
 vi.mock('@/config/features', async (orig) => ({
     ...(await orig()),
-    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING'),
+    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_HOUSEHOLD_MEMBERS'),
 }));
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
@@ -37,6 +37,8 @@ import { logger } from '@/lib/logger';
 import { MAX_HOUSEHOLD_LINES, currentAge } from '@/domain/households';
 import { countActivity } from '@/domain/activityCounts';
 import { countsFor } from '@/lib/profileSummary';
+import { NO_PERIOD_ALERTS } from '@/domain/periodAlerts';
+import { enrichAdopters } from '@/app/actions/enrichAdopters';
 
 type Row = Record<string, unknown>;
 type Sqlite = {
@@ -442,14 +444,54 @@ describe('householdLinesFor', () => {
         const lines = await householdLinesFor(db(), STRANGER, ['lucas', 'marta', 'ana', 'gone', 'nobody']);
         expect(Object.keys(lines).sort()).toEqual(['ana', 'gone', 'lucas', 'marta', 'nobody']);
         expect(lines.lucas).toEqual(expect.arrayContaining([
-            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], isMinor: false, isGift: false, householdId: hh },
-            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: [], isMinor: false, isGift: false, householdId: hh },
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
+            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
         ]));
         expect(lines.lucas).toHaveLength(2);
-        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: [], isMinor: true, isGift: false, householdId: hh });
-        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: [], isMinor: false, isGift: true, householdId: 'gift1' }]);
+        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: true, isGift: false, householdId: hh });
+        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: true, householdId: 'gift1' }]);
         expect(lines.nobody).toEqual([]);
         expect(lines.gone).toEqual([]);
+    });
+
+    it("a housemate's ALERTS are the search card's own: the same rule, config and per-rescue request count (enrichAdopters)", async () => {
+        await pedrosHousehold();
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90'),
+            ('too_many_requests_threshold', '2'), ('too_many_requests_period_days', '30')`);
+        const day = 86_400, t0 = 1_780_000_000;
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an2', 'Mora', ?), ('an3', 'Tom', ?)`).run(OWNER, OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES ('p2', 'an2', 'marta', 'adoption', ?), ('p3', 'an3', 'marta', 'adoption', ?)`).run(t0, t0 + 10 * day);
+        // Three requests, two rescuers of ONE organization and a third rescue: 2 rescues.
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email) VALUES ('om1', 'org1', ?), ('om2', 'org1', ?)`).run(OWNER, MATE);
+        const ev = sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, date, recorded_by) VALUES (?, 'marta', 'adoption_request', ?, ?)`);
+        ev.run('e1', t0, OWNER); ev.run('e2', t0 + day, MATE); ev.run('e3', t0 + 2 * day, STRANGER);
+
+        const line = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro.find(l => l.profileId === 'marta')!;
+        const own = (await enrichAdopters(db(), ['marta'])).get('marta')!.flags;
+        expect(line.alerts).toEqual({ tooManyAdoptions: own.tooManyAdoptions, tooManyRequests: own.tooManyRequests });
+        expect(line.alerts.tooManyAdoptions).toMatchObject({ count: 2, threshold: 2, periodDays: 90 });
+        expect(line.alerts.tooManyRequests).toMatchObject({ count: 2, threshold: 2, periodDays: 30 });
+        // Flags stay what they were: Marta has none, Pedro's «Inexacto» is not an alert.
+        expect(line.openAlerts).toEqual([]);
+        const pedroLine = (await householdLinesFor(db(), OWNER, ['marta'])).marta.find(l => l.profileId === 'pedro')!;
+        expect(pedroLine.alerts).toEqual(NO_PERIOD_ALERTS);
+    });
+
+    it("a failed alerts read is logged with the card's context and shows no alerts", async () => {
+        await pedrosHousehold();
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const real = handle.select.bind(handle);
+        const spy = vi.spyOn(handle, 'select').mockImplementation(((cols?: Record<string, unknown>) => {
+            if (cols && 'recordType' in cols && 'addedBy' in cols && Object.keys(cols).length === 3) throw new Error('D1 down');
+            return real(cols as never);
+        }) as never);
+        try {
+            const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+            expect(pedro.find(l => l.profileId === 'marta')!.alerts).toEqual(NO_PERIOD_ALERTS);
+            expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alerts read failed'), expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, profileId: 'marta' }));
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     it('a big household reads at most the cap: profile reads stop once the card line is full, and deleted rows cannot make it read without end', async () => {
@@ -489,6 +531,20 @@ describe('householdLinesFor', () => {
         await addMembership(db(), { householdId: second, adopterId: 'pedro', addedBy: STRANGER });
         const { lucas } = await householdLinesFor(db(), null, ['lucas']);
         expect(lucas.map(l => l.profileId).sort()).toEqual(['marta', 'pedro', 'rosa']);
+    });
+
+    it('the households flag is read failing open: a failed read keeps the housemate lines', async () => {
+        await pedrosHousehold();
+        const { getFeatureFlag } = await import('@/config/features');
+        await householdLinesFor(db(), STRANGER, ['lucas']);
+        expect(vi.mocked(getFeatureFlag)).toHaveBeenCalledWith('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true });
+    });
+
+    it('households switched off: no lines at all, nothing read', async () => {
+        await pedrosHousehold();
+        const { getFeatureFlag } = await import('@/config/features');
+        vi.mocked(getFeatureFlag).mockImplementationOnce(async () => false);
+        expect(await householdLinesFor(db(), STRANGER, ['lucas', 'marta'])).toEqual({});
     });
 });
 

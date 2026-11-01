@@ -38,7 +38,7 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
 }));
 vi.mock('@/config/features', async (orig) => ({
     ...(await orig()),
-    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_GUEST_NAME_MASK'),
+    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_GUEST_NAME_MASK' || flag === 'ENABLE_HOUSEHOLD_MEMBERS'),
 }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async (_n: string, task: () => Promise<unknown>) => { await task(); }) }));
@@ -146,9 +146,9 @@ describe("search returns only the people who match, each with its household line
         const lucas = (res.results as DiscoveryMatch[])[0];
         expect(lucas.isMinor).toBe(true);
         expect(lucas.households).toEqual([
-            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], isMinor: false, isGift: false, householdId: 'hh-pedro' },
-            { name: 'Marta Paez', profileId: 'marta', rating: 4, openAlerts: [], isMinor: false, isGift: false, householdId: 'hh-pedro' },
-            { name: 'Ana Gómez', profileId: 'ana', rating: 3, openAlerts: [], isMinor: false, isGift: false, householdId: 'hh-ana' },
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
+            { name: 'Marta Paez', profileId: 'marta', rating: 4, openAlerts: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
+            { name: 'Ana Gómez', profileId: 'ana', rating: 3, openAlerts: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-ana' },
         ]);
     });
 
@@ -475,5 +475,7 @@ describe('final fix P6 — «¿Es este perfil?» counts alerts as the household 
         expect(pedro.openAlerts).toEqual(['inaccurate']);
         const line = (await householdLinesFor(db(), OWNER, ['marta'])).marta.find(l => l.profileId === 'pedro')!;
         expect(line.openAlerts).toEqual(pedro.openAlerts);
+        // Flags are not alerts (option B, Jon 2026-10-28): the card line shows his period alerts only — none here.
+        expect(line.alerts).toEqual({ tooManyAdoptions: null, tooManyRequests: null });
     });
 });

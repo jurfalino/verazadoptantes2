@@ -16,7 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import { MinorTag } from './MinorTag';
 import { CardHouseholdLine } from './CardHouseholdLine';
-import { AlertPill } from './AlertPill';
+import { AlertPill, PeriodAlertPills } from './AlertPill';
 import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
 import { PersonActivity } from './PersonStanding';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
@@ -145,16 +145,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
 
     // The two "too many …" risk chips. Promoted on mobile to sit right under the
     // rating (C layout); on desktop they stay inline in the stats band below.
-    const riskFlagChips = (
-        <>
-            {res.flags.tooManyAdoptions && (
-                <AlertPill kind="too_many_adoptions">{t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.max(1, Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays)).toString())}</AlertPill>
-            )}
-            {res.flags.tooManyRequests && (
-                <AlertPill kind="too_many_requests">{t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.max(1, Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays)).toString())}</AlertPill>
-            )}
-        </>
-    );
+    const riskFlagChips = <PeriodAlertPills alerts={res.flags} />;
     const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests);
 
     const inner = (
@@ -380,7 +371,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 );
             })()}
 
-            {/* «Convive con …»: each housemate's live rating and alerts (households as profiles). */}
+            {/* «Vive con N personas»: only when a housemate has a low rating or an alert (option B). */}
             <CardHouseholdLine lines={res.households} />
 
             {/* Dates Row - bottom right */}

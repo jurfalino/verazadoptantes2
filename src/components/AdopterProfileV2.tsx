@@ -19,6 +19,7 @@ import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
 import VisitIntentCard from '@/components/VisitIntentCard';
 import { DeletionCollaboratorList } from '@/components/household/HouseholdDialogs';
 import MergeDisputePrompt from '@/components/MergeDisputePrompt';
+import { ContinuedProfileBanner } from '@/components/ContinuedProfileBanner';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
@@ -414,6 +415,9 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     visibility badge modal (tap the "Público" badge). It's no longer
                     an always-on banner — see VisibilityBadgeModal's public branch,
                     which renders <PublicProfileSourceNotice> with the same copy. */}
+
+                {/* «Continuar con este perfil» (DuplicateHint) lands here: «Listo: … ahora es este perfil», once. */}
+                {!isNew && adopter && <ContinuedProfileBanner adopterId={adopter.id} />}
 
                 {!isNew && mergedFrom && (
                     <p data-testid="merged-profile-note" role="status" className="rounded-lg px-3 py-2 text-sm" style={{ background: 'var(--accent-subtle-bg)', color: 'var(--text-primary)' }}>

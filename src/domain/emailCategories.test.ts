@@ -19,6 +19,7 @@ describe('categoryForType', () => {
         ['merge_dispute_resolved', 'merges'],
         ['merge_disputed', 'other'],
         ['duplicate_candidate', 'merges'],
+        ['duplicate_flagged', 'merges'],
         ['pii_access_revoked', 'contact_access'],
         ['ownership_transferred', 'profile_changes'],
         ['household_linked', 'profile_changes'],

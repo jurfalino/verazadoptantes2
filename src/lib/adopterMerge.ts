@@ -16,12 +16,12 @@ import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
-import { deserializeContactEntries, mergeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
+import { deserializeContactEntries, foldContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
 import { knownAsNames, preserveRenameAliases, withRenameAliases } from '@/domain/profileIdentity';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
-import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
+import { MERGED_FLAG_DETAILS_PREFIX, mergeOwnersToTell } from '@/domain/dedupPair';
 import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
 import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { notificationContent } from '@/domain/notificationTemplates';
@@ -212,9 +212,14 @@ export async function mergeAdopters(
             // this the absorbed record's name stops being a NAME token — a person
             // recorded under that spelling elsewhere would silently stop matching
             // the survivor (aliases tokenize as name_words; see extractTokens).
-            let mergedEntries = mergeContactEntries(
+            // A contact the survivor already holds wholly (contactCoveredBy:
+            // «11 6312-0851» in «+54 9 11 6312-0851») is not added twice: the
+            // survivor's entry stays, with the absorbed one's phone apps; the
+            // absorbed owner's access follows it (grantAccessAfterFold).
+            let mergedEntries = foldContactEntries(
                 deserializeContactEntries(p.contactEntries),
                 deserializeContactEntries(secondary.contactEntries),
+                { stricterVisibility: true },
             );
             const secondaryName = (secondary.name || '').trim();
             // The absorbed name is a previous name of the same person: a rename-protected
@@ -904,13 +909,9 @@ export async function notifyMergeOwners(
     opts: { skip?: readonly string[] } = {},
 ): Promise<number> {
     // Normalized: notifications are keyed (bell, email) by the lowercased
-    // email, and `added_by` keeps whatever case it was written with.
-    const norm = (e: string) => e.trim().toLowerCase();
-    const skip = new Set([actorEmail ?? '', ...(opts.skip ?? [])].map(norm));
-    const owners = [...new Set([merge.primaryAddedBy, merge.secondaryAddedBy]
-        .filter((e): e is string => !!e && e.includes('@'))
-        .map(norm))]
-        .filter(e => !skip.has(e));
+    // email, and `added_by` keeps whatever case it was written with. The one
+    // rule for who hears it (the dup hint's «Les avisamos a …» uses it too).
+    const owners = mergeOwnersToTell(merge.primaryAddedBy, merge.secondaryAddedBy, actorEmail, opts.skip ?? []);
     if (!owners.length) return 0;
     const { createNotification } = await import('@/app/actions/notifications');
     // D31: each side's owner and date, when the absorbed profile is known.

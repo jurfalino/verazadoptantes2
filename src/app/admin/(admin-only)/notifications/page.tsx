@@ -59,6 +59,8 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
     'pii_access_revoked': 'A quien tenía acceso, cuando el dueño o un admin se lo quita.',
     'ownership_transferred': 'A ambas partes cuando un admin transfiere un registro.',
     'adopter_flagged': 'A los admins cuando alguien reporta un adoptante.',
+    'duplicate_flagged': 'A quienes cargaron dos perfiles cuando alguien los marca como posible duplicado.',
+    'inaccuracy_reported': 'A quienes pueden editar un perfil (quien lo cargó, su equipo y los admins) cuando otra persona avisa que hay información incorrecta.',
     'deletion_request': 'A los admins cuando alguien pide eliminar un registro.',
     'member_joined': 'A los miembros de una organización cuando se suma alguien.',
     'form_submission': 'Cuando un posible adoptante completa el formulario compartido.',

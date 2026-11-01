@@ -98,7 +98,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                         <div className="mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-lg border" data-testid={`${testId}-elsewhere`}
                             style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--status-info-text)' }}>
                             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
-                            {/* The housemates are named once, in the line above (audit B15). */}
+                            {/* The housemates are named once, in the line above when one has a problem (audit B15, option B). */}
                             <span className="min-w-0 break-words">{fill(t('adopter.hh_candidate_elsewhere'), { name: firstName(name) || name })}</span>
                         </div>
                     </>

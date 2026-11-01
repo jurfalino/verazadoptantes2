@@ -39,6 +39,7 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     form_attached: 'forms',
     contract_attached: 'forms',
     adopter_merged: 'merges',
+    duplicate_flagged: 'merges',
     merge_request_resolved: 'merges',
     merge_dispute_resolved: 'merges',
     // Admins only (D50): no switch of its own.
@@ -50,6 +51,7 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     pii_access_revoked: 'contact_access',
     ownership_transferred: 'profile_changes',
     contact_entry_added: 'profile_changes',
+    inaccuracy_reported: 'profile_changes',
     household_linked: 'profile_changes',
     household_link_removed: 'profile_changes',
     household_contribution: 'profile_changes',

@@ -37,15 +37,15 @@ import type { ProfileHouseholds } from '@/domain/profileHouseholds';
 import { fill, firstName, joinNames } from '@/lib/householdCopy';
 import { householdForAdd, separateHomes } from '@/domain/households';
 
-/** «+ Agregar» — a slim text button; with 2+ homes it opens «¿En qué hogar?» (the ▾). */
+/** «+ Agregar alguien al hogar» — a slim text button; with 2+ homes it opens «¿En qué hogar?» (the ▾). */
 function AddMemberButton({ onClick, expanded, buttonRef }: { onClick: () => void; expanded?: boolean; buttonRef?: Ref<HTMLButtonElement> }) {
     const { t } = useLanguage();
     return (
-        // The visible «Agregar» sits under the «Familiares / Convivientes» heading; the accessible name says the whole thing.
-        <button ref={buttonRef} type="button" data-testid="household-add-member" onClick={onClick} aria-label={t('adopter.hh_cta_add')}
+        // The label says what it adds (Jon, 2026-10-29): «Agregar» alone sat a few lines under «Agregar dato de contacto».
+        <button ref={buttonRef} type="button" data-testid="household-add-member" onClick={onClick}
             aria-expanded={expanded} aria-haspopup={expanded === undefined ? undefined : 'menu'}
             className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-teal-700 hover:underline">
-            <Plus className="w-4 h-4" aria-hidden="true" />{t('adopter.hh_add_short')}
+            <Plus className="w-4 h-4" aria-hidden="true" />{t('adopter.hh_cta_add')}
             {expanded !== undefined && <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />}
         </button>
     );

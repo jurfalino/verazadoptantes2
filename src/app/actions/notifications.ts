@@ -393,6 +393,8 @@ export async function notifyAdmins(opts: {
     icon?: string;
     metadata?: Record<string, unknown>;
     template?: NotificationTemplate;
+    /** People already told some other way (e.g. as an owner of a flagged profile): never sent this one. Normalized here. */
+    skip?: readonly string[];
 }): Promise<void> {
     try {
         const adminEmails = new Set<string>();
@@ -425,8 +427,12 @@ export async function notifyAdmins(opts: {
             });
         }
 
-        // Exclude the actor
+        // Exclude the actor, and anyone told some other way.
         adminEmails.delete(opts.actorEmail);
+        if (opts.skip?.length) {
+            const skip = new Set(opts.skip.map(e => e.trim().toLowerCase()));
+            for (const email of [...adminEmails]) if (skip.has(email.trim().toLowerCase())) adminEmails.delete(email);
+        }
 
         if (adminEmails.size === 0) return;
 

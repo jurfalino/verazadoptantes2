@@ -2,8 +2,8 @@
 
 /**
  * How a person stands, wherever ONE person is summed up in a line: a household
- * member's row, «¿Es este perfil?», and the household line of a search result /
- * form, contract or Pendientes match card (CardHouseholdLine).
+ * member's row, «¿Es este perfil?» and a match card's header. (A card's
+ * household line draws its housemates without flags — CardHouseholdLine.)
  *
  * - `PersonStanding`: «Menor de edad» first for a minor (an informational
  *   marker only — Jon, 2026-10-28), then the rating (★ + its word: colour is

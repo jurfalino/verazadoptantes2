@@ -12,7 +12,7 @@
  * typed entry.
  */
 
-import { extractEmails, extractSocials, extractIds, stripIdsFromText, isPlaceholderPhone } from './tokenizer';
+import { extractEmails, extractSocials, extractIds, stripIdsFromText, isPlaceholderPhone, extractPhones, extractPhoneSuffixes, normalizeIdValue, normalizeSocialHandle } from './tokenizer';
 
 export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' | 'alias' | 'other';
 
@@ -367,9 +367,118 @@ export function deriveLocality(entry: ContactEntry): string {
 
 /** The identity `mergeContactEntries` de-duplicates on: type + normalized value (+ network for socials). */
 export function contactEntryKey(e: Pick<ContactEntry, 'type' | 'value' | 'platform'>): string {
-    return e.type === 'social'
-        ? `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`
-        : `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
+    if (e.type === 'social') return `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`;
+    // A «phone» with no digits at all («ver notas», «llamar tarde») is text: compared as text,
+    // never as the same empty number (round 8).
+    if (e.type === 'phone' && !/\d/.test(e.value ?? '')) return `phone-text|${(e.value ?? '').trim().toLowerCase()}`;
+    return `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
+}
+
+/**
+ * THE «same contact» rule, as the duplicate matcher sees it (src/lib/tokenizer.ts):
+ * phones by the token index's keys — the digits, plus the last 8 for a number
+ * of 9+ digits — so «11 6312-0851» and «+54 9 11 6312-0851» are one phone
+ * (country / area prefixes ignored); emails lower-cased; social handles and id
+ * numbers normalized as the index normalizes them. Anything else (address,
+ * alias, note, or a value the matcher can't read) falls back to contactEntryKey.
+ * Matcher keys start with «~», so they never collide with a fallback key.
+ * Shared by every «what does this add?» preview AND the server write that
+ * folds one profile's contacts into another's, so the two can never disagree.
+ */
+export function contactMatchKeys(e: Pick<ContactEntry, 'type' | 'value' | 'platform'>): string[] {
+    const value = typeof e.value === 'string' ? e.value : '';
+    switch (e.type) {
+        case 'phone': {
+            const phones = extractPhones(value);
+            const keys = [...phones, ...extractPhoneSuffixes(phones)].map(k => `~phone|${k}`);
+            return keys.length ? [...new Set(keys)] : [contactEntryKey(e)];
+        }
+        case 'email': return [`~email|${value.trim().toLowerCase()}`];
+        case 'social': {
+            const h = normalizeSocialHandle(value, e.platform);
+            return [h ? `~social|${h}` : contactEntryKey(e)];
+        }
+        case 'id': {
+            const v = normalizeIdValue(value);
+            return [v ? `~id|${v}` : contactEntryKey(e)];
+        }
+        default: return [contactEntryKey(e)];
+    }
+}
+
+/** Two contacts are the same as the duplicate matcher sees them (contactMatchKeys). */
+export function sameContact(a: Pick<ContactEntry, 'type' | 'value' | 'platform'>, b: Pick<ContactEntry, 'type' | 'value' | 'platform'>): boolean {
+    if (a.type !== b.type) return false;
+    const keys = new Set(contactMatchKeys(a));
+    return contactMatchKeys(b).some(k => keys.has(k));
+}
+
+/**
+ * `a` is wholly contained in `b` — the rule for MERGING contacts and for
+ * ACCESS after a fold (round 7, review M1/S1), stricter than sameContact
+ * (which is for the hint's «coincide» and detection):
+ * - phones: EVERY number in `a` is one of `b`'s (by the matcher's keys, so
+ *   «11 6312-0851» ⊆ «+54 9 11 6312-0851»). An entry holding two numbers is
+ *   never "the same" as an entry holding one of them.
+ * - social handles: the same handle on the same network (or both without one).
+ *   A different network, or one side without a network, is a different
+ *   contact (as before round 4).
+ * - anything else: the matcher's key (emails lower-cased, ids normalized).
+ */
+export function contactCoveredBy(a: Pick<ContactEntry, 'type' | 'value' | 'platform'>, b: Pick<ContactEntry, 'type' | 'value' | 'platform'>): boolean {
+    if (a.type !== b.type) return false;
+    if (a.type === 'phone') {
+        const numbers = extractPhones(typeof a.value === 'string' ? a.value : '');
+        if (numbers.length === 0) return contactEntryKey(a) === contactEntryKey(b);
+        const bKeys = new Set(contactMatchKeys(b));
+        return numbers.every(n => [n, ...extractPhoneSuffixes([n])].some(k => bKeys.has(`~phone|${k}`)));
+    }
+    if (a.type === 'social' && (a.platform ?? '') !== (b.platform ?? '')) return false;
+    return sameContact(a, b);
+}
+
+/**
+ * The two entries hold exactly the same contact — for phones, the same SET of
+ * numbers (each holds every number of the other, by the matcher's keys). What
+ * merging and appending require before dropping an incoming entry (round 8):
+ * survivor «A / B» + absorbed «A» keeps «A» as its own entry, so the team that
+ * brought it never loses sight of it (its grant matches that entry).
+ */
+export function sameContactSet(a: Pick<ContactEntry, 'type' | 'value' | 'platform'>, b: Pick<ContactEntry, 'type' | 'value' | 'platform'>): boolean {
+    return contactCoveredBy(a, b) && contactCoveredBy(b, a);
+}
+
+/**
+ * Fold `incoming` (an absorbed profile's contacts, or what the new-profile form
+ * typed) into `base` (the profile that stays). An incoming contact the base
+ * already holds exactly (sameContactSet — the same numbers, same network) is
+ * NOT added a second time: the kept entry keeps its own formatting and id and gains
+ * the incoming phone's messaging apps (WhatsApp / Telegram, union). Any other
+ * overlap (a two-number entry sharing one number, either way) is kept as its
+ * own entry: nothing is lost, and nobody loses sight of what they brought.
+ *
+ * `stricterVisibility` — only when both lists are profiles being MERGED
+ * (mergeAdopters): the kept entry stays public only if BOTH copies were. A
+ * contact typed by a third party (the new-profile form's «Continuar») never
+ * changes the visibility of the profile's existing entry (round 7, S2).
+ * Everything else is mergeContactEntries (exact-key dedupe, rename aliases first).
+ */
+export function foldContactEntries(base: ContactEntry[], incoming: ContactEntry[], opts: { stricterVisibility: boolean }): ContactEntry[] {
+    const kept = base.map(e => ({ ...e }));
+    const added: ContactEntry[] = [];
+    for (const e of incoming) {
+        if (!e?.value?.trim()) continue;
+        if (e.type === 'alias') { added.push(e); continue; }
+        const holder = kept.find(k => k.type !== 'alias' && sameContactSet(e, k))
+            ?? added.find(k => k.type !== 'alias' && sameContactSet(e, k));
+        if (!holder) { added.push(e); continue; }
+        if (holder.type === 'phone' && e.apps?.length) {
+            const apps = [...new Set([...(holder.apps ?? []), ...e.apps])];
+            if (apps.length) holder.apps = apps;
+        }
+        if (opts.stricterVisibility && holder.isPublic && !e.isPublic) delete holder.isPublic;
+    }
+    return mergeContactEntries(kept, added);
 }
 
 function dedupe(entries: ContactEntry[]): ContactEntry[] {
@@ -817,9 +926,9 @@ export function stripRenameMarks<T extends ContactEntry>(entries: readonly T[]):
 /**
  * The typed contacts that would be NEW on a profile — what «¿Continuar con el
  * perfil de X?» lists under «Se agregará» (fix round 2, item 20). Mirrors the
- * server's append (appendToExistingAdopter → mergeContactEntries): the
- * profile's typed list, else its legacy text read as entries, de-duplicated on
- * contactEntryKey. A masked contact (`masked: true`) can't be compared, so a
+ * server's append (appendToExistingAdopter → foldContactEntries): the
+ * profile's typed list, else its legacy text read as entries; a typed contact
+ * counts as already there only when one entry holds exactly it (sameContactSet). A masked contact (`masked: true`) can't be compared, so a
  * typed one is never assumed to be it — unless the duplicate engine matched on
  * that same email (`matchValues`: the query's own normalized tokens).
  * Blank and repeated typed entries count once.
@@ -831,14 +940,16 @@ export function newContactsForProfile(
 ): ContactEntry[] {
     const stored = deserializeContactEntries(profile.contactEntries);
     const base = stored.length ? stored : parseBlobToContactEntries(profile.contactInfo);
-    const known = new Set(base.filter(e => !e.masked && e.value?.trim()).map(contactEntryKey));
-    for (const v of matchValues) if (v.type === 'email' && v.value) known.add(contactEntryKey({ type: 'email', value: v.value }));
+    // The same rule the save folds with (sameContactSet / foldContactEntries):
+    // «11 6312-0851» typed against «+54 9 11 6312-0851» adds nothing; any typed
+    // entry not holding exactly an entry's numbers is listed (it is saved as its own).
+    const known: Array<Pick<ContactEntry, 'type' | 'value' | 'platform'>> = base.filter(e => !e.masked && e.value?.trim());
+    for (const v of matchValues) if (v.type === 'email' && v.value) known.push({ type: 'email', value: v.value });
     const out: ContactEntry[] = [];
     for (const e of typed) {
         if (!e.value?.trim()) continue;
-        const key = contactEntryKey(e);
-        if (known.has(key)) continue;
-        known.add(key);
+        if (known.some(k => sameContactSet(e, k))) continue;
+        known.push(e);
         out.push(e);
     }
     return out;

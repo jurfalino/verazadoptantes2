@@ -1033,6 +1033,10 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 type={composerType}
                                 value={hintValue}
                                 excludeAdopterId={adopterId}
+                                platform={composerType === 'social' ? effectiveSocialPlatform ?? undefined : undefined}
+                                apps={composerType === 'phone' ? composerApps : undefined}
+                                needsPlatform={socialNeedsPlatform}
+                                onTypedSaved={() => { clearComposerInputs(); router.refresh(); }}
                             />
                         )}
                         {/* Action row — structurally identical to the

@@ -76,6 +76,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                                 sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
                                 onNotThis: () => onDismiss(result.adopter.id),
                                 notThisTestId: 'strong-match-not-this',
+                                sameTestId: 'strong-match-continue',
                             }} />
                     </li>
                 ))}

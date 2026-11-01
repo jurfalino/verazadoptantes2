@@ -1,7 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 import {
-    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, insertHousehold, insertProfile, memberMenu, memberMenuPanel, profileNamed, rows, saveAsNew,
+    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, insertHousehold, insertProfile, isDbNull, memberMenu, memberMenuPanel, profileNamed, rows, saveAsNew,
 } from './householdFixtures';
 
 /**
@@ -12,7 +12,7 @@ import {
  *   1. A non-owner adds «Marta Paez» with a phone to Pedro's household: Marta's
  *      profile exists (owned by Pedro's owner, the add credited to the viewer)
  *      and her profile shows Pedro.
- *   2. Searching Marta's phone shows only Marta's card, with Pedro's rating line.
+ *   2. Searching Marta's phone shows only Marta's card, with the household line (Pedro is 1★): closed, then opened.
  *   3. Adding a person whose phone matches an existing profile offers
  *      «¿Es este perfil?»; «Sí» links that profile (no new one), and its row
  *      counts its active foster as «Actividad» does. On that profile's page
@@ -20,7 +20,9 @@ import {
  *      «¿En qué hogar?»; its add goes into that home.
  *   4. A stranger's rename: the owner is told and «Deshacer» puts the name back.
  *   5. A minor's profile is tagged and has «¿Qué pasó con …?» like anyone's
- *      (marker only — Jon, 2026-10-28); the homepage picker picks them.
+ *      (marker only — Jon, 2026-10-28); editing them in the household keeps the
+ *      mark (the forms enter no age or «Es menor de edad» — Jon, 2026-10-29);
+ *      the homepage picker picks them.
  *   6. «Quitar del hogar» → «No vive acá» removes the person on every profile.
  *   7. At 390px nothing scrolls sideways.
  *   8. On the viewer's own household: «Eliminar perfil», «Pedir eliminación»
@@ -78,7 +80,9 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await expect(page.getByTestId('household-add-member')).toBeVisible({ timeout: 30_000 });
 
         const form = await fillAddForm(page, { name: MARTA_NAME, relationship: 'partner', phone: MARTA_PHONE });
-        await expect(form.getByTestId('hh-minor-checkbox').locator('input')).not.toBeChecked();
+        // No age and no «Es menor de edad» in the form (Jon, 2026-10-29): neither is entered in the app.
+        await expect(form.getByText(/^(Edad|Age)$/)).toHaveCount(0);
+        await expect(form.getByRole('checkbox')).toHaveCount(0);
         await saveAsNew(page);
         await expect(card(page, MARTA_NAME)).toHaveCount(1, { timeout: 30_000 });
         // The name is the link to her profile; the viewer added her (not their profile).
@@ -115,7 +119,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await page.mouse.click(5, 300);
     });
 
-    test('2. searching Marta\'s phone shows only Marta\'s card, with Pedro\'s rating line', async ({ page }) => {
+    test('2. searching Marta\'s phone shows only Marta\'s card, with the household line because Pedro is 1★', async ({ page }) => {
         test.setTimeout(120_000);
         const marta = String(profileNamed(MARTA_NAME)!.id);
         await page.goto('/');
@@ -128,9 +132,25 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         const martaCard = results.locator(`a[href^="/adopter/${marta}"]`);
         await expect(martaCard).toHaveCount(1, { timeout: 30_000 });
         await expect(results.locator(`a[href^="/adopter/${PEDRO}"]`)).toHaveCount(0);
+        // Option B (Jon, 2026-10-28): Pedro is rated 1★, so the line shows — closed, his rating only, no names.
         const line = martaCard.getByTestId('card-household-line');
-        await expect(line).toContainText(PEDRO_NAME);
+        await expect(line).toBeVisible({ timeout: 30_000 });
         await expect(line).toContainText('1.0');
+        await expect(line).not.toContainText(PEDRO_NAME);
+        // His «Inexacto» is a FLAG: it never shows on the line.
+        await expect(line.getByTestId('card-household-alert')).toHaveCount(0);
+        await expect(line.locator('[data-alert="inaccurate"]')).toHaveCount(0);
+        const toggle = line.getByTestId('card-household-toggle');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        const before = page.url();
+        await toggle.click();
+        // Opening it never follows the card's link.
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        expect(page.url()).toBe(before);
+        await expect(line.getByTestId('card-household-list')).toContainText(PEDRO_NAME);
+        await expect(line.locator('[data-alert="inaccurate"]')).toHaveCount(0);
+        await toggle.click();
+        await expect(line.getByTestId('card-household-list')).toHaveCount(0);
     });
 
     test('2b. while a contact is being written, «Sí» / «No» and the form\'s «Guardar» can\'t save the person without it', async ({ page }) => {
@@ -232,24 +252,35 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         }
     });
 
-    test('5. a minor added to the household: tagged, and «¿Qué pasó con …?» on the profile like anyone\'s', async ({ page }) => {
+    test('5. a minor in the household: tagged, kept by an edit, and «¿Qué pasó con …?» on the profile like anyone\'s', async ({ page }) => {
         test.setTimeout(150_000);
         await page.goto(`/adopter/${PEDRO}`);
         await dismissCountryBanner(page);
-        const form = await fillAddForm(page, { name: TOMAS_NAME, relationship: 'child', age: 12 });
-        // The box follows the age: ticked and locked.
-        const box = form.getByTestId('hh-minor-checkbox').locator('input');
-        await expect(box).toBeChecked();
-        await expect(box).toHaveAttribute('aria-readonly', 'true');
-        await box.click(); // locked by the age: stays ticked
-        await expect(box).toBeChecked();
+        await fillAddForm(page, { name: TOMAS_NAME, relationship: 'child' });
         await saveAsNew(page);
         const tomasCard = card(page, TOMAS_NAME);
         await expect(tomasCard).toHaveCount(1, { timeout: 30_000 });
-        await expect(tomasCard.getByTestId('minor-tag')).toBeVisible();
+        // The app no longer marks a minor; the public form and imports still do — as here, with no age.
+        const made = profileNamed(TOMAS_NAME)!;
+        expect(Number(made.is_minor)).toBe(0);
+        execD1(`UPDATE adopters SET is_minor = 1 WHERE id = '${made.id}'`);
+        await page.reload();
+        await dismissCountryBanner(page);
+        await expect(tomasCard.getByTestId('minor-tag')).toBeVisible({ timeout: 30_000 });
+
+        // Editing him (relationship only — the form has no age or box) keeps the mark.
+        await memberMenu(tomasCard, 'edit');
+        const edit = page.getByTestId('hh-edit-form');
+        await expect(edit.getByRole('checkbox')).toHaveCount(0);
+        await edit.getByTestId('hh-person-rel').selectOption('other_relative');
+        await edit.getByTestId('hh-form-save').click();
+        await expect(edit).toHaveCount(0, { timeout: 30_000 });
+        await expect.poll(() => String(housemates(PEDRO).find(h => h.profileId === made.id)?.relationship), { timeout: 15_000 }).toBe('other_relative');
+        await expect(tomasCard.getByTestId('minor-tag')).toBeVisible({ timeout: 30_000 });
 
         const tomas = profileNamed(TOMAS_NAME)!;
         expect(Number(tomas.is_minor)).toBe(1);
+        expect(isDbNull(tomas.age), 'no age written').toBe(true);
         await page.goto(`/adopter/${tomas.id}`);
         await dismissCountryBanner(page);
         // «Menor de edad» is a marker only (Jon, 2026-10-28): tagged, nothing hidden.

@@ -4,20 +4,21 @@
  * The two household forms (households as profiles, prototype E1/E2, A1–A5):
  *
  * - `EditMemberForm` («⋯ → Editar»): one form, the same for everyone signed in —
- *   name, relationship, age and «Es menor de edad». The name and age belong to
- *   the person's PROFILE (changeProfileName / changeProfileAge: the old name is
- *   kept as «Conocido/a como», the owner's team is told with «Deshacer»); the
- *   relationship to the membership (updateHouseholdMembership). Only what was
+ *   name and relationship. The name belongs to the person's PROFILE
+ *   (changeProfileName: the old name is kept as «Conocido/a como», the owner's
+ *   team is told with «Deshacer»); the relationship to the membership
+ *   (updateHouseholdMembership). Only what was
  *   changed is sent, each with the value shown when the form opened, so a
  *   teammate's newer change is never overwritten silently («conflict»).
- * - `AddPersonForm` («Agregar familiar / conviviente»): name, relationship, age,
- *   «Es menor de edad» and contacts; on «Guardar» the duplicate check runs
+ * - `AddPersonForm` («Agregar alguien al hogar»): name, relationship and contacts; on «Guardar» the duplicate check runs
  *   (getHouseholdMatchCandidates, the «Nuevo adoptante» check) and every likely
  *   match is offered as «¿Es este perfil?» — «Sí» links that profile, «No»
  *   moves on, and with none left a new profile is made.
  *
- * The «Es menor de edad» box is always shown; with an age typed it follows the
- * age and is locked (ticked under 18, unticked from 18 — a known age decides).
+ * Neither form enters an age or «Es menor de edad» (Jon, 2026-10-29: age
+ * editing is out of the app for now). A person's stored age and minor mark are
+ * never sent from here, so an edit keeps them as they are; they are still shown
+ * (MemberCard, the profile) and still set by the public form and imports.
  */
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -29,14 +30,11 @@ import { INLINE_CANCEL_BTN, INLINE_FIELD, INLINE_SAVE_BTN } from '@/components/u
 import { HouseholdCandidateCard } from '@/components/household/HouseholdCandidateCard';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
 import type { ContactEntry } from '@/lib/contactEntries';
-import { MINOR_AGE_LIMIT } from '@/domain/households';
-import { isValidAge } from '@/domain/profileIdentity';
-import { addHouseholdPerson, changeProfileAge, changeProfileName, checkHouseholdPersonEdit, getHouseholdMatchCandidates, updateHouseholdMembership } from '@/app/actions';
+import { addHouseholdPerson, changeProfileName, checkHouseholdPersonEdit, getHouseholdMatchCandidates, updateHouseholdMembership } from '@/app/actions';
 import type { HouseholdContactInput, HouseholdMatchCandidate } from '@/app/actions/households';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { householdErrorCopy, fill, joinNames } from '@/lib/householdCopy';
-import { MinorCheckbox } from '@/components/MinorCheckbox';
 
 /**
  * The inputs of the profile's own inline forms (ContactEntriesSection's composer): these fields sit right
@@ -73,19 +71,18 @@ export function useHouseholdFailure(source: string) {
     };
 }
 
-function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, minor, setMinor, renameHint = false, showRelationship = true }: {
+function PersonFields({ name, setName, rel, setRel, relativeName, renameHint = false, showRelationship = true }: {
     name: string; setName: (v: string) => void;
     rel: Relationship | ''; setRel: (v: Relationship | '') => void;
     /** «Parentesco de Pedro»: who the relationship points at (first name). */
     relativeName: string;
-    age: string; setAge: (v: string) => void; minor: boolean; setMinor: (v: boolean) => void;
     renameHint?: boolean;
     showRelationship?: boolean;
 }) {
     const { t } = useLanguage();
     // Unique per form: the add form and a card's «Editar» can be open at once.
     const uid = useId();
-    const ids = { name: `${uid}-name`, rel: `${uid}-rel`, age: `${uid}-age` };
+    const ids = { name: `${uid}-name`, rel: `${uid}-rel` };
     return (
         <>
             <div>
@@ -94,26 +91,18 @@ function PersonFields({ name, setName, rel, setRel, relativeName, age, setAge, m
                     data-testid="hh-person-name" className={FIELD} />
                 {renameHint && <p className="text-xs text-stone-500 mt-1">{t('adopter.rename_hint')}</p>}
             </div>
-            <div className="flex gap-2 flex-wrap">
-                {showRelationship && (
-                    <div className="flex-1 min-w-[140px]">
-                        <label className={LABEL} htmlFor={ids.rel}>
-                            {relativeName ? fill(t('adopter.hh_rel_of_label'), { name: relativeName }) : t('adopter.hh_rel')}
-                        </label>
-                        <select id={ids.rel} value={rel} onChange={e => setRel(e.target.value as Relationship | '')} data-testid="hh-person-rel"
-                            className={FIELD}>
-                            <option value="">{t('adopter.hh_rel_choose')}</option>
-                            {RELATIONSHIPS.filter(r => r !== 'unknown').map(r => <option key={r} value={r}>{t(`adopter.hh_rel_${r}`)}</option>)}
-                        </select>
-                    </div>
-                )}
-                <div className="w-24">
-                    <label className={LABEL} htmlFor={ids.age}>{t('adopter.hh_age')}</label>
-                    <input id={ids.age} type="number" inputMode="numeric" min={0} max={120} step={1} value={age} onChange={e => setAge(e.target.value)}
-                        data-testid="hh-person-age" className={FIELD} />
+            {showRelationship && (
+                <div>
+                    <label className={LABEL} htmlFor={ids.rel}>
+                        {relativeName ? fill(t('adopter.hh_rel_of_label'), { name: relativeName }) : t('adopter.hh_rel')}
+                    </label>
+                    <select id={ids.rel} value={rel} onChange={e => setRel(e.target.value as Relationship | '')} data-testid="hh-person-rel"
+                        className={FIELD}>
+                        <option value="">{t('adopter.hh_rel_choose')}</option>
+                        {RELATIONSHIPS.filter(r => r !== 'unknown').map(r => <option key={r} value={r}>{t(`adopter.hh_rel_${r}`)}</option>)}
+                    </select>
                 </div>
-            </div>
-            <MinorCheckbox age={age} value={minor} onChange={setMinor} testId="hh-minor-checkbox" />
+            )}
         </>
     );
 }
@@ -134,11 +123,9 @@ function FormButtons({ busy, onCancel, onSave, canSave = true }: { busy: boolean
     );
 }
 
-const ageText = (age: number | null) => (age === null ? '' : String(age));
-
 /** «⋯ → Editar» on one member card. */
 export function EditMemberForm({ member, relativeName, onDone }: {
-    member: { profileId: string; membershipId: string; name: string; relationship: Relationship; relativeToAdopterId: string | null; age: number | null; isMinor: boolean };
+    member: { profileId: string; membershipId: string; name: string; relationship: Relationship; relativeToAdopterId: string | null };
     relativeName: string;
     onDone: () => void;
 }) {
@@ -148,31 +135,24 @@ export function EditMemberForm({ member, relativeName, onDone }: {
     const fail = useHouseholdFailure('EditMemberForm');
     const [name, setName] = useState(member.name);
     const [rel, setRel] = useState<Relationship | ''>(member.relationship === 'unknown' ? '' : member.relationship);
-    const [age, setAge] = useState(ageText(member.age));
-    const [minor, setMinor] = useState(member.isMinor);
     const [busy, setBusy] = useState(false);
     const showRelationship = !!member.relativeToAdopterId;
 
     async function save() {
-        const n = age.trim() === '' ? null : Number(age);
-        if (n !== null && !isValidAge(n)) { toast.warning(t('adopter.age_invalid')); return; }
-        const boxNow = n !== null ? n < MINOR_AGE_LIMIT : minor;
         const relNow = rel || 'unknown';
         const nameChanged = !!name.trim() && name.trim() !== member.name.trim();
         const relChanged = showRelationship && relNow !== member.relationship;
-        const ageChanged = n !== member.age || boxNow !== member.isMinor;
         setBusy(true);
         try {
             // Final fix P1: every field is checked BEFORE any is saved — a teammate's change to
             // one of them closes the form and shows how it is now, nothing half-saved.
-            if (nameChanged || relChanged || ageChanged) {
+            if (nameChanged || relChanged) {
                 const check = await checkHouseholdPersonEdit({
                     profileId: member.profileId,
                     ...(relChanged ? { membershipId: member.membershipId } : {}),
                     expected: {
                         ...(nameChanged ? { name: member.name } : {}),
                         ...(relChanged ? { relationship: member.relationship } : {}),
-                        ...(ageChanged ? { age: member.age, isMinor: member.isMinor } : {}),
                     },
                 });
                 if (!check.ok) { fail.refused(check); return; }
@@ -192,11 +172,6 @@ export function EditMemberForm({ member, relativeName, onDone }: {
                 const res = await updateHouseholdMembership({ membershipId: member.membershipId, relationship: relNow, expected: member.relationship });
                 if (!res.ok) { fail.refused(res); if (res.error === 'conflict') onDone(); return; }
             }
-            if (ageChanged) {
-                const res = await changeProfileAge({ adopterId: member.profileId, age: n, isMinor: boxNow, expected: { age: member.age, isMinor: member.isMinor } });
-                if (!res.ok) { fail.refused(res); if (res.error === 'conflict') onDone(); return; }
-                fail.partial(res.warningErrorId);
-            }
             toast.success('✓', t('adopter.hh_edit_saved'));
             onDone();
             router.refresh();
@@ -209,8 +184,8 @@ export function EditMemberForm({ member, relativeName, onDone }: {
 
     return (
         <div className="space-y-3" data-testid="hh-edit-form">
-            <PersonFields name={name} setName={setName} rel={rel} setRel={setRel} relativeName={relativeName} age={age} setAge={setAge}
-                minor={minor} setMinor={setMinor} renameHint showRelationship={showRelationship} />
+            <PersonFields name={name} setName={setName} rel={rel} setRel={setRel} relativeName={relativeName}
+                renameHint showRelationship={showRelationship} />
             <FormButtons busy={busy} onCancel={onDone} onSave={save} canSave={!!name.trim()} />
         </div>
     );
@@ -244,8 +219,6 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const fail = useHouseholdFailure('AddPersonForm');
     const [name, setName] = useState('');
     const [rel, setRel] = useState<Relationship | ''>('');
-    const [age, setAge] = useState('');
-    const [minor, setMinor] = useState(false);
     const [drafts, setDrafts] = useState<ContactEntry[]>([]);
     /**
      * A contact is being written (added, or edited in place): its own «Cancelar / Guardar» are the only
@@ -264,22 +237,13 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     // Anything typed after the check makes it stale.
     const edited = <T,>(set: (v: T) => void) => (v: T) => { set(v); setCandidates(null); };
 
-    /** The typed age, or undefined (after the warning) when it is not a valid one. */
-    function validAge(): number | null | undefined {
-        const n = age.trim() === '' ? null : Number(age);
-        if (n !== null && !isValidAge(n)) { toast.warning(t('adopter.age_invalid')); return undefined; }
-        return n;
-    }
-
     async function add(existingProfileId?: string) {
-        const n = validAge();
-        if (n === undefined) return;
         setBusy(true);
         try {
             const res = await addHouseholdPerson({
                 anchorAdopterId,
                 ...(householdId ? { householdId } : {}),
-                ...(existingProfileId ? { existingProfileId } : { name: name.trim(), age: n, isMinor: n === null && minor }),
+                ...(existingProfileId ? { existingProfileId } : { name: name.trim() }),
                 ...(rel ? { relationship: rel } : {}),
                 contactEntries: contactInputs(),
             });
@@ -303,8 +267,6 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
 
     async function save() {
         if (!hasIdentifier) return;
-        // The age is checked BEFORE «¿Es este perfil?»: never ask about a form that then can't be saved.
-        if (validAge() === undefined) return;
         setChecking(true);
         setCheckFailed(null);
         let found: HouseholdMatchCandidate[] = [];
@@ -343,7 +305,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
         <div className="pl-10 pt-3 border-t border-stone-100" data-testid="hh-add-form">
             <div className="space-y-3">
                 <PersonFields name={name} setName={edited(setName)} rel={rel} setRel={setRel} relativeName={relativeName}
-                    age={age} setAge={setAge} minor={minor} setMinor={setMinor} />
+                />
                 <div>
                     <div className={LABEL}>{t('adopter.hh_contacts_label')}</div>
                     {/* The profile's own contact list, in local mode (as the new-adopter form and the import

@@ -13,11 +13,10 @@ import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
-import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
+import { mergeAdopters } from '@/lib/adopterMerge';
 import { createMergeRequest, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
 import { loadPairVerdict, refuseDisputedMerge, teamOf } from '@/lib/pairVerdict';
-import { grantAccessAfterFold } from '@/lib/mergeAccess';
-import { mergeSideParams } from '@/lib/mergeNotificationSides';
+import { mergeChosenPair } from '@/lib/pairMerge';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdPerson } from './households';
@@ -899,56 +898,18 @@ export async function mergePendingDedupPair(candidateId: string, opts?: { keepId
             return { success: true, outcome: 'requested', toName, toAdmins };
         }
 
-        const result = await mergeAdopters(primaryId, secondaryId, actor);
-        // Some old household data of these two couldn't be converted yet (Task 7): retryable, nothing moved.
-        if (!result.success && result.error === HOUSEHOLD_NOT_CONVERTED) return refuse(HOUSEHOLD_NOT_CONVERTED);
-        if (!result.success) {
-            const errorId = logger.error('mergePendingDedupPair: merge failed', new Error(result.error ?? 'merge failed'), {
-                candidateId, actorEmail, primaryId, secondaryId,
-            });
-            return { success: false, error: 'merge_failed', errorId };
-        }
-        const notifyOwner = action.kind === 'merge' ? action.notifyOwner : null;
-        logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId, secondaryId, viaAdmin, notifyOwner: !!notifyOwner });
-        // D40: the absorbed profile's owner team keeps seeing what it had. Best-effort.
-        // An admin's merge is a consented fold: full contact. A rescuer merging
-        // here without asking either kept a profile of their own team (nothing
-        // to grant) or kept the OTHER rescuer's, who never agreed: then only
-        // the contact values the absorbed profile brought (final review C1).
+        // The merge, D40's access and the notices: shared with «Continuar con
+        // este perfil» (src/lib/pairMerge.ts), wording of these logs unchanged.
         const absorbed = secondaryId === sideA.id ? sideA : sideB;
-        await grantAccessAfterFold(db, {
-            survivorId: primaryId, absorbedOwnerEmail: realOwner(absorbed.addedBy), actor, mergeAuditId: result.auditId ?? null,
-            access: isAdmin ? { scope: 'all_contact' } : { scope: 'absorbed_entries', absorbedId: secondaryId },
+        const merged = await mergeChosenPair(db, {
+            primaryId, secondaryId, actor, isAdmin, viaAdmin,
+            notifyOwner: action.kind === 'merge' ? action.notifyOwner : null,
+            absorbedAddedBy: absorbed.addedBy,
+            label: 'mergePendingDedupPair', ctx: { candidateId, actorEmail },
         });
-        if (viaAdmin) {
-            // Whoever registered either profile hears that an admin joined them.
-            await notifyMergeOwners({ primaryId, secondaryId, ...result }, actor);
-        } else if (notifyOwner) {
-            // Their profile absorbed the caller's record: tell them. The merge
-            // stands even if the notice fails.
-            try {
-                const { createNotification, resolveDisplayName } = await import('./notifications');
-                const [requester, sides] = await Promise.all([
-                    resolveDisplayName(actor),
-                    mergeSideParams(db, { survivorId: primaryId, absorbedId: secondaryId }, { survivorName: result.primaryName, absorbedName: result.secondaryName }),
-                ]);
-                await createNotification({
-                    type: 'adopter_merged',
-                    // Normalized: notifications are keyed (bell, email) by the
-                    // lowercased email, and `added_by` keeps whatever case it had.
-                    userId: normEmail(notifyOwner),
-                    ...notificationContent({ key: 'adopter_merged_by_rescuer', params: { actorName: requester, ...sides, ...(result.auditId ? { disputable: '1' } : {}) } }),
-                    // «¿No es la misma persona?» opens from here (D50).
-                    url: result.auditId ? `/adopter/${primaryId}?dispute=${encodeURIComponent(result.auditId)}` : `/adopter/${primaryId}`,
-                    icon: '🔗',
-                    metadata: { primaryId, secondaryId, auditId: result.auditId ?? null },
-                });
-            } catch (e) {
-                logger.warn('mergePendingDedupPair: owner notice not sent', {
-                    candidateId, actorEmail, primaryId, secondaryId, error: e instanceof Error ? e.message : String(e),
-                });
-            }
-        }
+        // Some old household data of these two couldn't be converted yet (Task 7): retryable, nothing moved.
+        if (!merged.ok && merged.error === HOUSEHOLD_NOT_CONVERTED) return refuse(HOUSEHOLD_NOT_CONVERTED);
+        if (!merged.ok) return { success: false, error: 'merge_failed', errorId: merged.errorId };
         return { success: true, outcome: 'merged' };
     } catch (e) {
         const errorId = logger.error('mergePendingDedupPair failed', e, { candidateId, actorEmail });
@@ -1175,7 +1136,9 @@ export async function getPendingDuplicatesForUser(
                 reason: adopterFlags.reason,
                 details: adopterFlags.details,
                 createdAt: adopterFlags.createdAt,
-            }).from(adopterFlags).where(eq(adopterFlags.reason, 'duplicate')).limit(100).all();
+            // Newest first: a flag raised now (its owners were just told «Revisar»)
+            // must be within the cap, however many old ones there are.
+            }).from(adopterFlags).where(eq(adopterFlags.reason, 'duplicate')).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
             for (const f of flags as Array<{ id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null }>) {

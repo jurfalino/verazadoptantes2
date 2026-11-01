@@ -24,6 +24,8 @@
  *   person and every remaining housemate, the other teams told.
  * - `getHouseholdMatchCandidates`: the «Nuevo adoptante» duplicate check
  *   (findFormDuplicates) plus each candidate's household line.
+ * - `getDuplicateHintMatches`: the composer's «Ya está en otro perfil» — the
+ *   same card data for one typed phone / email / social / id.
  *
  * Browser-callable: the session is the only source of the actor; every id is
  * checked against what is stored. History kinds follow profilePrivilege
@@ -40,7 +42,7 @@ import { runBatch } from '@/lib/dbBatch';
 import { runAfterResponse } from '@/lib/background';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { isPrivilegedOnProfile, historyKind, historyKindForOwner } from '@/lib/profilePrivilege';
-import { CONTACT_ENTRIES_FULL, contactEntryFromInput, type ContactEntry } from '@/lib/contactEntries';
+import { CONTACT_ENTRIES_FULL, contactEntryFromInput, deserializeContactEntries, newContactsForProfile, parseBlobToContactEntries, type ContactEntry, type SocialPlatform } from '@/lib/contactEntries';
 import { countsFor } from '@/lib/profileSummary';
 import type { ActivityCounts } from '@/domain/activityCounts';
 import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
@@ -61,7 +63,13 @@ import { householdContactSchema } from './validation';
 import { addContactEntry } from './addContactEntry';
 import { createHouseholdProfile } from './_adopterFactory';
 import { searchFormDuplicates } from '@/lib/formDuplicates';
-import type { DiscoveryMatch } from './types';
+import { findAdopters } from './findAdopters';
+import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
+import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
+import { ratingAfterMerge } from '@/domain/ratings';
+import { realOwner } from '@/domain/dedupPair';
+import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
+import type { DiscoveryMatch, DuplicateMatch } from './types';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -715,6 +723,23 @@ export async function removeHouseholdMembership(
 // ─────────────────────────── «¿Es este perfil?» ───────────────────────────
 
 /**
+ * Card-ready candidates: each match's household line (it already rides on a
+ * hydrated match — read here only for one that came without it), and its
+ * rating, open alerts and activity counted as a household row counts them.
+ */
+async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ctx: Record<string, unknown>): Promise<HouseholdMatchCandidate[]> {
+    const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
+    const [lines, counts] = await Promise.all([
+        missing.length > 0 ? householdLinesFor(db, actor, missing) : Promise.resolve({} as Record<string, HouseholdLine[]>),
+        Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }))),
+    ]);
+    return matches.map((r, i) => ({
+        ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [],
+        openAlerts: counts[i].openAlerts, activity: counts[i].activity, rating: counts[i].rating,
+    }));
+}
+
+/**
  * The candidates for the add form: «Nuevo adoptante»'s own duplicate check
  * (findFormDuplicates — fuzzy name, phone-suffix, masked exactly as there),
  * each with its household line («Convive con Pedro ★1») so a relative of a
@@ -745,24 +770,222 @@ export async function getHouseholdMatchCandidates(
         if (matches.length === 0) return { results: [] };
         const db = await getDb();
         if (!db) throw new Error('No database');
-        // The household line already rides on each candidate (hydrateDuplicateMatches);
-        // read it here only for one that came without it.
-        const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
-        const [lines, counts] = await Promise.all([
-            missing.length > 0 ? householdLinesFor(db, actor, missing) : Promise.resolve({} as Record<string, HouseholdLine[]>),
-            Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }))),
-        ]);
-        return {
-            results: matches.map((r, i) => ({
-                ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [],
-                openAlerts: counts[i].openAlerts, activity: counts[i].activity, rating: counts[i].rating,
-            })),
-        };
+        return { results: await asCandidates(db, actor, matches, ctx) };
     } catch (e) {
         // The form says the check failed (with this id) and lets the rescuer decide — never a silent «new».
         const errorId = logger.error('getHouseholdMatchCandidates failed — the form shows no suggestions', e, ctx);
         return { results: [], failed: true, errorId };
     }
+}
+
+// ─────────────────────────── «Ya está en otro perfil» ───────────────────────────
+
+export type DupHintMatch = HouseholdMatchCandidate & {
+    /**
+     * Positions, in `adopter.contactEntries`, of the contacts that are the
+     * identifier typed — read before masking (masking keeps the order and drops
+     * entry ids), so the window marks it «coincide» even when the viewer sees it
+     * only partially. Nothing beyond what was typed.
+     */
+    matchedEntryIndexes: number[];
+    /**
+     * What the window offers (decideDupHintAction, decided here — every
+     * action re-decides it): null without a saved profile being edited.
+     */
+    action: DupHintAction | null;
+    /** An open duplicate flag or a pending request already covers the pair («Ya está marcado para revisar.»). */
+    alreadyPending: boolean;
+    /**
+     * Why the 'flag' window can't offer «Continuar» for the profile being
+     * edited: 'other_owner' «Lo cargó otra persona…», 'no_owner' «Este perfil
+     * no tiene un responsable…»; absent when the flag is only because the match
+     * has no owner (case 3).
+     */
+    cantJoin?: 'other_owner' | 'no_owner';
+    /**
+     * Someone already said they are two people, and this viewer can't ask the
+     * admins (no profile of theirs): the 'flag' window says «Ya dijeron que
+     * no…» instead of offering a flag the server refuses.
+     */
+    saidNo?: boolean;
+    /**
+     * Only for 'continue': who «Sí, continuar» tells (display names, never
+     * emails) — the confirmation's «Le avisamos a …» line.
+     */
+    toldNames?: string[];
+    /**
+     * Only for 'continue': what the profile being edited adds to this one —
+     * its contacts this one doesn't have yet (the value being typed included),
+     * its records — and the rating this one will have after the merge
+     * (ratingAfterMerge: both profiles' records together).
+     */
+    preview?: { newContacts: ContactEntry[]; records: number; ratingAfter: number | null; /** The profile being edited, «El perfil de {name} deja de existir por separado.» */ currentName: string };
+};
+
+/**
+ * The composer's inline hint (DuplicateHint, option B): the profiles that
+ * already carry the phone / email / social / id just typed — the same
+ * detection the hint always ran (findAdopters 'duplicate', phone-suffix
+ * included, the floor and cap fixed here, never by the browser) — each as the
+ * «¿Es este perfil?» card shows it: masked for this viewer exactly as there,
+ * with its household line, rating, alerts and activity. Detection re-runs from
+ * the typed value, so a caller only ever sees profiles matching what they
+ * typed (never a list of ids they choose). Session required. Never throws: a
+ * failure is logged and comes back as `failed` + errorId.
+ */
+export async function getDuplicateHintMatches(
+    input: { type: string; value: string; excludeAdopterId?: string; platform?: string },
+): Promise<{ results: DupHintMatch[]; failed?: true; errorId?: string }> {
+    const actor = await sessionActor();
+    if (!actor) return { results: [] };
+    const type = input?.type;
+    const excludeAdopterId = id64(input?.excludeAdopterId);
+    // The typed value is a contact: never logged.
+    const ctx: Record<string, unknown> = { actor, type: typeof type === 'string' ? type.slice(0, 16) : null, excludeAdopterId: excludeAdopterId || null };
+    const search = dupHintSearchInput(type, input?.value);
+    if (!search || !isDupHintType(type)) return { results: [] };
+    const typed = String(input.value).trim().slice(0, DUP_HINT_MAX_VALUE);
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const found = await findAdopters(
+            { ...search, ...(excludeAdopterId ? { excludeAdopterId } : {}) },
+            { mode: 'duplicate', limit: DUP_HINT_MAX_RESULTS, minRelevance: DUP_HINT_MIN_RELEVANCE },
+        );
+        const dup = ((found.results ?? []) as DuplicateMatch[]).filter(m => m.adopterId !== excludeAdopterId);
+        if (dup.length === 0) return { results: [] };
+        const hydrated = await hydrateDuplicateMatches(db, dup, { viewer: actor, isUnauthenticated: false });
+        if (hydrated.length === 0) return { results: [] };
+        type RawRow = { contactEntries: string | null; contactInfo: string | null; addedBy: string | null };
+        const [candidates, raw, viewer] = await Promise.all([
+            asCandidates(db, actor, hydrated, ctx),
+            Promise.all(hydrated.map(m => (async () => db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                .from(adopters).where(eq(adopters.id, m.adopter.id)).get() as Promise<RawRow | undefined>)()
+                .catch((e: unknown) => {
+                    logger.warn('getDuplicateHintMatches: raw contacts D1 fallback hit, no «coincide» mark', { ...ctx, profileId: m.adopter.id, error: e instanceof Error ? e.message : String(e) });
+                    return undefined;
+                }))),
+            // Who is asking and the profile being edited: read once, not per match.
+            excludeAdopterId ? loadDupHintViewer(db, actor, excludeAdopterId) : Promise.resolve(null),
+        ]);
+        const typedEntry = contactEntryFromInput({ type, value: typed, platform: socialPlatformOf(input?.platform) }, actor);
+        const windows = await Promise.all(candidates.map((c, i) =>
+            dupHintWindow(db, viewer, { id: c.adopter.id, row: raw[i] }, typedEntry, ctx)));
+        return {
+            results: candidates.map((c, i) => {
+                const row = raw[i];
+                const parsed = deserializeContactEntries(row?.contactEntries ?? null);
+                const source = parsed.length > 0 ? parsed : parseBlobToContactEntries(row?.contactInfo ?? null);
+                const matchedEntryIndexes = source.flatMap((e, idx) => (entryMatchesTyped(e, type, typed) ? [idx] : []));
+                return { ...c, matchedEntryIndexes, ...windows[i] };
+            }),
+        };
+    } catch (e) {
+        const errorId = logger.error('getDuplicateHintMatches failed — the hint shows nothing', e, ctx);
+        return { results: [], failed: true, errorId };
+    }
+}
+
+const SOCIAL_PLATFORMS: readonly SocialPlatform[] = ['facebook', 'instagram', 'tiktok', 'x', 'threads', 'other'];
+const socialPlatformOf = (v: unknown): SocialPlatform | undefined =>
+    typeof v === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(v) ? v as SocialPlatform : undefined;
+
+/**
+ * One match's window (getDuplicateHintMatches): what it offers, and — only
+ * for 'continue' — the confirmation's preview and who would be told. Never
+ * throws: a decision that can't be read falls back to «Marcar como posible
+ * duplicado» (logged) — the flag itself refuses a second flag on the pair.
+ */
+async function dupHintWindow(
+    db: Db,
+    viewer: DupHintViewer | null,
+    match: { id: string; row: { contactEntries: string | null; contactInfo: string | null; addedBy: string | null } | undefined },
+    typedEntry: ContactEntry,
+    ctx: Record<string, unknown>,
+): Promise<Pick<DupHintMatch, 'action' | 'alreadyPending' | 'cantJoin' | 'saidNo' | 'toldNames' | 'preview'>> {
+    if (!viewer?.current) return { action: null, alreadyPending: false };
+    const current = viewer.current;
+    const mctx = { ...ctx, profileId: match.id };
+    if (!match.row) {
+        logger.warn('getDuplicateHintMatches: match owner unreadable, offering the flag', mctx);
+        return { action: 'flag', alreadyPending: false, ...cantJoinOf(viewer, current) };
+    }
+    const row = match.row;
+    const cantJoin = cantJoinOf(viewer, current);
+    try {
+        const decision = await decideDupHintMatch(db, { ...viewer, current }, { id: match.id, addedBy: row.addedBy });
+        if (decision.action !== 'continue') {
+            return {
+                action: decision.action, alreadyPending: decision.alreadyPending, ...cantJoin,
+                ...(decision.action === 'flag' && decision.saidNo ? { saidNo: true } : {}),
+            };
+        }
+        const plan = dupHintMergePlan({
+            actor: viewer.actor, isAdmin: viewer.isAdmin,
+            currentTeamOwned: viewer.currentTeamOwned, matchTeamOwned: decision.matchTeamOwned,
+            currentAddedBy: current.addedBy, matchAddedBy: row.addedBy,
+        });
+        const [preview, toldNames] = await Promise.all([
+            continuePreview(db, current, { id: match.id, row }, typedEntry),
+            toldDisplayNames(plan.told, mctx),
+        ]);
+        return { action: 'continue', alreadyPending: decision.alreadyPending, toldNames, preview };
+    } catch (e) {
+        logger.warn('getDuplicateHintMatches: window decision D1 fallback hit, offering the flag', { ...mctx, error: e instanceof Error ? e.message : String(e) });
+        return { action: 'flag', alreadyPending: false, ...cantJoin };
+    }
+}
+
+/** Why the profile being edited can't be joined by this viewer (the 'flag' window's first line). */
+function cantJoinOf(viewer: DupHintViewer, current: DupHintProfileRow): Pick<DupHintMatch, 'cantJoin'> {
+    if (viewer.isAdmin || viewer.currentTeamOwned) return {};
+    return { cantJoin: realOwner(current.addedBy) ? 'other_owner' : 'no_owner' };
+}
+
+/**
+ * What «Sí, continuar» adds to the match: the edited profile's contacts (and
+ * the value being typed) that the match doesn't have yet — compared with the
+ * match's stored contacts (newContactsForProfile, the merge's own dedupe
+ * rule), so the list is what the merge will really add. Only the edited
+ * profile's own values (which this viewer's team loaded, or an admin sees)
+ * and the typed one ever come back — never one of the match's: at most it
+ * tells that the match already has one of them, which the merge shows anyway.
+ * Plus its record count, and the match's rating after both profiles' records join.
+ */
+async function continuePreview(
+    db: Db,
+    current: DupHintProfileRow,
+    match: { id: string; row: { contactEntries: string | null; contactInfo: string | null } },
+    typedEntry: ContactEntry,
+): Promise<NonNullable<DupHintMatch['preview']>> {
+    const parsed = deserializeContactEntries(current.contactEntries);
+    const own = (parsed.length > 0 ? parsed : parseBlobToContactEntries(current.contactInfo))
+        .filter(e => !e.masked && e.type !== 'alias' && e.value?.trim());
+    const [currentRatings, matchRatings] = await Promise.all([ratingsOf(db, current.id), ratingsOf(db, match.id)]);
+    // The typed value only when the match doesn't already have it as the matcher
+    // compares phones (country / area prefixes) — exactly when «Sí, continuar» saves it.
+    const matchParsed = deserializeContactEntries(match.row.contactEntries);
+    const matchEntries = matchParsed.length > 0 ? matchParsed : parseBlobToContactEntries(match.row.contactInfo);
+    const typed = isDupHintType(typedEntry.type) && typedIsNewFor(matchEntries, typedEntry.type, typedEntry.value, typedEntry.platform) ? [typedEntry] : [];
+    return {
+        // Only what the preview shows: never who added each one.
+        newContacts: newContactsForProfile([...own, ...typed], match.row)
+            .map(e => ({ id: e.id, type: e.type, value: e.value, ...(e.platform ? { platform: e.platform } : {}) })),
+        records: currentRatings.length,
+        ratingAfter: ratingAfterMerge(matchRatings, currentRatings),
+        currentName: current.name ?? '',
+    };
+}
+
+/** Display names (never emails) of the people a merge would tell. */
+async function toldDisplayNames(emails: readonly string[], ctx: Record<string, unknown>): Promise<string[]> {
+    if (emails.length === 0) return [];
+    const { resolveDisplayNames } = await import('./notifications');
+    const names = await resolveDisplayNames([...emails]).catch((e: unknown) => {
+        logger.warn('getDuplicateHintMatches: told names lookup failed, naming the handles', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+        return new Map<string, string>();
+    });
+    return emails.map(e => names.get(e.trim().toLowerCase()) ?? e.split('@')[0]);
 }
 
 // ─────────────────────────── Gift recipient ───────────────────────────
