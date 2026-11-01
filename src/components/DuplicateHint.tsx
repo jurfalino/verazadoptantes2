@@ -186,7 +186,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
         </Button>
     );
     // «Abrir perfil ↗»: the same new-tab link on every surface and for every role (point B, Jon 2026-11-01).
-    const openLink = <OpenProfileLink onClick={onOpenFull} disabled={disabled} testId="dup-hint-open-full" className="self-center" />;
+    const openLink = <OpenProfileLink onClick={onOpenFull} disabled={disabled} loading={busy === 'open'} testId="dup-hint-open-full" className="self-center" />;
     return (
         <div className="space-y-3 min-w-0" data-testid="dup-hint-profile" data-action={action ?? 'none'}>
             <MatchCardHeader
@@ -250,7 +250,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
                         )}
                         {notThis}
                         {/* The same «Abrir perfil ↗» the owner sees, not a big button (point B). */}
-                        <OpenProfileLink onClick={onOpenFull} disabled={disabled} testId="dup-hint-open-to-add" className="self-center" />
+                        <OpenProfileLink onClick={onOpenFull} disabled={disabled} loading={busy === 'open'} testId="dup-hint-open-to-add" className="self-center" />
                     </>
                 )}
                 {action === 'review_admins' && (

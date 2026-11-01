@@ -12,11 +12,11 @@ import { dismissCountryBanner } from './helpers';
  *     owner's profile no longer merges — «Pedir revisión a un administrador»
  *     files a dispute; the admins see ONE row for the pair («Disputa», both
  *     positions) and decline it; it stays gone after a reload.
- *   - D50 + D52: a rescuer combines in «Pendientes» keeping the other's
- *     profile → the row becomes «✓ Combinados … · Ver perfil» until the page
+ *   - D50 + D52: a rescuer joins them in «Pendientes» keeping the other's
+ *     profile → the row becomes «✓ Unidos … · Abrir perfil ↗» until the page
  *     reloads; the kept profile's owner opens the notice
  *     (`/adopter/{survivor}?dispute={auditId}`), says «No es la misma
- *     persona»; an admin «Deshacer combinación» → both profiles live again.
+ *     persona»; an admin «Deshacer unión» → both profiles live again.
  *     (The merge's own actor may not dispute it — decideMergeDisputeRaise —
  *     so the one who raises is the other side: here the survivor's owner, who
  *     is the one notified.)
@@ -131,7 +131,7 @@ test.describe('One shared reality (D48–D52)', () => {
         );
 
         try {
-            // ── The requester keeps hers → «Pedir combinar» → the owner declines.
+            // ── The requester keeps hers → «Pedir unir» → the owner declines.
             const rp = requester.page;
             let row = await openRow(rp, NAME);
             await row.getByTestId('dedup-keep-new').click();
@@ -195,11 +195,11 @@ test.describe('One shared reality (D48–D52)', () => {
         }
     });
 
-    test('combined in «Pendientes»: «✓ Combinados · Ver perfil»; the kept profile\'s owner disputes it; an admin undoes it', async ({ page, browser }) => {
+    test('joined in «Pendientes»: «✓ Unidos · Abrir perfil ↗»; the kept profile\'s owner disputes it; an admin undoes it', async ({ page, browser }) => {
         test.setTimeout(300_000);
         const stamp = Date.now();
         const tail = String(stamp).slice(-3);
-        const actor = await rescuer(browser, 'm1', stamp);    // combines, keeping the other's profile
+        const actor = await rescuer(browser, 'm1', stamp);    // joins them, keeping the other's profile
         const keeper = await rescuer(browser, 'm2', stamp);   // owns the kept profile: notified, disputes
         const THEIRS = `test-onereal-fixture-mrg-kept-${stamp}`;     // older → kept
         const MINE = `test-onereal-fixture-mrg-absorbed-${stamp}`;   // newer → absorbed
@@ -210,7 +210,7 @@ test.describe('One shared reality (D48–D52)', () => {
         seedCandidate(CAND, MINE, THEIRS);
 
         try {
-            // ── D52: combining keeps the row, as its confirmation, with «Ver perfil».
+            // ── D52: joining keeps the row, as its confirmation, with «Abrir perfil ↗».
             const ap = actor.page;
             const row = await openRow(ap, NAME);
             await expect(row.getByTestId('dedup-keep-existing')).toHaveAttribute('aria-checked', 'true');
@@ -253,7 +253,7 @@ test.describe('One shared reality (D48–D52)', () => {
             expect(disputes()[0]).toMatchObject({ survivor_id: THEIRS, absorbed_id: MINE, raised_by: keeper.email, status: 'open' });
             expect(isLive(MINE), 'nothing changes until an admin decides').toBe(false);
 
-            // ── The admins: «Disputas» → «Deshacer combinación».
+            // ── The admins: «Disputas» → «Deshacer unión».
             await page.goto('/admin/merge-requests');
             await dismissCountryBanner(page);
             const disputeRow = page.getByTestId('merge-dispute-row').filter({ hasText: NAME });

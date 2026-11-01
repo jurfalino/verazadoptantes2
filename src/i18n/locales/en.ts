@@ -3264,7 +3264,6 @@ export const en = {
         prep_lead: 'Probably this person',
         prep_lead_selected: 'Marked as likely',
         prep_start: 'Start',
-        view_profile: 'View profile',
         adoptions_count: '{n} adoptions',
         technique_title: 'How to interview',
         technique_dont_show: 'Don\'t show again',

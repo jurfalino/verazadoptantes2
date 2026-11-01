@@ -3269,7 +3269,6 @@ export const pt = {
         prep_lead: 'Provavelmente é esta pessoa',
         prep_lead_selected: 'Marcado como provável',
         prep_start: 'Começar',
-        view_profile: 'Ver perfil',
         adoptions_count: '{n} adoções',
         technique_title: 'Como entrevistar',
         technique_dont_show: 'Não mostrar novamente',

@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES, SCAN_MAX_BATCHES, SCAN_PAGE_LIMIT } from '@/domain/scanResilience';
 
 /**
@@ -134,6 +136,15 @@ export default function DuplicatesPanel() {
     const mergeErrorText = (e: string | null | undefined) =>
         e === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
             : (e ?? '');
+    /**
+     * A join that failed, said in Spanish with «unir» (review M1) and an error id the admin can quote —
+     * reported through resolveErrorId (the endpoint answers no id of its own).
+     */
+    const mergeFailedText = (e: string | null | undefined, source: string) => {
+        const errorId = resolveErrorId(new Error(`admin merge failed: ${e ?? 'unknown'}`), source);
+        const why = mergeErrorText(e);
+        return `No se pudieron unir los perfiles${why ? `: ${why}` : '.'} (error ${errorId})`;
+    };
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
     const [candidates, setCandidates] = useState<DuplicateCandidate[]>([]);
     const [counts, setCounts] = useState<Counts>({ pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
@@ -455,7 +466,7 @@ export default function DuplicatesPanel() {
             clearSelection();
             fetchData();
         } else {
-            alert(`Merge failed: ${mergeErrorText(data.error)}`);
+            alert(mergeFailedText(data.error ?? `HTTP ${res.status}`, 'DuplicatesPanel.handleMerge'));
         }
     }
 
@@ -487,7 +498,7 @@ export default function DuplicatesPanel() {
         const okResults = allResults.filter(r => r.success);
         const failed = allResults.filter(r => !r.success);
         if (transportError && okResults.length === 0) {
-            alert(`Merge failed: ${mergeErrorText(transportError)}`);
+            alert(mergeFailedText(transportError, 'DuplicatesPanel.handleMassMerge'));
             return;
         }
         if (failed.length > 0 || transportError) {
@@ -617,13 +628,8 @@ export default function DuplicatesPanel() {
                     <span className="flex items-center gap-3 flex-wrap">
                         ✅ {lastMerge.label}.
                         {lastMerge.primaryIds.length === 1 && (
-                            <a
-                                href={`/adopter/${lastMerge.primaryIds[0]}`}
-                                target="_blank"
-                                className="font-semibold underline hover:text-teal-900"
-                            >
-                                Abrir el perfil resultante →
-                            </a>
+                            // «Abrir perfil ↗», the one new-tab profile link (point B, review M1).
+                            <OpenProfileLink href={`/adopter/${encodeURIComponent(lastMerge.primaryIds[0])}`} testId="dup-merge-open-result" />
                         )}
                     </span>
                     <div className="flex items-center gap-2">
@@ -1070,7 +1076,7 @@ function CandidateCard({
                             <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={name1} /></p>
                             {createdBy1 && <p className="text-xs text-stone-600 mt-0.5 break-words" data-testid="dup-created-by">Cargado por <span className="font-medium">{createdBy1}</span></p>}
                             {contact1 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact1}</p>}
-                            <a href={`/adopter/${id1}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
+                            <a href={`/adopter/${id1}`} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                 View →
                             </a>
                         </div>
@@ -1079,7 +1085,7 @@ function CandidateCard({
                             {createdBy2 && <p className="text-xs text-stone-600 mt-0.5 break-words" data-testid="dup-created-by">Cargado por <span className="font-medium">{createdBy2}</span></p>}
                             {contact2 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact2}</p>}
                             {id2 && (
-                                <a href={`/adopter/${id2}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
+                                <a href={`/adopter/${id2}`} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                     View →
                                 </a>
                             )}

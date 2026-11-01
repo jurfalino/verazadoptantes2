@@ -6,10 +6,10 @@ import { dismissCountryBanner } from './helpers';
  * Merge requests end to end (layout D, spec 2026-10-25-pendientes-d):
  *
  *   - #pendientes (the request notifications' link) opens the section; an
- *     admin's «Combinar perfiles» on another rescuer's newer profile merges it
+ *     admin's «Unir perfiles» on another rescuer's newer profile merges it
  *     straight away — admins choose freely, no request (D24) — and the
  *     absorbed profile's old link lands on the survivor with a note (D32);
- *   - a rescuer's «Pedir combinar» files a request with the owner (a
+ *   - a rescuer's «Pedir unir» files a request with the owner (a
  *     `merge_request` notification) → she cancels it → asks again → an admin
  *     approves it on /admin/merge-requests → merged.
  *
@@ -93,7 +93,7 @@ async function openPendingCard(page: Page, name: string) {
     return card;
 }
 
-test('#pendientes opens the section; an admin\'s «Combinar perfiles» merges another rescuer\'s profile at once', async ({ page }) => {
+test('#pendientes opens the section; an admin\'s «Unir perfiles» merges another rescuer\'s profile at once', async ({ page }) => {
     test.setTimeout(180_000);
     const stamp = Date.now();
     const A = `test-mergereq-fixture-a-${stamp}`; // the admin's, older → survives

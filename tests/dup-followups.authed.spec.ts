@@ -6,7 +6,7 @@ import { cleanupProfiles, createProfileViaApi, execD1 } from './householdFixture
  * Three duplicate fixes (Jon, 2026-10-31), on his case: «Jonathan Urfalino»
  * (loaded first) and «Jonatan Urfalino» share a phone.
  *
- *   1. Pendientes and the admin «Fusionar perfiles» window propose keeping the
+ *   1. Pendientes and the admin «Unir perfiles» window propose keeping the
  *      same profile: the one loaded first (Jonathan).
  *   2. «⋯ Reportar duplicado» on Jonatan never lists Jonatan himself.
  *   3. A spreadsheet row identical to Jonathan also says «También coincide con

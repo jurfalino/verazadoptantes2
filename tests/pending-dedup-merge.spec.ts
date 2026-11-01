@@ -3,10 +3,10 @@ import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
 
 /**
- * «Combinar perfiles» on /my-adopters goes through mergePendingDedupPair: the
+ * «Unir perfiles» on /my-adopters goes through mergePendingDedupPair: the
  * server takes the actor from the session and only merges a pair the feed
  * shows the caller (they created one side). When the absorbed side is someone
- * else's, the button reads «Pedir combinar» and the click files a merge
+ * else's, the button reads «Pedir unir» and the click files a merge
  * request to its owner instead. Before, the page called the bare
  * mergeAdopters action with ids and an actor email of its own choosing — an
  * endpoint anyone could hit for any two profiles.

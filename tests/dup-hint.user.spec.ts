@@ -18,7 +18,7 @@ import { ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, 
  *      else loaded the profile) flags the pair (adopter_flags, reason
  *      duplicate) and its row reads «Marcado».
  *
- * Then case 1, on a profile this rescuer loaded: «Continuar con este perfil»
+ * Then case 1, on a profile this rescuer loaded: «Unir con este perfil»
  * → the confirmation (absorb mode: «deja de existir», the rating after, who is told) → «Sí, unirlos» lands
  * on the matched profile with «Listo», once; the edited profile is absorbed
  * and the typed phone is on the match.
@@ -138,7 +138,7 @@ const MINE_NAME = `Duphint Maria ${stamp}`;
 const MATCH_NAME = `Duphint Jonatan ${stamp}`;
 let MATCH_ID = '';
 
-test.describe.serial('composer duplicate hint — «Continuar con este perfil» on my own profile (case 1)', () => {
+test.describe.serial('composer duplicate hint — «Unir con este perfil» on my own profile (case 1)', () => {
     test.beforeAll(async ({ baseURL }) => {
         const adminCtx = await playwrightRequest.newContext({ baseURL, storageState: '.auth/admin.json' });
         MATCH_ID = await createProfileViaApi(adminCtx, { name: MATCH_NAME, phone: `+54 9 ${PHONE_C1}` });
