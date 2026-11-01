@@ -494,6 +494,9 @@ export const pt = {
         dedup_dismiss_failed: 'Não foi possível descartar a sugestão. Tente novamente.',
         load_duplicates_failed: 'Não foi possível carregar os possíveis duplicados. Recarregue a página.',
         merge_failed: 'Não foi possível unir os perfis. Tente novamente.',
+        /** Admin «Duplicados» (DuplicatesPanel): a join that failed, with the id to quote. */
+        merge_failed_id: 'Não foi possível unir os perfis (erro {id}).',
+        merge_failed_why_id: 'Não foi possível unir os perfis: {why} (erro {id})',
         merge_other_owner: 'Este perfil foi cadastrado por outro resgatista: não pode ser absorvido pelo seu. Quem o cadastrou, ou um administrador, pode uni-los.',
         merge_flag_cross_owner: 'Este par foi marcado manualmente entre perfis de resgatistas diferentes: um administrador vai revisá-lo.',
         dismiss_failed: 'Não foi possível descartar a sugestão. Tente novamente.',

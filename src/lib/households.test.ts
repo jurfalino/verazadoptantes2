@@ -608,15 +608,28 @@ describe('review fix 2 — the chips answer for every housemate, whatever the li
     });
 
     it('too many housemates who might have alerts: reads stop at the cap, logged with the card\'s context', async () => {
+        // Re-review M-c: every one is screened in (two adoptions, threshold 2) but NONE has an alert (a year
+        // apart, 90-day period), so the reads never stop early on a found alert — only the cap stops them.
         const n = MAX_CARD_ALERT_READS + 2;
         const { ids } = await bigHome(n);
-        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '1')`);
-        // An adoption each: every one of them is screened in and must be read.
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90')`);
         const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, 'X', ?)`);
-        const adopt = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type) VALUES (?, ?, ?, 'adoption')`);
-        ids.forEach((id, i) => { animal.run(`anx${i}`, OWNER); adopt.run(`pa${i}`, `anx${i}`, id); });
-        await householdLinesFor(db(), OWNER, ['pedro']);
-        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alert read cap hit'), expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, cap: MAX_CARD_ALERT_READS }));
+        const adopt = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES (?, ?, ?, 'adoption', ?)`);
+        ids.forEach((id, i) => {
+            for (const k of [0, 1]) { animal.run(`anx${i}-${k}`, OWNER); adopt.run(`pa${i}-${k}`, `anx${i}-${k}`, id, 1_780_000_000 + k * 365 * 86_400); }
+        });
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const spy = vi.spyOn(handle, 'select');
+        try {
+            // listCards: 0 — no list read, so every alert read counted is a chip read.
+            const { pedro } = await householdLinesFor(db(), OWNER, ['pedro'], { listCards: 0 });
+            expect(pedro.alert).toEqual({ lowRating: null, hasAlerts: false });
+            const alertReads = spy.mock.calls.filter(([cols]) => !!cols && 'recordType' in (cols as object) && 'addedBy' in (cols as object) && Object.keys(cols as object).length === 3);
+            expect(alertReads).toHaveLength(MAX_CARD_ALERT_READS);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alert read cap hit'), expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, candidates: n, cap: MAX_CARD_ALERT_READS }));
     });
 });
 

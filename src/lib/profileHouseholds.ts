@@ -14,7 +14,7 @@
  */
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { getHouseholdsFor, periodAlertReader, type HouseholdView } from '@/lib/households';
+import { getHouseholdsFor, MAX_CARD_ALERT_READS, periodAlertReader, type HouseholdView } from '@/lib/households';
 import { EMPTY_PROFILE_HOUSEHOLDS, NO_HOUSEMATE_ALERT, type HousemateAlertSummary, type ProfileHouseholds } from '@/domain/profileHouseholds';
 import { housemateAlertSummary, type HousemateAlertLine } from '@/domain/households';
 import { mayHavePeriodAlerts, NO_PERIOD_ALERTS, type PeriodAlerts } from '@/domain/periodAlerts';
@@ -32,8 +32,9 @@ const alertLines = (views: HouseholdView[]): HousemateAlertLine[] =>
 /**
  * The members' own period alerts, read only where they can exist (their
  * activity counts are already in the view: mayHavePeriodAlerts), once per
- * person however many homes they share. Throws only if the config read does
- * (each person's read logs its own fallback).
+ * person however many homes they share, at most MAX_CARD_ALERT_READS people
+ * (logged when cut). Throws only if the config read does (each person's read
+ * logs its own fallback).
  */
 async function withMemberAlerts(db: Db, views: HouseholdView[], ctx: Record<string, unknown>): Promise<HouseholdView[]> {
     const reader = periodAlertReader(db, 'readProfileHouseholds');
@@ -45,8 +46,13 @@ async function withMemberAlerts(db: Db, views: HouseholdView[], ctx: Record<stri
     const maybe = members.filter(m => { const c = counts(m); return c.adoptions > 0 || c.requests > 0; });
     if (maybe.length === 0) return views;
     const config = await reader.config();
-    const ids = [...new Set(maybe.filter(m => mayHavePeriodAlerts(counts(m), config)).map(m => m.profileId))];
-    if (ids.length === 0) return views;
+    const candidates = [...new Set(maybe.filter(m => mayHavePeriodAlerts(counts(m), config)).map(m => m.profileId))];
+    if (candidates.length === 0) return views;
+    // Re-review M-e: bounded like a card's own reads (households × members could be hundreds of people).
+    if (candidates.length > MAX_CARD_ALERT_READS) {
+        logger.warn('profileHouseholds: member alert read cap hit, later members show no alerts', { ...ctx, candidates: candidates.length, cap: MAX_CARD_ALERT_READS });
+    }
+    const ids = candidates.slice(0, MAX_CARD_ALERT_READS);
     const read = new Map<string, PeriodAlerts>(await Promise.all(ids.map(async id => [id, await reader.alertsOf(id, ctx)] as const)));
     return views.map(v => ({ ...v, members: v.members.map(m => (read.has(m.profileId) ? { ...m, alerts: read.get(m.profileId) } : m)) }));
 }

@@ -41,7 +41,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { readProfileHouseholds } from './profileHouseholds';
-import { addMembership, createHousehold, ensureHousehold } from './households';
+import { addMembership, createHousehold, ensureHousehold, MAX_CARD_ALERT_READS } from './households';
 import { logger } from './logger';
 import { NO_HOUSEMATE_ALERT } from '@/domain/profileHouseholds';
 
@@ -149,6 +149,39 @@ describe('readProfileHouseholds().housemateAlert — the header chips, from the 
             expect(r.views[0].members.map(m => m.profileId).sort()).toEqual(['bad', 'marta']);
             expect(r.housemateAlert).toEqual({ lowRating: 1, hasAlerts: false });
             expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alerts read failed'), expect.objectContaining({ adopterId: 'pedro', viewer: MATE, profileId: 'marta' }));
+        } finally {
+            spy.mockRestore();
+        }
+    });
+});
+
+describe('re-review M-e — the member alert reads are capped', () => {
+    it('more members who might have alerts than MAX_CARD_ALERT_READS: reads stop at the cap, logged with the page\'s context', async () => {
+        // Two homes (a home shows at most 30 people), MAX_CARD_ALERT_READS + 5 members in all, each with two
+        // adoptions a year apart: screened in (threshold 2), but none has an alert (90-day period).
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90')`);
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 1000, 1000)`);
+        const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, 'X', ?)`);
+        const adopt = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES (?, ?, ?, 'adoption', ?)`);
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        await createHousehold(db(), OWNER, 'hh-second');
+        await addMembership(db(), { householdId: 'hh-second', adopterId: 'pedro', addedBy: OWNER });
+        const n = MAX_CARD_ALERT_READS + 5;
+        for (let i = 0; i < n; i++) {
+            const id = `m${i}`;
+            insert.run(id, `Member ${i}`, OWNER);
+            for (const k of [0, 1]) { animal.run(`a${i}-${k}`, OWNER); adopt.run(`p${i}-${k}`, `a${i}-${k}`, id, T0 + k * 365 * DAY); }
+            await addMembership(db(), { householdId: i < 20 ? hh : 'hh-second', adopterId: id, addedBy: OWNER });
+        }
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const spy = vi.spyOn(handle, 'select');
+        try {
+            const r = await read(MATE, 'pedro');
+            expect(r.views.flatMap(v => v.members)).toHaveLength(n);
+            expect(r.housemateAlert).toEqual(NO_HOUSEMATE_ALERT);
+            const alertReads = spy.mock.calls.filter(([cols]) => !!cols && 'recordType' in (cols as object) && 'addedBy' in (cols as object) && Object.keys(cols as object).length === 3);
+            expect(alertReads).toHaveLength(MAX_CARD_ALERT_READS);
+            expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('member alert read cap hit'), expect.objectContaining({ adopterId: 'pedro', viewer: MATE, candidates: n, cap: MAX_CARD_ALERT_READS }));
         } finally {
             spy.mockRestore();
         }

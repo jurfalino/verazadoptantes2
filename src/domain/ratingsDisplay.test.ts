@@ -17,18 +17,18 @@ describe('getRatingDisplayLevel', () => {
 
 describe('isLowRating (the 1★/2★ pills: «Peligroso», «Malo»)', () => {
     it('follows the pill\'s own bucket', () => {
-        for (const r of [1, 1.4, 2, 2.44, 2.449]) expect(isLowRating(r), String(r)).toBe(true);
-        for (const r of [2.45, 2.49, 2.5, 3, 4, 5]) expect(isLowRating(r), String(r)).toBe(false);
-        for (const r of [1, 2.44, 2.5]) expect(isLowRating(r)).toBe(['dangerous', 'poor'].includes(getRatingLabelKey(r)));
+        for (const r of [1, 1.4, 2, 2.49]) expect(isLowRating(r), String(r)).toBe(true);
+        for (const r of [2.5, 3, 4, 5]) expect(isLowRating(r), String(r)).toBe(false);
+        for (const r of [1, 2.44, 2.45, 2.49, 2.5]) expect(isLowRating(r)).toBe(['dangerous', 'poor'].includes(getRatingLabelKey(r)));
     });
-    it('review M6: decided on the number as written (formatRating), so the chip never shows a low «2.5»', () => {
-        // 2.45 is written «2.5»: «Regular», not low (it used to read «2.5» and count as low).
-        expect(formatRating(2.45)).toBe('2.5');
-        expect(isLowRating(2.45)).toBe(false);
-        // 2.449 is «2.4»: low.
-        expect(formatRating(2.449)).toBe('2.4');
-        expect(isLowRating(2.449)).toBe(true);
-        // 1.45 is written «1.4» and stays low; the 1★ ban rule (raw average) is untouched.
+    it('re-review M-a: the chip follows the badge\'s word, and writes the badge\'s own number', () => {
+        // 2.45 and 2.49 read «2.5 · Malo» on the badge: «Malo», so the housemate chip shows («… 2.5»).
+        for (const r of [2.45, 2.49]) {
+            expect(getRatingLabelKey(r)).toBe('poor');
+            expect(isLowRating(r)).toBe(true);
+            expect(formatRating(r)).toBe('2.5');
+        }
+        // 1.45 is «1.4 · Peligroso», low, and still bans (the raw average, untouched).
         expect(formatRating(1.45)).toBe('1.4');
         expect(isLowRating(1.45)).toBe(true);
         expect(ratingBansAdopting(1.45)).toBe(true);

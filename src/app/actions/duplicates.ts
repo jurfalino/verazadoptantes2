@@ -1003,6 +1003,9 @@ type FeedCandidate = {
     rebuilt?: boolean;
 };
 
+/** Pairs per «Pendientes de revisar» page at most, whatever the browser asks for (re-review M-h). */
+const MAX_PENDING_PAGE_SIZE = 50;
+
 /**
  * Pending-dedup feed for the current user's /my-adopters section.
  * Returns a page of pending candidate pairs where the current rescuer is the
@@ -1031,6 +1034,10 @@ export async function getPendingDuplicatesForUser(
     focusPair?: string,
 ): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string }> {
     const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0 };
+    // Re-review M-h: both come from the browser, and the fan-out below is bounded by the page size — so
+    // the server bounds it (1–MAX_PENDING_PAGE_SIZE; anything unreadable is the default page).
+    pageSize = Math.min(MAX_PENDING_PAGE_SIZE, Math.max(1, Math.floor(Number(pageSize)) || 10));
+    page = Math.max(1, Math.floor(Number(page)) || 1);
     let actorEmail: string | null = null;
     try {
         const { getUser } = await import('./_db');

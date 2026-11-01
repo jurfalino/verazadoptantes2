@@ -495,6 +495,9 @@ export const en = {
         dedup_dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",
         load_duplicates_failed: "We couldn't load possible duplicates. Reload the page.",
         merge_failed: "The profiles couldn't be joined. Please try again.",
+        /** Admin «Duplicados» (DuplicatesPanel): a join that failed, with the id to quote. */
+        merge_failed_id: 'The profiles could not be joined (error {id}).',
+        merge_failed_why_id: 'The profiles could not be joined: {why} (error {id})',
         merge_other_owner: "This profile was created by another rescuer, so it can't be absorbed into yours. Whoever created it, or an admin, can join them.",
         merge_flag_cross_owner: 'This pair was flagged by hand across different rescuers\' profiles: an admin reviews it.',
         dismiss_failed: "The suggestion couldn't be dismissed. Please try again.",

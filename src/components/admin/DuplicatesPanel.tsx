@@ -137,13 +137,15 @@ export default function DuplicatesPanel() {
         e === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
             : (e ?? '');
     /**
-     * A join that failed, said in Spanish with «unir» (review M1) and an error id the admin can quote —
+     * A join that failed, said with «unir» (review M1; es/en/pt keys, re-review M-f) and an error id the admin can quote —
      * reported through resolveErrorId (the endpoint answers no id of its own).
      */
     const mergeFailedText = (e: string | null | undefined, source: string) => {
         const errorId = resolveErrorId(new Error(`admin merge failed: ${e ?? 'unknown'}`), source);
         const why = mergeErrorText(e);
-        return `No se pudieron unir los perfiles${why ? `: ${why}` : '.'} (error ${errorId})`;
+        return why
+            ? t('errors.merge_failed_why_id').replace('{why}', why).replace('{id}', errorId)
+            : t('errors.merge_failed_id').replace('{id}', errorId);
     };
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
     const [candidates, setCandidates] = useState<DuplicateCandidate[]>([]);

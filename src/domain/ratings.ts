@@ -37,19 +37,19 @@ export function formatRating(rating: number): string {
 }
 
 /**
- * A low rating: the 1★ / 2★ buckets («Peligroso», «Malo») of the rating AS
- * WRITTEN (formatRating, one decimal) — review M6: the housemate chip writes
- * the rating with formatRating, so deciding on that same number means the chip
- * never shows a «2.5» it counted as low. 2.44 is «2.4» and low; 2.45 is «2.5»,
- * «Regular», not low. Unrated (null, 0, outside 1–5) is never low: ratings are
- * never inferred. (RatingBadge's word and colour, and the 1★ ban rule, still
- * round the raw average.)
+ * A low rating: one whose pill (RatingBadge) reads «Peligroso» or «Malo» — the
+ * 1★ and 2★ buckets, by RatingBadge's own rounding of the raw average
+ * (getRatingLabelKey: 2.49 is «Malo», 2.5 is «Regular»). Re-review M-a: the
+ * housemate chip decides on the badge's WORD, so a housemate whose badge reads
+ * «Malo» always raises it — even when the number (formatRating, the badge's own
+ * number) reads «2.5». Unrated (null, 0, outside 1–5) is never low: ratings are
+ * never inferred.
  */
 export function isLowRating(rating: number | null | undefined): boolean {
     if (rating == null) return false;
     const n = Number(rating);
     if (Number.isNaN(n) || n < 1 || n > 5) return false;
-    const key = getRatingLabelKey(Number(formatRating(n)));
+    const key = getRatingLabelKey(n);
     return key === RATING_LABEL_KEYS[1] || key === RATING_LABEL_KEYS[2];
 }
 

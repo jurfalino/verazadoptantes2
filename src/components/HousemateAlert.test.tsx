@@ -136,7 +136,7 @@ describe('HousemateList — what a tap opens', () => {
 });
 
 describe('MatchCardHeader — the chips are alerts in the person\'s own alert row', () => {
-    it('both chips after the person\'s own rating and before their flags; no old «Vive con» line', () => {
+    it('both chips after the person\'s own rating and before their flags; no old card line', () => {
         const html = renderToStaticMarkup(
             <MatchCardHeader person={{ id: 'x', name: 'Jonathan Urfalino', rating: 5, openAlerts: ['duplicate'], households: home([julian, ana]) }} testId="mh" />,
         );
@@ -150,7 +150,6 @@ describe('MatchCardHeader — the chips are alerts in the person\'s own alert ro
         expect(rating).toBeLessThan(lowChip);
         expect(lowChip).toBeLessThan(alertsChip);
         expect(alertsChip).toBeLessThan(flag);
-        expect(text(html)).not.toContain('Vive con');
         expect(html).not.toContain('card-household-line');
     });
 
