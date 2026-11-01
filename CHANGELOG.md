@@ -2,6 +2,40 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.7] - 2026-10-31
+
+### Changed — «Ya está en otro perfil» (typing a contact that another profile already has)
+- A compact box under the field: each match's name and rating, and «Ver perfil». «Ver perfil» opens a window over
+  the page, so what you were typing stays. The box no longer shows the person's home.
+- In the window, what you can do depends on who loaded the profile you are editing:
+  - You, your team or an admin: «Continuar con este perfil». The profile you were editing joins the match, you land on
+    the match with «Listo», and the number you typed is kept on it.
+  - Someone else: «Marcar como posible duplicado» (the people who loaded each profile and the admins are told),
+    «Abrir perfil para agregar datos» or «No es esta persona».
+  - Already marked, already said to be two people, or recorded as living together: the window says so instead of
+    asking again. Where someone already said no, your team can ask the admins to review it.
+- Every duplicate report (this window and «⋯ Reportar duplicado») now also tells the people who loaded the profiles,
+  not only the admins.
+
+### Changed — home on person cards
+- Cards show the home folded: «Vive con N personas» with the lowest rating or alert, opened with a tap. It shows only
+  when someone in the home has a low rating or an alert, and not at all while households are switched off.
+- Copy: «Agregar alguien al hogar», «N datos de contacto».
+
+### Changed — «⋯ Reportar inexactitud»
+- Reads «La información es incorrecta» and is offered only to people who can't edit the profile; guests are asked to
+  sign in. The form no longer asks for name or email: we know who you are.
+- Whoever loaded the profile, their team and the admins are told. A repeat report from the same person tells no one
+  again.
+
+### Changed — age
+- Adding or changing a person's age, and the «Es menor de edad» box, are removed until there is a better design.
+  Ages already saved still show and still go up each year; the applicants' form still asks for ages.
+
+### Fixed
+- The same phone written two ways («+54 9 11 …» and «11 …») is kept once when profiles are joined or a contact is
+  added, instead of twice.
+
 ## [2.58.6] - 2026-10-28
 
 ### Changed — profile duplicate banner
