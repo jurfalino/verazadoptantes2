@@ -671,7 +671,8 @@ export default function SpreadsheetImportWizard() {
         }
 
         // Phase 1b — «también coincide» for the identical rows, one lookup per distinct
-        // fingerprint, in batches of 50 (the action's cap).
+        // fingerprint. The action checks what fits its query budget and hands the rest
+        // back as `deferred`, which goes into the next call.
         const otherByFp: Record<string, DuplicateMatch[]> = {};
         const identical = new Map<string, IdenticalRowIdentifiers>();
         for (const t of targets) {
@@ -681,18 +682,29 @@ export default function SpreadsheetImportWizard() {
             const g = splitGroupedContacts(t.eff);
             identical.set(fp, { key: fp, identicalId: hit.adopterId, phones: g.phones, emails: g.emails, ids: g.ids });
         }
-        const identicalRows = [...identical.values()];
-        for (let i = 0; i < identicalRows.length; i += 50) {
-            const batch = identicalRows.slice(i, i + 50);
+        let pending = [...identical.values()];
+        let unchecked = 0;
+        while (pending.length > 0) {
+            const batch = pending.slice(0, 50);
             const res = await findIdenticalRowsOtherMatches(batch).catch((e: unknown) => ({ ok: false as const, errorId: resolveErrorId(e, 'SpreadsheetImportWizard.otherMatches') }));
             if (!live()) return;
-            if (res.ok) {
-                Object.assign(otherByFp, res.others);
-                if (res.failed.length) void reportClientError({ message: 'sheet import: other matches of identical rows not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { rows: res.failed.length } });
-            } else {
+            if (!res.ok) {
                 // The identical matches stand; only their «también coincide» lists are missing.
+                unchecked += batch.length;
+                pending = pending.slice(batch.length);
                 void reportClientError({ message: 'sheet import: other matches of identical rows not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { rows: batch.length, errorId: res.errorId } });
+                continue;
             }
+            Object.assign(otherByFp, res.others);
+            unchecked += res.failed.length;
+            const deferred = new Set(res.deferred);
+            // Always progresses: the action checks at least one row per call.
+            pending = [...batch.filter(r => deferred.has(r.key)), ...pending.slice(batch.length)];
+            if (deferred.size === batch.length) { unchecked += pending.length; break; }
+        }
+        if (unchecked > 0) {
+            setDetectionDegraded(true); // surfaced in the UI: a match list may be missing
+            void reportClientError({ message: 'sheet import: other matches of identical rows not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { rows: unchecked } });
         }
 
         let done = 0, cursor = 0;
@@ -720,6 +732,7 @@ export default function SpreadsheetImportWizard() {
                 // (intermittent "Failed query"). A couple of spaced retries clear
                 // the transient ones so the row isn't dropped from comparison.
                 let dup: DuplicateMatch[] | null = null;
+                let lastError: unknown = null;
                 for (let attempt = 0; attempt < 3 && dup === null; attempt++) {
                     if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
                     try {
@@ -731,8 +744,8 @@ export default function SpreadsheetImportWizard() {
                             { mode: 'duplicate', limit: MAX_ROW_MATCHES, minRelevance: 5 },
                         );
                         dup = (res.results as DuplicateMatch[]) ?? [];
-                    } catch {
-                        // Fall through to the next attempt; a row never compared is marked failed below.
+                    } catch (e) {
+                        lastError = e; // fall through to the next attempt
                     }
                 }
                 if (!live()) return;
@@ -749,6 +762,7 @@ export default function SpreadsheetImportWizard() {
                     actions[index] = top ? (isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'review') : 'create';
                 }
                 if (!compared) {
+                    void reportClientError({ message: 'sheet import: row not compared after 3 attempts', source: 'SpreadsheetImportWizard', level: 'warn', extra: { row: index, error: lastError instanceof Error ? lastError.message : String(lastError) } });
                     // Fail CLOSED: this row was never compared. Do NOT default to
                     // 'create' (that would import a possible duplicate unseen) — mark
                     // it failed so import is blocked until a re-scan compares it.

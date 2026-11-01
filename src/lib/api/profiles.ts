@@ -67,7 +67,7 @@ export async function findIdentifierHits(db: Db, person: SearchRequest['person']
 /** Several identifiers of one person (a sheet row with two phones): the same lookup as findIdentifierHits. */
 export interface IdentifierSet { emails: string[]; phones: string[]; documentIds: string[] }
 
-export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestId: string, country: string | null): Promise<IdentifierHits> {
+function identifierLookups(ids: IdentifierSet, country: string | null): Array<{ type: string; value: string; field: MatchedOn }> {
     const lookups: Array<{ type: string; value: string; field: MatchedOn }> = [];
     const push = (l: { type: string; value: string; field: MatchedOn }) => {
         if (l.value && !lookups.some(x => x.type === l.type && x.value === l.value)) lookups.push(l);
@@ -75,6 +75,20 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
     for (const e of ids.emails) push({ type: 'email', value: e.trim().toLowerCase(), field: 'email' });
     for (const p of ids.phones) for (const t of phoneDuplicateTokens(p, country)) push({ type: t.type, value: t.value, field: 'phone' });
     for (const d of ids.documentIds) push({ type: 'id_number', value: normalizeDocumentId(d), field: 'documentId' });
+    return lookups;
+}
+
+/** At most how many D1 queries findIdentifierHitsFor issues for `ids` with `maxProfiles` (a caller's budget). */
+export function identifierQueryCount(ids: IdentifierSet, country: string | null, maxProfiles: number): number {
+    return identifierLookups(ids, country).length + maxProfiles;
+}
+
+/**
+ * `maxProfiles`: read only that many hit profiles, those matched on the most
+ * identifiers first — so a caller can bound its D1 queries (the API leaves it unset).
+ */
+export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestId: string, country: string | null, opts: { maxProfiles?: number } = {}): Promise<IdentifierHits> {
+    const lookups = identifierLookups(ids, country);
 
     const rows = await Promise.all(lookups.map(l =>
         db.select({ adopterId: duplicateTokens.adopterId }).from(duplicateTokens)
@@ -89,7 +103,12 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
         matchedOn.set(hit.adopterId, fields);
     }
 
-    const profiles = await Promise.all([...matchedOn.keys()].map(id =>
+    const hitIds = [...matchedOn.keys()];
+    if (opts.maxProfiles !== undefined && hitIds.length > opts.maxProfiles) {
+        hitIds.sort((a, b) => matchedOn.get(b)!.length - matchedOn.get(a)!.length);
+        for (const id of hitIds.splice(opts.maxProfiles)) matchedOn.delete(id);
+    }
+    const profiles = await Promise.all(hitIds.map(id =>
         db.select({
             id: adopters.id, name: adopters.name, contactEntries: adopters.contactEntries, isDemo: adopters.isDemo,
         }).from(adopters).where(and(eq(adopters.id, id), isNull(adopters.deletedAt))).get(),

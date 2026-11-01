@@ -386,7 +386,8 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // Spreadsheet import «También coincide con» for identical rows uses the API's exact-mode lookup
 // (Jon 2026-11-01; EM review I3: the fuzzy engine cost ~110–200 D1 queries per identical row):
 // +1 findIdenticalRowsOtherMatches(rows) in src/app/actions/importOtherMatches.ts. Session
-// required; ≤50 rows per call, ≤5 phones/emails/ids each; looks up only the duplicate_tokens the
+// required; ≤50 rows and ≤400 D1 queries per call (the rest come back deferred), ≤3 phones/emails/ids
+// each, ≤6 profiles read per row; looks up only the duplicate_tokens the
 // API's exact mode reads (findIdentifierHitsFor) on live, non-demo profiles, and answers ids +
 // names of profiles sharing an identifier the caller already holds — what the fuzzy search it
 // replaces already answered. Never logs a value.

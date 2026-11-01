@@ -25,11 +25,13 @@ import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { logger } from '@/lib/logger';
 
 type Sqlite = { prepare: (s: string) => { run: (...a: unknown[]) => unknown } };
+let sqliteRef: Sqlite;
 
 beforeEach(async () => {
     const m = migratedDb();
     state.db = m.db;
     const sqlite = m.sqlite as unknown as Sqlite;
+    sqliteRef = sqlite;
     session.user = OWNER;
     const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries, deleted_at) VALUES (?, ?, '5', ?, 'AR', 1000, 1000, ?, ?)`);
     const entries = (...e: Array<[string, string]>) => JSON.stringify(e.map(([type, value], i) => ({ id: `e${i}`, type, value })));
@@ -71,9 +73,33 @@ describe('findIdenticalRowsOtherMatches', () => {
         expect(r.ok && r.others.p[0].matchTypes).toEqual(['phone']);
     });
 
+    it('the profile matched on more identifiers comes first', async () => {
+        const r = await findIdenticalRowsOtherMatches([{ key: 'fp', identicalId: 'none', phones: ['11 6585-1333'], emails: ['ana@example.com'], ids: [] }]);
+        // «same» shares the phone AND the email; the others share one each.
+        expect(r.ok && r.others.fp[0].adopterId).toBe('same');
+        expect(r.ok && r.others.fp[0].matchTypes.sort()).toEqual(['email', 'phone']);
+    });
+
+    it('one call stays under its D1 query budget: rows that don\'t fit come back as deferred, never dropped', async () => {
+        const rows = Array.from({ length: 50 }, (_, i) => ({
+            key: `fp${i}`, identicalId: 'same',
+            phones: [`11 4${String(i).padStart(3, '0')}-1111`, `11 5${String(i).padStart(3, '0')}-2222`, `11 6${String(i).padStart(3, '0')}-3333`],
+            emails: [`x${i}@example.com`], ids: [],
+        }));
+        // drizzle on better-sqlite3 prepares once per query.
+        const prepare = vi.spyOn(sqliteRef, 'prepare');
+        const r = await findIdenticalRowsOtherMatches(rows);
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        expect(r.deferred.length).toBeGreaterThan(0);
+        expect(Object.keys(r.others).length + r.deferred.length).toBe(50);
+        expect(r.deferred.every(k => !(k in r.others))).toBe(true);
+        expect(prepare.mock.calls.length).toBeLessThanOrEqual(400);
+    });
+
     it('a row with no email, phone or document lists nothing', async () => {
         const r = await findIdenticalRowsOtherMatches([{ key: 'x', identicalId: 'same', phones: [], emails: [], ids: [] }]);
-        expect(r).toEqual({ ok: true, others: { x: [] }, failed: [] });
+        expect(r).toEqual({ ok: true, others: { x: [] }, failed: [], deferred: [] });
     });
 
     it('needs a session', async () => {
