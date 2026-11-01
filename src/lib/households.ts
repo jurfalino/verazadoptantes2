@@ -61,6 +61,7 @@ import { RECORD_TYPES } from '@/domain/constants';
 import { NO_PERIOD_ALERTS, mayHavePeriodAlerts, periodAlerts, type PeriodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import type { AdoptionConfig } from '@/types/adopter';
+import { getAdoptionConfig } from '@/app/actions/config';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export type MembershipRow = typeof householdMemberships.$inferSelect;
@@ -765,7 +766,7 @@ export function periodAlertReader(db: Db, op: string): PeriodAlertReader {
     const memo = new Map<string, Promise<PeriodAlerts>>();
     let configP: Promise<AdoptionConfig> | null = null;
     let rescueKeysP: Promise<Map<string, string>> | null = null;
-    const config = () => (configP ??= import('@/app/actions/config').then(m => m.getAdoptionConfig()));
+    const config = () => (configP ??= getAdoptionConfig());
     const rescueKeys = () => (rescueKeysP ??= loadRescueKeys(db, op));
     const alertsOf = (profileId: string, ctx: Record<string, unknown>) => {
         let p = memo.get(profileId);
