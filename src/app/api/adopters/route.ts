@@ -349,7 +349,9 @@ export async function POST(request: Request) {
         .map(m => ({
             name: m.name,
             relationship: m.relationship,
-            age: m.age ?? null,
+            // Age is never set from here (Jon 2026-10-29: no age editing until a new design;
+            // review 2026-11-01): only the public adoption form records an age.
+            age: null,
             // Final fix S6: only the server's rename code marks a rename alias.
             contactEntries: stripRenameMarks(m.contactEntries).map(({ own: _own, ...e }) => ({ ...e, id: crypto.randomUUID(), addedBy: session.user?.email || undefined })),
         }));

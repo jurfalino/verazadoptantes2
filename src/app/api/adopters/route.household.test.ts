@@ -68,6 +68,24 @@ describe('view markers are never stored', () => {
     });
 });
 
+describe('age is never set through the import endpoint (Jon 2026-10-29; review 2026-11-01)', () => {
+    it('a relative sent with an age is saved without it, and is not marked a minor', async () => {
+        const res = await POST(new Request('http://localhost/api/adopters', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                name: 'Paula Edad',
+                householdMembers: JSON.stringify([{ id: 'x', name: 'Tomás Paez', relationship: 'child', age: 12, contactEntries: [] }]),
+            }),
+        }));
+        expect(res.status, JSON.stringify(await res.clone().json())).toBeLessThan(300);
+        const created = sqlite.prepare(`SELECT id FROM adopters WHERE name = 'Paula Edad'`).get()!;
+        const people = householdPeopleOf(created.id as string);
+        expect(people).toEqual([expect.objectContaining({ name: 'Tomás Paez' })]);
+        expect(sqlite.prepare('SELECT age, is_minor FROM adopters WHERE id = ?').get(people[0].id)).toMatchObject({ age: null, is_minor: 0 });
+    });
+});
+
 describe('profileId only through the household actions', () => {
     it('POST /api/adopters keeps the relative but drops a planted profileId', async () => {
         const res = await POST(new Request('http://localhost/api/adopters', {
