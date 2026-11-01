@@ -77,6 +77,7 @@ export type { ImportBatchRow, ImportBatchResult } from './importBatch';
 
 // On-the-fly identical-record detection for import
 export { matchFingerprints } from './importIdentical';
+export { findIdenticalRowsOtherMatches } from './importOtherMatches';
 
 // Presence-only match context for the import "por qué" panel (PII-safe)
 export { getMatchContext } from './matchContext';

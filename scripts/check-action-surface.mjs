@@ -383,7 +383,15 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // (no caller sends them, fromImport included). The lib writer (setProfileAge) is plain lib code.
 // MEASURED (npm run build): 171.
 // 171 = 172 − 1.
-const EXPECTED_ACTIONS = 171;
+// Spreadsheet import «También coincide con» for identical rows uses the API's exact-mode lookup
+// (Jon 2026-11-01; EM review I3: the fuzzy engine cost ~110–200 D1 queries per identical row):
+// +1 findIdenticalRowsOtherMatches(rows) in src/app/actions/importOtherMatches.ts. Session
+// required; ≤50 rows per call, ≤5 phones/emails/ids each; looks up only the duplicate_tokens the
+// API's exact mode reads (findIdentifierHitsFor) on live, non-demo profiles, and answers ids +
+// names of profiles sharing an identifier the caller already holds — what the fuzzy search it
+// replaces already answered. Never logs a value.
+// 172 = 171 + 1.
+const EXPECTED_ACTIONS = 172;
 
 let manifest;
 try {

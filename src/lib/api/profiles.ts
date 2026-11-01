@@ -57,10 +57,24 @@ export async function ownerCountry(db: Db, ownerEmail: string, requestId: string
  * `country`, so "+54 9 11 6585-1333" and "11 6585-1333" are one number.
  */
 export async function findIdentifierHits(db: Db, person: SearchRequest['person'], requestId: string, country: string | null): Promise<IdentifierHits> {
+    return findIdentifierHitsFor(db, {
+        emails: person.email ? [person.email] : [],
+        phones: person.phone ? [person.phone] : [],
+        documentIds: person.documentId ? [person.documentId.value] : [],
+    }, requestId, country);
+}
+
+/** Several identifiers of one person (a sheet row with two phones): the same lookup as findIdentifierHits. */
+export interface IdentifierSet { emails: string[]; phones: string[]; documentIds: string[] }
+
+export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestId: string, country: string | null): Promise<IdentifierHits> {
     const lookups: Array<{ type: string; value: string; field: MatchedOn }> = [];
-    if (person.email) lookups.push({ type: 'email', value: person.email.trim().toLowerCase(), field: 'email' });
-    if (person.phone) for (const t of phoneDuplicateTokens(person.phone, country)) lookups.push({ type: t.type, value: t.value, field: 'phone' });
-    if (person.documentId) lookups.push({ type: 'id_number', value: normalizeDocumentId(person.documentId.value), field: 'documentId' });
+    const push = (l: { type: string; value: string; field: MatchedOn }) => {
+        if (l.value && !lookups.some(x => x.type === l.type && x.value === l.value)) lookups.push(l);
+    };
+    for (const e of ids.emails) push({ type: 'email', value: e.trim().toLowerCase(), field: 'email' });
+    for (const p of ids.phones) for (const t of phoneDuplicateTokens(p, country)) push({ type: t.type, value: t.value, field: 'phone' });
+    for (const d of ids.documentIds) push({ type: 'id_number', value: normalizeDocumentId(d), field: 'documentId' });
 
     const rows = await Promise.all(lookups.map(l =>
         db.select({ adopterId: duplicateTokens.adopterId }).from(duplicateTokens)

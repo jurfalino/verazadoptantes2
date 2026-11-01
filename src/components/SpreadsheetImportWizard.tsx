@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import MatchCompare from '@/components/MatchCompare';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, findIdenticalRowsOtherMatches, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
 import { isExactIdentifierMatch } from '@/domain/importMerge';
+import type { IdenticalRowIdentifiers } from '@/app/actions/importOtherMatches';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -651,10 +652,10 @@ export default function SpreadsheetImportWizard() {
         // Phase 1 — EXACT identical-record match. One server scan fingerprints all
         // existing records and returns which import rows are byte-for-byte the same
         // person (any field combo, incl. address-only). An identical row defaults to
-        // "actualizar" — never a duplicate. Since 2.58.8 it still runs the fuzzy call
-        // below (up to 3 attempts), only to list the other profiles it also matches
-        // («también coincide»): ~110–200 D1 queries per row on a Catpuccino-sized
-        // database (measured 2026-11-01, EM review I3).
+        // "actualizar" — never a duplicate, and it skips the fuzzy call below. The other
+        // profiles it also matches («también coincide») come from the API's exact-mode
+        // lookup (email / phone / document only, Jon 2026-11-01): a few token reads per
+        // row instead of the fuzzy engine's ~110–200 (EM review I3).
         const fpByIndex: Record<number, string> = {};
         for (const t of targets) {
             const g = splitGroupedContacts(t.eff);
@@ -669,12 +670,46 @@ export default function SpreadsheetImportWizard() {
             else setDetectionDegraded(true); // surfaced in the UI; do NOT treat as "no matches"
         }
 
+        // Phase 1b — «también coincide» for the identical rows, one lookup per distinct
+        // fingerprint, in batches of 50 (the action's cap).
+        const otherByFp: Record<string, DuplicateMatch[]> = {};
+        const identical = new Map<string, IdenticalRowIdentifiers>();
+        for (const t of targets) {
+            const fp = fpByIndex[t.index];
+            const hit = idMap[fp];
+            if (!hit || identical.has(fp)) continue;
+            const g = splitGroupedContacts(t.eff);
+            identical.set(fp, { key: fp, identicalId: hit.adopterId, phones: g.phones, emails: g.emails, ids: g.ids });
+        }
+        const identicalRows = [...identical.values()];
+        for (let i = 0; i < identicalRows.length; i += 50) {
+            const batch = identicalRows.slice(i, i + 50);
+            const res = await findIdenticalRowsOtherMatches(batch).catch((e: unknown) => ({ ok: false as const, errorId: resolveErrorId(e, 'SpreadsheetImportWizard.otherMatches') }));
+            if (!live()) return;
+            if (res.ok) {
+                Object.assign(otherByFp, res.others);
+                if (res.failed.length) void reportClientError({ message: 'sheet import: other matches of identical rows not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { rows: res.failed.length } });
+            } else {
+                // The identical matches stand; only their «también coincide» lists are missing.
+                void reportClientError({ message: 'sheet import: other matches of identical rows not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { rows: batch.length, errorId: res.errorId } });
+            }
+        }
+
         let done = 0, cursor = 0;
         const worker = async () => {
             for (let k = cursor++; k < targets.length; k = cursor++) {
                 if (!live()) return;
                 const { index, eff } = targets[k];
                 const idHit = idMap[fpByIndex[index]];
+                if (idHit) {
+                    // Byte-for-byte the same person: that profile comes first and defaults
+                    // to "actualizar"; any other profile the row also matches is listed under it.
+                    found[index] = { adopterId: idHit.adopterId, adopterName: idHit.adopterName ?? '', relevancePercent: 100, matchTypes: ['identical'], matchValues: [], source: 'token' };
+                    others[index] = otherByFp[fpByIndex[index]] ?? [];
+                    actions[index] = 'upsert';
+                    done++; setDetectProgress({ done, total: targets.length });
+                    continue;
+                }
                 // DNIs go via contactInfo, LABELED ("DNI 12345678"), because
                 // findAdopters extracts id_number tokens from contactInfo (there's
                 // no structured `dnis` input) — without this a same-DNI record only
@@ -685,7 +720,6 @@ export default function SpreadsheetImportWizard() {
                 // (intermittent "Failed query"). A couple of spaced retries clear
                 // the transient ones so the row isn't dropped from comparison.
                 let dup: DuplicateMatch[] | null = null;
-                let lastError: unknown = null;
                 for (let attempt = 0; attempt < 3 && dup === null; attempt++) {
                     if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
                     try {
@@ -697,24 +731,11 @@ export default function SpreadsheetImportWizard() {
                             { mode: 'duplicate', limit: MAX_ROW_MATCHES, minRelevance: 5 },
                         );
                         dup = (res.results as DuplicateMatch[]) ?? [];
-                    } catch (e) {
-                        lastError = e; // fall through to the next attempt
+                    } catch {
+                        // Fall through to the next attempt; a row never compared is marked failed below.
                     }
                 }
                 if (!live()) return;
-                if (idHit) {
-                    // Byte-for-byte the same person: that profile comes first and defaults
-                    // to "actualizar"; any other profile the row also matches is listed under it.
-                    found[index] = { adopterId: idHit.adopterId, adopterName: idHit.adopterName ?? '', relevancePercent: 100, matchTypes: ['identical'], matchValues: [], source: 'token' };
-                    others[index] = (dup ?? []).filter(m => m.adopterId !== idHit.adopterId).slice(0, MAX_ROW_MATCHES - 1);
-                    actions[index] = 'upsert';
-                    if (dup === null) {
-                        // The identical match stands; only the «también coincide» list is missing.
-                        void reportClientError({ message: 'sheet import: other matches of an identical row not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { row: index, error: lastError instanceof Error ? lastError.message : String(lastError) } });
-                    }
-                    done++; setDetectProgress({ done, total: targets.length });
-                    continue;
-                }
                 const compared = dup !== null;
                 if (dup !== null) {
                     const top = dup[0] ?? null;
