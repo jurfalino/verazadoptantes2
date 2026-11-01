@@ -19,6 +19,8 @@
  *   same helpers as getLinkedSummaries, src/lib/profileSummary.ts). Never throws.
  * - `householdLinesFor`: the homes of search / «¿Es este perfil?» cards —
  *   the housemate chips' answers and the list they open — batched. Never throws.
+ * - `housemateAlertsFor`: the chips' answers only (/my-adopters rows). Never throws.
+ *   Both spend ONE query budget per call (HOUSEHOLD_QUERY_BUDGET, re-review I1).
  * - `periodAlertReader`: housemates' period alerts, memoized per call.
  *
  * Rules live in src/domain/households.ts. D1: no `IN (array)` — one bounded
@@ -54,6 +56,7 @@ import {
     NO_HOUSEMATE_ALERT,
     type CardHousehold,
     type HouseholdLine,
+    type HousemateAlertSummary,
     type MembershipLabel,
 } from '@/domain/households';
 import { pairKey } from '@/domain/dedupPair';
@@ -571,16 +574,19 @@ async function liveProfile(db: Db, id: string): Promise<ProfileRow | null> {
  * the household under their surviving profile instead of vanishing. Callers
  * key on the returned `id` (it may differ from `id`).
  */
-async function housemateProfile(db: Db, id: string, ctx: Record<string, unknown>): Promise<ProfileRow | null> {
+async function housemateProfile(db: Db, id: string, ctx: Record<string, unknown>, budget?: QueryBudget): Promise<ProfileRow | null> {
     try {
+        budget?.spend(1);
         const live = await liveProfile(db, id);
         if (live) return live;
+        budget?.spend(MERGE_FOLLOW_QUERIES);
         const { resolveMergedAdopterIdIn } = await import('@/lib/mergedAdopterRedirect');
         const survivor = await resolveMergedAdopterIdIn(db, id);
         if (!survivor || survivor === id) return null;
         logger.info('households: a member merged away without its memberships, shown as the survivor', { ...ctx, profileId: id, survivorId: survivor });
         return await liveProfile(db, survivor);
     } catch (e) {
+        if (isBudgetSpent(e)) throw e;
         logger.warn('households: housemate profile read failed, member skipped', { ...ctx, profileId: id, error: errMsg(e) });
         return null;
     }
@@ -762,15 +768,22 @@ export type PeriodAlertReader = {
     alertsOf: (profileId: string, ctx: Record<string, unknown>) => Promise<PeriodAlerts>;
 };
 
-export function periodAlertReader(db: Db, op: string): PeriodAlertReader {
+export function periodAlertReader(db: Db, op: string, budget?: QueryBudget): PeriodAlertReader {
     const memo = new Map<string, Promise<PeriodAlerts>>();
     let configP: Promise<AdoptionConfig> | null = null;
     let rescueKeysP: Promise<Map<string, string>> | null = null;
-    const config = () => (configP ??= getAdoptionConfig());
-    const rescueKeys = () => (rescueKeysP ??= loadRescueKeys(db, op));
+    // With a budget, each first read spends it (a memoized one is free): the config's one query, the rescue
+    // keys' two (org memberships, admins), one per person. A spent budget rejects (HouseholdBudgetSpent).
+    const config = () => (configP ??= (budget?.spend(1), getAdoptionConfig()));
+    const rescueKeys = () => (rescueKeysP ??= (budget?.spend(2), loadRescueKeys(db, op)));
     const alertsOf = (profileId: string, ctx: Record<string, unknown>) => {
         let p = memo.get(profileId);
         if (!p) {
+            try {
+                budget?.spend(1);
+            } catch (e) {
+                return Promise.reject(e);
+            }
             p = (async () => {
                 try {
                     const rows = await db.select({ recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
@@ -781,6 +794,7 @@ export function periodAlertReader(db: Db, op: string): PeriodAlertReader {
                     const keys = rows.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await rescueKeys() : new Map<string, string>();
                     return periodAlerts(withRescueKeys(rows, keys), await config());
                 } catch (e) {
+                    if (isBudgetSpent(e)) throw e;
                     logger.warn('households: housemate alerts read failed, none shown for them', { ...ctx, profileId, error: errMsg(e) });
                     return NO_PERIOD_ALERTS;
                 }
@@ -790,6 +804,70 @@ export function periodAlertReader(db: Db, op: string): PeriodAlertReader {
         return p;
     };
     return { config, alertsOf };
+}
+
+// ─────────────────────────── One query budget per call (re-review I1) ───────────────────────────
+
+/**
+ * Queries ONE householdLinesFor / housemateAlertsFor call may issue, for all
+ * its cards together — memberships, standings, alert reads, list reads, the
+ * flag, the config and the rescue keys. The per-card caps alone don't add up
+ * to a bound (100 cards × 31 alert reads), and a Worker invocation may issue
+ * 1,000 queries. A 50-card search costs findAdopters about 100 of its own
+ * (measured: householdSearch.test.ts, «re-review I1»), so 400 here keeps the
+ * whole request near half the ceiling, with room for what else it reads.
+ */
+export const HOUSEHOLD_QUERY_BUDGET = 400;
+/** What following a merged-away housemate to its survivor costs (one hop: its row and merge audit, the survivor's check and row). */
+const MERGE_FOLLOW_QUERIES = 4;
+
+/** Thrown when a call's budget can't pay for the next read: that card is left unset (never a half answer). */
+class HouseholdBudgetSpent extends Error {
+    constructor() { super('households: query budget spent'); }
+}
+const isBudgetSpent = (e: unknown): e is HouseholdBudgetSpent => e instanceof HouseholdBudgetSpent;
+
+/** One call's budget: `spend(n)` before issuing n queries (throws once it can't; it stays spent). */
+export type QueryBudget = { readonly limit: number; spend: (n?: number) => void; used: () => number; spent: () => boolean };
+
+function queryBudget(limit: number): QueryBudget {
+    let used = 0;
+    let spent = false;
+    return {
+        limit,
+        spend(n = 1) {
+            if (spent || used + n > limit) { spent = true; throw new HouseholdBudgetSpent(); }
+            used += n;
+        },
+        used: () => used,
+        spent: () => spent,
+    };
+}
+
+/**
+ * Runs `card` over the ids in two waves — the first HOUSEHOLD_LINE_CARDS (the
+ * top of the page), then the rest — so the cards seen first are paid for first;
+ * a card that returns null (the budget ran out on it) and every card not started
+ * once the budget is spent are left out. Logs once when the budget cut any card.
+ */
+async function inWaves<R>(
+    ids: string[],
+    budget: QueryBudget,
+    log: Record<string, unknown>,
+    card: (adopterId: string, index: number) => Promise<R | null>,
+): Promise<Array<[string, R]>> {
+    const out: Array<[string, R]> = [];
+    for (const [start, end] of [[0, HOUSEHOLD_LINE_CARDS], [HOUSEHOLD_LINE_CARDS, ids.length]] as const) {
+        if (start >= ids.length || budget.spent()) break;
+        const got = await Promise.all(ids.slice(start, end).map((id, k) => card(id, start + k)));
+        got.forEach((r, k) => { if (r !== null) out.push([ids[start + k], r]); });
+    }
+    if (budget.spent()) {
+        logger.warn('households: query budget spent, later cards show no housemate chips', {
+            ...log, cards: ids.length, answered: out.length, unset: ids.length - out.length, used: budget.used(), budget: budget.limit,
+        });
+    }
+    return out;
 }
 
 // ─────────────────────────── Card lines (batched) ───────────────────────────
@@ -820,10 +898,12 @@ export async function withHouseholdLines<T extends { adopterId: string }>(
     const listed = new Set([...new Set(ids)].slice(0, HOUSEHOLD_LINE_CARDS));
     return cards.map(c => {
         const home = homes[c.adopterId];
-        // A card past the list budget with no chip had no list read: left unset — never «nobody lives
-        // there» — so a caller that draws the list anyway («¿Es este perfil?», asCandidates) reads it.
-        if (!listed.has(c.adopterId) && !raisesHousemateAlert(home?.alert)) return c;
-        return { ...c, households: home ?? NO_CARD_HOUSEHOLD };
+        // No answer (households off, or the call's query budget ran out first — I1): left unset, exactly
+        // today's no-chip card. A card past the list budget with no chip had no list read: unset too —
+        // never «nobody lives there» — so a caller that draws the list anyway («¿Es este perfil?»,
+        // asCandidates) reads it.
+        if (!home || (!listed.has(c.adopterId) && !raisesHousemateAlert(home.alert))) return c;
+        return { ...c, households: home };
     });
 }
 
@@ -874,33 +954,76 @@ async function housemateStandings(db: Db, adopterId: string, ctx: Record<string,
     return { rows, capped: raw.length > MAX_CARD_HOUSEMATES };
 }
 
+/** A card's chips (housemateAlertSummary — the one rule), from everyone; null when that read failed. */
+type CardChips = { alert: HousemateAlertSummary; liveIds: Set<string>; anyDeleted: boolean };
+
+/**
+ * Both chips' answers for one card from EVERY live housemate in a non-gift
+ * home: their ratings from one query (housemateStandings); their period alerts
+ * read only for those with enough records to have one (mayHavePeriodAlerts),
+ * at most MAX_CARD_ALERT_READS (logged when cut), stopping at the first found.
+ * A failed read is logged and answers null; a spent budget is rethrown.
+ */
+async function cardChips(db: Db, reader: PeriodAlertReader, budget: QueryBudget, adopterId: string, ctx: Record<string, unknown>): Promise<CardChips | null> {
+    try {
+        budget.spend(1);
+        const { rows, capped } = await housemateStandings(db, adopterId, ctx);
+        if (capped) logger.warn('households: card housemate cap hit, later housemates not considered for the chips', { ...ctx, cap: MAX_CARD_HOUSEMATES });
+        const live = rows.filter(r => r.live);
+        const lowRating = housemateLowRating(live.map(r => ({ rating: r.rating, alerts: NO_PERIOD_ALERTS, isGift: false })));
+        let hasAlerts = false;
+        const maybe = live.filter(r => r.adoptions > 0 || r.requests > 0);
+        if (maybe.length > 0) {
+            const config = await reader.config();
+            const candidates = maybe.filter(r => mayHavePeriodAlerts(r, config));
+            if (candidates.length > MAX_CARD_ALERT_READS) {
+                logger.warn('households: card alert read cap hit, later housemates not read for «Conviviente con alertas»', { ...ctx, candidates: candidates.length, cap: MAX_CARD_ALERT_READS });
+            }
+            const toRead = candidates.slice(0, MAX_CARD_ALERT_READS);
+            for (let i = 0; i < toRead.length && !hasAlerts; i += MAX_HOUSEHOLD_LINES) {
+                const read = await Promise.all(toRead.slice(i, i + MAX_HOUSEHOLD_LINES).map(r => reader.alertsOf(r.id, ctx)));
+                hasAlerts = housemateHasAlerts(read.map(alerts => ({ rating: null, alerts, isGift: false })));
+            }
+        }
+        return { alert: { lowRating, hasAlerts }, liveIds: new Set(live.map(r => r.id)), anyDeleted: rows.some(r => !r.live) };
+    } catch (e) {
+        if (isBudgetSpent(e)) throw e;
+        logger.warn('households: card chip read failed, the chips answer from the listed housemates only', { ...ctx, error: errMsg(e) });
+        return null;
+    }
+}
+
 /**
  * The homes of each profile in `adopterIds` (search results, «¿Es este
  * perfil?», match cards, Pendientes sides) — review fix 2, 2026-11-01: the
  * chips never depend on what the list can show.
- * - `alert`: both chips' answers (housemateAlertSummary — the one rule) from
- *   EVERY live housemate in a non-gift home: their ratings from one query per
- *   card (housemateStandings); their period alerts read only for those with
- *   enough records to have one (mayHavePeriodAlerts), at most
- *   MAX_CARD_ALERT_READS per card (logged when cut), stopping at the first.
+ * - `alert`: both chips' answers (cardChips) from every live housemate.
  * - `lines`: the opened list — every live housemate, once, with live rating,
  *   open flags and alerts, at most MAX_HOUSEHOLD_LINES (`more`: the people in
  *   non-gift homes it leaves out). `isGift` when every household the two share
  *   is a gift one. Read for the first `listCards` profiles (default: all), and
  *   for any later one that raises a chip — a chip always opens a list.
- * Every requested id gets an entry. Profiles, households, counts and alerts are
- * read once per call however many cards share them. Never throws: a failed
- * card gets nothing (logged). `viewer` is for the log only — no contact data.
+ * Profiles, households, counts and alerts are read once per call however many
+ * cards share them, and the whole call spends ONE query budget (`budget`,
+ * default HOUSEHOLD_QUERY_BUDGET — re-review I1): the first
+ * HOUSEHOLD_LINE_CARDS cards are paid first; once it runs out, reading stops,
+ * it is logged once, and the cards left get NO entry (a caller shows them as
+ * today's no-chip card). Every other requested id gets an entry. Never throws:
+ * a failed card gets NO_CARD_HOUSEHOLD (logged). `viewer` is for the log only —
+ * no contact data.
  */
 export async function householdLinesFor(
     db: Db,
     viewer: string | null | undefined,
     adopterIds: string[],
-    opts: { listCards?: number } = {},
+    opts: { listCards?: number; budget?: number } = {},
 ): Promise<Record<string, CardHousehold>> {
+    if (adopterIds.length === 0) return {};
+    const budget = queryBudget(opts.budget ?? HOUSEHOLD_QUERY_BUDGET);
     // Households switched off: no card says anything about a home (every mount reads this).
     // A failed flag read keeps the lines: a housemate warning must not vanish on a D1 hiccup.
-    if (adopterIds.length === 0 || !(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true }))) return {};
+    budget.spend(1);
+    if (!(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true }))) return {};
     const listCards = opts.listCards ?? Infinity;
     const memo = <T>(m: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
         let p = m.get(key);
@@ -910,41 +1033,13 @@ export async function householdLinesFor(
     const groupMemo = new Map<string, Promise<MembershipRow[]>>();
     const profileMemo = new Map<string, Promise<ProfileRow | null>>();
     const countMemo = new Map<string, Promise<ProfileCounts>>();
-    const reader = periodAlertReader(db, 'householdLinesFor');
+    const reader = periodAlertReader(db, 'householdLinesFor', budget);
     const today = new Date();
     const ids = [...new Set(adopterIds)];
 
-    /** The chips' answers from everyone (null when that read failed: the list's own people answer instead). */
-    const chipsOf = async (adopterId: string, ctx: Record<string, unknown>) => {
-        try {
-            const { rows, capped } = await housemateStandings(db, adopterId, ctx);
-            if (capped) logger.warn('households: card housemate cap hit, later housemates not considered for the chips', { ...ctx, cap: MAX_CARD_HOUSEMATES });
-            const live = rows.filter(r => r.live);
-            const lowRating = housemateLowRating(live.map(r => ({ rating: r.rating, alerts: NO_PERIOD_ALERTS, isGift: false })));
-            let hasAlerts = false;
-            const maybe = live.filter(r => r.adoptions > 0 || r.requests > 0);
-            if (maybe.length > 0) {
-                const config = await reader.config();
-                const candidates = maybe.filter(r => mayHavePeriodAlerts(r, config));
-                if (candidates.length > MAX_CARD_ALERT_READS) {
-                    logger.warn('households: card alert read cap hit, later housemates not read for «Conviviente con alertas»', { ...ctx, candidates: candidates.length, cap: MAX_CARD_ALERT_READS });
-                }
-                const toRead = candidates.slice(0, MAX_CARD_ALERT_READS);
-                for (let i = 0; i < toRead.length && !hasAlerts; i += MAX_HOUSEHOLD_LINES) {
-                    const read = await Promise.all(toRead.slice(i, i + MAX_HOUSEHOLD_LINES).map(r => reader.alertsOf(r.id, ctx)));
-                    hasAlerts = housemateHasAlerts(read.map(alerts => ({ rating: null, alerts, isGift: false })));
-                }
-            }
-            return { alert: { lowRating, hasAlerts }, liveIds: new Set(live.map(r => r.id)), anyDeleted: rows.some(r => !r.live) };
-        } catch (e) {
-            logger.warn('households: card chip read failed, the chips answer from the listed housemates only', { ...ctx, error: errMsg(e) });
-            return null;
-        }
-    };
-
     /** The opened list (the former card line): just enough profiles to fill it, bounded. */
     const linesOf = async (adopterId: string, mine: MembershipRow[], ctx: Record<string, unknown>): Promise<HouseholdLine[]> => {
-        const groups = await Promise.all(mine.map(m => memo(groupMemo, m.householdId, () => membershipsOf(db, m.householdId))));
+        const groups = await Promise.all(mine.map(m => memo(groupMemo, m.householdId, () => { budget.spend(1); return membershipsOf(db, m.householdId); })));
         // Each housemate once; gift only when every shared household is a gift one.
         // Their home on the card: the first ordinary household the two share.
         const mates = new Map<string, boolean>();
@@ -972,7 +1067,7 @@ export async function householdLinesFor(
         for (let i = 0; i < readable.length && shown.length < MAX_HOUSEHOLD_LINES;) {
             const batch = readable.slice(i, i + (MAX_HOUSEHOLD_LINES - shown.length));
             i += batch.length;
-            const rows = await Promise.all(batch.map(id => memo(profileMemo, id, () => housemateProfile(db, id, ctx))));
+            const rows = await Promise.all(batch.map(id => memo(profileMemo, id, () => housemateProfile(db, id, ctx, budget))));
             // A member followed to its survivor (D1): never twice, never the card's own profile.
             rows.forEach((p, k) => {
                 if (!p || p.id === adopterId || shown.some(x => x.id === p.id)) return;
@@ -982,7 +1077,7 @@ export async function householdLinesFor(
         }
         // The list shows rating and alerts only: no activity read.
         const [counts, alerts] = await Promise.all([
-            Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx, { activity: false })))),
+            Promise.all(shown.map(p => memo(countMemo, p.id, () => { budget.spend(1); return countsFor(db, p.id, ctx, { activity: false }); }))),
             Promise.all(shown.map(p => reader.alertsOf(p.id, ctx))),
         ]);
         return shown.map((p, i) => ({
@@ -997,35 +1092,83 @@ export async function householdLinesFor(
         }));
     };
 
-    const entries = await Promise.all(ids.map(async (adopterId, index): Promise<[string, CardHousehold]> => {
+    const card = async (adopterId: string, index: number): Promise<CardHousehold | null> => {
         const ctx = { adopterId, viewer: viewer ?? null };
         try {
             const listed = index < listCards;
             // A listed card checks its memberships first (most people have none: one indexed read, nothing more).
             let mine: MembershipRow[] | null = null;
             if (listed) {
+                budget.spend(1);
                 mine = await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE);
-                if (mine.length === 0) return [adopterId, NO_CARD_HOUSEHOLD];
+                if (mine.length === 0) return NO_CARD_HOUSEHOLD;
             }
-            const chips = await chipsOf(adopterId, ctx);
+            const chips = await cardChips(db, reader, budget, adopterId, ctx);
             // A card further down reads its list only when a chip will open it (or a merged-away member
             // may stand for a survivor the chips can't see).
             if (!listed && !(chips && (raisesHousemateAlert(chips.alert) || chips.anyDeleted))) {
-                return [adopterId, chips ? { lines: [], more: 0, alert: chips.alert } : NO_CARD_HOUSEHOLD];
+                return chips ? { lines: [], more: 0, alert: chips.alert } : NO_CARD_HOUSEHOLD;
             }
-            mine ??= await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE);
+            if (!mine) {
+                budget.spend(1);
+                mine = await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE);
+            }
             const lines = mine.length > 0 ? await linesOf(adopterId, mine, ctx) : [];
             // The listed people answer too (a survivor stands in for a merged-away member there).
             const alert = mergeHousemateAlerts(chips?.alert ?? NO_HOUSEMATE_ALERT, housemateAlertSummary(lines));
             const listedLive = chips ? lines.filter(l => !l.isGift && chips.liveIds.has(l.profileId)).length : 0;
             const more = chips ? Math.max(0, chips.liveIds.size - listedLive) : 0;
-            return [adopterId, { lines, more, alert }];
+            return { lines, more, alert };
         } catch (e) {
+            if (isBudgetSpent(e)) return null;
             logger.warn('households: card line read failed, card shows no household', { ...ctx, error: errMsg(e) });
-            return [adopterId, NO_CARD_HOUSEHOLD];
+            return NO_CARD_HOUSEHOLD;
         }
-    }));
-    return Object.fromEntries(entries);
+    };
+
+    return Object.fromEntries(await inWaves(ids, budget, { op: 'householdLinesFor', viewer: viewer ?? null }, card));
+}
+
+/**
+ * The housemate chips' answers ONLY — never the list, never a name — for rows
+ * that show a person without their home (/my-adopters, Jon 2026-11-01): the
+ * same per-card read as a search card's chips (cardChips: everyone in a
+ * non-gift home, screened alert reads), under the same one budget per call
+ * (HOUSEHOLD_QUERY_BUDGET), the first HOUSEHOLD_LINE_CARDS rows paid first.
+ * Callers pass only rows that are in a home at all. An id gets an entry when
+ * it was answered (NO_HOUSEMATE_ALERT when nothing is wrong, or when its read
+ * failed — logged); none when households are off or the budget ran out first
+ * (logged once). Never throws.
+ */
+export async function housemateAlertsFor(
+    db: Db,
+    viewer: string | null | undefined,
+    adopterIds: string[],
+    opts: { budget?: number } = {},
+): Promise<Record<string, HousemateAlertSummary>> {
+    const log = { op: 'housemateAlertsFor', viewer: viewer ?? null };
+    try {
+        if (adopterIds.length === 0) return {};
+        const budget = queryBudget(opts.budget ?? HOUSEHOLD_QUERY_BUDGET);
+        budget.spend(1);
+        if (!(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true }))) return {};
+        const reader = periodAlertReader(db, 'housemateAlertsFor', budget);
+        const ids = [...new Set(adopterIds)];
+        const answered = await inWaves(ids, budget, log, async (adopterId): Promise<HousemateAlertSummary | null> => {
+            try {
+                return (await cardChips(db, reader, budget, adopterId, { adopterId, viewer: viewer ?? null }))?.alert ?? NO_HOUSEMATE_ALERT;
+            } catch (e) {
+                if (isBudgetSpent(e)) return null;
+                // cardChips logs and answers null itself; anything else is unexpected — logged, no chips.
+                logger.warn('households: row chip read failed, the row shows no housemate chips', { ...log, adopterId, error: errMsg(e) });
+                return NO_HOUSEMATE_ALERT;
+            }
+        });
+        return Object.fromEntries(answered);
+    } catch (e) {
+        logger.warn('households: housemate chips read failed, no row shows them', { ...log, rows: adopterIds.length, error: errMsg(e) });
+        return {};
+    }
 }
 
 /**

@@ -103,7 +103,9 @@ describe('getMatchContext — never more than the duplicate search', () => {
             const [m] = await hydrateDuplicateMatches(state.db, [stub(id)], { viewer: state.user, isUnauthenticated: false });
             const { standing } = await getMatchContext(id, { standing: true });
             expect(Object.keys(standing ?? {}).sort()).toEqual(['households', 'isMinor', 'openAlerts', 'rating']);
-            expect(standing).toEqual({ rating: m.avgRating, openAlerts: openAlertKinds(m.flags), isMinor: !!m.isMinor, households: m.households ?? [] });
+            // A search card with no answer about a home carries none (unset: households off here, re-review I1); the
+            // match card says the same with the empty home.
+            expect(standing).toEqual({ rating: m.avgRating, openAlerts: openAlertKinds(m.flags), isMinor: !!m.isMinor, households: m.households ?? NO_CARD_HOUSEHOLD });
         }
     });
 });

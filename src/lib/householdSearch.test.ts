@@ -62,7 +62,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { tokenizeAdopter } from './adopterTokenize';
 import { giftPhoneEntriesByGiver } from './giftRecipients';
-import { addMembership, createHousehold, householdLinesFor, withHouseholdLines, HOUSEHOLD_LINE_CARDS } from './households';
+import { addMembership, createHousehold, householdLinesFor, withHouseholdLines, HOUSEHOLD_LINE_CARDS, HOUSEHOLD_QUERY_BUDGET } from './households';
 import { MAX_HOUSEHOLD_LINES, NO_CARD_HOUSEHOLD } from '@/domain/households';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { logger } from '@/lib/logger';
@@ -482,5 +482,91 @@ describe('final fix P6 — «¿Es este perfil?» counts alerts as the household 
         expect(line.openAlerts).toEqual(pedro.openAlerts);
         // Flags are not alerts (option B, Jon 2026-10-28): the card line shows his period alerts only — none here.
         expect(line.alerts).toEqual({ tooManyAdoptions: null, tooManyRequests: null });
+    });
+});
+
+describe('re-review I1 — one query budget per search call', () => {
+    const countQueries = async <T>(run: () => Promise<T>) => {
+        const raw = sqlite as unknown as { prepare: (...a: unknown[]) => unknown };
+        const orig = raw.prepare;
+        let n = 0;
+        raw.prepare = function (this: unknown, ...a: unknown[]) { n++; return orig.apply(this, a); };
+        try { return { result: await run(), n }; } finally { raw.prepare = orig; }
+    };
+    const T0 = 1_780_000_000, YEAR = 365 * 86_400;
+
+    it('findAdopters\' own queries for a full 50-card search: about 100, so the household budget leaves the request far under 1,000', async () => {
+        // 60 «Gomez … Ruiz» and 60 «Gomez Otro …»: every recall path full (50 shown).
+        const ins = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries) VALUES (?, ?, '5', ?, 'AR', 1000, 1000, ?)`);
+        for (let i = 0; i < 60; i++) {
+            ins.run(`gm${i}`, `Gomez Testa${i} Ruiz`, i % 2 ? OTHER : OWNER, JSON.stringify([{ id: `c${i}`, type: 'phone', value: `+54 9 11 6${String(i).padStart(3, '0')} 4455`, addedBy: OWNER }]));
+            ins.run(`gx${i}`, `Gomez Otro${i}`, OTHER, null);
+        }
+        for (let i = 0; i < 60; i++) { await tokenizeAdopter(`gm${i}`); await tokenizeAdopter(`gx${i}`); }
+        const { getFeatureFlag } = await import('@/config/features');
+        const own: number[] = [];
+        try {
+            // Households off: only findAdopters' own reads are counted.
+            vi.mocked(getFeatureFlag).mockImplementation(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_GUEST_NAME_MASK');
+            for (const raw of ['Gomez', 'Gomez Ruiz', 'Ruiz Gomez Testa1']) {
+                const { result, n } = await countQueries(() => findAdopters({ raw }, { mode: 'discovery' }));
+                expect((result.results as DiscoveryMatch[]).length + (result.lowRelevanceResults ?? []).length).toBe(50);
+                own.push(n);
+            }
+        } finally {
+            vi.mocked(getFeatureFlag).mockImplementation(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_GUEST_NAME_MASK' || flag === 'ENABLE_HOUSEHOLD_MEMBERS');
+        }
+        // Measured 2026-11-01: 96, 107 and 101.
+        expect(Math.max(...own)).toBeLessThanOrEqual(150);
+        expect(Math.max(...own) + HOUSEHOLD_QUERY_BUDGET).toBeLessThanOrEqual(600);
+    });
+
+    it('a 100-card call: the household reads stop at the budget, logged once; the top of the page keeps its chips, later cards are left unset', async () => {
+        // 100 cards, each in its own home with a 1★ housemate (a chip, so every card reads its list too) and two
+        // housemates screened in for alerts (two adoptions a year apart, threshold 2) who have none.
+        sqlite.prepare(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90')`).run();
+        const person = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at) VALUES (?, ?, '5', ?, 'AR', 1000, 1000)`);
+        const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, 'X', ?)`);
+        const record = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating, started_at) VALUES (?, ?, ?, 'adoption', ?, ?)`);
+        const cards: string[] = [];
+        for (let c = 0; c < 100; c++) {
+            const id = `card${String(c).padStart(3, '0')}`;
+            person.run(id, `Card ${c}`, OTHER);
+            await createHousehold(db(), OWNER, `hh-${id}`);
+            await addMembership(db(), { householdId: `hh-${id}`, adopterId: id, addedBy: OWNER });
+            for (const k of [0, 1, 2]) {
+                const mate = `${id}-m${k}`;
+                person.run(mate, `Mate ${c} ${k}`, OTHER);
+                await addMembership(db(), { householdId: `hh-${id}`, adopterId: mate, addedBy: OWNER });
+                if (k === 0) { animal.run(`a-${mate}`, OWNER); record.run(`r-${mate}`, `a-${mate}`, mate, 1, T0); continue; }
+                for (const j of [0, 1]) { animal.run(`a-${mate}-${j}`, OWNER); record.run(`r-${mate}-${j}`, `a-${mate}-${j}`, mate, null, T0 + j * YEAR); }
+            }
+            cards.push(id);
+        }
+        vi.mocked(logger.warn).mockClear();
+        const { result, n } = await countQueries(() => withHouseholdLines(db(), OWNER, cards.map(adopterId => ({ adopterId }))));
+        // Uncapped this would be about 100 × 12 queries.
+        expect(n).toBeLessThanOrEqual(HOUSEHOLD_QUERY_BUDGET);
+        expect(n).toBeGreaterThan(HOUSEHOLD_QUERY_BUDGET / 2);
+        // The top of the page (the first wave) keeps its chips and its list.
+        for (const c of result.slice(0, HOUSEHOLD_LINE_CARDS)) {
+            expect(c.households?.alert).toEqual({ lowRating: 1, hasAlerts: false });
+            expect(c.households?.lines).toHaveLength(3);
+        }
+        // Later cards: some answered, the rest left unset — exactly today's no-chip card, never a made-up state.
+        const unset = result.filter(c => !('households' in c));
+        expect(unset.length).toBeGreaterThan(0);
+        expect(result.slice(0, HOUSEHOLD_LINE_CARDS).some(c => !('households' in c))).toBe(false);
+        for (const c of result) if ('households' in c) expect(c.households!.alert.lowRating).toBe(1);
+        const logged = vi.mocked(logger.warn).mock.calls.filter(([msg]) => String(msg).includes('query budget spent'));
+        expect(logged).toHaveLength(1);
+        expect(logged[0][1]).toEqual(expect.objectContaining({ viewer: OWNER, cards: 100, unset: unset.length, answered: 100 - unset.length, budget: HOUSEHOLD_QUERY_BUDGET }));
+    });
+
+    it('under the budget nothing is cut or logged', async () => {
+        vi.mocked(logger.warn).mockClear();
+        const out = await withHouseholdLines(db(), OWNER, ['lucas', 'pedro', 'rosa'].map(adopterId => ({ adopterId })));
+        expect(out.every(c => 'households' in c)).toBe(true);
+        expect(vi.mocked(logger.warn).mock.calls.some(([msg]) => String(msg).includes('query budget spent'))).toBe(false);
     });
 });
