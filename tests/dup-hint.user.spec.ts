@@ -19,7 +19,7 @@ import { ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, 
  *      duplicate) and its row reads «Marcado».
  *
  * Then case 1, on a profile this rescuer loaded: «Continuar con este perfil»
- * → the confirmation (the rating after, who is told) → «Sí, continuar» lands
+ * → the confirmation (absorb mode: «deja de existir», the rating after, who is told) → «Sí, unirlos» lands
  * on the matched profile with «Listo», once; the edited profile is absorbed
  * and the typed phone is on the match.
  *
@@ -168,6 +168,9 @@ test.describe.serial('composer duplicate hint — «Continuar con este perfil» 
 
         const confirm = page.getByTestId('dup-hint-confirm');
         await expect(confirm).toBeVisible();
+        // Absorb mode (UX C1): it says my profile goes away, and never «Solo abriremos el perfil existente».
+        await expect(confirm.getByTestId('continue-merge-absorbed')).toContainText(MINE_NAME);
+        await expect(confirm.getByTestId('continue-merge-nothing-new')).toHaveCount(0);
         await expect(confirm.getByTestId('continue-merge-new')).toContainText(`duphint-${stamp}@example.org`);
         // The typed phone is already on the match (+54 9 …, the same phone as the matcher compares it): not «added».
         await expect(confirm.getByTestId('continue-merge-new')).not.toContainText(PHONE_C1);

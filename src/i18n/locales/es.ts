@@ -919,7 +919,10 @@ export const es = {
         dup_hint_not_a_match: 'Estos dos perfiles no comparten ningún dato, así que no se pueden unir desde acá.',
         dup_hint_cant_join_no_owner: 'Este perfil no tiene un responsable, así que no podés unirlos vos. Podés:',
         dup_hint_review_already: 'Ya se lo pedimos a los administradores.',
-        dup_hint_confirm_absorbed: 'El perfil de {name} deja de existir por separado.',
+        // «Ya está en otro perfil» → «Continuar con este perfil»: the profile being edited is absorbed (UX C1).
+        merge_absorb_title: '¿Unir el perfil de {current} con el de {name}?',
+        merge_absorb_body: 'El perfil de {current} deja de existir: sus datos y registros pasan al de {name}.',
+        merge_absorb_action: 'Sí, unirlos',
         ce_undo: 'Deshacer',
         ce_visibility_microcopy: 'Datos protegidos: otros solo pueden confirmarlos si ya los conocen.',
         ce_visibility_profile_public: 'Este perfil es público y visible para todos.',

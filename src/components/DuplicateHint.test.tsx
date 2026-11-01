@@ -3,8 +3,8 @@
  * that never repeats the typed contact, and a window with the match card whose
  * answers are the server's (`match.action`: continue / flag / review_admins /
  * pending) — only on a saved profile — «No es esta persona» hiding the row for
- * the same typed value, and «Continuar»'s confirmation (the shared dialog)
- * with the rating after the merge and who is told.
+ * the same typed value, and «Continuar»'s confirmation (the shared dialog in
+ * its absorb mode, UX C1) with the rating after the merge and who is told.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -33,6 +33,7 @@ vi.mock('@/components/ui/Modal', () => ({
 }));
 
 import { DupHintBox, DupHintContinueDialog, DupHintFailed, DupHintProfile } from './DuplicateHint';
+import { ContinueMergeDialog } from './ContinueMergeDialog';
 import { dismissDupHintMatch, NO_DISMISSED, visibleDupHintMatches } from '@/domain/dupHint';
 import type { DupHintMatch } from '@/app/actions/households';
 import { NO_PERIOD_ALERTS } from '@/domain/periodAlerts';
@@ -203,30 +204,41 @@ describe('DupHintProfile — the window', () => {
     });
 });
 
-describe('DupHintContinueDialog — the new-profile form\'s confirmation', () => {
+describe('DupHintContinueDialog — «Continuar con este perfil»\'s confirmation, in its absorb mode (UX C1)', () => {
     const preview = { newContacts: [{ id: 'c1', type: 'phone' as const, value: '555-1234' }, { id: 'c2', type: 'email' as const, value: 'maria@example.com' }], records: 1, ratingAfter: 4, currentName: 'María García López' };
 
-    it('the shared dialog: title, what it adds, the rating after, one owner told', () => {
+    it('says the profile being edited goes away: its title, a first line at body size, «Sí, unirlos»; what it adds, the rating after, who is told', () => {
         const html = renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview, toldNames: ['Refugio Patitas'] }} busy={false} failure={null} onCancel={() => {}} onConfirm={() => {}} />);
         const said = text(html);
-        expect(said).toContain('¿Continuar con el perfil de Jonatan Urfalino?');
-        expect(said).toContain(es.adopter.merge_confirm_body);
+        expect(said).toContain('¿Unir el perfil de María García López con el de Jonatan Urfalino?');
+        expect(html).toMatch(/<p data-testid="continue-merge-absorbed">El perfil de María García López deja de existir: sus datos y registros pasan al de Jonatan Urfalino\.<\/p>/);
+        expect(said).not.toContain(es.adopter.merge_confirm_body);
+        expect(said).not.toContain('¿Continuar con el perfil');
         expect(said).toContain('555-1234');
         expect(said).toContain('maria@example.com');
         expect(said).toContain('1 registro');
         expect(html).toContain('data-testid="dup-hint-rating-after"');
         expect(said).toContain('Calificación después de unirlos:');
         expect(said).toContain('4.0 · Bueno');
-        // The prototype's line first (fix round 2, N6), then who is told.
-        expect(said).toContain('El perfil de María García López deja de existir por separado. Le avisamos a Refugio Patitas, que puede deshacerlo si no es la misma persona.');
-        expect(said).toContain('Sí, continuar');
+        // Who is told, alone on its line — «deja de existir» is said once, up top.
+        expect(html).toMatch(/data-testid="dup-hint-confirm-told">Le avisamos a Refugio Patitas, que puede deshacerlo si no es la misma persona\.<\/p>/);
+        expect(said).not.toContain('por separado');
+        expect(said).toContain('Sí, unirlos');
+        expect(said).not.toContain('Sí, continuar');
+    });
+
+    it('nothing new to add: never «Solo abriremos el perfil existente» (the other profile goes away)', () => {
+        const html = renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview: { ...preview, newContacts: [], records: 0 }, toldNames: [] }} busy={false} failure={null} onCancel={() => {}} onConfirm={() => {}} />);
+        expect(html).not.toContain('data-testid="continue-merge-nothing-new"');
+        expect(text(html)).not.toContain('Solo abriremos el perfil existente');
+        expect(text(html)).toContain('deja de existir');
     });
 
     it('an admin merging two owners\' profiles: plural; nobody told: no line; unrated after: «Sin calificación»', () => {
         const two = text(renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview, toldNames: ['Gatitos Felices', 'Refugio Patitas'] }} busy={false} failure={null} onCancel={() => {}} onConfirm={() => {}} />));
         expect(two).toContain('Les avisamos a Gatitos Felices y Refugio Patitas, que pueden deshacerlo si no es la misma persona.');
         const none = renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview: { ...preview, ratingAfter: null }, toldNames: [] }} busy={false} failure={null} onCancel={() => {}} onConfirm={() => {}} />);
-        expect(text(none)).toContain('El perfil de María García López deja de existir por separado.');
+        expect(none).not.toContain('data-testid="dup-hint-confirm-told"');
         expect(text(none)).not.toContain('Le avisamos');
         expect(text(none)).toContain('Sin calificación');
     });
@@ -235,6 +247,26 @@ describe('DupHintContinueDialog — the new-profile form\'s confirmation', () =>
         const html = renderToStaticMarkup(<DupHintContinueDialog match={{ ...jonatan, preview }} busy={false} failure="No se pudo unir los perfiles (error ab12)." onCancel={() => {}} onConfirm={() => {}} />);
         expect(html).toContain('role="alert"');
         expect(text(html)).toContain('No se pudo unir los perfiles (error ab12).');
+    });
+});
+
+describe('ContinueMergeDialog — the new-profile form\'s path is unchanged (nothing saved yet, nothing lost)', () => {
+    it('without `absorb`: «¿Continuar con el perfil de X?», the shared body, «Solo abriremos…» when nothing is new, «Sí, continuar»', () => {
+        const html = renderToStaticMarkup(<ContinueMergeDialog name="Jonatan Urfalino" newContacts={[]} onCancel={() => {}} onConfirm={() => {}} />);
+        const said = text(html);
+        expect(said).toContain('¿Continuar con el perfil de Jonatan Urfalino?');
+        expect(said).toContain(es.adopter.merge_confirm_body);
+        expect(html).toContain('data-testid="continue-merge-nothing-new"');
+        expect(said).toContain('Solo abriremos el perfil existente');
+        expect(said).toContain('Sí, continuar');
+        expect(html).not.toContain('data-testid="continue-merge-absorbed"');
+    });
+
+    it('with `absorb`: never «Solo abriremos…»', () => {
+        const html = renderToStaticMarkup(<ContinueMergeDialog absorb={{ currentName: 'Lucía Fernández' }} name="Jonathan Urfalino" newContacts={[]} onCancel={() => {}} onConfirm={() => {}} />);
+        expect(html).not.toContain('data-testid="continue-merge-nothing-new"');
+        expect(text(html)).toContain('¿Unir el perfil de Lucía Fernández con el de Jonathan Urfalino?');
+        expect(text(html)).toContain('Sí, unirlos');
     });
 });
 

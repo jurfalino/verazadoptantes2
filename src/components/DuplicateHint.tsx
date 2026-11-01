@@ -19,9 +19,10 @@
  *   the server decided this viewer may do (`match.action`, Jon 2026-10-29,
  *   prototype proto-shots/dato-coincide-v3.html — decideDupHintAction):
  *     - 'continue' (the viewer or their team loaded the profile being edited,
- *       or an admin): «Continuar con este perfil» → the new-profile form's
- *       confirmation (ContinueMergeDialog: what it adds, the rating after,
- *       who is told) → continueWithMatchedProfile, then the profile that
+ *       or an admin): «Continuar con este perfil» → the shared confirmation
+ *       in its absorb mode (ContinueMergeDialog: «¿Unir el perfil de … con el
+ *       de …?», what it adds, the rating after, who is told — UX C1) →
+ *       continueWithMatchedProfile, then the profile that
  *       stayed opens with «Listo: … ahora es este perfil».
  *     - 'flag' (someone else loaded it, or the match has no owner):
  *       «Marcar como posible duplicado» (flagAdopterAsDuplicate — the owners
@@ -279,7 +280,10 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
     );
 }
 
-/** «¿Continuar con el perfil de X?» for a match: the shared dialog, with the rating after and who is told. */
+/**
+ * «Continuar con este perfil»'s confirmation: the shared dialog in its absorb mode (UX C1) — the profile being
+ * edited stops existing, said in its title and first line — with the rating after and who is told.
+ */
 export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfirm }: {
     match: DupHintMatch;
     busy: boolean;
@@ -296,6 +300,7 @@ export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfir
             : t('adopter.dup_hint_confirm_told_many').replace('{names}', joinNames(t, told));
     return (
         <ContinueMergeDialog
+            absorb={{ currentName: currentName || t('adopter.nameless') }}
             name={matchName(match, t('adopter.nameless'))}
             newContacts={match.preview?.newContacts ?? []}
             records={match.preview?.records ?? 0}
@@ -308,10 +313,8 @@ export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfir
             <p className="flex flex-wrap items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }} data-testid="dup-hint-rating-after">
                 {t('adopter.dup_hint_rating_after')} <RatingBadge rating={match.preview?.ratingAfter ?? null} />
             </p>
-            <p className="text-xs [overflow-wrap:anywhere]" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-confirm-told">
-                {t('adopter.dup_hint_confirm_absorbed').replace('{name}', currentName || t('adopter.nameless'))}
-                {toldLine && <> {toldLine}</>}
-            </p>
+            {/* «deja de existir» is the dialog's first line (absorb mode); only who is told stays here. */}
+            {toldLine && <p className="text-xs [overflow-wrap:anywhere]" style={{ color: 'var(--text-muted)' }} data-testid="dup-hint-confirm-told">{toldLine}</p>}
             {failure && <p role="alert" className="text-sm font-medium [overflow-wrap:anywhere]" style={{ color: 'var(--status-error-text)' }} data-testid="dup-hint-confirm-failed">{failure}</p>}
         </ContinueMergeDialog>
     );
