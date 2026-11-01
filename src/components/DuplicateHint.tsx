@@ -64,6 +64,8 @@ import { NO_DISMISSED, dismissDupHintMatch, isDupHintType, visibleDupHintMatches
 import { CONTACT_ENTRIES_FULL } from '@/lib/contactEntries';
 import { joinNames } from '@/lib/householdCopy';
 import { ContinueMergeDialog } from '@/components/ContinueMergeDialog';
+import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
+import type { SocialPlatform } from '@/lib/contactEntries';
 import { rememberContinued } from '@/components/ContinuedProfileBanner';
 
 interface Props {
@@ -79,6 +81,8 @@ interface Props {
     apps?: string[];
     /** A handle with no network picked: «Continuar» asks for it, as the composer's Save does. */
     needsPlatform?: boolean;
+    /** Picks the network from inside the window — the composer's own setter, so both agree (UX I6). */
+    onPickPlatform?: (p: SocialPlatform) => void;
     /** «Continuar» saved the typed value but the merge failed: the composer clears it (it is saved). */
     onTypedSaved?: () => void;
     className?: string;
@@ -143,12 +147,17 @@ export function DupHintBox({ matches, done, onView, className = '' }: {
 }
 
 /** The window's body: the match card + the answers the server decided (`match.action`). Presentational. */
-export function DupHintProfile({ match, canAct, needsPlatform = false, busy = null, onContinue, onFlag, onReview, onNotThis, onOpenFull }: {
+export function DupHintProfile({ match, canAct, needsPlatform = false, platform = null, onPickPlatform, platformAsk = false, busy = null, onContinue, onFlag, onReview, onNotThis, onOpenFull }: {
     match: DupHintMatch;
     /** A saved profile is being edited: the window's answer (continue / flag / review) can be given. */
     canAct: boolean;
     /** The typed handle has no network yet: «Continuar» waits for it (the composer's «¿Qué red social es?» *). */
     needsPlatform?: boolean;
+    /** The network picked so far, and how to pick it here: the composer's chips, in the window (UX I6). */
+    platform?: SocialPlatform | null;
+    onPickPlatform?: (p: SocialPlatform) => void;
+    /** The network was picked in this window: the chips stay, showing the pick. */
+    platformAsk?: boolean;
     /** Which answer is running (its button spins; all are disabled). */
     busy?: 'flag' | 'review' | 'open' | null;
     onContinue: () => void;
@@ -207,11 +216,15 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
                 {action === 'continue' && (
                     <>
                         {match.alreadyPending && note(t('adopter.dup_hint_pending'), 'dup-hint-pending-note')}
-                        {needsPlatform && (
-                            // The composer's own ask (its Save is disabled the same way until a network is picked).
-                            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }} data-testid="dup-hint-needs-platform">
-                                {t('adopter.ce_social_which')}<span style={{ color: 'var(--status-error-text)' }}> *</span>
-                            </p>
+                        {(needsPlatform || platformAsk) && (
+                            // The composer's own ask and its own chips, here (UX I6): they sat behind the window,
+                            // so «Continuar» stayed off with no way to pick. Picking one enables it.
+                            <div data-testid="dup-hint-needs-platform">
+                                <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('adopter.ce_social_which')}{needsPlatform && <span style={{ color: 'var(--status-error-text)' }}> *</span>}
+                                </p>
+                                {onPickPlatform && <SocialPlatformPicker value={platform} locked={false} onChange={onPickPlatform} />}
+                            </div>
                         )}
                         <Button type="button" fullWidth onClick={onContinue} disabled={disabled || needsPlatform} data-testid="dup-hint-continue"
                             icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
@@ -223,7 +236,8 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, busy = nu
                 )}
                 {action === 'flag' && (
                     <>
-                        {match.cantJoin && note(t(match.cantJoin === 'no_owner' ? 'adopter.dup_hint_cant_join_no_owner' : 'adopter.dup_hint_cant_join'), 'dup-hint-cant-join')}
+                        {/* Names the profile being edited (UX I5): under the match card it read as being about the match. */}
+                        {match.cantJoin && note(t(match.cantJoin === 'no_owner' ? 'adopter.dup_hint_cant_join_no_owner' : 'adopter.dup_hint_cant_join').replace('{name}', match.cantJoinName || t('adopter.nameless')), 'dup-hint-cant-join')}
                         {match.saidNo ? (
                             // Someone already said they are two people and this viewer can't ask the admins:
                             // said, no flag (the server refuses one, with the same reason).
@@ -320,7 +334,7 @@ export function DupHintContinueDialog({ match, busy, failure, onCancel, onConfir
     );
 }
 
-export default function DuplicateHint({ type, value, excludeAdopterId, platform, apps, needsPlatform = false, onTypedSaved, className }: Props) {
+export default function DuplicateHint({ type, value, excludeAdopterId, platform, apps, needsPlatform = false, onPickPlatform, onTypedSaved, className }: Props) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
@@ -331,8 +345,12 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
     const [failedId, setFailedId] = useState<string | null>(null);
     // «No es esta persona», for the value it was answered on.
     const [dismissed, setDismissed] = useState<DupHintDismissed>(NO_DISMISSED);
-    const [openId, setOpenId] = useState<string | null>(null);
+    const [openId, setOpenIdState] = useState<string | null>(null);
     const [busy, setBusy] = useState<'flag' | 'review' | 'open' | null>(null);
+    // The network was picked inside the window: its chips stay on screen until the window closes.
+    const [pickedInWindow, setPickedInWindow] = useState(false);
+    // Opening or closing the window starts its network ask afresh.
+    const setOpenId = (adopterId: string | null) => { setOpenIdState(adopterId); setPickedInWindow(false); };
     // «Continuar con este perfil» → its confirmation (the match id), and a failure said in it.
     const [confirmId, setConfirmId] = useState<string | null>(null);
     const [continuing, setContinuing] = useState(false);
@@ -395,7 +413,8 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
         };
     }, [type, value, excludeAdopterId, platform]);
 
-    if (loading) {
+    // A re-check while the window is open (a network picked in it) keeps the window and the matches on screen.
+    if (loading && !openId) {
         return (
             <div className={`flex items-center gap-2 text-xs text-stone-500 ${className ?? ''}`}>
                 <span className="inline-block w-3 h-3 border-2 border-stone-400 border-t-transparent rounded-full animate-spin" aria-hidden />
@@ -565,6 +584,9 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                         match={open}
                         canAct={!!excludeAdopterId}
                         needsPlatform={needsPlatform}
+                        platform={(platform as SocialPlatform | undefined) ?? null}
+                        onPickPlatform={type === 'social' && onPickPlatform ? (p) => { setPickedInWindow(true); onPickPlatform(p); } : undefined}
+                        platformAsk={pickedInWindow}
                         busy={busy}
                         onContinue={() => { setContinueFailure(null); setConfirmId(open.adopterId); setOpenId(null); }}
                         onFlag={() => handleFlag(open)}

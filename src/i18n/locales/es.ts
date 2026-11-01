@@ -897,7 +897,7 @@ export const es = {
         dup_hint_open_full: 'Abrir perfil completo en otra pestaña',
         dup_hint_flag_success: 'Marcado. Les avisamos a quienes cargaron cada perfil y a los administradores',
         dup_hint_flag_failed: 'No se pudo marcar',
-        dup_hint_cant_join: 'Lo cargó otra persona, así que no podés unirlos vos. Podés:',
+        dup_hint_cant_join: 'El perfil de {name} lo cargó otra persona, así que no podés unir los dos vos. Podés:',
         dup_hint_flag_action: 'Marcar como posible duplicado',
         dup_hint_flag_told: 'Les avisamos a quienes cargaron cada perfil y a los administradores.',
         dup_hint_open_to_add: 'Abrir perfil para agregar datos',
@@ -917,7 +917,7 @@ export const es = {
         dup_hint_join_failed: 'No se pudo unir los perfiles (error {id}).',
         dup_hint_join_failed_saved: 'No se pudo unir los perfiles. El dato quedó guardado en este perfil.',
         dup_hint_not_a_match: 'Estos dos perfiles no comparten ningún dato, así que no se pueden unir desde acá.',
-        dup_hint_cant_join_no_owner: 'Este perfil no tiene un responsable, así que no podés unirlos vos. Podés:',
+        dup_hint_cant_join_no_owner: 'El perfil de {name} no tiene un responsable, así que no podés unir los dos vos. Podés:',
         dup_hint_review_already: 'Ya se lo pedimos a los administradores.',
         // «Ya está en otro perfil» → «Continuar con este perfil»: the profile being edited is absorbed (UX C1).
         merge_absorb_title: '¿Unir el perfil de {current} con el de {name}?',

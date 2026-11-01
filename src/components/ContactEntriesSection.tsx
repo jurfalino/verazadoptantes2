@@ -1036,6 +1036,7 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
                                 platform={composerType === 'social' ? effectiveSocialPlatform ?? undefined : undefined}
                                 apps={composerType === 'phone' ? composerApps : undefined}
                                 needsPlatform={socialNeedsPlatform}
+                                onPickPlatform={setComposerPlatform}
                                 onTypedSaved={() => { clearComposerInputs(); router.refresh(); }}
                             />
                         )}

@@ -137,14 +137,15 @@ describe('DupHintProfile — the window', () => {
     });
 
     it("case 2 'flag': who loaded it, «Marcar como posible duplicado» + who is told, «Abrir perfil para agregar datos», «No es esta persona»", () => {
-        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'other_owner' }} canAct {...handlers} />);
+        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'other_owner', cantJoinName: 'Lucía Fernández' }} canAct {...handlers} />);
         expect(ids(html)).toEqual(['dup-hint-flag', 'dup-hint-open-to-add', 'dup-hint-not-this']);
         const said = text(html);
-        expect(said).toContain('Lo cargó otra persona, así que no podés unirlos vos. Podés:');
+        // It names the profile being edited (UX I5): under Jonatan's card it read as being about Jonatan.
+        expect(said).toContain('El perfil de Lucía Fernández lo cargó otra persona, así que no podés unir los dos vos. Podés:');
         expect(said).toContain('Marcar como posible duplicado');
         expect(said).toContain('Les avisamos a quienes cargaron cada perfil y a los administradores.');
         expect(said).toContain('Abrir perfil para agregar datos');
-        expect(said.indexOf('Lo cargó otra persona')).toBeLessThan(said.indexOf('Marcar como posible duplicado'));
+        expect(said.indexOf('lo cargó otra persona')).toBeLessThan(said.indexOf('Marcar como posible duplicado'));
         expect(html).not.toContain('data-testid="dup-hint-continue"');
         // Case 3 (the match has no owner, the profile being edited is mine): no «Lo cargó otra persona».
         const ownerless = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag' }} canAct {...handlers} />);
@@ -152,11 +153,14 @@ describe('DupHintProfile — the window', () => {
         expect(ids(ownerless)[0]).toBe('dup-hint-flag');
     });
 
-    it('case 2 when nobody is responsible for the profile being edited: «Este perfil no tiene un responsable…» (fix round 2, N7)', () => {
-        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'no_owner' }} canAct {...handlers} />);
-        expect(text(html)).toContain('Este perfil no tiene un responsable, así que no podés unirlos vos. Podés:');
-        expect(text(html)).not.toContain('Lo cargó otra persona');
+    it('case 2 when nobody is responsible for the profile being edited: «El perfil de {name} no tiene un responsable…» (fix round 2, N7; UX I5)', () => {
+        const html = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'no_owner', cantJoinName: 'Lucía Fernández' }} canAct {...handlers} />);
+        expect(text(html)).toContain('El perfil de Lucía Fernández no tiene un responsable, así que no podés unir los dos vos. Podés:');
+        expect(text(html)).not.toContain('lo cargó otra persona');
         expect(ids(html)[0]).toBe('dup-hint-flag');
+        // A nameless profile still reads as a sentence.
+        const nameless = renderToStaticMarkup(<DupHintProfile match={{ ...jonatan, action: 'flag', cantJoin: 'no_owner', cantJoinName: '' }} canAct {...handlers} />);
+        expect(text(nameless)).toContain(`El perfil de ${es.adopter.nameless} no tiene un responsable`);
     });
 
     it('a said-no pair this viewer can\'t ask about: «Ya dijeron que no…», no flag (the server refuses one)', () => {
@@ -191,6 +195,22 @@ describe('DupHintProfile — the window', () => {
         expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-testid="dup-hint-continue"|<button[^>]*data-testid="dup-hint-continue"[^>]*disabled=""/);
         const ready = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct {...handlers} />);
         expect(ready).not.toContain('data-testid="dup-hint-needs-platform"');
+    });
+
+    it('…with the composer\'s network chips in the window (UX I6): picking one enables «Continuar», the chips stay showing the pick', () => {
+        const continueOff = /<button[^>]*disabled=""[^>]*data-testid="dup-hint-continue"|<button[^>]*data-testid="dup-hint-continue"[^>]*disabled=""/;
+        const asking = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct needsPlatform platform={null} onPickPlatform={() => {}} {...handlers} />);
+        expect(asking).toContain('aria-label="Instagram"');
+        expect(asking).not.toContain('aria-pressed="true"');
+        expect(asking).toMatch(continueOff);
+        // Picked in the window: no longer required, the pick shown, «Continuar» on.
+        const picked = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct platform="instagram" platformAsk onPickPlatform={() => {}} {...handlers} />);
+        expect(picked).toContain('data-testid="dup-hint-needs-platform"');
+        expect(picked).toMatch(/aria-pressed="true"[^>]*aria-label="Instagram"|aria-label="Instagram"[^>]*aria-pressed="true"/);
+        expect(text(picked)).not.toContain('¿Qué red social es? *');
+        expect(picked).not.toMatch(continueOff);
+        // No way to pick (no setter): the ask alone, as before.
+        expect(renderToStaticMarkup(<DupHintProfile match={jonatan} canAct needsPlatform {...handlers} />)).not.toContain('aria-label="Instagram"');
     });
 
     it('a standalone «sin actividad» starts with a capital (fix round 1)', () => {

@@ -794,11 +794,18 @@ export type DupHintMatch = HouseholdMatchCandidate & {
     alreadyPending: boolean;
     /**
      * Why the 'flag' window can't offer «Continuar» for the profile being
-     * edited: 'other_owner' «Lo cargó otra persona…», 'no_owner' «Este perfil
-     * no tiene un responsable…»; absent when the flag is only because the match
+     * edited: 'other_owner' «El perfil de {name} lo cargó otra persona…»,
+     * 'no_owner' «El perfil de {name} no tiene un responsable…»; absent when the flag is only because the match
      * has no owner (case 3).
      */
     cantJoin?: 'other_owner' | 'no_owner';
+    /**
+     * With `cantJoin`: the name of the profile being edited, so the sentence
+     * says which profile it is about («El perfil de Lucía lo cargó otra
+     * persona…», UX I5) — it sat under the match and read as being about it.
+     * The viewer's own edited profile: it tells them nothing new.
+     */
+    cantJoinName?: string;
     /**
      * Someone already said they are two people, and this viewer can't ask the
      * admins (no profile of theirs): the 'flag' window says «Ya dijeron que
@@ -899,7 +906,7 @@ async function dupHintWindow(
     match: { id: string; row: { contactEntries: string | null; contactInfo: string | null; addedBy: string | null } | undefined },
     typedEntry: ContactEntry,
     ctx: Record<string, unknown>,
-): Promise<Pick<DupHintMatch, 'action' | 'alreadyPending' | 'cantJoin' | 'saidNo' | 'toldNames' | 'preview'>> {
+): Promise<Pick<DupHintMatch, 'action' | 'alreadyPending' | 'cantJoin' | 'cantJoinName' | 'saidNo' | 'toldNames' | 'preview'>> {
     if (!viewer?.current) return { action: null, alreadyPending: false };
     const current = viewer.current;
     const mctx = { ...ctx, profileId: match.id };
@@ -943,9 +950,9 @@ async function dupHintWindow(
 }
 
 /** Why the profile being edited can't be joined by this viewer (the 'flag' window's first line). */
-function cantJoinOf(viewer: DupHintViewer, current: DupHintProfileRow): Pick<DupHintMatch, 'cantJoin'> {
+function cantJoinOf(viewer: DupHintViewer, current: DupHintProfileRow): Pick<DupHintMatch, 'cantJoin' | 'cantJoinName'> {
     if (viewer.isAdmin || viewer.currentTeamOwned) return {};
-    return { cantJoin: realOwner(current.addedBy) ? 'other_owner' : 'no_owner' };
+    return { cantJoin: realOwner(current.addedBy) ? 'other_owner' : 'no_owner', cantJoinName: current.name?.trim() ?? '' };
 }
 
 /**

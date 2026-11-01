@@ -135,7 +135,8 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
 
     it('case 2 (someone else loaded it): flag, «Lo cargó otra persona», no preview, nobody named', async () => {
         const w = await as(STRANGER, () => windowFor('jonatan'));
-        expect(w).toMatchObject({ action: 'flag', cantJoin: 'other_owner' });
+        // The sentence names the profile being edited (UX I5): it is about María's, not the match.
+        expect(w).toMatchObject({ action: 'flag', cantJoin: 'other_owner', cantJoinName: 'María García López' });
         expect(w!.saidNo).toBeUndefined();
         expect(w!.preview).toBeUndefined();
         expect(w!.toldNames).toBeUndefined();
@@ -148,11 +149,12 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
         const w = await windowFor('jonatan');
         expect(w).toMatchObject({ action: 'flag' });
         expect(w!.cantJoin).toBeUndefined();
+        expect(w!.cantJoinName).toBeUndefined();
     });
 
     it('nobody is responsible for the profile being edited (an import): flag, «Este perfil no tiene un responsable…» (N7)', async () => {
         sqlite.prepare(`UPDATE adopters SET added_by = 'anonymous' WHERE id = 'maria'`).run();
-        expect(await windowFor('jonatan')).toMatchObject({ action: 'flag', cantJoin: 'no_owner' });
+        expect(await windowFor('jonatan')).toMatchObject({ action: 'flag', cantJoin: 'no_owner', cantJoinName: 'María García López' });
     });
 
     it('a said-no pair, seen by someone who loaded neither profile: flag with «Ya dijeron que no…», never review_admins (F1)', async () => {

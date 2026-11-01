@@ -90,7 +90,8 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         await expect(win.getByTestId('card-household-line')).toHaveCount(0);
         await expect(win.getByTestId('dup-hint-contact').getByTestId('contact-matches')).toHaveCount(1);
         // Case 2: someone else loaded the profile being edited — flag, never continue.
-        await expect(win.getByTestId('dup-hint-cant-join')).toBeVisible();
+        // The sentence names the profile being edited, not the match above it (UX I5).
+        await expect(win.getByTestId('dup-hint-cant-join')).toContainText(`Duphint Ana ${stamp}`);
         await expect(win.getByTestId('dup-hint-flag')).toBeVisible();
         await expect(win.getByTestId('dup-hint-flag-told')).toBeVisible();
         await expect(win.getByTestId('dup-hint-open-to-add')).toBeVisible();
