@@ -185,6 +185,9 @@ function ProfileCard({
         <button
             type="button"
             onClick={onSelect}
+            aria-pressed={isSelected}
+            data-testid="dmm-profile"
+            data-adopter-id={adopter.id}
             className={`text-left p-4 rounded-xl border-2 transition-all ${isSelected
                 ? 'border-teal-500 bg-teal-50/50'
                 : 'border-stone-200 hover:border-stone-300'
