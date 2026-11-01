@@ -844,11 +844,17 @@ function queryBudget(limit: number): QueryBudget {
     };
 }
 
+/** About what a card in a home costs when it reads everything (chips and list): sizes the later batches. */
+const CARD_QUERY_ESTIMATE = 12;
+
 /**
- * Runs `card` over the ids in two waves — the first HOUSEHOLD_LINE_CARDS (the
- * top of the page), then the rest — so the cards seen first are paid for first;
- * a card that returns null (the budget ran out on it) and every card not started
- * once the budget is spent are left out. Logs once when the budget cut any card.
+ * Runs `card` over the ids in batches: the first HOUSEHOLD_LINE_CARDS (the top
+ * of the page) together, then as many as the budget left can likely pay for
+ * in full (left ÷ CARD_QUERY_ESTIMATE — a page of people in no home is still
+ * one more batch), so the cards seen first are paid for first and a started
+ * card mostly finishes. A card that returns null (the budget ran out on it)
+ * and every card not started once the budget is spent are left out. Logs once
+ * when the budget cut any card.
  */
 async function inWaves<R>(
     ids: string[],
@@ -857,10 +863,12 @@ async function inWaves<R>(
     card: (adopterId: string, index: number) => Promise<R | null>,
 ): Promise<Array<[string, R]>> {
     const out: Array<[string, R]> = [];
-    for (const [start, end] of [[0, HOUSEHOLD_LINE_CARDS], [HOUSEHOLD_LINE_CARDS, ids.length]] as const) {
-        if (start >= ids.length || budget.spent()) break;
+    for (let start = 0; start < ids.length && !budget.spent();) {
+        const size = start === 0 ? HOUSEHOLD_LINE_CARDS : Math.max(1, Math.floor((budget.limit - budget.used()) / CARD_QUERY_ESTIMATE));
+        const end = Math.min(ids.length, start + size);
         const got = await Promise.all(ids.slice(start, end).map((id, k) => card(id, start + k)));
         got.forEach((r, k) => { if (r !== null) out.push([ids[start + k], r]); });
+        start = end;
     }
     if (budget.spent()) {
         logger.warn('households: query budget spent, later cards show no housemate chips', {
@@ -1006,7 +1014,7 @@ async function cardChips(db: Db, reader: PeriodAlertReader, budget: QueryBudget,
  * Profiles, households, counts and alerts are read once per call however many
  * cards share them, and the whole call spends ONE query budget (`budget`,
  * default HOUSEHOLD_QUERY_BUDGET — re-review I1): the first
- * HOUSEHOLD_LINE_CARDS cards are paid first; once it runs out, reading stops,
+ * HOUSEHOLD_LINE_CARDS cards are paid first (inWaves); once it runs out, reading stops,
  * it is logged once, and the cards left get NO entry (a caller shows them as
  * today's no-chip card). Every other requested id gets an entry. Never throws:
  * a failed card gets NO_CARD_HOUSEHOLD (logged). `viewer` is for the log only —
@@ -1019,7 +1027,7 @@ export async function householdLinesFor(
     opts: { listCards?: number; budget?: number } = {},
 ): Promise<Record<string, CardHousehold>> {
     if (adopterIds.length === 0) return {};
-    const budget = queryBudget(opts.budget ?? HOUSEHOLD_QUERY_BUDGET);
+    const budget = queryBudget(Math.max(1, opts.budget ?? HOUSEHOLD_QUERY_BUDGET));
     // Households switched off: no card says anything about a home (every mount reads this).
     // A failed flag read keeps the lines: a housemate warning must not vanish on a D1 hiccup.
     budget.spend(1);
@@ -1149,7 +1157,7 @@ export async function housemateAlertsFor(
     const log = { op: 'housemateAlertsFor', viewer: viewer ?? null };
     try {
         if (adopterIds.length === 0) return {};
-        const budget = queryBudget(opts.budget ?? HOUSEHOLD_QUERY_BUDGET);
+        const budget = queryBudget(Math.max(1, opts.budget ?? HOUSEHOLD_QUERY_BUDGET));
         budget.spend(1);
         if (!(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true }))) return {};
         const reader = periodAlertReader(db, 'housemateAlertsFor', budget);

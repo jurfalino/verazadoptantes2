@@ -548,7 +548,7 @@ describe('re-review I1 — one query budget per search call', () => {
         // Uncapped this would be about 100 × 12 queries.
         expect(n).toBeLessThanOrEqual(HOUSEHOLD_QUERY_BUDGET);
         expect(n).toBeGreaterThan(HOUSEHOLD_QUERY_BUDGET / 2);
-        // The top of the page (the first wave) keeps its chips and its list.
+        // The top of the page (the first batch) keeps its chips and its list.
         for (const c of result.slice(0, HOUSEHOLD_LINE_CARDS)) {
             expect(c.households?.alert).toEqual({ lowRating: 1, hasAlerts: false });
             expect(c.households?.lines).toHaveLength(3);
@@ -556,6 +556,11 @@ describe('re-review I1 — one query budget per search call', () => {
         // Later cards: some answered, the rest left unset — exactly today's no-chip card, never a made-up state.
         const unset = result.filter(c => !('households' in c));
         expect(unset.length).toBeGreaterThan(0);
+        // Later batches are sized by what is left (about 12 a card here), so the cards started mostly finish:
+        // more than the top of the page is answered, in page order.
+        const answered = result.filter(c => 'households' in c).map(c => c.adopterId);
+        expect(answered.length).toBeGreaterThan(HOUSEHOLD_LINE_CARDS + 5);
+        expect(answered).toEqual(cards.slice(0, answered.length));
         expect(result.slice(0, HOUSEHOLD_LINE_CARDS).some(c => !('households' in c))).toBe(false);
         for (const c of result) if ('households' in c) expect(c.households!.alert.lowRating).toBe(1);
         const logged = vi.mocked(logger.warn).mock.calls.filter(([msg]) => String(msg).includes('query budget spent'));
