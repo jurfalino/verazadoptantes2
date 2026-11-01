@@ -251,6 +251,40 @@ export function housemateHasAlerts(lines: ReadonlyArray<HousemateAlertLine> | nu
     return (lines ?? []).some(l => !l.isGift && (!!l.alerts?.tooManyAdoptions || !!l.alerts?.tooManyRequests));
 }
 
+/** The two housemate-alert answers a card or the profile header carries (never the housemates' names). */
+export type HousemateAlertSummary = { lowRating: number | null; hasAlerts: boolean };
+export const NO_HOUSEMATE_ALERT: HousemateAlertSummary = { lowRating: null, hasAlerts: false };
+
+/** Both chips' answers for these lines — the ONE rule (housemateLowRating / housemateHasAlerts). */
+export function housemateAlertSummary(lines: ReadonlyArray<HousemateAlertLine> | null | undefined): HousemateAlertSummary {
+    return { lowRating: housemateLowRating(lines), hasAlerts: housemateHasAlerts(lines) };
+}
+
+/** Two partial answers about the same homes, together: the lowest low rating, alerts when either has them. */
+export function mergeHousemateAlerts(a: HousemateAlertSummary, b: HousemateAlertSummary): HousemateAlertSummary {
+    const lows = [a.lowRating, b.lowRating].filter((r): r is number => r != null);
+    return { lowRating: lows.length ? Math.min(...lows) : null, hasAlerts: a.hasAlerts || b.hasAlerts };
+}
+
+/** Does this summary raise either chip? */
+export function raisesHousemateAlert(s: HousemateAlertSummary | null | undefined): boolean {
+    return !!s && (s.lowRating != null || s.hasAlerts);
+}
+
+/**
+ * What a card that shows one person knows about their homes (review fix 2,
+ * 2026-11-01): the chips' answers (`alert`) come from EVERY live housemate in
+ * a non-gift home, whatever the display caps; `lines` is only what the opened
+ * list shows (at most MAX_HOUSEHOLD_LINES people), and `more` the people in
+ * those homes it leaves out («y N más»).
+ */
+export type CardHousehold = {
+    lines: HouseholdLine[];
+    more: number;
+    alert: HousemateAlertSummary;
+};
+export const NO_CARD_HOUSEHOLD: CardHousehold = { lines: [], more: 0, alert: NO_HOUSEMATE_ALERT };
+
 /**
  * Which household «+ Agregar» names (Task 8, coordinator ruling; compact
  * section, addendum 2026-10-27): the home it adds into, always — the one home

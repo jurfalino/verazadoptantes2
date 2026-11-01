@@ -5,7 +5,7 @@ import { adopters } from '@/db/schema';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { logger } from '@/lib/logger';
-import { isMinor, type HouseholdLine } from '@/domain/households';
+import { isMinor, NO_CARD_HOUSEHOLD, type CardHousehold } from '@/domain/households';
 import type { OpenAlertKind } from '@/domain/flags';
 
 export interface MatchContext {
@@ -21,7 +21,7 @@ export interface MatchContext {
      * carries for this caller (matchContext.test pins it); for a merged-away
      * profile the call returns nothing at all, whoever asks.
      */
-    standing?: { rating: number | null; openAlerts: OpenAlertKind[]; isMinor: boolean; households: HouseholdLine[] };
+    standing?: { rating: number | null; openAlerts: OpenAlertKind[]; isMinor: boolean; households: CardHousehold };
 }
 
 /** Presence-only summary of an existing adopter's contact types — for the import
@@ -84,7 +84,7 @@ async function standingOf(
             countsFor(db, adopterId, ctx, { activity: false }),
             householdLinesFor(db, actor, [adopterId]),
         ]);
-        return { standing: { rating: counts.rating, openAlerts: counts.openAlerts, isMinor: isMinor(row), households: lines[adopterId] ?? [] } };
+        return { standing: { rating: counts.rating, openAlerts: counts.openAlerts, isMinor: isMinor(row), households: lines[adopterId] ?? NO_CARD_HOUSEHOLD } };
     } catch (e) {
         logger.warn('getMatchContext: standing could not be read, the card shows none', { adopterId, actor, error: e instanceof Error ? e.message : String(e) });
         return {};

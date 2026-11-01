@@ -16,7 +16,7 @@ import { isAdminAsync } from '@/config/admins';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
 import { countsFor } from '@/lib/profileSummary';
-import { isMinor, type HouseholdLine } from '@/domain/households';
+import { isMinor, type CardHousehold } from '@/domain/households';
 import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
 import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
 
@@ -81,7 +81,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
 
     // Fetch full adopter profiles for matches
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: HouseholdLine[]; rating?: number | null; openAlerts?: OpenAlertKind[] }> = [];
+    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: CardHousehold; rating?: number | null; openAlerts?: OpenAlertKind[] }> = [];
     if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
         const adopterIds = metadata.matchedAdopters.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
@@ -123,8 +123,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         }));
         // Final fix P2: who each one lives with, as on every card showing one person (never throws).
         if (matchedProfiles.length) {
-            const lines = await householdLinesFor(db, currentUser, matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => p.id));
-            matchedProfiles = matchedProfiles.map(p => (lines[p.id]?.length ? { ...p, households: lines[p.id] } : p));
+            // Every card its housemate chips; the first HOUSEHOLD_LINE_CARDS their list whatever it says.
+            const homes = await householdLinesFor(db, currentUser, matchedProfiles.map(p => p.id), { listCards: HOUSEHOLD_LINE_CARDS });
+            matchedProfiles = matchedProfiles.map(p => (homes[p.id] ? { ...p, households: homes[p.id] } : p));
             // Each card's own rating and alerts (audit B6); countsFor never throws (it logs and shows «Sin calificación»).
             const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { notificationId, user: currentUser }, { activity: false })));
             matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openAlerts: standing[i].openAlerts } : p));

@@ -51,12 +51,12 @@ import { extractErrorId } from '@/lib/errorUtils';
 import {
     addMembership, claimMembershipRecord, ensureHousehold, hasCorrection, householdExists, ordinaryHouseholdCount,
     householdLinesFor, isMemberOf, membershipById, membershipBySourceKey, membershipsOf, ownTeamOf, releaseMembershipRecord, removeMembership, setMembershipRelationship,
-    type HouseholdLine,
+    type CardHousehold,
 } from '@/lib/households';
 import {
     notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed, notifyHouseholdRelationshipChanged,
 } from '@/lib/householdNotices';
-import { canRemoveMembership, currentAge, householdNameKey, isGiftHousehold, isMinor, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
+import { canRemoveMembership, currentAge, householdNameKey, isGiftHousehold, isMinor, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE, NO_CARD_HOUSEHOLD } from '@/domain/households';
 import { sameName } from '@/domain/profileIdentity';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { householdContactSchema } from './validation';
@@ -125,7 +125,7 @@ export type AddHouseholdPersonResult =
     | Fail;
 
 export type HouseholdMatchCandidate = DiscoveryMatch & {
-    householdLine: HouseholdLine[];
+    household: CardHousehold;
     /** Open alerts, counted exactly as the household line counts them (ProfileCounts / openAlertKinds — final fix P6). */
     openAlerts: OpenAlertKind[];
     /** Activity by record type, counted as the candidate's own «Actividad» header and a household row count it (countsFor). */
@@ -727,11 +727,11 @@ export async function removeHouseholdMembership(
 async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ctx: Record<string, unknown>): Promise<HouseholdMatchCandidate[]> {
     const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
     const [lines, counts] = await Promise.all([
-        missing.length > 0 ? householdLinesFor(db, actor, missing) : Promise.resolve({} as Record<string, HouseholdLine[]>),
+        missing.length > 0 ? householdLinesFor(db, actor, missing) : Promise.resolve({} as Record<string, CardHousehold>),
         Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }))),
     ]);
     return matches.map((r, i) => ({
-        ...r, householdLine: r.households ?? lines[r.adopter.id] ?? [],
+        ...r, household: r.households ?? lines[r.adopter.id] ?? NO_CARD_HOUSEHOLD,
         openAlerts: counts[i].openAlerts, activity: counts[i].activity, rating: counts[i].rating,
     }));
 }

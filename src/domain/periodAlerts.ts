@@ -46,3 +46,15 @@ export function periodAlerts(records: readonly PeriodRecord[], config: AdoptionC
 export function periodAlertDays(alert: Pick<PeriodAlert, 'actualSpanDays' | 'periodDays'>): number {
     return Math.max(1, Math.round(alert.actualSpanDays || alert.periodDays));
 }
+
+/**
+ * Can a person with this many adoption / request records have a period alert
+ * at all? An alert needs `threshold` adoptions (or `requestsThreshold`
+ * rescues, each with at least one request) inside one period, so fewer
+ * records in total can never raise one. A cheap screen before reading a
+ * person's records for periodAlerts — never a substitute for it: a «true»
+ * here still has to be read.
+ */
+export function mayHavePeriodAlerts(counts: { adoptions: number; requests: number }, config: AdoptionConfig): boolean {
+    return counts.adoptions >= config.threshold || counts.requests >= config.requestsThreshold;
+}

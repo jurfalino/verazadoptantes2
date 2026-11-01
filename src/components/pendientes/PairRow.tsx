@@ -191,7 +191,7 @@ function SideHead({ side, badge, t, formatShortDate, onRequestAccess }: {
                 housemate alerts — tapping one lists who they live with, under this row. */}
             <div className="flex flex-wrap items-center gap-1.5 empty:hidden" data-testid="dedup-side-standing">
                 {side.rating !== undefined && <RatingBadge rating={side.rating} />}
-                <HousemateAlert lines={side.households} testId={`dedup-housemate-alert-${side.id}`} />
+                <HousemateAlert household={side.households} personId={side.id} testId={`dedup-housemate-alert-${side.id}`} />
             </div>
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px]">
                 {side.isMine

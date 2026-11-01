@@ -47,12 +47,16 @@ const SIZE = {
     md: { box: 'gap-1.5 px-3 py-1.5 text-xs', icon: 'w-3.5 h-3.5' },
 } as const;
 
-export function AlertPill({ kind, children, size = 'sm', onClick, pressed, expanded, controls, wrap = false, testId }: {
+export function AlertPill({ kind, children, size = 'sm', onClick, href, onNavigate, pressed, expanded, controls, wrap = false, testId }: {
     kind: AlertKind;
     children: ReactNode;
     size?: keyof typeof SIZE;
     /** A button (the profile header's pills open their hint). */
     onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+    /** A link to a place on the page instead (the profile header's housemate chips → «Familiares / Convivientes»). */
+    href?: string;
+    /** With `href`: runs on a click first (e.g. a smooth scroll that also moves focus). */
+    onNavigate?: (e: MouseEvent<HTMLAnchorElement>) => void;
     pressed?: boolean;
     /** A disclosure button instead (aria-expanded / aria-controls): the housemate chips open the household list. */
     expanded?: boolean;
@@ -72,6 +76,14 @@ export function AlertPill({ kind, children, size = 'sm', onClick, pressed, expan
         : FLAG_STYLE;
     // Wrapped: the icon stays on the first line (its 12px box centred on the 16px line — 2px, half-grid micro-spacing).
     const body = <><Icon className={`${sz.icon} shrink-0 ${wrap ? 'mt-0.5' : ''}`} strokeWidth={2.25} aria-hidden="true" />{wrap ? <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span> : children}</>;
+    if (href) {
+        return (
+            <a href={href} onClick={onNavigate} data-testid={testId} data-alert={kind}
+                className={`${cls} ${TAP_TARGET_44} transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]`} style={style}>
+                {body}
+            </a>
+        );
+    }
     if (onClick) {
         const aria = expanded === undefined ? { 'aria-pressed': pressed } : { 'aria-expanded': expanded, 'aria-controls': controls };
         return (

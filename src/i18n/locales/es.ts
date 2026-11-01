@@ -1079,6 +1079,7 @@ export const es = {
         hh_card_aria: 'Con quién vive',
         hh_card_open: 'Mostrar con quién vive',
         hh_card_close: 'Ocultar con quién vive',
+        hh_card_more: 'y {count} más',
         hh_lives_with_by: 'según {name}',
         hh_rel_unknown_display: 'Parentesco desconocido',
         hh_rel_partner: 'Pareja',

@@ -1531,7 +1531,15 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             compareSource={{ ...compareSource, kind: 'profile' }}
                             // The housemate alerts (Jon 2026-11-01): here a tap goes to the section that lists everyone.
                             housemateAlert={enableHousehold ? households.housemateAlert : undefined}
-                            onHousemateAlert={() => document.getElementById('profile-household-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            // A link to the section (review fix 7): smooth there, clear of the sticky nav (scroll-mt-20), and
+                            // focus lands on its heading, so a keyboard or screen-reader user arrives too.
+                            onHousemateAlert={(e) => {
+                                const section = document.getElementById('profile-household-section');
+                                if (!section) return; // the link's own jump
+                                e.preventDefault();
+                                section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                document.getElementById('profile-household-heading')?.focus({ preventScroll: true });
+                            }}
                         />
                     </div>
                 )}
@@ -1597,7 +1605,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
 
                     {/* Family Members (Full Width). The header's housemate alerts scroll here (clear of the h-16 sticky nav). */}
                     <div id="profile-household-section" className="md:col-span-2 min-w-0 scroll-mt-20">
-                        <h3 className="text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider">{t('adopter.family_members')}</h3>
+                        <h3 id="profile-household-heading" tabIndex={-1} className="text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider focus:outline-none">{t('adopter.family_members')}</h3>
                         {!isNew && enableHousehold && adopterId ? (
                             <div className="space-y-3">
                                 <HouseholdSection

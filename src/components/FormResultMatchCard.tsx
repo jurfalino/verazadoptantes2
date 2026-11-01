@@ -13,7 +13,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { en } from '@/i18n/locales/en';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
-import type { HouseholdLine } from '@/domain/households';
+import type { CardHousehold } from '@/domain/households';
 
 // Single source of truth: fallbacks from English locale
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -27,7 +27,7 @@ export interface FormResultMatchCardProps {
     profile: {
         id: string; name: string; contactInfo: string | null; contactEntries?: string | null; addressInfo: string | null; status: string | null; profileImageUrl?: string | null;
         /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
-        isMinor?: boolean; households?: HouseholdLine[];
+        isMinor?: boolean; households?: CardHousehold;
         /** Their own standing in the card's header (audit B6). */
         rating?: number | null; openAlerts?: OpenAlertKind[];
     };

@@ -19,7 +19,7 @@ import { computeAvgRating } from '@/domain/ratings';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
 import { countsFor } from '@/lib/profileSummary';
-import { isMinor, type HouseholdLine } from '@/domain/households';
+import { isMinor, type CardHousehold } from '@/domain/households';
 
 interface MatchedAdopter {
     id: string;
@@ -180,7 +180,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     type ProfileRow = {
         id: string; name: string; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null;
         /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
-        isMinor?: boolean; households?: HouseholdLine[];
+        isMinor?: boolean; households?: CardHousehold;
         /** Their own standing on the match card (audit B6). */
         rating?: number | null; openAlerts?: OpenAlertKind[];
     };
@@ -272,8 +272,9 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             });
         // Who each one lives with (never throws; the first HOUSEHOLD_LINE_CARDS cards).
         if (matchedProfiles.length) {
-            const lines = await householdLinesFor(db, currentUser, matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => p.id));
-            matchedProfiles = matchedProfiles.map(p => (lines[p.id]?.length ? { ...p, households: lines[p.id] } : p));
+            // Every card its housemate chips; the first HOUSEHOLD_LINE_CARDS their list whatever it says.
+            const homes = await householdLinesFor(db, currentUser, matchedProfiles.map(p => p.id), { listCards: HOUSEHOLD_LINE_CARDS });
+            matchedProfiles = matchedProfiles.map(p => (homes[p.id] ? { ...p, households: homes[p.id] } : p));
             // Each card's own rating and alerts (audit B6), the same counts a household line shows; countsFor
             // never throws (a failure logs and shows «Sin calificación»). One query per card, capped like the lines.
             const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { submissionId, user: currentUser }, { activity: false })));

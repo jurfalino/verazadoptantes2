@@ -5,6 +5,9 @@
  */
 import type { HouseholdView } from '@/lib/households';
 import type { GiftRecipientView } from '@/lib/householdPeople';
+import { NO_HOUSEMATE_ALERT, type HousemateAlertSummary } from '@/domain/households';
+
+export { NO_HOUSEMATE_ALERT, type HousemateAlertSummary };
 
 export type ProfileHouseholds = {
     views: HouseholdView[];
@@ -14,15 +17,13 @@ export type ProfileHouseholds = {
     canCreateGift: boolean;
     /**
      * The header's housemate alerts («Conviviente con calificación 2.0»,
-     * «Conviviente con alertas»), decided on the server from the same line a
-     * search card reads (householdLinesFor → housemateLowRating /
-     * housemateHasAlerts). Only the two answers reach the browser — never the
-     * housemates' names — and only for a signed-in viewer, as on search.
+     * «Conviviente con alertas»), decided on the server from the households
+     * in `views` themselves (each member's rating and period alerts →
+     * housemateAlertSummary, the rule every card uses), so the header and the
+     * section never disagree. Only the two answers are added — and only for
+     * a signed-in viewer, as on search.
      */
     housemateAlert: HousemateAlertSummary;
 };
 
-export type HousemateAlertSummary = { lowRating: number | null; hasAlerts: boolean };
-export const NO_HOUSEMATE_ALERT: HousemateAlertSummary = { lowRating: null, hasAlerts: false };
-
-export const EMPTY_PROFILE_HOUSEHOLDS: ProfileHouseholds = { views: [], giftForms: [], canCreateGift: false, housemateAlert: { lowRating: null, hasAlerts: false } };
+export const EMPTY_PROFILE_HOUSEHOLDS: ProfileHouseholds = { views: [], giftForms: [], canCreateGift: false, housemateAlert: NO_HOUSEMATE_ALERT };

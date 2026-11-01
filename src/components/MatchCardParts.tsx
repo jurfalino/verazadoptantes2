@@ -28,7 +28,7 @@ import { PersonStanding } from '@/components/PersonStanding';
 import { HousemateAlert } from '@/components/HousemateAlert';
 import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { Button, buttonClasses } from '@/components/ui/Button';
-import type { HouseholdLine } from '@/domain/households';
+import type { CardHousehold } from '@/domain/households';
 
 export type MatchCardPerson = {
     id: string;
@@ -37,7 +37,7 @@ export type MatchCardPerson = {
     rating?: number | null;
     openAlerts?: OpenAlertKind[];
     isMinor?: boolean;
-    households?: HouseholdLine[];
+    households?: CardHousehold;
 };
 
 export function MatchCardHeader({ person, newTab = false, testId = 'match-card-head', nameNode, thumbnail, showStanding = true }: {
@@ -68,8 +68,8 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
                     {/* The housemate alerts sit in the person's own alert row, before the flags (Jon 2026-11-01). */}
                     {showStanding
                         ? <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`}
-                            alerts={<HousemateAlert lines={person.households} testId={`${testId}-housemate-alert`} />} />
-                        : <HousemateAlert lines={person.households} testId={`${testId}-housemate-alert`} />}
+                            alerts={<HousemateAlert household={person.households} personId={person.id} testId={`${testId}-housemate-alert`} />} />
+                        : <HousemateAlert household={person.households} personId={person.id} testId={`${testId}-housemate-alert`} />}
                 </div>
             </div>
         </div>

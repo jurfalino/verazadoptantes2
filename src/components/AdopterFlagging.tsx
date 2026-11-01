@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, type MouseEvent } from 'react';
 import { flagAdopter, findAdopters, getDuplicateCandidates } from '@/app/actions';
 import type { DuplicateCandidate, DiscoveryMatch } from '@/app/actions';
 import { useRouter } from 'next/navigation';
@@ -20,6 +20,9 @@ import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import type { HousemateAlertSummary } from '@/domain/profileHouseholds';
+
+/** Where the header's housemate chips lead: «Familiares / Convivientes» (AdopterForm's section). */
+export const HOUSEHOLD_SECTION_HREF = '#profile-household-section';
 import { formatRating } from '@/domain/ratings';
 import { Modal, ModalActions } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -75,7 +78,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     );
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: () => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -298,14 +301,15 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             </AlertPill>
                         )}
 
-                        {/* …the housemate alerts: tapping one scrolls to «Familiares / Convivientes», where everyone is listed… */}
+                        {/* …the housemate alerts: links to «Familiares / Convivientes», where everyone is listed (review fix 7:
+                            a real link, so focus moves there too — onHousemateAlert smooths the scroll)… */}
                         {housemateLow != null && (
-                            <AlertPill kind="housemate_low_rating" size="md" wrap onClick={onHousemateAlert} testId="profile-housemate-alert-rating">
+                            <AlertPill kind="housemate_low_rating" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-rating">
                                 {t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateLow))}
                             </AlertPill>
                         )}
                         {housemateAlerts && (
-                            <AlertPill kind="housemate_alerts" size="md" wrap onClick={onHousemateAlert} testId="profile-housemate-alert-alerts">
+                            <AlertPill kind="housemate_alerts" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-alerts">
                                 {t('flags.housemate_alerts')}
                             </AlertPill>
                         )}

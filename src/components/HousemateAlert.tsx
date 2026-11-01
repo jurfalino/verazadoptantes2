@@ -12,6 +12,8 @@
  *   1★/2★ — the lowest such rating, one decimal (housemateLowRating).
  * - «Conviviente con alertas»: someone there has one of their own period
  *   alerts (housemateHasAlerts). Flags never raise either chip.
+ * Both answers come from the server (CardHousehold.alert), decided over EVERY
+ * housemate, not just the ones the list has room for (review fix 2).
  * The two are independent: a home can show both. Each is the alert pill in
  * the warning tone with the home icon, in the card's own alert row, before
  * the flags.
@@ -30,27 +32,32 @@ import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { MinorTag } from '@/components/MinorTag';
 import { AlertPill, PeriodAlertPills } from '@/components/AlertPill';
-import { householdLineGroups, housemateHasAlerts, housemateLowRating, type HouseholdLine, type HousemateAlertLine } from '@/domain/households';
+import { householdLineGroups, raisesHousemateAlert, type CardHousehold } from '@/domain/households';
 import { formatRating } from '@/domain/ratings';
 
-type Lines = HouseholdLine[] | null | undefined;
+type Household = CardHousehold | null | undefined;
 
-/** Does this person carry a housemate alert at all (either chip)? */
-export function hasHousemateAlert(lines: ReadonlyArray<HousemateAlertLine> | null | undefined): boolean {
-    return housemateLowRating(lines) != null || housemateHasAlerts(lines);
+/**
+ * Does this person carry a housemate alert at all (either chip)? From the
+ * card's `alert` answers — every housemate, never only the listed ones
+ * (review fix 2).
+ */
+export function hasHousemateAlert(household: Household): boolean {
+    return raisesHousemateAlert(household?.alert);
 }
 
 /**
- * The open state of one person's housemate list. Open for THESE lines only: a
- * new search keeps the card (keyed by adopter id) but brings a new array, so
- * the list comes back closed — with no open frame, unlike a reset in an effect.
+ * The open state of one person's housemate list, kept for THAT person
+ * (`personId`, review M3): a refetch that brings the same person back with a
+ * new array keeps an opened list open; another person's card never inherits it.
  */
-export function useHousemateList(lines: Lines) {
-    const [openFor, setOpenFor] = useState<Lines>(null);
+export function useHousemateList(personId: string | null | undefined) {
+    const [openFor, setOpenFor] = useState<string | null>(null);
     const listId = useId();
+    const key = personId ?? null;
     return {
-        open: openFor != null && openFor === lines,
-        toggle: () => setOpenFor(o => (o === lines ? null : lines)),
+        open: key != null && openFor === key,
+        toggle: () => setOpenFor(o => (o === key ? null : key)),
         listId,
     };
 }
@@ -58,16 +65,16 @@ export function useHousemateList(lines: Lines) {
 const stop = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); };
 
 /** The chips (none, one or both), each toggling the shared list. */
-export function HousemateAlertChips({ lines, open, onToggle, listId, testId = 'housemate-alert' }: {
-    lines: Lines;
+export function HousemateAlertChips({ household, open, onToggle, listId, testId = 'housemate-alert' }: {
+    household: Household;
     open: boolean;
     onToggle: () => void;
     listId: string;
     testId?: string;
 }) {
     const { t } = useLanguage();
-    const low = housemateLowRating(lines);
-    const alerts = housemateHasAlerts(lines);
+    const low = household?.alert.lowRating ?? null;
+    const alerts = !!household?.alert.hasAlerts;
     if (low == null && !alerts) return null;
     const click = (e: MouseEvent<HTMLButtonElement>) => { stop(e); onToggle(); };
     const hint = <span className="sr-only"> · {open ? t('adopter.hh_card_close') : t('adopter.hh_card_open')}</span>;
@@ -88,10 +95,15 @@ export function HousemateAlertChips({ lines, open, onToggle, listId, testId = 'h
     );
 }
 
-/** The opened list: everyone in the person's homes, per home, with their own rating and alerts (never flags). */
-export function HousemateList({ lines, id, className = '' }: { lines: Lines; id: string; className?: string }) {
+/**
+ * The opened list: everyone in the person's homes, per home, with their own
+ * rating and alerts (never flags) — at most the card's MAX_HOUSEHOLD_LINES
+ * people, then «y N más» for the rest (review fix 2).
+ */
+export function HousemateList({ household, id, className = '' }: { household: Household; id: string; className?: string }) {
     const { t } = useLanguage();
-    const homes = householdLineGroups(lines);
+    const homes = householdLineGroups(household?.lines);
+    const more = household?.more ?? 0;
     return (
         <div id={id} role="group" aria-label={t('adopter.hh_card_aria')}
             className={`rounded-lg border px-3 py-2 text-xs space-y-1.5 min-w-0 ${className}`}
@@ -115,6 +127,11 @@ export function HousemateList({ lines, id, className = '' }: { lines: Lines; id:
                     ))}
                 </div>
             ))}
+            {more > 0 && (
+                <div style={{ color: 'var(--text-secondary)' }} data-testid="card-household-more">
+                    {t('adopter.hh_card_more').replace('{count}', String(more))}
+                </div>
+            )}
         </div>
     );
 }
@@ -123,14 +140,15 @@ export function HousemateList({ lines, id, className = '' }: { lines: Lines; id:
  * Chips and list together, for a `flex flex-wrap` alert row: the chips sit in
  * the row, the opened list takes a full line at the row's end (basis-full +
  * order-last), so the flags after the chips stay on the chips' line.
+ * `personId` keeps the list open across a refetch of the same person (M3).
  */
-export function HousemateAlert({ lines, testId }: { lines: Lines; testId?: string }) {
-    const { open, toggle, listId } = useHousemateList(lines);
-    if (!hasHousemateAlert(lines)) return null;
+export function HousemateAlert({ household, personId, testId }: { household: Household; personId: string | null | undefined; testId?: string }) {
+    const { open, toggle, listId } = useHousemateList(personId);
+    if (!hasHousemateAlert(household)) return null;
     return (
         <>
-            <HousemateAlertChips lines={lines} open={open} onToggle={toggle} listId={listId} testId={testId} />
-            {open && <HousemateList lines={lines} id={listId} className="basis-full order-last mt-1" />}
+            <HousemateAlertChips household={household} open={open} onToggle={toggle} listId={listId} testId={testId} />
+            {open && <HousemateList household={household} id={listId} className="basis-full order-last mt-1" />}
         </>
     );
 }

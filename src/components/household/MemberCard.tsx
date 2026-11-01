@@ -35,6 +35,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { MemberContacts } from '@/components/LinkedProfileSummary';
 import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
+import { PeriodAlertPills } from '@/components/AlertPill';
 import { SEPARATED_PIECE } from '@/components/ActivityCountsLine';
 import { EditMemberForm, useHouseholdFailure } from '@/components/household/PersonForms';
 import { RemoveFromHomeDialog, RequestDeletionDialog, DeleteProfileDialog, type DeletionCollaborators, type RemoveReason } from '@/components/household/HouseholdDialogs';
@@ -228,7 +229,10 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                             Its own ::after pads the tap area to 44px without moving the text (audit B9). */}
                         <a href={`/adopter/${encodeURIComponent(member.profileId)}`} data-testid="household-member-profile-link" className="relative z-10 font-semibold text-[15px] text-teal-700 hover:underline min-w-0 break-words after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']">{name}</a>
                         {/* The one «standing + activity» renderer (PersonStanding), as «¿Es este perfil?» and every card's household line. */}
-                        <PersonStanding rating={member.rating} openAlerts={member.openAlerts} isMinor={member.isMinor} alertsTestId="household-member-alerts" />
+                        {/* Their own period alerts («3 adopciones en 8 días») with the pill a card's housemate list uses —
+                            one concept, one look (review fix 4); what the header's «Conviviente con alertas» leads to. */}
+                        <PersonStanding rating={member.rating} openAlerts={member.openAlerts} isMinor={member.isMinor} alertsTestId="household-member-alerts"
+                            alerts={<PeriodAlertPills alerts={member.alerts} testId="household-member-period-alert" />} />
                         <PersonActivity activity={member.activity} testId="household-member-activity" />
                     </div>
                     {(sub || attribution || hasContactsToggle) && (

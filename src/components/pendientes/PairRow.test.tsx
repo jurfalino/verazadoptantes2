@@ -10,12 +10,26 @@ import { es } from '@/i18n/locales/es';
 import { en } from '@/i18n/locales/en';
 import { pt } from '@/i18n/locales/pt';
 
-// The comparison card reads the session and calls actions; the row's own text is what is tested.
+// The comparison card reads the session and calls actions; the row's own text is what is tested —
+// plus the two side heads the row hands it (drawn here as they are, so their rows can be read).
 vi.mock('@/components/MatchCompare', () => ({
-    default: () => null,
+    default: ({ sourceHead, targetHead }: { sourceHead?: unknown; targetHead?: unknown }) => (
+        <>{sourceHead as never}{targetHead as never}</>
+    ),
     AdminScore: () => null,
     entriesAsShown: () => [],
 }));
+
+// The heads' own pieces (RatingBadge, the housemate chips, «Abrir perfil ↗») read the language themselves: es.
+vi.mock('@/context/LanguageContext', async () => {
+    const { es: dict } = await import('@/i18n/locales/es');
+    const t = (path: string): string => {
+        let cur: unknown = dict;
+        for (const k of path.split('.')) cur = (cur as Record<string, unknown> | undefined)?.[k];
+        return typeof cur === 'string' ? cur : path;
+    };
+    return { useLanguage: () => ({ t, locale: 'es' }) };
+});
 
 const { default: PairRow } = await import('./PairRow');
 
@@ -99,5 +113,43 @@ describe('PairRow — «Pedir revisión a un administrador» (D49)', () => {
         }), as(dict));
         expect(html).toContain(dict.myAdopters.pending_d_line_sent_dispute.replace('{when}', 'hace 1 día'));
         expect(html).toContain(dict.myAdopters.pending_d_explain_sent_dispute);
+    });
+});
+
+describe('PairRow — each side\'s standing row (dedup-side-standing, point C)', () => {
+    // Each side's standing row, in order (mine, theirs): its HTML up to the next side row.
+    // (The row after it — who loaded it, source, date — is the side's 12px meta line.)
+    const rows = (html: string) => html.split('data-testid="dedup-side-standing"').slice(1).map(chunk => chunk.slice(0, chunk.indexOf('text-[12px]')));
+
+    it('the side\'s own rating first, then its housemate chips; a side with neither draws an empty row (hidden by CSS)', () => {
+        const p = pair({
+            newAdopter: side('mine', {
+                isMine: true, teamOwned: true, rating: 4.25,
+                households: { lines: [], more: 0, alert: { lowRating: 1.5, hasAlerts: true } },
+            }),
+            existingAdopter: side('theirs', { createdByName: 'María' }),
+        });
+        const html = render(p, as(es));
+        const [mine, theirs] = rows(html);
+        expect(rows(html)).toHaveLength(2);
+        // Mine: «★ 4.3 · Bueno», then both chips (the lowest rating, one decimal), in that order.
+        expect(mine).toContain('data-testid="rating-value"');
+        expect(mine).toContain('4.3');
+        const rating = mine.indexOf('data-testid="rating-value"');
+        const low = mine.indexOf('data-testid="dedup-housemate-alert-mine-rating"');
+        const alerts = mine.indexOf('data-testid="dedup-housemate-alert-mine-alerts"');
+        expect(rating).toBeLessThan(low);
+        expect(low).toBeLessThan(alerts);
+        expect(html).toContain(es.flags.housemate_low_rating.replace('{rating}', '1.5'));
+        // Theirs: rating not read (undefined) and no homes → nothing in the row, not «Sin calificación».
+        expect(theirs).not.toContain('data-testid="rating-value"');
+        expect(theirs).not.toContain('person-unrated');
+        expect(theirs).not.toContain('dedup-housemate-alert');
+    });
+
+    it('a side read as unrated (null) says «Sin calificación»', () => {
+        const html = render(pair({ existingAdopter: side('theirs', { rating: null }) }), as(es));
+        const theirs = rows(html)[1];
+        expect(theirs).toContain('person-unrated');
     });
 });

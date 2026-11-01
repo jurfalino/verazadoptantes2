@@ -11,7 +11,7 @@ import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import type { HouseholdLine } from '@/domain/households';
+import type { CardHousehold } from '@/domain/households';
 
 interface ContractResultsMatchCardProps {
     matchId: string;
@@ -25,7 +25,7 @@ interface ContractResultsMatchCardProps {
         status: string | null;
         /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
         isMinor?: boolean;
-        households?: HouseholdLine[];
+        households?: CardHousehold;
         /** Their own standing in the card's header (audit B6). */
         rating?: number | null;
         openAlerts?: OpenAlertKind[];

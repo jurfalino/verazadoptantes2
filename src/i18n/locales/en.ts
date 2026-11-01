@@ -1071,6 +1071,7 @@ export const en = {
         hh_card_aria: 'Who they live with',
         hh_card_open: 'Show who they live with',
         hh_card_close: 'Hide who they live with',
+        hh_card_more: 'and {count} more',
         hh_lives_with_by: 'according to {name}',
         hh_rel_unknown_display: 'Relationship unknown',
         hh_rel_partner: 'Partner',

@@ -30,8 +30,8 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import {
-    addMembership, ensureHousehold, getHouseholdsFor, hasCorrection, householdIdsOf, householdLinesFor,
-    MAX_CARD_PROFILE_READS, removeMembership, sameHousehold, dropMembershipsOfDeletedProfile,
+    addMembership, createHousehold, ensureHousehold, getHouseholdsFor, hasCorrection, householdIdsOf, householdLinesFor,
+    MAX_CARD_ALERT_READS, MAX_CARD_PROFILE_READS, removeMembership, sameHousehold, dropMembershipsOfDeletedProfile,
 } from './households';
 import { logger } from '@/lib/logger';
 import { MAX_HOUSEHOLD_LINES, currentAge } from '@/domain/households';
@@ -441,8 +441,9 @@ describe('householdLinesFor', () => {
         await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
         await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
 
-        const lines = await householdLinesFor(db(), STRANGER, ['lucas', 'marta', 'ana', 'gone', 'nobody']);
-        expect(Object.keys(lines).sort()).toEqual(['ana', 'gone', 'lucas', 'marta', 'nobody']);
+        const homes = await householdLinesFor(db(), STRANGER, ['lucas', 'marta', 'ana', 'gone', 'nobody']);
+        expect(Object.keys(homes).sort()).toEqual(['ana', 'gone', 'lucas', 'marta', 'nobody']);
+        const lines = Object.fromEntries(Object.entries(homes).map(([k, v]) => [k, v.lines]));
         expect(lines.lucas).toEqual(expect.arrayContaining([
             { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
             { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
@@ -466,14 +467,14 @@ describe('householdLinesFor', () => {
         const ev = sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, date, recorded_by) VALUES (?, 'marta', 'adoption_request', ?, ?)`);
         ev.run('e1', t0, OWNER); ev.run('e2', t0 + day, MATE); ev.run('e3', t0 + 2 * day, STRANGER);
 
-        const line = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro.find(l => l.profileId === 'marta')!;
+        const line = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines.find(l => l.profileId === 'marta')!;
         const own = (await enrichAdopters(db(), ['marta'])).get('marta')!.flags;
         expect(line.alerts).toEqual({ tooManyAdoptions: own.tooManyAdoptions, tooManyRequests: own.tooManyRequests });
         expect(line.alerts.tooManyAdoptions).toMatchObject({ count: 2, threshold: 2, periodDays: 90 });
         expect(line.alerts.tooManyRequests).toMatchObject({ count: 2, threshold: 2, periodDays: 30 });
         // Flags stay what they were: Marta has none, Pedro's «Inexacto» is not an alert.
         expect(line.openAlerts).toEqual([]);
-        const pedroLine = (await householdLinesFor(db(), OWNER, ['marta'])).marta.find(l => l.profileId === 'pedro')!;
+        const pedroLine = (await householdLinesFor(db(), OWNER, ['marta'])).marta.lines.find(l => l.profileId === 'pedro')!;
         expect(pedroLine.alerts).toEqual(NO_PERIOD_ALERTS);
     });
 
@@ -487,7 +488,7 @@ describe('householdLinesFor', () => {
         }) as never);
         try {
             const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
-            expect(pedro.find(l => l.profileId === 'marta')!.alerts).toEqual(NO_PERIOD_ALERTS);
+            expect(pedro.lines.find(l => l.profileId === 'marta')!.alerts).toEqual(NO_PERIOD_ALERTS);
             expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alerts read failed'), expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, profileId: 'marta' }));
         } finally {
             spy.mockRestore();
@@ -510,12 +511,12 @@ describe('householdLinesFor', () => {
             const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
             expect(profileReads()).toBeLessThanOrEqual(MAX_CARD_PROFILE_READS);
             // The hard cap may hide live people behind many deleted ones; it never reads them all.
-            expect(pedro.length).toBeLessThanOrEqual(MAX_HOUSEHOLD_LINES);
+            expect(pedro.lines.length).toBeLessThanOrEqual(MAX_HOUSEHOLD_LINES);
 
             // All live: reading stops as soon as MAX_HOUSEHOLD_LINES are found.
             sqlite.exec('UPDATE adopters SET deleted_at = NULL');
             spy.mockClear();
-            const lines = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro;
+            const lines = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines;
             expect(lines).toHaveLength(MAX_HOUSEHOLD_LINES);
             expect(profileReads()).toBe(MAX_HOUSEHOLD_LINES);
         } finally {
@@ -530,7 +531,7 @@ describe('householdLinesFor', () => {
         await addMembership(db(), { householdId: second, adopterId: 'lucas', addedBy: STRANGER });
         await addMembership(db(), { householdId: second, adopterId: 'pedro', addedBy: STRANGER });
         const { lucas } = await householdLinesFor(db(), null, ['lucas']);
-        expect(lucas.map(l => l.profileId).sort()).toEqual(['marta', 'pedro', 'rosa']);
+        expect(lucas.lines.map(l => l.profileId).sort()).toEqual(['marta', 'pedro', 'rosa']);
     });
 
     it('the households flag is read failing open: a failed read keeps the housemate lines', async () => {
@@ -548,6 +549,77 @@ describe('householdLinesFor', () => {
     });
 });
 
+describe('review fix 2 — the chips answer for every housemate, whatever the list can show', () => {
+    /** Pedro's home with `n` more people (live, unrated), added after Marta and Lucas. */
+    async function bigHome(n: number): Promise<{ hh: string; ids: string[] }> {
+        const hh = await pedrosHousehold();
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 1000, 1000)`);
+        const ids: string[] = [];
+        for (let i = 0; i < n; i++) {
+            const id = `mate${String(i).padStart(2, '0')}`;
+            insert.run(id, `Mate ${i}`, OWNER);
+            await addMembership(db(), { householdId: hh, adopterId: id, addedBy: OWNER, addedAt: new Date(Date.now() + (i + 1) * 1000) });
+            ids.push(id);
+        }
+        return { hh, ids };
+    }
+
+    it('the 11th housemate is the 1★ one → the chip still shows, the list stops at 10 and says «y 1 más»', async () => {
+        // Pedro's home: Marta, Lucas and 8 more fill the list; the 11th, added last, is rated 1.
+        await bigHome(8);
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('late', 'Late Bad', '5', ?, 1000, 1000)`);
+        insert.run(OWNER);
+        const hh = (sqlite.prepare(`SELECT household_id FROM household_memberships WHERE adopter_id = 'pedro'`).get()!.household_id) as string;
+        await addMembership(db(), { householdId: hh, adopterId: 'late', addedBy: OWNER, addedAt: new Date(Date.now() + 3_600_000) });
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an9', 'Nube', ?)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating) VALUES ('p9', 'an9', 'late', 'adoption', 1)`).run();
+        // Pedro's card: Marta, Lucas, 8 mates, then «late» — the 11th housemate.
+        const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+        expect(pedro.lines).toHaveLength(MAX_HOUSEHOLD_LINES);
+        expect(pedro.lines.map(l => l.profileId)).not.toContain('late');
+        expect(pedro.alert).toEqual({ lowRating: 1, hasAlerts: false });
+        expect(pedro.more).toBe(1);
+    });
+
+    it('an alert of a housemate the list leaves out still raises «Conviviente con alertas»', async () => {
+        const { ids } = await bigHome(10);
+        const last = ids[ids.length - 1];
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90')`);
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an2', 'Mora', ?), ('an3', 'Tom', ?)`).run(OWNER, OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES ('p2', 'an2', ?, 'adoption', 1780000000), ('p3', 'an3', ?, 'adoption', 1780864000)`).run(last, last);
+        const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+        expect(pedro.lines.map(l => l.profileId)).not.toContain(last);
+        expect(pedro.alert.hasAlerts).toBe(true);
+        // Pedro's own ★1 is not his own housemate: no rating chip on his card.
+        expect(pedro.alert.lowRating).toBeNull();
+    });
+
+    it('a card past `listCards` reads its list only when it raises a chip; a gift home never raises one', async () => {
+        await pedrosHousehold();
+        await createHousehold(db(), OWNER, 'gift1');
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'pedro', giftRecipient: true, relativeToAdopterId: 'rosa', addedBy: OWNER });
+        const homes = await householdLinesFor(db(), OWNER, ['nobody', 'marta', 'rosa'], { listCards: 1 });
+        // Marta (#2) lives with Pedro (★1): chip and list.
+        expect(homes.marta.alert.lowRating).toBe(1);
+        expect(homes.marta.lines.map(l => l.profileId).sort()).toEqual(['lucas', 'pedro']);
+        // Rosa (#3) only GAVE to Pedro: no chip, and no list read for her.
+        expect(homes.rosa).toEqual({ lines: [], more: 0, alert: { lowRating: null, hasAlerts: false } });
+    });
+
+    it('too many housemates who might have alerts: reads stop at the cap, logged with the card\'s context', async () => {
+        const n = MAX_CARD_ALERT_READS + 2;
+        const { ids } = await bigHome(n);
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '1')`);
+        // An adoption each: every one of them is screened in and must be read.
+        const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, 'X', ?)`);
+        const adopt = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type) VALUES (?, ?, ?, 'adoption')`);
+        ids.forEach((id, i) => { animal.run(`anx${i}`, OWNER); adopt.run(`pa${i}`, `anx${i}`, id); });
+        await householdLinesFor(db(), OWNER, ['pedro']);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alert read cap hit'), expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, cap: MAX_CARD_ALERT_READS }));
+    });
+});
+
 describe('final fix D1(a) — a member merged away by an old build shows as its survivor', () => {
     /** What an old build's merge leaves: the absorbed row soft-deleted as MERGED, its memberships untouched, the audit row. */
     const oldBuildMerge = (absorbed: string, survivor: string) => {
@@ -562,7 +634,7 @@ describe('final fix D1(a) — a member merged away by an old build shows as its 
         const [view] = await getHouseholdsFor(db(), OWNER, 'pedro');
         expect(view.members.map(m => m.profileId).sort()).toEqual(['lucas', 'rosa']);
         const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
-        expect(pedro.map(l => l.profileId).sort()).toEqual(['lucas', 'rosa']);
+        expect(pedro.lines.map(l => l.profileId).sort()).toEqual(['lucas', 'rosa']);
     });
 
     it('a survivor already in the household, or the profile itself, is never listed twice', async () => {
@@ -570,12 +642,12 @@ describe('final fix D1(a) — a member merged away by an old build shows as its 
         oldBuildMerge('marta', 'lucas');
         const [view] = await getHouseholdsFor(db(), OWNER, 'pedro');
         expect(view.members.map(m => m.profileId)).toEqual(['lucas']);
-        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.map(l => l.profileId)).toEqual(['lucas']);
+        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines.map(l => l.profileId)).toEqual(['lucas']);
         // Merged into Pedro himself: not his own housemate.
         sqlite.prepare(`UPDATE adopters SET deleted_at = NULL, token_hash = NULL WHERE id = 'marta'`).run();
         sqlite.prepare(`DELETE FROM audit_log`).run();
         oldBuildMerge('marta', 'pedro');
         expect((await getHouseholdsFor(db(), OWNER, 'pedro'))[0].members.map(m => m.profileId)).toEqual(['lucas']);
-        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.map(l => l.profileId)).toEqual(['lucas']);
+        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines.map(l => l.profileId)).toEqual(['lucas']);
     });
 });

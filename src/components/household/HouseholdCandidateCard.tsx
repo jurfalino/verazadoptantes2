@@ -58,7 +58,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
     const shown = entries.slice(0, MAX_SUMMARY_CONTACTS);
     // The same count as the household line (final fix P6).
     const alerts = candidate.openAlerts ?? openAlertKinds(candidate.flags);
-    const homes = householdLineGroups(candidate.householdLine);
+    const homes = householdLineGroups(candidate.household.lines);
     const minor = !!candidate.isMinor;
     return (
         // A question, not a warning (audit B15): the neutral info look, and the person drawn as every other person
@@ -82,7 +82,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                             <a href={`/adopter/${encodeURIComponent(candidate.adopterId)}`} target="_blank" rel="noopener noreferrer"
                                 data-testid={`${testId}-link`} className={`font-semibold text-[15px] text-teal-700 hover:underline break-words ${TAP_TARGET_44}`}>{name}</a>
                             <PersonStanding rating={candidate.rating ?? candidate.avgRating} openAlerts={alerts} isMinor={minor} alertsTestId={`${testId}-alerts`}
-                                alerts={<HousemateAlert lines={candidate.householdLine} testId={`${testId}-housemate-alert`} />} />
+                                alerts={<HousemateAlert household={candidate.household} personId={candidate.adopterId} testId={`${testId}-housemate-alert`} />} />
                             {candidate.activity && <PersonActivity activity={candidate.activity} testId={`${testId}-activity`} />}
                         </div>
                         {shown.length > 0 && (

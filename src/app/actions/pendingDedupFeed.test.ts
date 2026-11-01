@@ -102,6 +102,19 @@ describe('getPendingDuplicatesForUser — who created the other profile', () => 
     });
 });
 
+describe('getPendingDuplicatesForUser — each side\'s own rating (point C)', () => {
+    it('a rated side carries its live average (countsFor: ratings > 0 only); an unrated one null — never undefined once read', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an-r1', 'Luna', ?), ('an-r2', 'Mora', ?), ('an-r3', 'Tom', ?)`).run(OWNER, OWNER, OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating) VALUES
+            ('pl-r1', 'an-r1', 'o-new', 'adoption', 2), ('pl-r2', 'an-r2', 'o-new', 'adoption', 3), ('pl-r3', 'an-r3', 'o-new', 'adoption', 0)`).run();
+        const p = pairOf((await feed(OWNER)).pairs, 'cand-older-mine');
+        expect(p.newAdopter.id).toBe('o-new');
+        expect(p.newAdopter.rating).toBe(2.5);
+        expect(p.existingAdopter.id).toBe('s-old');
+        expect(p.existingAdopter.rating).toBeNull();
+    });
+});
+
 describe('getPendingDuplicatesForUser — open merge requests', () => {
     it("the viewer's own request: direction 'sent', waiting on the other owner by name", async () => {
         // OWNER's o-old is older than STRANGER's s-new → a request to STRANGER.

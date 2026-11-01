@@ -1078,6 +1078,7 @@ export const pt = {
         hh_card_aria: 'Com quem mora',
         hh_card_open: 'Mostrar com quem mora',
         hh_card_close: 'Ocultar com quem mora',
+        hh_card_more: 'e mais {count}',
         hh_lives_with_by: 'segundo {name}',
         hh_rel_unknown_display: 'Parentesco desconhecido',
         hh_rel_partner: 'Parceiro/a',

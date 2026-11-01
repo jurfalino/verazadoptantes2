@@ -17,8 +17,9 @@
  * - `getHouseholdsFor`: the profile page's households — each member's live
  *   summary masked exactly as that member's profile is for this viewer (the
  *   same helpers as getLinkedSummaries, src/lib/profileSummary.ts). Never throws.
- * - `householdLinesFor`: the household line of search / «¿Es este perfil?»
- *   cards, batched. Never throws.
+ * - `householdLinesFor`: the homes of search / «¿Es este perfil?» cards —
+ *   the housemate chips' answers and the list they open — batched. Never throws.
+ * - `periodAlertReader`: housemates' period alerts, memoized per call.
  *
  * Rules live in src/domain/households.ts. D1: no `IN (array)` — one bounded
  * query per profile / household, fanned out with Promise.all.
@@ -44,12 +45,20 @@ import {
     isGiftHousehold,
     isMinor,
     membershipLabel,
+    housemateAlertSummary,
+    housemateHasAlerts,
+    housemateLowRating,
+    mergeHousemateAlerts,
+    raisesHousemateAlert,
+    NO_CARD_HOUSEHOLD,
+    NO_HOUSEMATE_ALERT,
+    type CardHousehold,
     type HouseholdLine,
     type MembershipLabel,
 } from '@/domain/households';
 import { pairKey } from '@/domain/dedupPair';
 import { RECORD_TYPES } from '@/domain/constants';
-import { NO_PERIOD_ALERTS, periodAlerts, type PeriodAlerts } from '@/domain/periodAlerts';
+import { NO_PERIOD_ALERTS, mayHavePeriodAlerts, periodAlerts, type PeriodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import type { AdoptionConfig } from '@/types/adopter';
 
@@ -78,6 +87,12 @@ export type HouseholdMemberView = LinkedSummary & {
     age: number | null;
     /** The household's own anchor row (added next to nobody): the person relationships point at — no «Editar» there. */
     isAnchor: boolean;
+    /**
+     * Their own period alerts («3 adopciones en 8 días»), drawn as a card's list
+     * draws them (review fix 4). Added by readProfileHouseholds after this read,
+     * for a signed-in viewer; absent = none known.
+     */
+    alerts?: PeriodAlerts;
     /** The viewer added this membership («agregado por vos»). */
     addedByViewer: boolean;
     /** The viewer owns this member's profile (the deletion items: «Eliminar perfil» / «Pedir eliminación»). */
@@ -95,7 +110,7 @@ export type HouseholdSelfView = {
 export type HouseholdView = { id: string; isGift: boolean; self: HouseholdSelfView; members: HouseholdMemberView[] };
 
 /** A housemate on a search / «¿Es este perfil?» card — defined in the domain so client components can import it. */
-export type { HouseholdLine };
+export type { CardHousehold, HouseholdLine };
 
 export type AddMembershipInput = {
     householdId: string;
@@ -731,50 +746,153 @@ export async function getHouseholdsFor(
     }
 }
 
-// ─────────────────────────── Card lines (batched) ───────────────────────────
-
-/** Cards per page that get a household line (the rest of a long page go without). */
-export const HOUSEHOLD_LINE_CARDS = 20;
+// ─────────────────────────── Housemates' period alerts ───────────────────────────
 
 /**
- * Search / «¿Es este perfil?» cards with their household line (`households`),
- * read in ONE batched `householdLinesFor` call: one indexed lookup per card
- * (most people have no household), more only for a card that has one. Only the
- * first HOUSEHOLD_LINE_CARDS cards get a line — callers pass the cards in the
- * order shown (main results first) — and only for a signed-in viewer: the line
- * names people, and a logged-out visitor's names are masked server-side. Never
- * throws (a failed card gets [], logged).
+ * One call's reader of housemates' period alerts («N adopciones en N días»,
+ * «Pidió en N rescates…») — computed exactly as the search card's own
+ * (periodAlerts with getAdoptionConfig, requests per rescue). Each profile is
+ * read once per reader (memoized), the config and the rescue keys once, and
+ * only when someone is read. A failed read is logged with the caller's context
+ * and shows no alerts for that person; it never throws.
+ */
+export type PeriodAlertReader = {
+    config: () => Promise<AdoptionConfig>;
+    alertsOf: (profileId: string, ctx: Record<string, unknown>) => Promise<PeriodAlerts>;
+};
+
+export function periodAlertReader(db: Db, op: string): PeriodAlertReader {
+    const memo = new Map<string, Promise<PeriodAlerts>>();
+    let configP: Promise<AdoptionConfig> | null = null;
+    let rescueKeysP: Promise<Map<string, string>> | null = null;
+    const config = () => (configP ??= import('@/app/actions/config').then(m => m.getAdoptionConfig()));
+    const rescueKeys = () => (rescueKeysP ??= loadRescueKeys(db, op));
+    const alertsOf = (profileId: string, ctx: Record<string, unknown>) => {
+        let p = memo.get(profileId);
+        if (!p) {
+            p = (async () => {
+                try {
+                    const rows = await db.select({ recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
+                        .from(adoptions)
+                        .where(and(eq(adoptions.adopterId, profileId), or(eq(adoptions.recordType, RECORD_TYPES.ADOPTION), eq(adoptions.recordType, RECORD_TYPES.REQUEST))))
+                        .all() as Array<{ recordType: string | null; date: number | null; addedBy: string | null }>;
+                    if (rows.length === 0) return NO_PERIOD_ALERTS;
+                    const keys = rows.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await rescueKeys() : new Map<string, string>();
+                    return periodAlerts(withRescueKeys(rows, keys), await config());
+                } catch (e) {
+                    logger.warn('households: housemate alerts read failed, none shown for them', { ...ctx, profileId, error: errMsg(e) });
+                    return NO_PERIOD_ALERTS;
+                }
+            })();
+            memo.set(profileId, p);
+        }
+        return p;
+    };
+    return { config, alertsOf };
+}
+
+// ─────────────────────────── Card lines (batched) ───────────────────────────
+
+/** Cards per page whose opened list is always read (a card further down reads its list only when it raises a chip). */
+export const HOUSEHOLD_LINE_CARDS = 20;
+/** Housemates a card's chips consider at most: everyone in every home it reads (households × members). */
+export const MAX_CARD_HOUSEMATES = MAX_HOUSEHOLDS_PER_PROFILE * MAX_HOUSEHOLD_MEMBERS;
+/** Housemates whose records one card reads for «Conviviente con alertas» at most — only those with enough records to have one. */
+export const MAX_CARD_ALERT_READS = MAX_CARD_PROFILE_READS;
+
+/**
+ * Search / «¿Es este perfil?» cards with their homes (`households`), read in
+ * ONE batched `householdLinesFor` call. Every card gets its chips' answers;
+ * the first HOUSEHOLD_LINE_CARDS also get their list whatever it says (callers
+ * pass the cards in the order shown — main results first). Only for a
+ * signed-in viewer: the list names people, and a logged-out visitor's names
+ * are masked server-side. Never throws (a failed card gets nothing, logged).
  */
 export async function withHouseholdLines<T extends { adopterId: string }>(
     db: Db,
     viewer: string,
     cards: T[],
-): Promise<Array<T & { households?: HouseholdLine[] }>> {
+): Promise<Array<T & { households?: CardHousehold }>> {
     if (cards.length === 0) return [];
-    const budget = cards.slice(0, HOUSEHOLD_LINE_CARDS);
-    const lines = await householdLinesFor(db, viewer, budget.map(c => c.adopterId));
-    return cards.map((c, i) => (i < HOUSEHOLD_LINE_CARDS ? { ...c, households: lines[c.adopterId] ?? [] } : c));
+    const homes = await householdLinesFor(db, viewer, cards.map(c => c.adopterId), { listCards: HOUSEHOLD_LINE_CARDS });
+    return cards.map(c => ({ ...c, households: homes[c.adopterId] ?? NO_CARD_HOUSEHOLD }));
+}
+
+type HousemateStanding = { id: string; live: boolean; rating: number | null; adoptions: number; requests: number };
+
+/**
+ * Everyone who shares a NON-gift home with `adopterId`, once each, with their
+ * live rating (countsFor's own AVG of ratings > 0) and how many adoption /
+ * request records they have — ONE query per card (a self-join over the
+ * memberships, the gift rule of housematePairKeys), bounded. `live: false`
+ * for a soft-deleted member (a merge by an old build: the list follows it to
+ * its survivor, this does not).
+ */
+async function housemateStandings(db: Db, adopterId: string, ctx: Record<string, unknown>): Promise<{ rows: HousemateStanding[]; capped: boolean }> {
+    const me = alias(householdMemberships, 's');
+    const other = alias(householdMemberships, 'o');
+    const raw = await db.select({
+        id: other.adopterId,
+        deletedAt: adopters.deletedAt,
+        stats: sql<string | null>`(SELECT json_object('avg', AVG(CASE WHEN a.rating > 0 THEN a.rating END), 'adoptions', SUM(CASE WHEN a.record_type = ${RECORD_TYPES.ADOPTION} THEN 1 ELSE 0 END), 'requests', SUM(CASE WHEN a.record_type = ${RECORD_TYPES.REQUEST} THEN 1 ELSE 0 END)) FROM adoptions a WHERE a.adopter_id = ${other.adopterId})`,
+    })
+        .from(me)
+        .innerJoin(other, and(eq(other.householdId, me.householdId), sql`${other.adopterId} <> ${me.adopterId}`))
+        .innerJoin(adopters, eq(adopters.id, other.adopterId))
+        .where(and(
+            eq(me.adopterId, adopterId),
+            sql`NOT EXISTS (SELECT 1 FROM household_memberships g WHERE g.household_id = ${me.householdId} AND g.gift_recipient = 1)`,
+        ))
+        .groupBy(other.adopterId)
+        .limit(MAX_CARD_HOUSEMATES + 1)
+        .all() as Array<{ id: string; deletedAt: Date | number | null; stats: string | null }>;
+    const rows = raw.slice(0, MAX_CARD_HOUSEMATES).map(r => {
+        let st: { avg?: unknown; adoptions?: unknown; requests?: unknown } = {};
+        try {
+            st = JSON.parse(r.stats || '{}');
+        } catch (e) {
+            // Unrated, no records: the person still counts for «y N más».
+            logger.warn('households: unreadable housemate stats, read as unrated', { ...ctx, profileId: r.id, error: errMsg(e) });
+        }
+        return {
+            id: r.id,
+            live: r.deletedAt == null,
+            rating: typeof st.avg === 'number' ? st.avg : null,
+            adoptions: typeof st.adoptions === 'number' ? st.adoptions : 0,
+            requests: typeof st.requests === 'number' ? st.requests : 0,
+        };
+    });
+    return { rows, capped: raw.length > MAX_CARD_HOUSEMATES };
 }
 
 /**
- * The household line of each profile in `adopterIds` (search results,
- * «¿Es este perfil?»): every live housemate, once, with their live rating,
- * open flags and ALERTS — the period alerts computed exactly as the search
- * card's own (periodAlerts with getAdoptionConfig, requests per rescue), read
- * once per housemate. `isGift` when every household the two share is a gift one.
- * Every requested id gets an entry ([] when none). Profiles, households and
- * counts are read once per call however many cards share them. Bounded per
- * card (MAX_HOUSEHOLD_LINES). Never throws: a failed card gets [] (logged).
- * `viewer` is for the log only — the line carries no contact data.
+ * The homes of each profile in `adopterIds` (search results, «¿Es este
+ * perfil?», match cards, Pendientes sides) — review fix 2, 2026-11-01: the
+ * chips never depend on what the list can show.
+ * - `alert`: both chips' answers (housemateAlertSummary — the one rule) from
+ *   EVERY live housemate in a non-gift home: their ratings from one query per
+ *   card (housemateStandings); their period alerts read only for those with
+ *   enough records to have one (mayHavePeriodAlerts), at most
+ *   MAX_CARD_ALERT_READS per card (logged when cut), stopping at the first.
+ * - `lines`: the opened list — every live housemate, once, with live rating,
+ *   open flags and alerts, at most MAX_HOUSEHOLD_LINES (`more`: the people in
+ *   non-gift homes it leaves out). `isGift` when every household the two share
+ *   is a gift one. Read for the first `listCards` profiles (default: all), and
+ *   for any later one that raises a chip — a chip always opens a list.
+ * Every requested id gets an entry. Profiles, households, counts and alerts are
+ * read once per call however many cards share them. Never throws: a failed
+ * card gets nothing (logged). `viewer` is for the log only — no contact data.
  */
 export async function householdLinesFor(
     db: Db,
     viewer: string | null | undefined,
     adopterIds: string[],
-): Promise<Record<string, HouseholdLine[]>> {
+    opts: { listCards?: number } = {},
+): Promise<Record<string, CardHousehold>> {
     // Households switched off: no card says anything about a home (every mount reads this).
-    // A failed flag read keeps the lines: a housemate warning («Convive con Pedro ★1») must not vanish on a D1 hiccup.
+    // A failed flag read keeps the lines: a housemate warning must not vanish on a D1 hiccup.
     if (adopterIds.length === 0 || !(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true }))) return {};
+    const listCards = opts.listCards ?? Infinity;
     const memo = <T>(m: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
         let p = m.get(key);
         if (!p) { p = load(); m.set(key, p); }
@@ -783,88 +901,119 @@ export async function householdLinesFor(
     const groupMemo = new Map<string, Promise<MembershipRow[]>>();
     const profileMemo = new Map<string, Promise<ProfileRow | null>>();
     const countMemo = new Map<string, Promise<ProfileCounts>>();
-    const alertMemo = new Map<string, Promise<PeriodAlerts>>();
-    // Read once per call, only when some card has a housemate (most have none).
-    let configP: Promise<AdoptionConfig> | null = null;
-    let rescueKeysP: Promise<Map<string, string>> | null = null;
-    const config = () => (configP ??= import('@/app/actions/config').then(m => m.getAdoptionConfig()));
-    const rescueKeys = () => (rescueKeysP ??= loadRescueKeys(db, 'householdLinesFor'));
-    const alertsOf = (profileId: string, ctx: Record<string, unknown>) => memo(alertMemo, profileId, async () => {
-        try {
-            const rows = await db.select({ recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
-                .from(adoptions)
-                .where(and(eq(adoptions.adopterId, profileId), or(eq(adoptions.recordType, RECORD_TYPES.ADOPTION), eq(adoptions.recordType, RECORD_TYPES.REQUEST))))
-                .all() as Array<{ recordType: string | null; date: number | null; addedBy: string | null }>;
-            if (rows.length === 0) return NO_PERIOD_ALERTS;
-            const keys = rows.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await rescueKeys() : new Map<string, string>();
-            return periodAlerts(withRescueKeys(rows, keys), await config());
-        } catch (e) {
-            logger.warn('households: housemate alerts read failed, none shown for them', { ...ctx, profileId, error: errMsg(e) });
-            return NO_PERIOD_ALERTS;
-        }
-    });
+    const reader = periodAlertReader(db, 'householdLinesFor');
     const today = new Date();
     const ids = [...new Set(adopterIds)];
 
-    const entries = await Promise.all(ids.map(async (adopterId): Promise<[string, HouseholdLine[]]> => {
+    /** The chips' answers from everyone (null when that read failed: the list's own people answer instead). */
+    const chipsOf = async (adopterId: string, ctx: Record<string, unknown>) => {
+        try {
+            const { rows, capped } = await housemateStandings(db, adopterId, ctx);
+            if (capped) logger.warn('households: card housemate cap hit, later housemates not considered for the chips', { ...ctx, cap: MAX_CARD_HOUSEMATES });
+            const live = rows.filter(r => r.live);
+            const lowRating = housemateLowRating(live.map(r => ({ rating: r.rating, alerts: NO_PERIOD_ALERTS, isGift: false })));
+            let hasAlerts = false;
+            const maybe = live.filter(r => r.adoptions > 0 || r.requests > 0);
+            if (maybe.length > 0) {
+                const config = await reader.config();
+                const candidates = maybe.filter(r => mayHavePeriodAlerts(r, config));
+                if (candidates.length > MAX_CARD_ALERT_READS) {
+                    logger.warn('households: card alert read cap hit, later housemates not read for «Conviviente con alertas»', { ...ctx, candidates: candidates.length, cap: MAX_CARD_ALERT_READS });
+                }
+                const toRead = candidates.slice(0, MAX_CARD_ALERT_READS);
+                for (let i = 0; i < toRead.length && !hasAlerts; i += MAX_HOUSEHOLD_LINES) {
+                    const read = await Promise.all(toRead.slice(i, i + MAX_HOUSEHOLD_LINES).map(r => reader.alertsOf(r.id, ctx)));
+                    hasAlerts = housemateHasAlerts(read.map(alerts => ({ rating: null, alerts, isGift: false })));
+                }
+            }
+            return { alert: { lowRating, hasAlerts }, liveIds: new Set(live.map(r => r.id)), anyDeleted: rows.some(r => !r.live) };
+        } catch (e) {
+            logger.warn('households: card chip read failed, the chips answer from the listed housemates only', { ...ctx, error: errMsg(e) });
+            return null;
+        }
+    };
+
+    /** The opened list (the former card line): just enough profiles to fill it, bounded. */
+    const linesOf = async (adopterId: string, mine: MembershipRow[], ctx: Record<string, unknown>): Promise<HouseholdLine[]> => {
+        const groups = await Promise.all(mine.map(m => memo(groupMemo, m.householdId, () => membershipsOf(db, m.householdId))));
+        // Each housemate once; gift only when every shared household is a gift one.
+        // Their home on the card: the first ordinary household the two share.
+        const mates = new Map<string, boolean>();
+        const homeOf = new Map<string, string>();
+        groups.forEach((group, gi) => {
+            const gift = isGiftHousehold(group);
+            for (const m of group) {
+                if (m.adopterId === adopterId) continue;
+                const wasGiftOnly = mates.get(m.adopterId) ?? true;
+                mates.set(m.adopterId, wasGiftOnly && gift);
+                if (!homeOf.has(m.adopterId) || (wasGiftOnly && !gift)) homeOf.set(m.adopterId, mine[gi].householdId);
+            }
+        });
+        // Read only what the list shows: just enough profiles to fill it,
+        // in membership order, never more than MAX_CARD_PROFILE_READS
+        // (deleted housemates can't make a card read without end).
+        // People who live there first: a gift-only housemate (left off the card)
+        // never takes a slot or a read from someone who does.
+        const candidates = [...mates.keys()].sort((x, y) => Number(!!mates.get(x)) - Number(!!mates.get(y)));
+        if (candidates.length > MAX_CARD_PROFILE_READS) {
+            logger.info('households: card read cap, later housemates not read', { ...ctx, housemates: candidates.length, cap: MAX_CARD_PROFILE_READS });
+        }
+        const readable = candidates.slice(0, MAX_CARD_PROFILE_READS);
+        const shown: ProfileRow[] = [];
+        for (let i = 0; i < readable.length && shown.length < MAX_HOUSEHOLD_LINES;) {
+            const batch = readable.slice(i, i + (MAX_HOUSEHOLD_LINES - shown.length));
+            i += batch.length;
+            const rows = await Promise.all(batch.map(id => memo(profileMemo, id, () => housemateProfile(db, id, ctx))));
+            // A member followed to its survivor (D1): never twice, never the card's own profile.
+            rows.forEach((p, k) => {
+                if (!p || p.id === adopterId || shown.some(x => x.id === p.id)) return;
+                if (p.id !== batch[k] && !mates.has(p.id)) { mates.set(p.id, mates.get(batch[k]) ?? false); homeOf.set(p.id, homeOf.get(batch[k]) ?? ''); }
+                shown.push(p);
+            });
+        }
+        // The list shows rating and alerts only: no activity read.
+        const [counts, alerts] = await Promise.all([
+            Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx, { activity: false })))),
+            Promise.all(shown.map(p => reader.alertsOf(p.id, ctx))),
+        ]);
+        return shown.map((p, i) => ({
+            name: p.name,
+            profileId: p.id,
+            rating: counts[i].rating,
+            openAlerts: counts[i].openAlerts,
+            alerts: alerts[i],
+            isMinor: isMinor(p, today),
+            isGift: !!mates.get(p.id),
+            householdId: homeOf.get(p.id) ?? '',
+        }));
+    };
+
+    const entries = await Promise.all(ids.map(async (adopterId, index): Promise<[string, CardHousehold]> => {
         const ctx = { adopterId, viewer: viewer ?? null };
         try {
-            const mine = await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE);
-            if (mine.length === 0) return [adopterId, []];
-            const groups = await Promise.all(mine.map(m => memo(groupMemo, m.householdId, () => membershipsOf(db, m.householdId))));
-            // Each housemate once; gift only when every shared household is a gift one.
-            // Their home on the card: the first ordinary household the two share.
-            const mates = new Map<string, boolean>();
-            const homeOf = new Map<string, string>();
-            groups.forEach((group, gi) => {
-                const gift = isGiftHousehold(group);
-                for (const m of group) {
-                    if (m.adopterId === adopterId) continue;
-                    const wasGiftOnly = mates.get(m.adopterId) ?? true;
-                    mates.set(m.adopterId, wasGiftOnly && gift);
-                    if (!homeOf.has(m.adopterId) || (wasGiftOnly && !gift)) homeOf.set(m.adopterId, mine[gi].householdId);
-                }
-            });
-            // Read only what the line shows: just enough profiles to fill it,
-            // in membership order, never more than MAX_CARD_PROFILE_READS
-            // (deleted housemates can't make a card read without end).
-            // People who live there first: a gift-only housemate (left off the card)
-            // never takes a slot or a read from someone who does.
-            const candidates = [...mates.keys()].sort((x, y) => Number(!!mates.get(x)) - Number(!!mates.get(y)));
-            if (candidates.length > MAX_CARD_PROFILE_READS) {
-                logger.info('households: card read cap, later housemates not read', { ...ctx, housemates: candidates.length, cap: MAX_CARD_PROFILE_READS });
+            const listed = index < listCards;
+            // A listed card checks its memberships first (most people have none: one indexed read, nothing more).
+            let mine: MembershipRow[] | null = null;
+            if (listed) {
+                mine = await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE);
+                if (mine.length === 0) return [adopterId, NO_CARD_HOUSEHOLD];
             }
-            const readable = candidates.slice(0, MAX_CARD_PROFILE_READS);
-            const shown: ProfileRow[] = [];
-            for (let i = 0; i < readable.length && shown.length < MAX_HOUSEHOLD_LINES;) {
-                const batch = readable.slice(i, i + (MAX_HOUSEHOLD_LINES - shown.length));
-                i += batch.length;
-                const rows = await Promise.all(batch.map(id => memo(profileMemo, id, () => housemateProfile(db, id, ctx))));
-                // A member followed to its survivor (D1): never twice, never the card's own profile.
-                rows.forEach((p, k) => {
-                    if (!p || p.id === adopterId || shown.some(x => x.id === p.id)) return;
-                    if (p.id !== batch[k] && !mates.has(p.id)) { mates.set(p.id, mates.get(batch[k]) ?? false); homeOf.set(p.id, homeOf.get(batch[k]) ?? ''); }
-                    shown.push(p);
-                });
+            const chips = await chipsOf(adopterId, ctx);
+            // A card further down reads its list only when a chip will open it (or a merged-away member
+            // may stand for a survivor the chips can't see).
+            if (!listed && !(chips && (raisesHousemateAlert(chips.alert) || chips.anyDeleted))) {
+                return [adopterId, chips ? { lines: [], more: 0, alert: chips.alert } : NO_CARD_HOUSEHOLD];
             }
-            // The card line shows rating and alerts only: no activity read.
-            const [counts, alerts] = await Promise.all([
-                Promise.all(shown.map(p => memo(countMemo, p.id, () => countsFor(db, p.id, ctx, { activity: false })))),
-                Promise.all(shown.map(p => alertsOf(p.id, ctx))),
-            ]);
-            return [adopterId, shown.map((p, i) => ({
-                name: p.name,
-                profileId: p.id,
-                rating: counts[i].rating,
-                openAlerts: counts[i].openAlerts,
-                alerts: alerts[i],
-                isMinor: isMinor(p, today),
-                isGift: !!mates.get(p.id),
-                householdId: homeOf.get(p.id) ?? '',
-            }))];
+            mine ??= await ownMemberships(db, adopterId, MAX_HOUSEHOLDS_PER_PROFILE);
+            const lines = mine.length > 0 ? await linesOf(adopterId, mine, ctx) : [];
+            // The listed people answer too (a survivor stands in for a merged-away member there).
+            const alert = mergeHousemateAlerts(chips?.alert ?? NO_HOUSEMATE_ALERT, housemateAlertSummary(lines));
+            const listedLive = chips ? lines.filter(l => !l.isGift && chips.liveIds.has(l.profileId)).length : 0;
+            const more = chips ? Math.max(0, chips.liveIds.size - listedLive) : 0;
+            return [adopterId, { lines, more, alert }];
         } catch (e) {
             logger.warn('households: card line read failed, card shows no household', { ...ctx, error: errMsg(e) });
-            return [adopterId, []];
+            return [adopterId, NO_CARD_HOUSEHOLD];
         }
     }));
     return Object.fromEntries(entries);

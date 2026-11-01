@@ -21,7 +21,7 @@ import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdPerson } from './households';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
-import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, type HouseholdLine } from '@/domain/households';
+import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, type CardHousehold } from '@/domain/households';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -717,7 +717,7 @@ export interface PendingDedupSide {
     /** «Menor de edad» (final fix P2: the same tag as every card showing one person). */
     isMinor?: boolean;
     /** Who they live with, with live ratings and alerts: the housemate alert chips, as on search and «¿Es este perfil?». */
-    households?: HouseholdLine[];
+    households?: CardHousehold;
     /** The person's own average rating, shown at the top of the side as on every card (point C); null = unrated, undefined = not read. */
     rating?: number | null;
 }
@@ -1440,8 +1440,8 @@ export async function getPendingDuplicatesForUser(
             });
         }
 
-        // Final fix P2: each side's household line, as on search cards (one read per call, the
-        // first HOUSEHOLD_LINE_CARDS sides in the order shown; never throws).
+        // Final fix P2: each side's homes, as on search cards (one batched read per call: every side gets
+        // its chips, the first HOUSEHOLD_LINE_CARDS sides in the order shown their list; never throws).
         const sidesShown = [...new Set(pairs.flatMap(p => [p.newAdopter.id, p.existingAdopter.id]))];
         if (sidesShown.length) {
             const { householdLinesFor, HOUSEHOLD_LINE_CARDS } = await import('@/lib/households');
@@ -1450,11 +1450,14 @@ export async function getPendingDuplicatesForUser(
             // card's rating comes from, capped like the household lines (the first HOUSEHOLD_LINE_CARDS sides).
             // countsFor never throws (logs its own fallback); a side past the cap shows no rating pill.
             const capped = sidesShown.slice(0, HOUSEHOLD_LINE_CARDS);
-            const [lines, counts] = await Promise.all([
-                householdLinesFor(db, viewer, capped),
+            const [homes, counts] = await Promise.all([
+                householdLinesFor(db, viewer, sidesShown, { listCards: HOUSEHOLD_LINE_CARDS }),
                 Promise.all(capped.map(id => countsFor(db, id, { actorEmail, adopterId: id, op: 'getPendingDuplicatesForUser' }, { activity: false }))),
             ]);
-            for (const built of sideCache.values()) if (lines[built.id]?.length) built.households = lines[built.id];
+            for (const built of sideCache.values()) {
+                const home = homes[built.id];
+                if (home && (home.lines.length > 0 || raisesHousemateAlert(home.alert))) built.households = home;
+            }
             capped.forEach((id, i) => { const built = sideCache.get(id); if (built) built.rating = counts[i].rating; });
         }
 

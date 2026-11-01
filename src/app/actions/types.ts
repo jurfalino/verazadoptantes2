@@ -2,7 +2,7 @@ import type { adopters } from '@/db/schema';
 import type { ActivityCounts } from '@/domain/activityCounts';
 import type { AdopterFlags } from '@/types/adopter';
 import type { VisibilityBadge } from '@/domain/visibilityBadge';
-import type { HouseholdLine } from '@/domain/households';
+import type { CardHousehold } from '@/domain/households';
 
 export type SnippetField = 'name' | 'contact' | 'address' | 'family' | 'adoption' | 'history';
 
@@ -115,11 +115,12 @@ export interface DiscoveryMatch {
     /** «Menor de edad» (domain `isMinor`: current age under 18, or the box with no age). */
     isMinor?: boolean;
     /**
-     * The card's household line: each housemate's live rating, open alerts and
-     * minor tag (households as profiles). Signed-in, in-app viewers only;
-     * absent for a logged-out visitor and the API.
+     * The card's homes: the housemate chips' answers (from every housemate) and
+     * the list they open — each housemate's live rating, alerts and minor tag
+     * (households as profiles). Signed-in, in-app viewers only; absent for a
+     * logged-out visitor and the API.
      */
-    households?: HouseholdLine[];
+    households?: CardHousehold;
 }
 
 /** Discriminated union for generic consumer code. Prefer the concrete type when mode is known at the call site. */

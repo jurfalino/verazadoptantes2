@@ -16,6 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import { MinorTag } from './MinorTag';
 import { HousemateAlertChips, HousemateList, hasHousemateAlert, useHousemateList } from './HousemateAlert';
+import { useMinWidth } from '@/hooks/useMinWidth';
 import { AlertSummary, PeriodAlertPills } from './AlertPill';
 import { openAlertKinds } from '@/domain/flags';
 import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
@@ -148,13 +149,19 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     // rating (C layout); on desktop they stay inline in the stats band below.
     // …then the housemate alerts («Conviviente con calificación 2.0», «Conviviente con alertas» — Jon
     // 2026-11-01): alerts like them, so they ride in the same row on both layouts. The row is drawn twice
-    // (mobile / desktop, CSS-hidden), so the open state lives here, each copy has its own test id, and the
-    // list they open is drawn once, under the card's body.
-    const housemates = useHousemateList(res.households);
+    // (mobile / desktop, CSS-hidden), so the open state lives here (kept per person, M3) and each copy has
+    // its own test id. The list they open is MOUNTED once, directly under the visible row (review fix 5):
+    // under the mobile row on a phone, under the stats band on desktop — one id for both chips' aria-controls.
+    const housemates = useHousemateList(res.adopter.id);
+    const hasHousemate = hasHousemateAlert(res.households);
+    const desktop = useMinWidth(768);
     const housemateChips = (testId: string) => (
-        <HousemateAlertChips lines={res.households} open={housemates.open} onToggle={housemates.toggle} listId={housemates.listId} testId={testId} />
+        <HousemateAlertChips household={res.households} open={housemates.open} onToggle={housemates.toggle} listId={housemates.listId} testId={testId} />
     );
-    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests || hasHousemateAlert(res.households));
+    const housemateList = (className: string) => (housemates.open && hasHousemate
+        ? <HousemateList household={res.households} id={housemates.listId} className={className} />
+        : null);
+    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests || hasHousemate);
 
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
@@ -254,9 +261,12 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {/* Mobile C layout: risk flags right after the rating, then contact
                 full-width. Both hidden on desktop (rating flags live in the stats
                 band; contact lives in the middle column). */}
+            {/* A housemate chip is a button with a 44px touch area around a 22px pill (11px each side,
+                review fix 6): 12px between wrapped lines and under the row keep it off the «Tel:» line. */}
             {hasRiskFlags && (
-                <div className="md:hidden flex flex-wrap gap-1.5 mb-2"><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert-m')}</div>
+                <div className={`md:hidden flex flex-wrap gap-x-1.5 ${hasHousemate ? 'gap-y-3 mb-3' : 'gap-y-1.5 mb-2'}`}><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert-m')}</div>
             )}
+            {!desktop && housemateList('mb-3')}
             <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={contactText || undefined}>
                 {contactNode}
             </div>
@@ -271,8 +281,9 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 </div>
             )}
 
-            {/* Stats Row */}
-            <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
+            {/* Stats Row. With a housemate chip in it (desktop), 4px above and below plus the 8px around
+                keep the chip's 44px touch area off the rows next to it (review fix 6). */}
+            <div className={`flex flex-wrap items-center gap-3 text-xs text-stone-500 ${hasHousemate ? 'md:py-1' : ''}`}>
                 {/* Views, then the activity counted as a household row and the «Actividad» header count it
                     (PersonActivity — singulars, «sin actividad» when none) — audit B12. */}
                 {showMetadata && (
@@ -284,7 +295,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 <PersonActivity
                     activity={res.stats.activity ?? { adoption: res.stats.adoptions || undefined, adoption_request: res.stats.requests || undefined }}
                     testId="search-card-activity" />
-                <div className="flex flex-wrap gap-1 ml-auto">
+                <div className={`flex flex-wrap gap-x-1 ml-auto ${hasHousemate ? 'gap-y-1 md:gap-y-3' : 'gap-y-1'}`}>
                     {/* Desktop: the alerts (risk chips) first, inline in the stats band. On mobile
                         they're promoted above (right after the rating), so hidden here —
                         `md:contents` lets them flow into this flex cluster on ≥md. */}
@@ -307,6 +318,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     )}
                 </div>
             </div>
+            {desktop && housemateList('mt-2')}
 
             {/* Match Snippet — shows why this result appeared */}
             {res.matchSnippet && (() => {
@@ -378,9 +390,6 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     </div>
                 );
             })()}
-
-            {/* Who they live with, opened from a housemate alert chip above (either layout's). */}
-            {housemates.open && hasHousemateAlert(res.households) && <HousemateList lines={res.households} id={housemates.listId} className="mt-2" />}
 
             {/* Dates Row - bottom right */}
             {showMetadata && (addedDate || updatedDate) && (

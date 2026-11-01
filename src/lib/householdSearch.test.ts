@@ -63,7 +63,7 @@ vi.mock('@/lib/logger', () => ({
 import { tokenizeAdopter } from './adopterTokenize';
 import { giftPhoneEntriesByGiver } from './giftRecipients';
 import { addMembership, createHousehold, householdLinesFor, withHouseholdLines, HOUSEHOLD_LINE_CARDS } from './households';
-import { MAX_HOUSEHOLD_LINES } from '@/domain/households';
+import { MAX_HOUSEHOLD_LINES, NO_CARD_HOUSEHOLD } from '@/domain/households';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { logger } from '@/lib/logger';
 import { findAdopters, findAdoptersAsViewer } from '@/app/actions/findAdopters';
@@ -145,7 +145,7 @@ describe("search returns only the people who match, each with its household line
         }
         const lucas = (res.results as DiscoveryMatch[])[0];
         expect(lucas.isMinor).toBe(true);
-        expect(lucas.households).toEqual([
+        expect(lucas.households?.lines).toEqual([
             { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
             { name: 'Marta Paez', profileId: 'marta', rating: 4, openAlerts: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
             { name: 'Ana Gómez', profileId: 'ana', rating: 3, openAlerts: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-ana' },
@@ -162,12 +162,12 @@ describe("search returns only the people who match, each with its household line
         const res = await findAdopters({ raw: 'Pedro Paez' }, { mode: 'discovery' });
         const pedro = (res.results as DiscoveryMatch[]).find(r => r.adopterId === 'pedro')!;
         expect(pedro.isMinor).toBe(false);
-        expect(pedro.households?.find(l => l.profileId === 'lucas')).toMatchObject({ name: 'Lucas Paez', isMinor: true, rating: null });
+        expect(pedro.households?.lines.find(l => l.profileId === 'lucas')).toMatchObject({ name: 'Lucas Paez', isMinor: true, rating: null });
     });
 
     it('a profile with no household gets an empty line', async () => {
         const res = await findAdopters({ raw: 'Rosa Diaz' }, { mode: 'discovery' });
-        expect((res.results as DiscoveryMatch[]).find(r => r.adopterId === 'rosa')!.households).toEqual([]);
+        expect((res.results as DiscoveryMatch[]).find(r => r.adopterId === 'rosa')!.households).toEqual(NO_CARD_HOUSEHOLD);
     });
 
     it('a logged-out visitor gets no household names (guest name mask)', async () => {
@@ -185,13 +185,13 @@ describe('«¿Es este perfil?» cards carry the household line', () => {
         const { results } = await searchFormDuplicates({ name: 'Lucas Paez', phones: ['11 4200-0003'] }, {}, async () => OWNER);
         const lucas = results.find(r => r.adopter.id === 'lucas')!;
         expect(lucas.isMinor).toBe(true);
-        expect(lucas.households?.map(l => l.name)).toEqual(['Pedro Paez', 'Marta Paez', 'Ana Gómez']);
+        expect(lucas.households?.lines.map(l => l.name)).toEqual(['Pedro Paez', 'Marta Paez', 'Ana Gómez']);
     });
 
-    it('the household add form keeps its householdLine (same data)', async () => {
+    it('the household add form keeps its household (same data)', async () => {
         const { results } = await getHouseholdMatchCandidates({ name: 'Lucas Paez', contactEntries: [{ type: 'phone', value: '11 4200-0003' }] });
         const lucas = results.find(r => r.adopter.id === 'lucas')!;
-        expect(lucas.householdLine.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
+        expect(lucas.household.lines.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
     });
 });
 
@@ -349,15 +349,20 @@ describe('fix round 1 — household lines stay cheap', () => {
     it('I2: a 20-card page costs at most 1 + 20×6 queries for its lines', async () => {
         const cards = [...['lucas', 'pedro', 'ana', 'rosa'], ...addPeople(16, 'pg')].map(adopterId => ({ adopterId }));
         const { result, n } = await countQueries(() => withHouseholdLines(db(), OWNER, cards));
-        expect(result.find(c => c.adopterId === 'lucas')!.households!.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
+        expect(result.find(c => c.adopterId === 'lucas')!.households!.lines.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
         expect(n).toBeLessThanOrEqual(1 + 20 * 6);
     });
 
-    it('I2: only the first HOUSEHOLD_LINE_CARDS cards get a line', async () => {
-        const ids = addPeople(HOUSEHOLD_LINE_CARDS + 5, 'cap');
-        const out = await withHouseholdLines(db(), OWNER, ids.map(adopterId => ({ adopterId })));
-        expect(out.filter(c => 'households' in c)).toHaveLength(HOUSEHOLD_LINE_CARDS);
-        expect('households' in out[HOUSEHOLD_LINE_CARDS]).toBe(false);
+    it('review fix 2: every card shown gets its chips — card #21 too, with the list its chip opens', async () => {
+        const ids = addPeople(HOUSEHOLD_LINE_CARDS, 'cap');
+        // Card #21 is Lucas, who lives with Pedro (★1).
+        const out = await withHouseholdLines(db(), OWNER, [...ids, 'lucas', 'rosa'].map(adopterId => ({ adopterId })));
+        expect(out.every(c => 'households' in c)).toBe(true);
+        const lucas = out[HOUSEHOLD_LINE_CARDS].households!;
+        expect(lucas.alert.lowRating).toBe(1);
+        expect(lucas.lines.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
+        // A later card with no chip carries none, and no list was read for it.
+        expect(out[HOUSEHOLD_LINE_CARDS + 1].households).toEqual(NO_CARD_HOUSEHOLD);
     });
 
     it('I2: enrich:false callers (AdopterFlagging) get no household line', async () => {
@@ -376,7 +381,7 @@ describe('fix round 1 — household lines stay cheap', () => {
         sqlite.prepare('DROP TABLE household_memberships').run();
         vi.mocked(logger.warn).mockClear();
         const res = await findAdopters({ raw: 'Rosa Diaz' }, { mode: 'discovery' });
-        expect((res.results as DiscoveryMatch[]).find(r => r.adopterId === 'rosa')!.households).toEqual([]);
+        expect((res.results as DiscoveryMatch[]).find(r => r.adopterId === 'rosa')!.households).toEqual(NO_CARD_HOUSEHOLD);
         expect(vi.mocked(logger.warn).mock.calls.some(([msg]) => String(msg).startsWith('households:'))).toBe(true);
     });
 
@@ -387,7 +392,7 @@ describe('fix round 1 — household lines stay cheap', () => {
         await addMembership(db(), { householdId: 'hh-gift-old', adopterId: 'pedro', addedBy: null, addedAt: new Date(1000) });
         for (const m of addPeople(9, 'big')) await addMembership(db(), { householdId: 'hh-pedro', adopterId: m, addedBy: OWNER });
         const out = await withHouseholdLines(db(), OWNER, [{ adopterId: 'pedro' }]);
-        const lines = out[0].households!;
+        const lines = out[0].households!.lines;
         expect(lines).toHaveLength(MAX_HOUSEHOLD_LINES);
         expect(lines.every(l => !l.isGift)).toBe(true);
     });
@@ -459,9 +464,9 @@ describe('final fix P2 — «Pendientes de revisar» shows each side as every ca
         const pair = pairs.find(p => p.candidateId === 'c-out')!;
         const lucas = [pair.newAdopter, pair.existingAdopter].find(s => s.id === 'lucas')!;
         expect(lucas.isMinor).toBe(true);
-        expect((lucas.households ?? []).map(l => l.profileId).sort()).toEqual(['ana', 'marta', 'pedro']);
+        expect((lucas.households?.lines ?? []).map(l => l.profileId).sort()).toEqual(['ana', 'marta', 'pedro']);
         const rosa = [pair.newAdopter, pair.existingAdopter].find(s => s.id === 'rosa')!;
-        expect(rosa.households ?? []).toEqual([]);
+        expect(rosa.households?.lines ?? []).toEqual([]);
         expect(rosa.isMinor).toBeFalsy();
     });
 });
@@ -473,7 +478,7 @@ describe('final fix P6 — «¿Es este perfil?» counts alerts as the household 
         const { results } = await getHouseholdMatchCandidates({ name: 'Pedro Paez', contactEntries: [{ type: 'phone', value: HOME_PHONE }] });
         const pedro = results.find(r => r.adopterId === 'pedro')!;
         expect(pedro.openAlerts).toEqual(['inaccurate']);
-        const line = (await householdLinesFor(db(), OWNER, ['marta'])).marta.find(l => l.profileId === 'pedro')!;
+        const line = (await householdLinesFor(db(), OWNER, ['marta'])).marta.lines.find(l => l.profileId === 'pedro')!;
         expect(line.openAlerts).toEqual(pedro.openAlerts);
         // Flags are not alerts (option B, Jon 2026-10-28): the card line shows his period alerts only — none here.
         expect(line.alerts).toEqual({ tooManyAdoptions: null, tooManyRequests: null });

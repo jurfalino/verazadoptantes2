@@ -15,7 +15,7 @@ import { RatingExplainer } from '@/components/RatingExplainer';
 import { en } from '@/i18n/locales/en';
 import { ChevronDown, ChevronRight, CheckCircle2, ClipboardList, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
 import { formResultsView, type FormLinkKind, type FormResultsAction, type FormResultsBanner } from '@/domain/formLink';
-import type { HouseholdLine } from '@/domain/households';
+import type { CardHousehold } from '@/domain/households';
 
 // Single source of truth: fallbacks come from English locale so labels always render
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -78,7 +78,7 @@ interface MatchedProfile {
     status: string | null;
     profileImageUrl?: string | null;
     isMinor?: boolean;
-    households?: HouseholdLine[];
+    households?: CardHousehold;
     rating?: number | null;
     openAlerts?: OpenAlertKind[];
 }
