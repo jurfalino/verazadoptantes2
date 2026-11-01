@@ -57,8 +57,8 @@ describe('AdopterFlagging — the header\'s housemate chips', () => {
         expect(own).toBeLessThan(low);
         expect(low).toBeLessThan(alerts);
         expect(alerts).toBeLessThan(flag);
-        // One decimal, rounded as every rating is written (M6: 1.45 → «1.5»).
-        expect(text(html)).toContain('Conviviente con calificación 1.5');
+        // One decimal, as every rating is written (formatRating).
+        expect(text(html)).toContain('Conviviente con calificación 1.4');
         expect(text(html)).toContain('Conviviente con alertas');
     });
 

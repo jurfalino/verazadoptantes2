@@ -357,12 +357,12 @@ describe('fix round 1 — household lines stay cheap', () => {
         const ids = addPeople(HOUSEHOLD_LINE_CARDS, 'cap');
         // Card #21 is Lucas, who lives with Pedro (★1).
         const out = await withHouseholdLines(db(), OWNER, [...ids, 'lucas', 'rosa'].map(adopterId => ({ adopterId })));
-        expect(out.every(c => 'households' in c)).toBe(true);
+        expect(out.slice(0, HOUSEHOLD_LINE_CARDS).every(c => 'households' in c)).toBe(true);
         const lucas = out[HOUSEHOLD_LINE_CARDS].households!;
         expect(lucas.alert.lowRating).toBe(1);
         expect(lucas.lines.map(l => l.profileId)).toEqual(['pedro', 'marta', 'ana']);
-        // A later card with no chip carries none, and no list was read for it.
-        expect(out[HOUSEHOLD_LINE_CARDS + 1].households).toEqual(NO_CARD_HOUSEHOLD);
+        // A later card with no chip had no list read: left unset (not «nobody lives there»), as before.
+        expect('households' in out[HOUSEHOLD_LINE_CARDS + 1]).toBe(false);
     });
 
     it('I2: enrich:false callers (AdopterFlagging) get no household line', async () => {

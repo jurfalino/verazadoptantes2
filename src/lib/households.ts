@@ -814,8 +814,16 @@ export async function withHouseholdLines<T extends { adopterId: string }>(
     cards: T[],
 ): Promise<Array<T & { households?: CardHousehold }>> {
     if (cards.length === 0) return [];
-    const homes = await householdLinesFor(db, viewer, cards.map(c => c.adopterId), { listCards: HOUSEHOLD_LINE_CARDS });
-    return cards.map(c => ({ ...c, households: homes[c.adopterId] ?? NO_CARD_HOUSEHOLD }));
+    const ids = cards.map(c => c.adopterId);
+    const homes = await householdLinesFor(db, viewer, ids, { listCards: HOUSEHOLD_LINE_CARDS });
+    const listed = new Set([...new Set(ids)].slice(0, HOUSEHOLD_LINE_CARDS));
+    return cards.map(c => {
+        const home = homes[c.adopterId];
+        // A card past the list budget with no chip had no list read: left unset — never «nobody lives
+        // there» — so a caller that draws the list anyway («¿Es este perfil?», asCandidates) reads it.
+        if (!listed.has(c.adopterId) && !raisesHousemateAlert(home?.alert)) return c;
+        return { ...c, households: home ?? NO_CARD_HOUSEHOLD };
+    });
 }
 
 type HousemateStanding = { id: string; live: boolean; rating: number | null; adoptions: number; requests: number };

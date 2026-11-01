@@ -26,39 +26,30 @@ export const RATING_LABEL_KEYS: Record<RatingLevel, string> = {
     5: 'excellent',
 };
 
-/**
- * A rating to the one decimal every card writes («2.45» → 2.5). Every reading
- * of an average — its number (formatRating), its word (getRatingLabelKey), its
- * colour (getRatingColors) and whether it is low (isLowRating) — starts from
- * this, so the number shown and what it means never disagree (review M6: a
- * 2.45 read «2.5» yet counted as low). `toFixed` on the raw value is not the
- * same rounding ((1.45).toFixed(1) is «1.4»).
- */
-export function roundRating(rating: number): number {
-    return Math.round(Number(rating) * 10) / 10;
+export function getRatingLabelKey(rating: number): string {
+    const r = Math.max(1, Math.min(5, Math.round(Number(rating) || 0))) as RatingLevel;
+    return RATING_LABEL_KEYS[r];
 }
 
 /** A rating as every card writes it: one decimal («2.0», «2.3») — RatingBadge and the housemate chip share it. */
 export function formatRating(rating: number): string {
-    return roundRating(rating).toFixed(1);
-}
-
-export function getRatingLabelKey(rating: number): string {
-    const r = Math.max(1, Math.min(5, Math.round(roundRating(Number(rating) || 0)))) as RatingLevel;
-    return RATING_LABEL_KEYS[r];
+    return rating % 1 !== 0 ? rating.toFixed(1) : `${rating}.0`;
 }
 
 /**
- * A low rating: one whose pill (RatingBadge) reads «Peligroso» or «Malo» — the
- * 1★ and 2★ buckets of the rating as shown (roundRating, one decimal): 2.44 is
- * «2.4 · Malo» and low; 2.45 is «2.5 · Regular» and not. Unrated (null, 0,
- * outside 1–5) is never low: ratings are never inferred.
+ * A low rating: the 1★ / 2★ buckets («Peligroso», «Malo») of the rating AS
+ * WRITTEN (formatRating, one decimal) — review M6: the housemate chip writes
+ * the rating with formatRating, so deciding on that same number means the chip
+ * never shows a «2.5» it counted as low. 2.44 is «2.4» and low; 2.45 is «2.5»,
+ * «Regular», not low. Unrated (null, 0, outside 1–5) is never low: ratings are
+ * never inferred. (RatingBadge's word and colour, and the 1★ ban rule, still
+ * round the raw average.)
  */
 export function isLowRating(rating: number | null | undefined): boolean {
     if (rating == null) return false;
     const n = Number(rating);
     if (Number.isNaN(n) || n < 1 || n > 5) return false;
-    const key = getRatingLabelKey(roundRating(n));
+    const key = getRatingLabelKey(Number(formatRating(n)));
     return key === RATING_LABEL_KEYS[1] || key === RATING_LABEL_KEYS[2];
 }
 
