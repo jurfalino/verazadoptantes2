@@ -89,6 +89,22 @@ describe('dupHintPairMatches — «Continuar» only joins two profiles that real
         expect(dupHintPairMatches(none, fb, { type: 'social', value: 'ana.perez', platform: 'instagram' })).toBe(false);
         expect(dupHintPairMatches(none, fb, { type: 'social', value: 'ana.perez', platform: 'facebook' })).toBe(true);
     });
+    it('a handle typed before its network is picked matches by handle; the network must agree once known', () => {
+        const ig = side([{ type: 'social', value: 'ana.perez', platform: 'instagram' }]);
+        expect(dupHintPairMatches(none, ig, { type: 'social', value: 'ana.perez' })).toBe(true);
+        expect(dupHintPairMatches(none, ig, { type: 'social', value: '@Ana.Perez', platform: 'instagram' })).toBe(true);
+        expect(dupHintPairMatches(none, ig, { type: 'social', value: 'ana.perez', platform: 'facebook' })).toBe(false);
+    });
+    it('a saved link without a network takes it from its URL', () => {
+        const legacy = side([{ type: 'social', value: 'https://instagram.com/ana.perez' }]);
+        expect(dupHintPairMatches(none, legacy, { type: 'social', value: 'ana.perez', platform: 'instagram' })).toBe(true);
+        expect(dupHintPairMatches(none, legacy, { type: 'social', value: 'ana.perez', platform: 'facebook' })).toBe(false);
+    });
+    it('a number saved without its area code needs at least 8 digits to count', () => {
+        expect(dupHintPairMatches(none, match, { type: 'phone', value: '851333' })).toBe(false);
+        expect(dupHintPairMatches(side([{ type: 'phone', value: '412-3456' }]), side([{ type: 'phone', value: '11 1412-3456' }]))).toBe(false);
+        expect(dupHintPairMatches(none, match, { type: 'phone', value: '6312-0851' })).toBe(true);
+    });
     it('phones are read with each profile\'s own country', () => {
         expect(dupHintPairMatches(side([{ type: 'phone', value: '+54 9 11 6312-0851' }], 'CL'), side([{ type: 'phone', value: '11 6312-0851' }], 'AR'))).toBe(true);
     });

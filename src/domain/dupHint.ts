@@ -11,9 +11,9 @@
  * - `visibleDupHintMatches`: «No es esta persona» hides a match for as long as
  *   the typed value stays the same (local only, no server write).
  */
-import { contactMatchKeys, sameContact, sameContactSet, type ContactEntry } from '@/lib/contactEntries';
+import { contactMatchKeys, detectSocialPlatform, sameContact, sameContactSet, type ContactEntry } from '@/lib/contactEntries';
 import { mergeOwnersToTell, realOwner } from '@/domain/dedupPair';
-import { samePhoneAcross } from '@/domain/phoneNumber';
+import { samePhoneAsEvidence } from '@/domain/phoneNumber';
 
 export type DupHintType = 'phone' | 'email' | 'social' | 'id';
 
@@ -105,16 +105,23 @@ export type PairSide = { entries: ReadonlyArray<PairEntry>; country?: string | n
 /**
  * The two contacts are the same identifier — strict, because a merge deletes a
  * profile (review 2026-11-01): phones as whole numbers read with each record's
- * country (samePhoneAcross: «11 6312-0851» is «+54 9 11 6312-0851», but
+ * country (samePhoneAsEvidence: «11 6312-0851» is «+54 9 11 6312-0851», but
  * «351 412-3456» is not «11 1412-3456» although their last 8 digits agree);
- * a handle only on the same network; emails and ids normalized as the matcher
+ * a handle on the same network — a saved link's network read from its URL, and
+ * a handle whose network isn't known yet (typed before the network is picked)
+ * matching by handle alone: the window then asks for the network, and
+ * «Continuar» can't run without it. Emails and ids normalized as the matcher
  * does. Anything else is never evidence.
  */
 function sameIdentifier(a: PairEntry, aCountry: string | null | undefined, b: PairEntry, bCountry: string | null | undefined): boolean {
     if (a.type !== b.type || typeof a.value !== 'string' || typeof b.value !== 'string') return false;
-    if (a.type === 'phone') return samePhoneAcross(a.value, aCountry, b.value, bCountry);
+    if (a.type === 'phone') return samePhoneAsEvidence(a.value, aCountry, b.value, bCountry);
     if (a.type !== 'email' && a.type !== 'social' && a.type !== 'id') return false;
-    if (a.type === 'social' && (a.platform ?? '') !== (b.platform ?? '')) return false;
+    if (a.type === 'social') {
+        const network = (e: PairEntry) => e.platform || detectSocialPlatform(e.value) || '';
+        const na = network(a), nb = network(b);
+        if (na && nb && na !== nb) return false;
+    }
     const strong = (e: PairEntry) => contactMatchKeys(e as Pick<ContactEntry, 'type' | 'value' | 'platform'>).filter(k => k.startsWith('~'));
     const keys = new Set(strong(a));
     return strong(b).some(k => keys.has(k));

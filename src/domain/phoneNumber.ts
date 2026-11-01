@@ -251,6 +251,17 @@ export function samePhone(a: string, b: string, country?: string | null): boolea
     return samePhoneAcross(a, country, b, country);
 }
 
+/**
+ * The same number, as merge EVIDENCE (dupHintPairMatches): samePhoneAcross,
+ * except a number saved without its area code must keep at least 8 digits —
+ * «851333» ending «+54 9 11 6585-1333» is not enough to delete a profile.
+ */
+export function samePhoneAsEvidence(a: string, aCountry: string | null | undefined, b: string, bCountry: string | null | undefined): boolean {
+    const strongEnough = (r: ReadPhone) => r.kind === 'complete' || (!r.overlong && r.local.length >= STRONG_PARTIAL_DIGITS);
+    return readPhones(a, aCountry).filter(strongEnough)
+        .some(ra => readPhones(b, bCountry).filter(strongEnough).some(rb => sameReadPhone(ra, rb)));
+}
+
 /** samePhone when each value belongs to a record of its own country. */
 export function samePhoneAcross(a: string, aCountry: string | null | undefined, b: string, bCountry: string | null | undefined): boolean {
     return readPhones(a, aCountry).some(ra => readPhones(b, bCountry).some(rb => sameReadPhone(ra, rb)));

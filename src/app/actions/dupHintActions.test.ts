@@ -229,6 +229,17 @@ describe('continueWithMatchedProfile — «Sí, continuar»', () => {
         expect(contactsOf('jonatan').find(c => c.type === 'social')).toMatchObject({ value: 'maria.garcia', platform: 'instagram' });
     });
 
+    it('a handle the match has on Instagram, typed before the network is picked: the window offers «Continuar» (it asks for the network); only the same network joins (review 2026-11-01)', async () => {
+        sqlite.prepare('UPDATE adopters SET contact_entries = ? WHERE id = ?').run(JSON.stringify([{ id: 'j1', type: 'social', value: 'ana.perez', platform: 'instagram', addedBy: OTHER }]), 'jonatan');
+        await tokenizeAdopter('jonatan');
+        const w = (await getDuplicateHintMatches({ type: 'social', value: 'ana.perez', excludeAdopterId: 'maria' })).results.find(r => r.adopter.id === 'jonatan');
+        expect(w).toMatchObject({ action: 'continue' });
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'social', value: 'ana.perez', platform: 'facebook' } }))
+            .toMatchObject({ ok: false, error: 'not_a_match' });
+        expect(deleted('maria')).toBe(false);
+        expect(await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'social', value: 'ana.perez', platform: 'instagram' } })).toMatchObject({ ok: true });
+    });
+
     it('the merge fails after the typed value was saved: says so (typedSaved), so the composer clears it', async () => {
         vi.mocked(mergeAdopters).mockResolvedValueOnce({ success: false, error: 'boom' });
         const res = await continueWithMatchedProfile({ currentId: 'maria', matchId: 'jonatan', typed: { type: 'email', value: 'nuevo@example.com' } });
