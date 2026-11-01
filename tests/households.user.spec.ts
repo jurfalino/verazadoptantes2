@@ -94,7 +94,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         expect(housemates(PEDRO)).toContainEqual(expect.objectContaining({ profileId: marta!.id, addedBy: USER_EMAIL, relationship: 'partner' }));
         expect(JSON.parse(String(marta!.contact_entries))).toEqual([expect.objectContaining({ type: 'phone', addedBy: USER_EMAIL })]);
 
-        // Her profile shows the household: Pedro, rated, with his alert.
+        // Her profile shows the household: Pedro, rated. His only flag is «Inexacto», which no rescuer surface draws (Jon 2026-11-01).
         // Its bottom edge too: the contacts toggle's padded hit area sits just below and must never take the tap.
         const link = card(page, MARTA_NAME).getByTestId('household-member-profile-link');
         const box = (await link.boundingBox())!;
@@ -102,9 +102,10 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
         await expect(page).toHaveURL(new RegExp(`/adopter/${marta!.id}`), { timeout: 30_000 });
         const pedroCard = card(page, PEDRO_NAME);
         await expect(pedroCard).toHaveCount(1, { timeout: 30_000 });
-        // His row: rating and his open alert, no «Perfil cargado por …»; one attribution at most.
+        // His row: rating, no «Inexacto» chip, no «Perfil cargado por …»; one attribution at most.
         await expect(pedroCard).toContainText('1.0');
-        await expect(pedroCard.getByTestId('household-member-alerts')).toBeVisible();
+        await expect(pedroCard.getByTestId('household-member-alerts')).toHaveCount(0);
+        await expect(pedroCard.locator('[data-alert="inaccurate"]')).toHaveCount(0);
         await expect(pedroCard.locator('[data-activity="observation"]')).toHaveAttribute('data-count', '1');
         // «Editar» on everyone's card, the anchor's too — no relationship field there (his row has none);
         // taking Pedro out of his own home is not this viewer's to do.

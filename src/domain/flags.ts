@@ -71,3 +71,19 @@ export function openAlertKinds(flags: { inaccurate?: boolean | null; duplicate?:
 export function openAlertKindsOfRows(flagRows: readonly DuplicateFlagRow[]): OpenAlertKind[] {
     return openAlertKinds(buildFlags(flagRows, 0));
 }
+
+/**
+ * THE rule for which open FLAGS a rescuer-facing surface draws (Jon,
+ * 2026-11-01) — the profile header, search cards, match cards and
+ * «¿Es este perfil?» (AlertSummary / PersonStanding), household rows,
+ * /my-adopters, an applicant's row and panel: every kind except «Inexacto»
+ * (`inaccurate_information`, legacy `inaccurate`). "Only admins care about
+ * that — in the admin UI": /admin keeps drawing it from its own rows, and the
+ * data (openAlertKinds, the public API's `flags`) still carries it.
+ *
+ * A flag is a rescuer's report, not an alert: these are drawn as neutral flag
+ * chips after the alerts, never counted as «N alertas».
+ */
+export function rescuerFlagKinds(kinds: readonly OpenAlertKind[]): OpenAlertKind[] {
+    return kinds.filter(kind => kind !== 'inaccurate');
+}

@@ -16,6 +16,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
 import { AlertPill } from '@/components/AlertPill';
+import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
 
@@ -326,8 +327,7 @@ function timeAgo(input: number | Date | string | null | undefined, isEs: boolean
 function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => string }) {
     const badges = [];
 
-    if (flags.inaccurate) badges.push(<AlertPill key="inaccurate" kind="inaccurate">{t('flags.inaccurate') || 'Inaccurate'}</AlertPill>);
-    if (flags.duplicate) badges.push(<AlertPill key="duplicate" kind="duplicate">{t('flags.duplicate') || 'Duplicate'}</AlertPill>);
+    // Alerts first; then the flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01).
     if (flags.tooManyAdoptions) {
         badges.push(
             <AlertPill key="too_many_adoptions" kind="too_many_adoptions">
@@ -341,6 +341,10 @@ function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => str
                 {t('flags.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
             </AlertPill>
         );
+    }
+
+    for (const kind of rescuerFlagKinds(openAlertKinds(flags))) {
+        badges.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
     }
 
     if (badges.length === 0) {

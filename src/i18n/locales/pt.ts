@@ -1066,7 +1066,6 @@ export const pt = {
         hh_rel_choose: 'Escolher…',
         hh_years: '{n} anos',
         hh_link_unrated: 'Sem avaliação',
-        hh_link_alerts_many: '{n} alertas',
         hh_contact_already_there: 'Esse dado já estava cadastrado.',
         hh_link_more_contacts: '+{n} dados a mais no perfil',
         hh_link_more_contacts_one: '+1 dado a mais no perfil',

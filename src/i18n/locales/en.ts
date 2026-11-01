@@ -1059,7 +1059,6 @@ export const en = {
         hh_rel_choose: 'Choose…',
         hh_years: '{n} years old',
         hh_link_unrated: 'Not rated',
-        hh_link_alerts_many: '{n} alerts',
         hh_contact_already_there: 'That detail was already there.',
         hh_link_more_contacts: '+{n} more details on their profile',
         hh_link_more_contacts_one: '+1 more detail on their profile',

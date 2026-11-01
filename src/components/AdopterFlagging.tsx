@@ -16,7 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
-import { isInaccurateReason, openAlertKindsOfRows } from '@/domain/flags';
+import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import { Modal, ModalActions } from '@/components/ui/Modal';
@@ -96,7 +96,6 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     // Tap-to-expand context hints for flags
     const [showAdoptionsHint, setShowAdoptionsHint] = useState(false);
     const [showRequestsHint, setShowRequestsHint] = useState(false);
-    const [showInaccurateHint, setShowInaccurateHint] = useState(false);
     const [showIdentityHint, setShowIdentityHint] = useState(false);
     const [_showAddressHint, _setShowAddressHint] = useState(false);
 
@@ -108,17 +107,15 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
         });
     }, [adopterId]);
 
-    // The open alerts, by the one rule every surface counts them with
-    // (openAlertKindsOfRows): «Inexacto» for any inaccuracy report, «Duplicado»
-    // only for an OPEN duplicate question — a merged flag ("Merged into … by …")
-    // or a declined merge request ("Kept separate: …") is settled, and its
-    // details are bookkeeping, not something to show every viewer.
-    const alertKinds = openAlertKindsOfRows(existingFlags.map(f => ({ adopterId, ...f })));
+    // The open flags, by the one rule every surface draws them with
+    // (openAlertKindsOfRows, then rescuerFlagKinds): «Duplicado» only for an
+    // OPEN duplicate question — a merged flag ("Merged into … by …") or a
+    // declined merge request ("Kept separate: …") is settled, and its details
+    // are bookkeeping. «Inexacto» is never drawn here, for any viewer (Jon,
+    // 2026-11-01: only admins care about it, in the admin UI).
+    const flagKinds = rescuerFlagKinds(openAlertKindsOfRows(existingFlags.map(f => ({ adopterId, ...f }))));
     const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
-    const isFlaggedAsDuplicate = alertKinds.includes('duplicate');
-
-    const inaccurateFlags = existingFlags.filter(f => isInaccurateReason(f.reason));
-    const isFlaggedAsInaccurate = alertKinds.includes('inaccurate');
+    const isFlaggedAsDuplicate = flagKinds.includes('duplicate');
 
     // Verification flags - include adoption-based verification
     const identityVerifiedFlag = existingFlags.find(f => f.reason === 'verified_identity');
@@ -276,23 +273,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             {/* Flag Pills — split into warnings and verifications */}
             <div className="space-y-2 mb-4">
                 {/* ⚠ Warnings: things that need attention */}
-                {(isFlaggedAsInaccurate || isFlaggedAsDuplicate || tooManyAdoptions || tooManyRequests) && (
+                {((isFlaggedAsDuplicate && !hasDuplicateBanner) || tooManyAdoptions || tooManyRequests) && (
                     // gap-y-3: wrapped rows of 32px pills keep their 44px tap targets apart.
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
-                        {/* Inaccurate Information Flag */}
-                        {isFlaggedAsInaccurate && (
-                            <AlertPill kind="inaccurate" size="md" onClick={() => setShowInaccurateHint(!showInaccurateHint)} pressed={showInaccurateHint}>
-                                {t('flags.inaccurate') || 'Inaccurate'}
-                            </AlertPill>
-                        )}
-
-                        {/* Duplicate - click to expand hint */}
-                        {isFlaggedAsDuplicate && !hasDuplicateBanner && (
-                            <AlertPill kind="duplicate" size="md" onClick={() => setShowDuplicateHint(!showDuplicateHint)} pressed={showDuplicateHint}>
-                                {t('flags.duplicate') || 'Duplicate'}
-                            </AlertPill>
-                        )}
-
+                        {/* Alerts first (computed from the records)… */}
                         {/* Too Many Adoptions Warning */}
                         {tooManyAdoptions && (
                             <AlertPill kind="too_many_adoptions" size="md" onClick={() => setShowAdoptionsHint(!showAdoptionsHint)} pressed={showAdoptionsHint}>
@@ -306,15 +290,15 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                 {t('flags.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
                             </AlertPill>
                         )}
-                        
-                        {/* Context hints revealed on tap */}
-                        {showInaccurateHint && isFlaggedAsInaccurate && (
-                            <div className="w-full mt-1 p-3 bg-rose-50 border border-rose-100 rounded-lg text-xs leading-relaxed text-rose-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-rose-100"></div>
-                                <span className="font-semibold text-rose-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
-                                {inaccurateFlags[0]?.details || t('flags.inaccurate_desc') || 'Este perfil fue reportado como inexacto.'}
-                            </div>
+
+                        {/* …then the flags (a rescuer's report): the neutral chip, by name. Tap for the hint. */}
+                        {isFlaggedAsDuplicate && !hasDuplicateBanner && (
+                            <AlertPill kind="duplicate" size="md" onClick={() => setShowDuplicateHint(!showDuplicateHint)} pressed={showDuplicateHint}>
+                                {t('flags.duplicate') || 'Duplicate'}
+                            </AlertPill>
                         )}
+
+                        {/* Context hints revealed on tap */}
                         {showDuplicateHint && isFlaggedAsDuplicate && !hasDuplicateBanner && (
                             <div className="w-full mt-1 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs leading-relaxed text-amber-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
                                 <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-amber-100"></div>

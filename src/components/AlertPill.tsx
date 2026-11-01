@@ -1,34 +1,40 @@
 'use client';
 
 /**
- * An alert on a person, one way everywhere (audit B2): the profile header's
- * flag pill — rounded, bordered, in the alert's status colour, with a lucide
- * icon and its words — also on a household row, a card's household line, a
- * search card, /my-adopters and an applicant's panel. No «⚠» / «📄» emoji chips.
+ * An alert or a flag on a person, one way everywhere (audit B2): the profile
+ * header's pill — rounded, bordered, with an SVG icon and its words — also on
+ * a household row, a card's household line, a search card, /my-adopters and an
+ * applicant's panel. No «⚠» / «📄» emoji chips.
  *
  * - `md`: the profile header (a button that opens the «Por qué está marcado» hint).
  * - `sm`: a line about a person (rows, cards, lists).
  *
- * Kinds and colours (the profile header's): inexacto = error, duplicado and
- * «N adopciones en N días» = warning, «Pidió en N rescates…» = purple, a bare
- * count («1 alerta») = error. Colours are status CSS variables: theme-safe.
+ * An ALERT (computed from the person's records) keeps its status colour:
+ * «N adopciones en N días» = warning, «Pidió en N rescates…» = purple.
+ * A FLAG (a rescuer's report: «Duplicado», «Inexacto») is not an alert (Jon,
+ * 2026-11-01): a neutral grey outlined chip with a flag icon and the flag's
+ * own name, drawn after the alerts and never counted as «N alertas». Which
+ * flags a rescuer surface draws at all is rescuerFlagKinds (no «Inexacto»).
+ * Colours are CSS variables: theme-safe.
  */
 import type { ReactNode } from 'react';
-import { AlertCircle, AlertTriangle, Files, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Flag, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import type { OpenAlertKind } from '@/domain/flags';
+import { rescuerFlagKinds, type OpenAlertKind } from '@/domain/flags';
 import { periodAlertDays, type PeriodAlerts } from '@/domain/periodAlerts';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 
-export type AlertKind = 'inaccurate' | 'duplicate' | 'too_many_adoptions' | 'too_many_requests' | 'count';
+export type AlertKind = OpenAlertKind | 'too_many_adoptions' | 'too_many_requests';
 
-const KIND: Record<AlertKind, { tone: 'error' | 'warning' | 'purple'; Icon: LucideIcon }> = {
-    inaccurate: { tone: 'error', Icon: AlertCircle },
-    duplicate: { tone: 'warning', Icon: Files },
+/** `null` tone = a flag: the neutral outlined chip. */
+const KIND: Record<AlertKind, { tone: 'warning' | 'purple' | null; Icon: LucideIcon }> = {
+    inaccurate: { tone: null, Icon: Flag },
+    duplicate: { tone: null, Icon: Flag },
     too_many_adoptions: { tone: 'warning', Icon: AlertTriangle },
     too_many_requests: { tone: 'purple', Icon: AlertTriangle },
-    count: { tone: 'error', Icon: AlertTriangle },
 };
+
+const FLAG_STYLE = { background: 'transparent', color: 'var(--text-secondary)', borderColor: 'var(--text-faint, var(--border-default))' } as const;
 
 const SIZE = {
     // The line-height is pinned so a row's pills (this and RatingBadge, the same box) line up whatever the parent's font.
@@ -47,8 +53,10 @@ export function AlertPill({ kind, children, size = 'sm', onClick, pressed, testI
 }) {
     const { tone, Icon } = KIND[kind];
     const sz = SIZE[size];
-    const cls = `inline-flex items-center ${sz.box} rounded-full border font-semibold whitespace-nowrap`;
-    const style = { background: `var(--status-${tone}-bg)`, color: `var(--status-${tone}-text)`, borderColor: `var(--status-${tone}-border)` };
+    const cls = `inline-flex items-center ${sz.box} rounded-full border ${tone ? 'font-semibold' : 'font-medium'} whitespace-nowrap`;
+    const style = tone
+        ? { background: `var(--status-${tone}-bg)`, color: `var(--status-${tone}-text)`, borderColor: `var(--status-${tone}-border)` }
+        : FLAG_STYLE;
     const body = <><Icon className={`${sz.icon} shrink-0`} strokeWidth={2.25} aria-hidden="true" />{children}</>;
     if (onClick) {
         return (
@@ -63,30 +71,26 @@ export function AlertPill({ kind, children, size = 'sm', onClick, pressed, testI
 }
 
 /**
- * A person's open alerts in one pill, where one person is summed up in a line
- * (household rows, match cards, «¿Es este perfil?», a card's household line,
- * the applicants list). `kinds` come from openAlertKinds — the profile
- * header's rule. One kind is that kind's own header pill («Inexacto» in red,
- * «Duplicado» in amber with its Files icon), exactly as the profile header and
- * the search card draw it; two or more are the count pill («2 alertas»).
+ * A person's open FLAGS, where one person is summed up in a line (household
+ * rows, match cards, «¿Es este perfil?», the applicants list): one neutral
+ * flag chip per kind, by its own name («Duplicado») — never counted into
+ * «N alertas» (Jon, 2026-11-01). `kinds` come from openAlertKinds; only the
+ * ones a rescuer surface shows are drawn (rescuerFlagKinds: no «Inexacto»).
  * Nothing when there are none.
  */
 export function AlertSummary({ kinds, testId }: { kinds: readonly OpenAlertKind[]; testId?: string }) {
     const { t } = useLanguage();
-    if (kinds.length === 0) return null;
-    if (kinds.length === 1) {
-        const kind = kinds[0];
-        return <AlertPill kind={kind} testId={testId}>{t(`flags.${kind}`)}</AlertPill>;
-    }
-    return <AlertPill kind="count" testId={testId}>{t('adopter.hh_link_alerts_many').replace('{n}', String(kinds.length))}</AlertPill>;
+    const shown = rescuerFlagKinds(kinds);
+    if (shown.length === 0) return null;
+    return <>{shown.map(kind => <AlertPill key={kind} kind={kind} testId={testId}>{t(`flags.${kind}`)}</AlertPill>)}</>;
 }
 
 /**
  * A person's ALERTS — «{count} adopciones en {days} días» and «Pidió en {count}
  * rescates en {days} días» (periodAlerts) — one pill each, as the search card
  * draws its own; a card's household line draws a housemate's the same way.
- * Never a summary: the «N alertas» pill is for flags (AlertSummary). Nothing
- * when there are none.
+ * Never a summary, and never mixed with flags (AlertSummary). Nothing when
+ * there are none.
  */
 export function PeriodAlertPills({ alerts, testId }: { alerts: PeriodAlerts | null | undefined; testId?: string }) {
     const { t } = useLanguage();

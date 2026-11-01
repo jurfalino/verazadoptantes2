@@ -22,7 +22,7 @@ import { zarazTrack } from '@/lib/zaraz';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
 import { AlertSummary } from '@/components/AlertPill';
-import { openAlertKinds } from '@/domain/flags';
+import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 // Sentinel: tracking the busy row by submissionId (always present) avoids the
@@ -258,8 +258,8 @@ export default function AnimalApplicants({
                     <ul className="divide-y divide-teal-100 border-t border-teal-100">
                         {applicants.map((a, idx) => {
                             const summary = summaryLine(a, t);
-                            // The person's open alerts by the one rule (openAlertKinds — the profile header's).
-                            const alertKinds = openAlertKinds(a.flags);
+                            // The person's open flags a rescuer sees (rescuerFlagKinds: never «Inexacto»), as AlertSummary draws them.
+                            const alertKinds = rescuerFlagKinds(openAlertKinds(a.flags));
                             const verified = !!a.flags?.verified_identity;
                             return (
                                 <li

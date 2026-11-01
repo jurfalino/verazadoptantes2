@@ -16,7 +16,8 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import { MinorTag } from './MinorTag';
 import { CardHouseholdLine } from './CardHouseholdLine';
-import { AlertPill, PeriodAlertPills } from './AlertPill';
+import { AlertSummary, PeriodAlertPills } from './AlertPill';
+import { openAlertKinds } from '@/domain/flags';
 import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
 import { PersonActivity } from './PersonStanding';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
@@ -277,8 +278,12 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     activity={res.stats.activity ?? { adoption: res.stats.adoptions || undefined, adoption_request: res.stats.requests || undefined }}
                     testId="search-card-activity" />
                 <div className="flex flex-wrap gap-1 ml-auto">
-                    {res.flags.inaccurate && <AlertPill kind="inaccurate">{t('flags.inaccurate') || 'Inaccurate'}</AlertPill>}
-                    {res.flags.duplicate && <AlertPill kind="duplicate">{t('flags.duplicate') || 'Duplicate'}</AlertPill>}
+                    {/* Desktop: the alerts (risk chips) first, inline in the stats band. On mobile
+                        they're promoted above (right after the rating), so hidden here —
+                        `md:contents` lets them flow into this flex cluster on ≥md. */}
+                    <span className="hidden md:contents">{riskFlagChips}</span>
+                    {/* Then the flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01). */}
+                    <AlertSummary kinds={openAlertKinds(res.flags)} />
                     {res.flags.systemDuplicate && !res.flags.duplicate && (
                         <span
                             title={t('search.possible_duplicate_tooltip') || 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.'}
@@ -293,10 +298,6 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     {res.flags.verified_address && (
                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_address') || 'Verified address'}</span>
                     )}
-                    {/* Desktop: risk chips inline in the stats band. On mobile they're
-                        promoted above (right after the rating), so hide them here —
-                        `md:contents` lets them flow into this flex cluster on ≥md. */}
-                    <span className="hidden md:contents">{riskFlagChips}</span>
                 </div>
             </div>
 

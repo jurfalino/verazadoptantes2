@@ -7,8 +7,9 @@
  *
  * - `PersonStanding`: «Menor de edad» first for a minor (an informational
  *   marker only — Jon, 2026-10-28), then the rating (★ + its word: colour is
- *   never the only signal) or «Sin calificación», and the open alerts
- *   (AlertSummary) when there are any — the same for everyone.
+ *   never the only signal) or «Sin calificación», and the open flags as
+ *   neutral chips by name (AlertSummary: never «Inexacto», never counted as
+ *   «N alertas» — Jon, 2026-11-01) — the same for everyone.
  * - `PersonActivity`: the person's activity counted as their own «Actividad»
  *   header counts it (ActivityCountsLine), «sin actividad» when none.
  *
@@ -36,7 +37,7 @@ export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alert
             {isMinor && <MinorTag testId={minorTestId} />}
             {/* The one rating pill (or «Sin calificación»), as in the profile header (Jon, 2026-10-28). */}
             <RatingBadge rating={rating} />
-            {/* The profile header's flag pill: one kind as itself, two as «2 alertas» (audit B2, fix round 2 item 9). */}
+            {/* The flags, one neutral chip each by name — never «Inexacto», never «N alertas» (rescuerFlagKinds). */}
             <AlertSummary kinds={openAlerts} testId={alertsTestId} />
         </>
     );

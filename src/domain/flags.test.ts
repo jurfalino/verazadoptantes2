@@ -7,7 +7,7 @@
  * number of those kinds, and a single kind is drawn as that kind's pill.
  */
 import { describe, it, expect } from 'vitest';
-import { buildFlags, openAlertKinds, openAlertKindsOfRows } from './flags';
+import { buildFlags, openAlertKinds, openAlertKindsOfRows, rescuerFlagKinds } from './flags';
 import { KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from './dedupPair';
 
 const row = (o: { reason: string | null; targetAdopterId?: string | null; details?: string | null }) => ({ adopterId: 'a', ...o });
@@ -49,5 +49,21 @@ describe('openAlertKinds', () => {
         expect(openAlertKinds(null)).toEqual([]);
         const rows = [row({ reason: 'inaccurate' }), row({ reason: 'duplicate', targetAdopterId: 'b', details: 'Merged into b by x@example.com' })];
         expect(openAlertKinds(buildFlags(rows, 0))).toEqual(openAlertKindsOfRows(rows));
+    });
+});
+
+describe('rescuerFlagKinds — which flags a rescuer-facing surface draws (Jon 2026-11-01)', () => {
+    it('«Inexacto» is filtered, under either stored reason; «Duplicado» is kept', () => {
+        expect(rescuerFlagKinds(openAlertKindsOfRows([row({ reason: 'inaccurate_information' }), row({ reason: 'duplicate', targetAdopterId: 'b' })]))).toEqual(['duplicate']);
+        expect(rescuerFlagKinds(openAlertKindsOfRows([row({ reason: 'inaccurate' })]))).toEqual([]);
+        expect(rescuerFlagKinds(['inaccurate'])).toEqual([]);
+        expect(rescuerFlagKinds(['duplicate'])).toEqual(['duplicate']);
+        expect(rescuerFlagKinds([])).toEqual([]);
+    });
+    it('the data keeps it: openAlertKinds (the admin UI, the public API) still lists «inaccurate»', () => {
+        const kinds = openAlertKinds({ inaccurate: true, duplicate: true });
+        expect(kinds).toEqual(['inaccurate', 'duplicate']);
+        expect(rescuerFlagKinds(kinds)).toEqual(['duplicate']);
+        expect(kinds).toEqual(['inaccurate', 'duplicate']); // not mutated
     });
 });
