@@ -65,7 +65,7 @@ import { createHouseholdProfile } from './_adopterFactory';
 import { searchFormDuplicates } from '@/lib/formDuplicates';
 import { findAdopters } from './findAdopters';
 import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
-import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
+import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintPairMatches, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
 import { ratingAfterMerge } from '@/domain/ratings';
 import { realOwner } from '@/domain/dedupPair';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
@@ -916,6 +916,15 @@ async function dupHintWindow(
                 action: decision.action, alreadyPending: decision.alreadyPending, ...cantJoin,
                 ...(decision.action === 'flag' && decision.saidNo ? { saidNo: true } : {}),
             };
+        }
+        // A loose hit (phone ending, contact LIKE) that isn't the same contact: «Continuar»
+        // would be refused (continueWithMatchedProfile's not_a_match), so offer the flag.
+        const entriesOf = (r: { contactEntries: string | null; contactInfo: string | null }) => {
+            const parsed = deserializeContactEntries(r.contactEntries);
+            return parsed.length > 0 ? parsed : parseBlobToContactEntries(r.contactInfo);
+        };
+        if (!dupHintPairMatches(entriesOf(current), entriesOf(row), typedEntry)) {
+            return { action: 'flag', alreadyPending: decision.alreadyPending };
         }
         const plan = dupHintMergePlan({
             actor: viewer.actor, isAdmin: viewer.isAdmin,

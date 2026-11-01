@@ -119,6 +119,16 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
         expect(w!.preview).toMatchObject({ records: 1, ratingAfter: 3 });
     });
 
+    it('a loose hit that is not the same contact (only the digits overlap): the flag, never a «Continuar» the server refuses', async () => {
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_info) VALUES (?, ?, '5', ?, ?, ?, ?)`);
+        insert.run('loose', 'Lorena Paz', OWNER, 1200, 1200, 'Tel 116585133399');
+        await tokenizeAdopter('loose');
+        const w = await windowFor('loose');
+        expect(w, 'the hint must find the loose hit for this test to mean anything').toBeDefined();
+        expect(w).toMatchObject({ action: 'flag' });
+        expect(w!.preview).toBeUndefined();
+    });
+
     it('a teammate of whoever loaded it: case 1 too', async () => {
         expect(await as(MATE, () => windowFor('jonatan'))).toMatchObject({ action: 'continue', toldNames: ['other-rescuer'] });
     });
