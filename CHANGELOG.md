@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.8] - 2026-10-31
+
+### Fixed — possible duplicates
+- «Pendientes de revisar» and the admin «Fusionar perfiles» window propose keeping the same profile: the one loaded
+  first. The admin window used to propose whichever the system stored first. Either can still be switched.
+- «⋯ Reportar duplicado» never lists the profile you are on. A failed search now says so, with its error id, instead
+  of looking like «no results».
+- Spreadsheet import: a row that matches more than one profile lists the others under the first — «También coincide
+  con …», with «Abrir ↗» and «Actualizar este» to update that one instead. Rows identical to a profile are checked
+  for other matches too.
+
+### Changed
+- «Reportar inexactitud»: the notice quotes what the person wrote (up to 280 characters), so whoever can fix the
+  profile knows what to fix.
+
 ## [2.58.7] - 2026-10-31
 
 ### Changed — «Ya está en otro perfil» (typing a contact that another profile already has)
