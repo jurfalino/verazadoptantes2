@@ -318,7 +318,7 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                                owner's team is told in-app + by email with «Deshacer».
 //   changeProfileAge(input)      open by design: integer 0–120 or null + the «menor» box;
 //                                credited, history, owner's team told. «Menor» is a marker only
-//                                (Jon, 2026-10-28): any profile can be marked.
+//                                (Jon, 2026-10-28): any profile can be marked. [Removed: see 171.]
 //   undoProfileRename(historyId) owner ∨ org-mate ∨ admin ∨ moderator of the profile, else
 //                                not_authorized; only a rename row (never an undo), only while
 //                                the profile still carries that rename's name, once.
@@ -375,7 +375,15 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //   (mergePendingDedupPair can't be reused: it needs a candidate or flag row this pair may not have.)
 // Both answer codes only, never another profile's data.
 // 172 = 170 + 2.
-const EXPECTED_ACTIONS = 172;
+// Age editing closed on the server (Jon 2026-10-29: no age field or «Es menor de edad» box until a
+// new design; EM review I2, Jon approved 2026-11-01): −1 changeProfileAge, removed from
+// src/app/actions/profileIdentity.ts and the barrel — nothing in src/ or tests/ called it, and a
+// tab still on 2.58.6 (or anyone calling it directly) could set any profile's age or «menor» with
+// no UI left to correct it. addHouseholdPerson stays, now ignoring the browser's `age`/`isMinor`
+// (no caller sends them, fromImport included). The lib writer (setProfileAge) is plain lib code.
+// MEASURED (npm run build): 171.
+// 171 = 172 − 1.
+const EXPECTED_ACTIONS = 171;
 
 let manifest;
 try {

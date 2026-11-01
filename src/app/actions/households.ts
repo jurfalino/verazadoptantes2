@@ -105,10 +105,6 @@ export type AddHouseholdPersonInput = {
     existingProfileId?: string;
     name?: string;
     relationship?: Relationship;
-    /** A whole 0–120 (new profiles only; an existing profile's age is changed through its own form). */
-    age?: number | null;
-    /** «Es menor de edad» ticked (new profiles only): counts only with no age — a typed age decides by itself. */
-    isMinor?: boolean;
     contactEntries?: HouseholdContactInput[];
     /**
      * A relative an import names (ImportWizard, Task 4 fix round 1). Re-merging the same post
@@ -351,8 +347,6 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
     let importKey = fromImport ? await importSourceKey(actor, anchorId, fromImport) : null;
     if (input.relationship !== undefined && input.relationship !== null && !REL_SET.has(input.relationship)) return { ok: false, error: 'invalid' };
     const relationship: Relationship = input.relationship && REL_SET.has(input.relationship) ? input.relationship : 'unknown';
-    const age = input.age;
-    if (age !== undefined && age !== null && !(Number.isInteger(age) && age >= 0 && age <= 120)) return { ok: false, error: 'invalid' };
     const contacts = parseContacts(input.contactEntries);
     if (!contacts) return { ok: false, error: 'invalid' };
     const entries = contacts.map(c => contactEntryFromInput(c, actor));
@@ -429,8 +423,11 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 actor,
                 name,
                 contactEntries: entries,
-                age: age ?? null,
-                isMinor: input.isMinor === true,
+                // Age and «Es menor de edad» are not set from here until a new design (Jon 2026-10-29;
+                // EM review I2). No caller sends them — the household forms, the post import's relatives
+                // (fromImport) and «alguien de su hogar» never did — so a browser's value is ignored.
+                age: null,
+                isMinor: false,
                 // Same owner as the anchor, so the same standing.
                 historyKind: historyKind(privilegedOnAnchor),
                 history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: householdId || null, gift: false, ...(contactTypes.length ? { contactTypes } : {}) } },

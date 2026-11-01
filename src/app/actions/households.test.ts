@@ -168,7 +168,7 @@ function giftHouseholdFor(giverId: string, recipientName: string, n = 0): { hous
 
 async function strangerAddsLucas() {
     const res = await addHouseholdPerson({
-        anchorAdopterId: 'pedro', name: 'Lucas Paez', relationship: 'child', age: 12,
+        anchorAdopterId: 'pedro', name: 'Lucas Paez', relationship: 'child',
         contactEntries: [{ type: 'phone', value: LUCAS_PHONE }],
     });
     if (!res.ok) throw new Error(res.error);
@@ -176,13 +176,22 @@ async function strangerAddsLucas() {
 }
 
 describe('addHouseholdPerson — a new person', () => {
-    it('Task 8: «Es menor de edad» ticked with no age → a minor profile; with an age the age decides', async () => {
-        const kid = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Tomás Paez', relationship: 'child', isMinor: true });
+    // Age and «Es menor de edad» are not set from here until a new design (Jon 2026-10-29; EM review I2):
+    // no caller sends them (the household forms, the post import's relatives, «alguien de su hogar»),
+    // so whatever a browser passes is ignored — never stored, never refused.
+    it('age and «Es menor de edad» passed by a caller are not stored: no age, not a minor', async () => {
+        const kid = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Tomás Paez', relationship: 'child', isMinor: true } as never);
         expect(kid.ok).toBe(true);
-        expect(profileNamed('Tomás Paez')).toMatchObject({ age: null, is_minor: 1 });
-        const adult = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Paez', relationship: 'sibling', age: 30, isMinor: true });
+        expect(profileNamed('Tomás Paez')).toMatchObject({ age: null, age_as_of: null, is_minor: 0 });
+        const adult = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Ana Paez', relationship: 'sibling', age: 12, isMinor: true } as never);
         expect(adult.ok).toBe(true);
-        expect(profileNamed('Ana Paez')).toMatchObject({ age: 30, is_minor: 0 });
+        expect(profileNamed('Ana Paez')).toMatchObject({ age: null, age_as_of: null, is_minor: 0 });
+        // Not even read: an out-of-range age no longer refuses the add.
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Eva Paez', relationship: 'sibling', age: 999 } as never)).toMatchObject({ ok: true });
+        expect(profileNamed('Eva Paez')).toMatchObject({ age: null, is_minor: 0 });
+        // Through the post import's door too (fromImport carries no age).
+        expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Rita Paez', relationship: 'child', age: 9, isMinor: true, fromImport: { slot: 'r0' } } as never)).toMatchObject({ ok: true });
+        expect(profileNamed('Rita Paez')).toMatchObject({ age: null, is_minor: 0 });
     });
 
     it("a stranger adds Lucas: Pedro's owner owns him, the phone is the stranger's with a grant, contributions only, Pedro's team told", async () => {
@@ -191,8 +200,7 @@ describe('addHouseholdPerson — a new person', () => {
 
         const lucas = profileNamed('Lucas Paez')!;
         expect(lucas.id).toBe(res.profileId);
-        expect(lucas).toMatchObject({ added_by: OWNER, age: 12, is_minor: 1, is_public: 0, deleted_at: null });
-        expect(lucas.age_as_of).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(lucas).toMatchObject({ added_by: OWNER, age: null, age_as_of: null, is_minor: 0, is_public: 0, deleted_at: null });
         expect(JSON.parse(lucas.contact_entries as string)).toEqual([expect.objectContaining({ type: 'phone', value: LUCAS_PHONE, addedBy: STRANGER })]);
         expect(lucas.contact_info).toContain(LUCAS_PHONE);
 

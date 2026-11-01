@@ -1,7 +1,7 @@
 'use server';
 
 /**
- * A profile's name and age — open to anyone signed in (households as profiles,
+ * A profile's name — open to anyone signed in (households as profiles,
  * Task 3 — Jon, 2026-10-27). Thin doors: the session gives the actor, the
  * writes and notices live in src/lib/profileIdentity.ts.
  *
@@ -14,9 +14,9 @@
  *   for a stranger, never 'edit' — no approver standing), and the owner's team
  *   is told in-app and by email with «Deshacer» (a change by the owner's own
  *   team is not news to it: no notice, as D54).
- * - `changeProfileAge`: set the age / «Es menor de edad» of any live profile;
- *   credited, notified. Marking a profile with records or alerts as a minor
- *   is refused (it would hide the «¿Qué pasó con …?» actions on an adult).
+ * - The age / «Es menor de edad» door (`changeProfileAge`) is RETIRED (Jon
+ *   2026-10-29: age editing is gone until a new design; EM review I2). The
+ *   stored age, its yearly count-up and the public form are unaffected.
  * - `undoProfileRename` / `getRenameUndoOption`: only the owner's team, an
  *   admin or a moderator; anyone else gets `not_authorized` and no names.
  */
@@ -27,11 +27,10 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { adopterFieldAuthors } from '@/lib/collabAttribution';
 import { isPrivilegedOnProfile } from '@/lib/profilePrivilege';
 import {
-    notifyProfileAgeChanged, notifyProfileRenamed, renameProfile, renamesBySince, renameUndoState, setProfileAge, undoRename,
+    notifyProfileRenamed, renameProfile, renamesBySince, renameUndoState, undoRename,
 } from '@/lib/profileIdentity';
-import { isValidAge, MAX_PROFILE_NAME_LEN, RENAME_RATE_LIMIT, RENAME_RATE_WINDOW_MS } from '@/domain/profileIdentity';
+import { MAX_PROFILE_NAME_LEN, RENAME_RATE_LIMIT, RENAME_RATE_WINDOW_MS } from '@/domain/profileIdentity';
 import { canonField } from '@/domain/fieldCollab';
-import { MINOR_AGE_LIMIT } from '@/domain/households';
 
 export type ProfileIdentityError =
     | 'not_authenticated' | 'not_found' | 'invalid' | 'conflict' | 'busy' | 'failed'
@@ -50,7 +49,6 @@ export type ChangeProfileNameResult =
     | { ok: false; error: 'conflict'; theirs: string; by: string }
     | { ok: false; error: Exclude<ProfileIdentityError, 'conflict'>; errorId?: string };
 
-export type ChangeProfileAgeResult = { ok: true; age: number | null; isMinor: boolean; warningErrorId?: string } | Fail;
 export type UndoProfileRenameResult = { ok: true; name: string; warningErrorId?: string } | Fail;
 export type RenameUndoOption =
     | { status: 'can_undo'; adopterId: string; from: string; to: string }
@@ -133,39 +131,6 @@ async function othersChanged(
     if (!fields.length) return [];
     const by = await adopterFieldAuthors(db, adopterId, [...fields]);
     return fields.map(f => ({ field: f, by: by[f] ?? '', value: stored[f] }));
-}
-
-export async function changeProfileAge(input: {
-    adopterId: string; age: number | null; isMinor: boolean;
-    /** Final fix P1: the age and «menor» the form showed when it opened; changed since → `conflict`, nothing written. */
-    expected?: { age: number | null; isMinor: boolean };
-}): Promise<ChangeProfileAgeResult> {
-    const actor = await sessionActor('changeProfileAge');
-    if (!actor) return { ok: false, error: 'not_authenticated' };
-    const adopterId = id64(input?.adopterId);
-    const age = input?.age === null ? null : input?.age;
-    if (!adopterId || (age !== null && !isValidAge(age)) || typeof input?.isMinor !== 'boolean') return { ok: false, error: 'invalid' };
-    const exp = input?.expected;
-    if (exp !== undefined && (!exp || typeof exp !== 'object' || typeof exp.isMinor !== 'boolean' || (exp.age !== null && !isValidAge(exp.age)))) return { ok: false, error: 'invalid' };
-    const ctx = { adopterId, actor };
-    try {
-        const db = await getDb();
-        if (!db) throw new Error('No database');
-        const res = await setProfileAge(db, { adopterId, age, isMinor: input.isMinor, actor, ...(exp ? { expected: { age: exp.age, isMinor: exp.isMinor } } : {}) });
-        switch (res.status) {
-            case 'missing': return { ok: false, error: 'not_found' };
-            case 'busy': return { ok: false, error: 'busy', errorId: res.errorId };
-            case 'conflict': return { ok: false, error: 'conflict' };
-            case 'unchanged': return { ok: true, age, isMinor: age !== null ? age < MINOR_AGE_LIMIT : input.isMinor };
-            case 'changed':
-                await notifyProfileAgeChanged(db, { adopterId, actor, ownerEmail: res.ownerEmail, name: res.name, age: res.to.age, minor: res.to.minor });
-                revalidatePath(`/adopter/${adopterId}`);
-                return { ok: true, age: res.to.age, isMinor: res.to.minor, ...(res.warningErrorId ? { warningErrorId: res.warningErrorId } : {}) };
-        }
-    } catch (e) {
-        const errorId = logger.error('changeProfileAge failed', e, ctx);
-        return { ok: false, error: 'failed', errorId };
-    }
 }
 
 export async function undoProfileRename(historyId: string): Promise<UndoProfileRenameResult> {
