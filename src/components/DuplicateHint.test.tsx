@@ -65,15 +65,15 @@ const jonatan = match('b', 'Jonatan Urfalino', {
 });
 
 describe('DupHintBox — the compact inline notice', () => {
-    it('header by count, one row per match: name, rating, «Ver perfil»; the household line only for the problem housemate', () => {
+    it('header by count, one row per match: name, rating, «Ver perfil»; no household line (Jon 2026-10-31)', () => {
         const html = renderToStaticMarkup(<DupHintBox matches={[jonathan, jonatan]} done={new Map()} onView={() => {}} />);
         expect(text(html)).toContain('Ya está en 2 perfiles');
         expect(html.match(/data-testid="dup-hint-row"/g)).toHaveLength(2);
         expect(html.match(/data-testid="dup-hint-view"/g)).toHaveLength(2);
         expect(text(html)).toContain('Sin calificación');
-        // The household line (CardHouseholdLine, closed) on Jonatan's row only.
-        expect(html.match(/data-testid="card-household-line"/g)).toHaveLength(1);
-        expect(text(html)).toContain('Vive con 2 personas');
+        // No household line, even on Jonatan's row whose housemate is 1★.
+        expect(html).not.toContain('data-testid="card-household-line"');
+        expect(text(html)).not.toContain('Vive con');
         // Warning tone through theme tokens, not raw amber classes.
         expect(html).toContain('var(--status-warning-bg)');
         expect(html).not.toMatch(/amber-/);
@@ -114,10 +114,10 @@ describe('DupHintProfile — the window', () => {
     const ids = (html: string) => [...html.matchAll(/data-testid="(dup-hint-[a-z-]+)"/g)].map(m => m[1])
         .filter(id => ['dup-hint-continue', 'dup-hint-flag', 'dup-hint-review', 'dup-hint-open-to-add', 'dup-hint-not-this', 'dup-hint-open-full'].includes(id));
 
-    it('the match card: header with the household line, contacts with the typed one «coincide», activity', () => {
+    it('the match card: header without the household line, contacts with the typed one «coincide», activity', () => {
         const html = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct {...handlers} />);
         expect(html).toContain('data-testid="dup-hint-window-head"');
-        expect(html).toContain('data-testid="card-household-line"');
+        expect(html).not.toContain('data-testid="card-household-line"');
         expect(html.match(/data-testid="dup-hint-contact"/g)).toHaveLength(2);
         expect(html.match(/data-testid="contact-matches"/g)).toHaveLength(1);
         expect(html).toContain('data-testid="dup-hint-activity"');
