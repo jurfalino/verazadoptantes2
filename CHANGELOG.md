@@ -2,6 +2,37 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.9] - 2026-11-01
+
+### Changed — joining two profiles of the same person
+- One word everywhere: «Unir». «Unir con este perfil» in «¿Es este perfil?», «Unir perfiles» / «Pedir unir» in
+  Pendientes, «Unir» in the admin Duplicados panel («Se conserva» / «Se suma al otro»), «Pedidos para unir».
+- When the profile you are editing joins another, the confirmation says so: «¿Unir el perfil de … con el de …?»,
+  «El perfil de … deja de existir: sus datos y registros pasan al de …», «Sí, unirlos».
+- Every link that opens a profile in a new tab reads «Abrir perfil ↗».
+- «¿Es este perfil?» names the profile someone else loaded, lets you pick the social network right there, and only
+  joins two profiles that share the same full phone, email, document or account on the same network.
+
+### Changed — the home on person cards
+- The «Vive con…» line is replaced by alerts: «Conviviente con calificación 1.0» (someone in their home is rated 1★
+  or 2★) and «Conviviente con alertas» (someone in their home has alerts of their own). Tapping one lists everyone in
+  the home with their rating and alerts.
+- They show on search cards, match cards, Pendientes, «Mis Adoptantes» and the profile header. On the profile and in
+  «Mis Adoptantes» a tap opens «Familiares / Convivientes». The «Ya está en otro perfil» notice shows nothing about
+  the home.
+- The profile section is called «Familiares / Convivientes» again, and shows each person's alerts.
+- Pendientes cards show each person's own rating.
+
+### Changed — reports are not alerts
+- A rescuer's report shows as a grey chip with its name («Duplicado»), never counted as an alert. «Inexacto» is shown
+  only in the admin pages.
+
+### Fixed
+- «Revisar» on a «posible duplicado» notice always lands on the pair in Pendientes.
+- Spreadsheet import: rows identical to a profile check «También coincide con» by email, phone or document number,
+  the same way the API does, and much faster on big sheets.
+- Nobody can set a person's age anymore, by any route.
+
 ## [2.58.8] - 2026-10-31
 
 ### Fixed — possible duplicates
