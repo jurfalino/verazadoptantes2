@@ -120,7 +120,9 @@ function sameCompatible(inputName: string, same: CandidateNames[]): Array<{ prof
         .map(c => ({ profileId: c.profileId, as: matchNameAgainstProfile(inputName, c) }))
         .filter((c): c is { profileId: string; as: NameMatchedAs } => c.as !== null);
     if (named.length > 0) return named;
-    const agree = same.every((a, i) => same.slice(i + 1).every(b => namesCompatible(a.name, b.name)));
+    // Aliases count (spec §3): «Majo Pérez» known as «María José Pérez» agrees with «María José Pérez».
+    const namesOf = (c: CandidateNames) => [c.name, ...c.aliases];
+    const agree = same.every((a, i) => same.slice(i + 1).every(b => namesOf(a).some(x => namesOf(b).some(y => namesCompatible(x, y)))));
     return agree ? same.map(c => ({ profileId: c.profileId, as: 'document' as const })) : [];
 }
 
@@ -152,11 +154,12 @@ export function decideExactOutcome(inputName: string, candidates: CandidateNames
 const NAME_RANK: Record<NameMatchedAs, number> = { profile: 3, alias: 2, household_member: 1, document: 0 };
 
 /**
- * Ambiguous, but more than one name fits (Jon, 2026-10-13): the activity goes on
- * the profile that matches the request best — most identifiers matched (email,
- * phone, document), then the closest name (the profile's own over an alias over
- * a household member), then the most recent activity. Null when no name fits:
- * the identifier belongs to someone else, so the caller creates a new profile.
+ * Ambiguous, but several profiles may take the activity (Jon, 2026-10-13): it
+ * goes on the profile that matches the request best — most identifiers matched
+ * (email, phone, document, social), then the closest name (the profile's own over
+ * an alias over a household member over a document-only fit), then the most
+ * recent activity. Null when none may take it (no name fits, or two different
+ * people hold the document): the caller creates a new profile.
  */
 export function pickBestMatch(
     compatible: Array<{ profileId: string; as: NameMatchedAs }>,

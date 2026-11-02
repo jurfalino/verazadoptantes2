@@ -132,6 +132,13 @@ describe('decideExactOutcome on the identity verdict (verdicts given)', () => {
         expect(o.result === 'ambiguous' && o.compatible).toEqual([{ profileId: 'a', as: 'document' }, { profileId: 'b', as: 'document' }]);
     });
 
+    it('agreement between DNI holders counts aliases', () => {
+        const withAlias = cand('a', 'Majo Pérez', [dni('30123456', 2)]);
+        withAlias.names.aliases = ['María José Pérez'];
+        const o = decide('Ana Ruiz', [withAlias, cand('b', 'María José Pérez', [dni('30123456', 2)])]);
+        expect(o.result === 'ambiguous' && o.compatible.map(c => c.profileId)).toEqual(['a', 'b']);
+    });
+
     it('a DNI on two profiles, the name fits one: found on it (the DNI-only holder is another match)', () => {
         expect(decide('María Pérez', [
             cand('dniOnly', 'Juan Ruiz', [dni('30123456', 2)]),

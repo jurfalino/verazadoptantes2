@@ -11,7 +11,9 @@
  * The SAME definitions seed the demo people on staging (src/lib/api/demoSeed.ts),
  * so every documented request really returns the documented answer there.
  */
-import { decideExactOutcome, type NameMatchedAs } from '@/domain/apiExactMatch';
+import type { NameMatchedAs } from '@/domain/apiExactMatch';
+import { foldHolderName } from '@/domain/identityVerdict';
+import { exactOutcomeOf } from './exactVerdict';
 import { orderCandidates, saveActionOf } from './schemas';
 
 type Level = 0 | 1 | 2 | 3 | 4 | 5;
@@ -349,7 +351,18 @@ function matchedOn(req: ScenarioDef['person'], p: Registered): Identifier[] {
 function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: AlertConfig) {
     const url = (id: string) => `${origin}/adopter/${id}`;
     const hits = def.profiles.filter(p => matchedOn(def.person, p).length > 0);
-    const outcome = decideExactOutcome(def.person.fullName, hits.map(p => ({ profileId: p.id, name: p.name, aliases: [] })));
+    // The same verdict path as the real call (exactOutcomeOf): each hit's shared identifiers,
+    // with how many differently-named hits hold each one.
+    const kindOf = { email: 'email', phone: 'phone', documentId: 'document' } as const;
+    const shared = new Map(hits.map(p => [p.id, matchedOn(def.person, p).map(k => ({
+        kind: kindOf[k], value: keyOf[k](p[k]!),
+        namesHolding: new Set(hits.filter(h => h[k] && keyOf[k](h[k]!) === keyOf[k](p[k]!)).map(h => foldHolderName(h.name))).size,
+    }))]));
+    const outcome = exactOutcomeOf(def.person, {
+        candidates: hits.map(p => ({ profileId: p.id, name: p.name, aliases: [] })),
+        matchedOn: new Map(hits.map(p => [p.id, matchedOn(def.person, p)])),
+        shared,
+    });
     const byId = new Map(hits.map(p => [p.id, p]));
     const summary = (p: Registered) => {
         const c = computed(p, now, cfg);

@@ -2,14 +2,16 @@
  * Write side of the API: save the activity of an exact call (decisions 7, 7b)
  * and void one (decision 11). Server-only.
  *
- *   found     → the activity goes on that profile (the exact-match rules are
+ *   found     → the activity goes on that profile (the identity verdict is
  *               the confirmation of who the person is). Contact details it did
- *               not have yet are added, with a trail (./contacts.ts).
+ *               not have yet are added, with a trail (./contacts.ts) — only
+ *               when the name fits the profile's own (never on a DNI-only fit).
  *   not_found → a new profile + the activity, through the same path the
  *               adoption form uses (tokenized, duplicate candidates written).
- *   ambiguous → several names fit: on the BEST match (pickBestMatch, Jon
- *               2026-10-13). No name fits (the identifier is someone else's):
- *               a NEW profile, with its duplicate candidates for an admin.
+ *   ambiguous → several profiles may take it (names fit, or DNI holders whose
+ *               names agree): on the BEST match (pickBestMatch, Jon 2026-10-13).
+ *               None may (the identifier is someone else's, or junk): a NEW
+ *               profile, with its duplicate candidates for an admin.
  */
 import { and, count, eq, gte, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
 import { activityForms, adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';

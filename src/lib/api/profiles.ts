@@ -13,22 +13,17 @@ import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { getRatingDisplayLevel, getRatingLabelKey } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
 import { openAlertKinds } from '@/domain/flags';
-import { decideExactOutcome, normalizeDocumentId, type CandidateNames, type ExactOutcome } from '@/domain/apiExactMatch';
-import { foldHolderName, judgeIdentity, type IdentifierKind, type PersonFacts, type SharedIdentifier, type Verdict } from '@/domain/identityVerdict';
+import { normalizeDocumentId, type CandidateNames } from '@/domain/apiExactMatch';
+import { foldHolderName, MAX_NAMES_PER_IDENTIFIER, type IdentifierKind, type SharedIdentifier } from '@/domain/identityVerdict';
 import { phoneDuplicateTokens } from '@/domain/phoneNumber';
-import { apiSocialHandle, type ProfileSummary, type SearchRequest } from './schemas';
+import { apiSocialHandles, type ProfileSummary, type SearchRequest } from './schemas';
+import type { IdentifierHits, MatchedOn } from './exactVerdict';
 import { ApiError } from './handler';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
-export type MatchedOn = 'email' | 'phone' | 'documentId' | 'social';
-
-export interface IdentifierHits {
-    candidates: CandidateNames[];
-    matchedOn: Map<string, MatchedOn[]>;
-    /** Per hit profile: each identifier it shares and how many differently-named hit profiles hold it (the verdict's input). */
-    shared: Map<string, SharedIdentifier[]>;
-}
+export type { MatchedOn, IdentifierHits } from './exactVerdict';
+export { judgeHits, exactOutcomeOf } from './exactVerdict';
 
 export function profileUrl(origin: string, profileId: string): string {
     return `${origin}/adopter/${encodeURIComponent(profileId)}`;
@@ -64,8 +59,8 @@ export async function findIdentifierHits(db: Db, person: SearchRequest['person']
         emails: person.email ? [person.email] : [],
         phones: person.phone ? [person.phone] : [],
         documentIds: person.documentId ? [person.documentId.value] : [],
-        // Accounts only: a display name ("Ana Perez") has no handle and looks nobody up.
-        socials: (person.socials ?? []).map(apiSocialHandle).filter((h): h is string => h !== null),
+        // Accounts only (the first 3): a display name ("Ana Perez") has no handle and looks nobody up.
+        socials: apiSocialHandles(person.socials),
     }, requestId, country);
 }
 
@@ -109,26 +104,6 @@ function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<strin
         }
     });
     return out;
-}
-
-/** The identity verdict for every hit profile (pure, src/domain/identityVerdict.ts). */
-export function judgeHits(person: SearchRequest['person'], hits: IdentifierHits): Map<string, Verdict> {
-    const facts: PersonFacts = {
-        name: person.fullName ?? '', aliases: [],
-        phones: person.phone ? [person.phone] : [], emails: person.email ? [person.email] : [],
-        socials: (person.socials ?? []).map(apiSocialHandle).filter((h): h is string => h !== null),
-        documentIds: person.documentId ? [person.documentId.value] : [],
-    };
-    return new Map(hits.candidates.map(c => [c.profileId, judgeIdentity(facts, {
-        adopterId: c.profileId, name: c.name, aliases: c.aliases,
-        shared: hits.shared.get(c.profileId) ?? [],
-        relevancePercent: 0, matchTypes: [], matchValues: [], source: 'token',
-    }).verdict]));
-}
-
-/** API exact's answer for the hits: the decision table on the identity verdict. runExact's one rule set. */
-export function exactOutcomeOf(person: SearchRequest['person'], hits: IdentifierHits): ExactOutcome {
-    return decideExactOutcome(person.fullName ?? '', hits.candidates, judgeHits(person, hits));
 }
 
 /** At most how many D1 queries findIdentifierHitsFor issues for `ids` with `maxProfiles` (a caller's budget). */
@@ -177,8 +152,18 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
     // Tokens pointing at deleted / demo profiles are dropped; that's expected.
     for (const id of matchedOn.keys()) if (!candidates.some(c => c.profileId === id)) matchedOn.delete(id);
     const shared = sharedOf(lookups, rows.map((r: Array<{ adopterId: string }>) => r.map(x => x.adopterId)), new Map(candidates.map(c => [c.profileId, c.name])));
-    logger.info('api: identifier lookup', { requestId, lookups: lookups.length, hits: candidates.length });
-    return { candidates, matchedOn, shared };
+    // A profile found ONLY through social accounts held by more than MAX_NAMES_PER_IDENTIFIER
+    // differently-named profiles (applicants typing the rescue's own account) is nobody: left
+    // out entirely, so it is not a candidate, another match or part of the risk. Social only:
+    // the other identifier types answer as they always did.
+    const socialJunkOnly = (id: string) => {
+        const list = shared.get(id) ?? [];
+        return list.length > 0 && list.every(x => x.kind === 'social' && x.namesHolding !== null && x.namesHolding > MAX_NAMES_PER_IDENTIFIER);
+    };
+    const kept = candidates.filter(c => !socialJunkOnly(c.profileId));
+    for (const c of candidates) if (!kept.includes(c)) { matchedOn.delete(c.profileId); shared.delete(c.profileId); }
+    logger.info('api: identifier lookup', { requestId, lookups: lookups.length, hits: kept.length, ...(kept.length < candidates.length ? { leftOutSocialJunk: candidates.length - kept.length } : {}) });
+    return { candidates: kept, matchedOn, shared };
 }
 
 type RatingFields = Pick<ProfileSummary, 'rating' | 'ratingLevel' | 'ratingLabel'>;

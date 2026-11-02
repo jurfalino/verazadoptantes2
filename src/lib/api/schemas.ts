@@ -56,6 +56,20 @@ export function apiSocialHandle(s: { platform: string; handle: string }): string
     return normalizeSocialHandle(s.handle, platform);
 }
 
+/** At most this many social accounts of one call are looked up (each is one D1 query). */
+export const MAX_SOCIAL_LOOKUPS = 3;
+
+/** The accounts of `socials` (display names left out), distinct, the first MAX_SOCIAL_LOOKUPS. */
+export function apiSocialHandles(socials: Array<{ platform: string; handle: string }> | undefined): string[] {
+    const out: string[] = [];
+    for (const s of socials ?? []) {
+        const h = apiSocialHandle(s);
+        if (h && !out.includes(h)) out.push(h);
+        if (out.length === MAX_SOCIAL_LOOKUPS) break;
+    }
+    return out;
+}
+
 /** formContent: any JSON object, as the rescue's own form produced it. */
 export const FORM_CONTENT_MAX_BYTES = 50_000;
 export const FORM_CONTENT_MAX_DEPTH = 6;
@@ -272,10 +286,10 @@ export const exactResponseSchema = z.object({
     profile: profileSummarySchema.optional().meta({ description: 'match = found. Describes the person BEFORE anything saved by this call.' }),
     otherMatches: z.array(z.object({ profileId: z.string(), url: z.string() })).optional()
         .meta({ description: 'match = found: other profiles the same email / phone / document also belongs to, under an unrelated name (e.g. a shared family phone). Their ratings and alerts are in `risk`. Check them before deciding.' }),
-    reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'match = ambiguous. multiple_profiles: several profiles fit the name. name_mismatch: the email / phone / document belongs to someone with another name.' }),
+    reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'match = ambiguous. multiple_profiles: several profiles fit the name. name_mismatch: the email / phone / document belongs to someone with another name. Placeholder or widely shared data (a 00000000 document, an email on more than 3 differently-named profiles) links nobody, and profiles holding the same document whose names agree with each other may take the activity even when your name fits neither.' }),
     candidates: z.array(z.object({
         profileId: z.string(), url: z.string(),
-        nameMatchedAs: z.enum(['profile', 'alias', 'household_member', 'document']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does. document: no name fits, but the profile holds the document you sent, so it can take the activity. household_member is no longer returned: each person in a household is a profile of their own.' }),
+        nameMatchedAs: z.enum(['profile', 'alias', 'household_member', 'document']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does, except document: no name fits, but the profile holds the document you sent, so it may take the activity. household_member is no longer returned: each person in a household is a profile of their own.' }),
     })).optional().meta({ description: 'match = ambiguous: the profiles the email / phone / document belongs to. Their ratings and alerts are in `risk`.' }),
     risk: riskSchema,
     saved: savedSchema.meta({ description: 'Always present: what this call did.' }),

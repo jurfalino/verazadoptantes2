@@ -30,7 +30,7 @@ vi.mock('./handler', async (orig) => ({
 import { runSearch } from './search';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { contactEntriesToBlob, deserializeContactEntries, type ContactEntry } from '@/lib/contactEntries';
-import { checkSearchRules, searchRequestSchema } from './schemas';
+import { apiSocialHandles, checkSearchRules, searchRequestSchema } from './schemas';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[]; get: (...a: unknown[]) => Row | undefined } };
@@ -73,12 +73,12 @@ beforeEach(async () => {
 });
 
 let n = 0;
-async function exact(person: Record<string, unknown>) {
+async function exact(person: Record<string, unknown>, opts: { dryRun?: boolean } = {}) {
     const body = { mode: 'exact', person, activity: { activityType: 'adoption_request', externalId: `ext-${++n}` } };
     const ctx = {
         db: state.db, key: { id: 'k1', name: 'Partner', ownerEmail: OWNER, importMode: null },
         scopes: ['search', 'search:fuzzy', 'record:write'], requestId: `req-${n}`, origin: 'https://staging.buenadoptante.org',
-        bodyText: JSON.stringify(body), bodyBytes: null, idempotencyKey: null, log: {}, rowClaimed: false, dryRun: false,
+        bodyText: JSON.stringify(body), bodyBytes: null, idempotencyKey: null, log: {}, rowClaimed: false, dryRun: opts.dryRun === true,
         query: new URLSearchParams(), limited: false,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,5 +121,60 @@ describe('API exact on the identity verdict', () => {
         expect(r.saved.action).toBe('created_profile');
         const entries = deserializeContactEntries(sqlite.prepare(`SELECT contact_entries AS c FROM adopters WHERE id = ?`).get(r.saved.profileId)!.c as string);
         expect(entries.find(x => x.type === 'social')).toMatchObject({ value: 'Sofia Medina', platform: 'facebook' });
+    });
+
+    it('dry run on the DNI-only path: says found / document / added_to_profile and writes nothing', async () => {
+        const r = await exact({ fullName: 'Majo Pérez', documentId: { value: '30.123.456' } }, { dryRun: true });
+        expect(r.match).toBe('found');
+        expect(r.profile).toMatchObject({ profileId: 'mj', nameMatchedAs: 'document' });
+        expect(r.saved).toEqual({ action: 'added_to_profile', dryRun: true });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adoptions`).get()!.n).toBe(0);
+    });
+});
+
+/** Payloads that already sent socials alongside an email (the docs' «Completo» example, Catpuccino). */
+describe('email + socials: the social now counts', () => {
+    const person = { fullName: 'María José Pérez', email: 'maria.perez@gmail.com', phone: '11 4000-1234', socials: [{ platform: 'instagram', handle: '@mariajose.p' }] };
+
+    it('(a) the social is also on a compatible-name duplicate: ambiguous, best match on MJ, both in the risk, no contacts added', async () => {
+        await seed('mj2', 'María Pérez', [e('social', 'mariajose.p', 'instagram')]);
+        const r = await exact(person);
+        expect(r.match).toBe('ambiguous');
+        expect(r.reason).toBe('multiple_profiles');
+        expect(r.candidates).toEqual([
+            { profileId: 'mj', url: expect.any(String), nameMatchedAs: 'profile' },
+            { profileId: 'mj2', url: expect.any(String), nameMatchedAs: 'profile' },
+        ]);
+        expect(r.otherMatches).toBeUndefined();
+        expect(r.risk.profilesMatched).toBe(2);
+        expect(r.saved).toMatchObject({ action: 'added_to_best_match', profileId: 'mj', contactsAdded: [] });
+    });
+
+    it('(b) the social is also on a different-name profile: found MJ, the other in otherMatches and the risk, the new phone added', async () => {
+        await seed('pg', 'Pedro Gil', [e('social', 'mariajose.p', 'instagram')]);
+        const r = await exact(person);
+        expect(r.match).toBe('found');
+        expect(r.profile).toMatchObject({ profileId: 'mj', matchedOn: ['email', 'social'], nameMatchedAs: 'profile' });
+        expect(r.otherMatches).toEqual([{ profileId: 'pg', url: expect.any(String) }]);
+        expect(r.risk.profilesMatched).toBe(2);
+        expect(r.saved).toMatchObject({ action: 'added_to_profile', profileId: 'mj', contactsAdded: ['phone'] });
+    });
+
+    it('a social held by more than 3 names (the rescue\'s own account) is nobody: those profiles are left out entirely', async () => {
+        for (const [id, n] of [['r1', 'Beto Sosa'], ['r2', 'Carla Díaz'], ['r3', 'Darío Vega'], ['r4', 'Elsa Ortiz']]) {
+            await seed(id, n, [e('social', 'refugio.oficial', 'instagram')]);
+        }
+        const r = await exact({ ...person, socials: [{ platform: 'instagram', handle: '@refugio.oficial' }] });
+        expect(r.match).toBe('found');
+        expect(r.profile).toMatchObject({ profileId: 'mj', matchedOn: ['email'] });
+        expect(r.otherMatches).toBeUndefined();
+        expect(r.risk.profilesMatched).toBe(1);
+    });
+
+    it('looks up at most the first 3 accounts that are accounts', () => {
+        expect(apiSocialHandles([
+            { platform: 'facebook', handle: 'Ana Perez' }, { platform: 'instagram', handle: '@a.one' }, { platform: 'instagram', handle: 'a.one' },
+            { platform: 'tiktok', handle: '@a.two' }, { platform: 'x', handle: 'a.three' }, { platform: 'threads', handle: 'a.four' },
+        ])).toEqual(['a.one', 'a.two', 'a.three']);
     });
 });

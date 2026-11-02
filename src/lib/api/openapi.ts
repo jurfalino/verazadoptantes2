@@ -83,8 +83,8 @@ La respuesta dice dos cosas por separado:
 |---|---|---|
 | \`found\` | \`added_to_profile\` | La actividad se sumó al perfil de esa persona. |
 | \`not_found\` | \`created_profile\` | Se creó su perfil, con esta actividad. |
-| \`ambiguous\` | \`added_to_best_match\` | Varios perfiles encajan con el nombre: se sumó al que mejor coincide. |
-| \`ambiguous\` | \`created_profile_for_review\` | El dato es de alguien con otro nombre: se creó un perfil nuevo que un admin revisa como posible duplicado. |
+| \`ambiguous\` | \`added_to_best_match\` | Varios perfiles encajan con el nombre (o tienen tu documento y sus nombres coinciden entre sí, aunque no con el tuyo): se sumó al que mejor coincide. |
+| \`ambiguous\` | \`created_profile_for_review\` | El dato es de alguien con otro nombre, o es un dato de relleno o compartido por muchos (un documento 00000000, un email de más de 3 personas distintas), que no identifica a nadie: se creó un perfil nuevo que un admin revisa como posible duplicado. |
 
 \`saved\` trae además \`activityId\` (para adjuntar el contrato o anularla), los links al perfil y \`contactsAdded\` (los datos de contacto que mandaste y la persona no tenía, que se agregaron a su perfil).
 
