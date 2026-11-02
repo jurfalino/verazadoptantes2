@@ -32,6 +32,7 @@
  */
 
 import { logger } from '@/lib/logger';
+import { redactedErrorFields } from '@/lib/identityCandidates';
 import type { ContactEntry, SocialPlatform } from '@/lib/contactEntries';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
@@ -258,16 +259,15 @@ export interface DuplicateProbe {
  * relevancePercent (shown as a percentage elsewhere, so unchanged). There is no
  * persistence threshold any more: the verdict is the noise floor.
  *
- * `skipLikeFallback` is still accepted but the verdict path has no equivalent
- * switch (it always runs the same retrieval), so it is ignored. Phones are read
- * without a country, as the previous findAdopters call did.
+ * `skipLikeFallback` (bulk imports) is passed down to the engine's retrieval.
+ * Phones are read without a country, as the previous findAdopters call did.
  */
 export async function findAndPersistDuplicateCandidates(
     db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
     adopterId: string,
     probe: DuplicateProbe,
     opts: {
-        /** Accepted for callers; ignored by the verdict path (see above). */
+        /** Bulk import: skip the engine's contact-text LIKE scan. */
         skipLikeFallback?: boolean;
         skipPair?: (otherId: string) => Promise<boolean>;
         /** Candidates fetched (default 5); raise it when skipPair may drop some, so the real ones still fit. */
@@ -295,7 +295,7 @@ export async function findAndPersistDuplicateCandidates(
             emails: probe.email ? extractEmails(probe.email) : [],
             // Raw values (a visible name with spaces is not an account): never converted.
             socials,
-        }, { country: null, excludeAdopterId: adopterId, limit: opts.limit ?? 5, ctx: opts.ctx });
+        }, { country: null, excludeAdopterId: adopterId, limit: opts.limit ?? 5, skipLikeFallback: opts.skipLikeFallback === true, ctx: opts.ctx });
 
         const matches: typeof found = [];
         for (const m of found) {
@@ -344,7 +344,6 @@ export async function findAndPersistDuplicateCandidates(
             relevancePercent: m.relevancePercent,
         }));
     } catch (e) {
-        const { redactedErrorFields } = await import('@/lib/identityCandidates');
         logger.warn('findAndPersistDuplicateCandidates: duplicate detection failed (continuing)', {
             ...opts.ctx,
             adopterId,

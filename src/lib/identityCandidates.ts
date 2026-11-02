@@ -10,7 +10,7 @@
  * before same-name ones; the pool is cut to `limit` before any read here.
  * Never logs names, contacts or token values — ids and counts only.
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, ne } from 'drizzle-orm';
 import { adopters, duplicateTokens } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { deserializeContactEntries } from '@/lib/contactEntries';
@@ -97,14 +97,25 @@ function sharedTokens(matchValues: Array<{ type: string; value: string }>): Shar
     return out;
 }
 
-export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Record<string, unknown>, opts: { limit?: number } = {}): Promise<IdentityCandidate[]> {
+export interface IdentityCandidateOpts {
+    limit?: number;
+    /** The profile being checked (tokenized before the check): never a candidate, never a name holding an identifier. */
+    excludeAdopterId?: string;
+    /** Bulk imports: skip the engine's contact-text LIKE scan. */
+    skipLikeFallback?: boolean;
+}
+
+export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Record<string, unknown>, opts: IdentityCandidateOpts = {}): Promise<IdentityCandidate[]> {
     const limit = opts.limit ?? DEFAULT_LIMIT;
+    const exclude = opts.excludeAdopterId;
     const res = await findAdopters(
         {
             name: facts.name, aliases: facts.aliases, phones: facts.phones.filter(p => !isUnreadablePhone(p, facts.country)), emails: facts.emails,
             socials: facts.socials, ids: facts.documentIds, country: facts.country ?? undefined,
+            ...(exclude ? { excludeAdopterId: exclude } : {}),
         },
-        { mode: 'duplicate', keepNameOnly: true, minRelevance: 5, limit: ENGINE_POOL },
+        // The engine limit only slices: ask for at least the caller's limit.
+        { mode: 'duplicate', keepNameOnly: true, minRelevance: 5, limit: Math.max(ENGINE_POOL, limit), skipLikeFallback: opts.skipLikeFallback === true },
     );
     // Profiles that share an identifier first (engine order kept within each tier), so
     // many same-name profiles can't push the one holding the DNI or email out of the list.
@@ -140,7 +151,9 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
         try {
             const rows: Array<{ name: string }> = await db.select({ name: adopters.name }).from(duplicateTokens)
                 .innerJoin(adopters, eq(adopters.id, duplicateTokens.adopterId))
-                .where(and(eq(duplicateTokens.tokenType, t.tokenType), eq(duplicateTokens.tokenValue, t.tokenValue), isNull(adopters.deletedAt)))
+                .where(and(eq(duplicateTokens.tokenType, t.tokenType), eq(duplicateTokens.tokenValue, t.tokenValue), isNull(adopters.deletedAt),
+                    // The profile being checked (already tokenized by its creator) is not a name holding the identifier.
+                    ...(exclude ? [ne(adopters.id, exclude)] : [])))
                 .limit(NAMES_SAMPLE);
             counts.set(k, new Set(rows.map(r => foldName(r.name))).size);
         } catch (e) {
@@ -170,7 +183,7 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
     });
 }
 
-export async function judgeCandidates(db: Db, facts: PersonFacts, ctx: Record<string, unknown>, opts: { limit?: number } = {}): Promise<Judged[]> {
+export async function judgeCandidates(db: Db, facts: PersonFacts, ctx: Record<string, unknown>, opts: IdentityCandidateOpts = {}): Promise<Judged[]> {
     const candidates = await findIdentityCandidates(db, facts, ctx, opts);
     return rankJudged(candidates.map(c => judgeIdentity(facts, c)));
 }

@@ -585,9 +585,8 @@ describe('Task 4 fix round 1', () => {
         expect(deferred.tasks.map(t => t.name)).toContain('attachHouseholdPeople.index');
         for (const t of deferred.tasks) await t.task();
         expect(tokensOf(tomas.id as string).length).toBeGreaterThan(0);
-        // The scan runs on the identity verdict, which has no LIKE-skip switch (skipLikeFallback is accepted and ignored).
         const scan = vi.mocked(findPersonMatches).mock.calls.find(c => c[2]?.excludeAdopterId === tomas.id);
-        expect(scan).toBeDefined();
+        expect(scan?.[2]).toMatchObject({ skipLikeFallback: true });
     });
 
     it('housemates never crowd a real duplicate out of the candidate slots', async () => {
@@ -595,8 +594,8 @@ describe('Task 4 fix round 1', () => {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries) VALUES ('outsider', 'Rita Sosa', '5', ?, 'AR', 1000, 1000, ?)`)
             .run(OTHER, JSON.stringify([{ id: 'oc', type: 'phone', value: P, addedBy: OTHER }]));
         await tokenizeAdopter('outsider');
-        // One housemate on the phone (+ the outsider + Zoe = 3 names): with more, the phone is held by too many names and the verdict links nobody on it (MAX_NAMES_PER_IDENTIFIER), so the old six-housemate crowding cannot happen.
-        const names = ['Ana Gomez'];
+        // Two housemates on the phone (+ the outsider = 3 other names, the cap): with more, the phone is held by too many names and the verdict links nobody on it (MAX_NAMES_PER_IDENTIFIER).
+        const names = ['Ana Gomez', 'Bea Gomez'];
         await attachHouseholdPeople(db(), {
             anchorAdopterId: 'pedro', actor: OWNER, ownerEmail: OWNER, sourceKey: 'import:crowd',
             people: names.map((name, i) => ({ name, relationship: 'housemate', index: i, contactEntries: [{ id: `c${i}`, type: 'phone' as const, value: P, addedBy: OWNER }] })),

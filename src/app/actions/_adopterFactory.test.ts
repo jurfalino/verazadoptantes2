@@ -99,4 +99,23 @@ describe('findAndPersistDuplicateCandidates on the verdict', () => {
         expect(call?.[1]).toMatchObject({ op: 'x', adopterId: 'new' });
         expect(JSON.stringify(call?.[1])).not.toContain('6585');
     });
+
+    it('the new profile does not count as a name holding the phone: 3 other names + the tokenized newcomer still pair with all 3', async () => {
+        for (const [id, n] of [['a1', 'Ana Ruiz'], ['a2', 'Bea Soto'], ['a3', 'Ceci Luna']]) await seed(id, n, [e('phone', '+54 9 11 3030 4040')]);
+        await seed('dora', 'Dora Vega', [e('phone', '+54 9 11 3030 4040')]);
+        const res = await findAndPersistDuplicateCandidates(db(), 'dora', { name: 'Dora Vega', phone: '11 3030-4040' });
+        expect(res.map(r => r.adopterId).sort()).toEqual(['a1', 'a2', 'a3']);
+        expect(pairs()).toHaveLength(3);
+    });
+
+    it('candidates that skipPair drops cannot crowd a real one out of a tight limit/keep', async () => {
+        for (const id of ['h1', 'h2']) await seed(id, 'Zoe Gomez', [e('phone', '+54 9 11 4545 6767')]);
+        await seed('outsider', 'Rita Sosa', [e('phone', '+54 9 11 4545 6767')]);
+        await seed('zoe', 'Zoe Gomez', [e('phone', '+54 9 11 4545 6767')]);
+        const res = await findAndPersistDuplicateCandidates(db(), 'zoe', { name: 'Zoe Gomez', phone: '11 4545-6767' }, {
+            skipPair: async o => o === 'h1' || o === 'h2', limit: 3, keep: 1,
+        });
+        expect(res.map(r => r.adopterId)).toEqual(['outsider']);
+        expect(pairs().map(p => [p.a, p.b].sort())).toEqual([['outsider', 'zoe']]);
+    });
 });

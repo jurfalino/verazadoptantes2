@@ -3,8 +3,8 @@
  * people, called as its screen calls it, on the same nine examples, over real
  * SQL (every drizzle/*.sql replayed) and the real token index / duplicate engine.
  *
- * Today's behavior is pinned for surfaces not yet on the verdict; each rollout
- * step flips its own column (spec §Rollout). Assert profile ids and actions only, never percentages.
+ * The sheet, form, social-post import and «Pendientes» columns are on the verdict;
+ * the rest pin today's behavior until their rollout step flips them (spec §Rollout). Assert profile ids and actions only, never percentages.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';

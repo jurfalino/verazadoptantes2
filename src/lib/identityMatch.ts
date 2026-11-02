@@ -35,7 +35,7 @@ const list = (v: string[] | undefined): string[] => (v ?? []).map(s => (typeof s
 export async function findPersonMatches(
     db: Db,
     input: PersonInput,
-    opts: { actor?: string | null; country?: string | null; excludeAdopterId?: string; limit?: number; ctx?: Record<string, unknown> } = {},
+    opts: { actor?: string | null; country?: string | null; excludeAdopterId?: string; limit?: number; skipLikeFallback?: boolean; ctx?: Record<string, unknown> } = {},
 ): Promise<IdentityMatch[]> {
     const ctx = opts.ctx ?? {};
     const facts: PersonFacts = {
@@ -60,8 +60,8 @@ export async function findPersonMatches(
 
     const limit = opts.limit ?? DEFAULT_LIMIT;
     const exclude = opts.excludeAdopterId;
-    // The excluded profile is dropped before the limit: ask for one more so it cannot cost a slot.
-    const judged = await judgeCandidates(db, facts, ctx, { limit: exclude ? limit + 1 : limit });
+    // The excluded profile is dropped inside the retrieval (engine and name counts), so it costs no slot.
+    const judged = await judgeCandidates(db, facts, ctx, { limit, excludeAdopterId: exclude, skipLikeFallback: opts.skipLikeFallback });
 
     const out: IdentityMatch[] = [];
     for (const j of judged) {
@@ -74,5 +74,5 @@ export async function findPersonMatches(
             verdict: j.verdict, reason: j.reason,
         });
     }
-    return out;
+    return out.slice(0, limit);
 }
