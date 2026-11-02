@@ -37,6 +37,9 @@ One pure verdict — **same person / possible / no** — computed the same way f
 5. **A visible name typed in a social field is not an account** (already true: `normalizeSocialHandle` returns null for values with spaces). It is saved as a «Conocido/a como» (alias) so search finds it. Prod: 2,569 of 7,083 social values (36%). **Converting the existing ones in production needs Jon's OK at run time.**
 6. **The same full name always goes to «Revisar»** (rule 4), however common the name (Jon, 2026-11-02).
 7. **The surface table (§4) is confirmed** (Jon, 2026-11-02).
+8. **Two «same» matches whose names don't agree with each other → «Revisar»** (sheet import default; e.g. «Gómez» + a phone shared by Ana Gómez and Juan Gómez). Two «same» that agree with each other (likely duplicate profiles of one person) keep «Actualizar» on the best (Jon, 2026-11-02).
+9. **A row with no name** sharing a phone, email or social is «possible» → «Revisar»; a shared DNI still makes it «same» (Jon, 2026-11-02).
+10. **On an identical-copy row, picking a «También coincide con» profile** shows «Posible duplicado de» and is left out of bulk «apply to all exact» (Jon, 2026-11-02).
 
 ## Design
 
