@@ -91,24 +91,59 @@ const KIND_OF: Record<MatchedOn, IdentifierKind> = { email: 'email', phone: 'pho
  * distinct (folded) names among the live hit profiles holding that same token. A phone's
  * last-8 suffix is not counted again when the full number hit the profile too.
  */
-function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<string, string>): Map<string, SharedIdentifier[]> {
+function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<string, string>, idEntries: Map<string, Set<string>>, namesHoldingOf: Map<number, number>): Map<string, SharedIdentifier[]> {
     const out = new Map<string, SharedIdentifier[]>();
     lookups.forEach((l, i) => {
         const holders = [...new Set(hitsPerLookup[i])].filter(id => names.has(id));
-        const namesHolding = new Set(holders.map(id => foldHolderName(names.get(id)!))).size;
+        // A social handle's count comes from its holders' names (socialHolders), not from the profiles read.
+        const namesHolding = namesHoldingOf.get(i) ?? new Set(holders.map(id => foldHolderName(names.get(id)!))).size;
         for (const id of holders) {
             if (l.type === 'phone_suffix' && lookups.some((m, j) => m.type === 'phone' && hitsPerLookup[j].includes(id))) continue;
             const list = out.get(id) ?? [];
-            list.push({ kind: KIND_OF[l.field], value: l.value, namesHolding });
+            // A DNI is the profile's own only in its `id` entry; one read from a free-text note
+            // identifies like an email or a phone (ruling R10).
+            list.push({
+                kind: KIND_OF[l.field], value: l.value, namesHolding,
+                ...(l.field === 'documentId' ? { inIdEntry: idEntries.get(id)?.has(l.value) === true } : {}),
+            });
             out.set(id, list);
         }
     });
     return out;
 }
 
-/** At most how many D1 queries findIdentifierHitsFor issues for `ids` with `maxProfiles` (a caller's budget). */
+/** At most how many D1 queries findIdentifierHitsFor issues for `ids` with `maxProfiles` (a caller's budget).
+ *  A social handle may cost one more (socialHolders' name probe). */
 export function identifierQueryCount(ids: IdentifierSet, country: string | null, maxProfiles: number): number {
-    return identifierLookups(ids, country).length + maxProfiles;
+    const lookups = identifierLookups(ids, country);
+    return lookups.length + lookups.filter(l => l.field === 'social').length + maxProfiles;
+}
+
+/** Holders read per lookup (and the name sample of a social handle). */
+const HOLDERS_SAMPLE = 50;
+/** At most this many profiles reached ONLY through one social handle that is not junk are read (the others are left out). */
+export const MAX_SOCIAL_HOLDERS_READ = 10;
+
+/**
+ * The live, non-demo profiles holding a social handle, and how many distinct (folded) names
+ * they have — counted BEFORE any profile is read, so a placeholder or the rescue's own account
+ * typed by hundreds costs no profile reads. When the holder sample is full but shows at most
+ * MAX_NAMES_PER_IDENTIFIER names, one more query reads up to HOLDERS_SAMPLE distinct names, so
+ * a handle with more names is junk whatever the sample.
+ */
+async function socialHolders(db: Db, l: Lookup): Promise<{ ids: string[]; namesHolding: number }> {
+    const where = and(eq(duplicateTokens.tokenType, l.type), eq(duplicateTokens.tokenValue, l.value), isNull(adopters.deletedAt), eq(adopters.isDemo, 0));
+    const rows: Array<{ adopterId: string; name: string }> = await db.select({ adopterId: duplicateTokens.adopterId, name: adopters.name })
+        .from(duplicateTokens).innerJoin(adopters, eq(adopters.id, duplicateTokens.adopterId))
+        .where(where).limit(HOLDERS_SAMPLE);
+    const names = new Set(rows.map(r => foldHolderName(r.name)));
+    if (rows.length === HOLDERS_SAMPLE && names.size <= MAX_NAMES_PER_IDENTIFIER) {
+        const more: Array<{ name: string }> = await db.selectDistinct({ name: adopters.name })
+            .from(duplicateTokens).innerJoin(adopters, eq(adopters.id, duplicateTokens.adopterId))
+            .where(where).limit(HOLDERS_SAMPLE);
+        for (const r of more) names.add(foldHolderName(r.name));
+    }
+    return { ids: [...new Set(rows.map(r => r.adopterId))], namesHolding: names.size };
 }
 
 /**
@@ -118,14 +153,31 @@ export function identifierQueryCount(ids: IdentifierSet, country: string | null,
 export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestId: string, country: string | null, opts: { maxProfiles?: number } = {}): Promise<IdentifierHits> {
     const lookups = identifierLookups(ids, country);
 
-    const rows = await Promise.all(lookups.map(l =>
-        db.select({ adopterId: duplicateTokens.adopterId }).from(duplicateTokens)
-            .where(and(eq(duplicateTokens.tokenType, l.type), eq(duplicateTokens.tokenValue, l.value)))
-            .limit(50)
-            .then((r: Array<{ adopterId: string }>) => r.map(x => ({ adopterId: x.adopterId, field: l.field }))),
+    const found: Array<{ ids: string[]; namesHolding?: number }> = await Promise.all(lookups.map(l =>
+        l.field === 'social' ? socialHolders(db, l) :
+            db.select({ adopterId: duplicateTokens.adopterId }).from(duplicateTokens)
+                .where(and(eq(duplicateTokens.tokenType, l.type), eq(duplicateTokens.tokenValue, l.value)))
+                .limit(HOLDERS_SAMPLE)
+                .then((r: Array<{ adopterId: string }>) => ({ ids: r.map(x => x.adopterId) })),
     ));
+    // Social handles: a junk one (held by more than MAX_NAMES_PER_IDENTIFIER names: applicants typing
+    // the rescue's own account) is nobody — it reaches only profiles another identifier already hit,
+    // where it counts for nothing. A real one reads at most MAX_SOCIAL_HOLDERS_READ profiles, those
+    // another identifier hit first. Social only: the other identifier types answer as they always did.
+    const hitByOther = new Set(found.flatMap((f, i) => (lookups[i].field === 'social' ? [] : f.ids)));
+    const namesHoldingOf = new Map<number, number>();
+    let socialJunk = 0;
+    let socialCut = 0;
+    const hitsPerLookup = found.map((f, i) => {
+        if (lookups[i].field !== 'social' || f.namesHolding === undefined) return f.ids;
+        namesHoldingOf.set(i, f.namesHolding);
+        if (f.namesHolding > MAX_NAMES_PER_IDENTIFIER) { socialJunk++; return f.ids.filter(id => hitByOther.has(id)); }
+        const only = f.ids.filter(id => !hitByOther.has(id));
+        socialCut += Math.max(0, only.length - MAX_SOCIAL_HOLDERS_READ);
+        return [...f.ids.filter(id => hitByOther.has(id)), ...only.slice(0, MAX_SOCIAL_HOLDERS_READ)];
+    });
     const matchedOn = new Map<string, MatchedOn[]>();
-    for (const hit of rows.flat()) {
+    for (const hit of hitsPerLookup.flatMap((ids, i) => ids.map(adopterId => ({ adopterId, field: lookups[i].field })))) {
         const fields = matchedOn.get(hit.adopterId) ?? [];
         if (!fields.includes(hit.field)) fields.push(hit.field);
         matchedOn.set(hit.adopterId, fields);
@@ -144,26 +196,21 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
     const live = profiles.filter((p): p is NonNullable<typeof p> => !!p && !p.isDemo);
     // A profile's OWN names only: a housemate is a profile of its own, found by its own
     // tokens (households as profiles — no `household_member` match any more).
+    const entriesOf = new Map(live.map(p => [p.id, deserializeContactEntries(p.contactEntries)]));
     const candidates: CandidateNames[] = live.map(p => ({
         profileId: p.id,
         name: p.name,
-        aliases: deserializeContactEntries(p.contactEntries).filter(e => e.type === 'alias').map(e => e.value),
+        aliases: entriesOf.get(p.id)!.filter(e => e.type === 'alias').map(e => e.value),
     }));
+    const idEntries = new Map(live.map(p => [p.id, new Set(entriesOf.get(p.id)!.filter(e => e.type === 'id').map(e => normalizeDocumentId(e.value)))]));
     // Tokens pointing at deleted / demo profiles are dropped; that's expected.
     for (const id of matchedOn.keys()) if (!candidates.some(c => c.profileId === id)) matchedOn.delete(id);
-    const shared = sharedOf(lookups, rows.map((r: Array<{ adopterId: string }>) => r.map(x => x.adopterId)), new Map(candidates.map(c => [c.profileId, c.name])));
-    // A profile found ONLY through social accounts held by more than MAX_NAMES_PER_IDENTIFIER
-    // differently-named profiles (applicants typing the rescue's own account) is nobody: left
-    // out entirely, so it is not a candidate, another match or part of the risk. Social only:
-    // the other identifier types answer as they always did.
-    const socialJunkOnly = (id: string) => {
-        const list = shared.get(id) ?? [];
-        return list.length > 0 && list.every(x => x.kind === 'social' && x.namesHolding !== null && x.namesHolding > MAX_NAMES_PER_IDENTIFIER);
-    };
-    const kept = candidates.filter(c => !socialJunkOnly(c.profileId));
-    for (const c of candidates) if (!kept.includes(c)) { matchedOn.delete(c.profileId); shared.delete(c.profileId); }
-    logger.info('api: identifier lookup', { requestId, lookups: lookups.length, hits: kept.length, ...(kept.length < candidates.length ? { leftOutSocialJunk: candidates.length - kept.length } : {}) });
-    return { candidates: kept, matchedOn, shared };
+    const shared = sharedOf(lookups, hitsPerLookup, new Map(candidates.map(c => [c.profileId, c.name])), idEntries, namesHoldingOf);
+    logger.info('api: identifier lookup', {
+        requestId, lookups: lookups.length, hits: candidates.length,
+        ...(socialJunk ? { socialJunk } : {}), ...(socialCut ? { socialHoldersNotRead: socialCut } : {}),
+    });
+    return { candidates, matchedOn, shared };
 }
 
 type RatingFields = Pick<ProfileSummary, 'rating' | 'ratingLevel' | 'ratingLabel'>;

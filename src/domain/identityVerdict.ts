@@ -22,6 +22,10 @@ export interface SharedIdentifier {
     value: string;
     /** distinct folded names among live profiles holding it; null = count unavailable */
     namesHolding: number | null;
+    /** kind 'document' only: the candidate holds this DNI in an `id` contact entry (its DNI field),
+     *  not just written in a free-text note. Rule 1 (DNI → same, any name) needs it; a note-only
+     *  DNI counts like a phone or an email (ruling R10). Absent = not known: treated as an id entry. */
+    inIdEntry?: boolean;
 }
 
 export interface IdentityCandidate {
@@ -90,7 +94,7 @@ export function judgeIdentity(incoming: PersonFacts, candidate: IdentityCandidat
     });
     const own = matchedAs === 'profile' || matchedAs === 'alias' ? matchedAs : undefined;
 
-    if (counted.some(s => s.kind === 'document')) return make('same', 'shared_document', own);
+    if (counted.some(s => s.kind === 'document' && s.inIdEntry !== false)) return make('same', 'shared_document', own);
     if (counted.length > 0) {
         return own
             ? make('same', 'shared_contact_name_compatible', own)

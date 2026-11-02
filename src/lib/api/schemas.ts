@@ -10,7 +10,7 @@ import { isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { readPhones } from '@/domain/phoneNumber';
 import { API_EMAIL_RE } from '@/domain/apiPersonCleanup';
 import { normalizeSpecies } from '@/domain/importRow';
-import { detectSocialPlatformFromValue, normalizeSocialHandle } from '@/lib/tokenizer';
+import { detectSocialPlatformFromValue, isUnusableSocialHandle, normalizeSocialHandle } from '@/lib/tokenizer';
 
 /** Activity types that place the animal with the person (they create it in the rescue's list). */
 export const PLACEMENT_TYPES: readonly string[] = [RECORD_TYPES.ADOPTION, RECORD_TYPES.FOSTER];
@@ -53,7 +53,10 @@ const personSchema = z.object({
  */
 export function apiSocialHandle(s: { platform: string; handle: string }): string | null {
     const platform = s.platform && s.platform !== 'other' ? s.platform : detectSocialPlatformFromValue(s.handle);
-    return normalizeSocialHandle(s.handle, platform);
+    const h = normalizeSocialHandle(s.handle, platform);
+    // The index keeps a bare Facebook value as typed ("no", "-", "x"); as an identifier the API
+    // applies every platform the same floor (3 characters, the page-type stoplist).
+    return h === null || isUnusableSocialHandle(h) ? null : h;
 }
 
 /** At most this many social accounts of one call are looked up (each is one D1 query). */
@@ -213,7 +216,7 @@ export const profileSummarySchema = ratingSchema.extend({
     matchedOn: z.array(z.enum(['email', 'phone', 'documentId', 'social'])).optional()
         .meta({ description: 'Which of the identifiers you sent this profile holds. social: one of the accounts in person.socials.' }),
     nameMatchedAs: z.enum(['profile', 'alias', 'household_member', 'document']).optional()
-        .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). document: no name fits, but the profile holds the document you sent, which identifies the person on its own (no contact details are added). household_member is no longer returned: each person in a household is a profile of their own.' }),
+        .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). document: no name fits, but the profile holds the document you sent in its DNI field, which identifies the person on its own (no contact details are added); a document written only in a profile note identifies like an email or a phone, only with a fitting name. household_member is no longer returned: each person in a household is a profile of their own.' }),
     flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs). duplicate is an open report only: once the two profiles are merged or kept separate it is no longer listed.' }),
     alerts: z.array(alertSchema).meta({ description: 'Activity alerts BuenAdoptante computed for this person: too_many_requests, too_many_adoptions. Empty when none.' }),
     records: z.partialRecord(z.enum(API_CONTEXTS), z.number().int()).meta({ description: 'Number of records per type.' }),
@@ -230,8 +233,8 @@ export type SaveAction = typeof SAVE_ACTIONS[number];
 const savedSchema = z.object({
     action: z.enum(SAVE_ACTIONS).meta({
         description: 'added_to_profile: the activity went on the person found. created_profile: nobody had that data, a new profile was created with the activity. ' +
-            'added_to_best_match: several profiles fit the name, it went on the best match. created_profile_for_review: the email / phone / document belongs to someone with another name, ' +
-            'so a new profile was created and an admin reviews it as a possible duplicate. nothing_saved: a look-up without activity, or a dry run.',
+            'added_to_best_match: several profiles fit the name, it went on the best match. created_profile_for_review: the email / phone / document belongs to someone with another name, or is placeholder / widely shared data, ' +
+            'so a new profile was created; when an existing profile may be the same person, the pair is marked for an admin to review as a possible duplicate (placeholder data alone pairs nobody). nothing_saved: a look-up without activity, or a dry run.',
     }),
     dryRun: z.literal(true).optional().meta({ description: 'X-Dry-Run (staging only): `action` is what the call WOULD have done; nothing was saved and there are no ids.' }),
     activityId: z.string().optional().meta({ description: 'The saved activity (use it to attach a contract or void it). Absent when nothing was saved.' }),

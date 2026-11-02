@@ -252,6 +252,12 @@ const NON_PROFILE_SEGMENTS = new Set([
     'media', 'l.php', 'login', 'home.php', 'profile.php',
 ]);
 
+/** A handle the non-Facebook branch of normalizeSocialHandle would refuse: under 3 characters,
+ *  a page-type segment, or with a space. (The API applies it to every platform.) */
+export function isUnusableSocialHandle(handle: string): boolean {
+    return handle.length < 3 || NON_PROFILE_SEGMENTS.has(handle) || /\s/.test(handle);
+}
+
 export function normalizeSocialHandle(value: string, platform?: string | null): string | null {
     let v = (value || '').toLowerCase().trim();
     if (!v) return null;

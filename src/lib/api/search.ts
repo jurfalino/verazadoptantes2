@@ -13,7 +13,7 @@ import { buildProfileSummaries, exactOutcomeOf, findIdentifierHits, ownerCountry
 import { bestMatchFor, saveApiActivity } from './records';
 import { environmentForHost, importModeOn } from './keys';
 import { isExampleData } from './docScenarios';
-import { checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, orderCandidates, saveActionOf, type ProfileSummary, type SearchRequest, type ApiWarning } from './schemas';
+import { apiSocialHandles, checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, orderCandidates, saveActionOf, type ProfileSummary, type SearchRequest, type ApiWarning } from './schemas';
 
 /** The lowest rating among rated profiles; "not rated" only if none is. */
 function worstOf(ratings: Array<number | null | undefined>) {
@@ -174,12 +174,14 @@ export function fuzzyQueryOf(person: SearchRequest['person']): string {
 
 /** The structured identifiers of a fuzzy query, for the identity verdict (the free text above still ranks). */
 export function fuzzyIdentityOf(person: SearchRequest['person']): PersonInput {
+    // The accounts exact looks up (same platform handling, floor and cap): a display name or «no» identifies nobody.
+    const socials = apiSocialHandles(person.socials);
     return {
         name: person.fullName,
         ...(person.email ? { emails: [person.email] } : {}),
         ...(person.phone ? { phones: [person.phone] } : {}),
         ...(person.documentId?.value ? { documentIds: [person.documentId.value] } : {}),
-        ...(person.socials?.length ? { socials: person.socials.map(s => s.handle) } : {}),
+        ...(socials.length ? { socials } : {}),
     };
 }
 

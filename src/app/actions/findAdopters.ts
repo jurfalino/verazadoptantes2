@@ -38,7 +38,7 @@ import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEI
 import { classifyNameMatch, NAME_MATCH_WEIGHT, NAME_MATCH_TYPE, isNameLikeQuery, qualifiesForMainList } from '@/lib/searchRanking';
 import { phoneQueryPlan, phoneDuplicateTokens } from '@/domain/phoneNumber';
 import { extractQueryIdentifiers } from '@/domain/queryIdentifiers';
-import { redactedErrorFields } from '@/lib/redactedError';
+import { redactedError, redactedErrorFields } from '@/lib/redactedError';
 import type { PersonInput } from '@/lib/identityMatch';
 import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
@@ -572,7 +572,8 @@ async function runDuplicateMode(
             // lookup instead of throwing the whole findAdopters call — otherwise the
             // caller (import detection) drops the row from comparison entirely.
             // Other tokens/strategies still run.
-            logger.warn('findAdopters: token lookup degraded', { tokenType: token.type, error: e instanceof Error ? e.message : String(e) });
+            // Redacted: the failed query's message ends with the bound phone / email / DNI.
+            logger.warn('findAdopters: token lookup degraded', { tokenType: token.type, ...redactedErrorFields(e) });
             return null;
         }
     }));
@@ -1560,7 +1561,8 @@ export async function findAdopters(
         );
 
     } catch (error) {
-        const errorId = logger.error('findAdopters failed', error, { mode: options.mode, user });
+        // Redacted: a failed query's message ends with the contact values it was bound to.
+        const errorId = logger.error('findAdopters failed', redactedError(error), { mode: options.mode, user });
         throw new Error(`findAdopters failed (ID: ${errorId})`);
     }
 }

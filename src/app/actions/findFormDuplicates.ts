@@ -34,5 +34,15 @@ export async function findFormDuplicates(
     input: FormDuplicateInput,
     opts: { minRelevance?: number; limit?: number } = {},
 ): Promise<{ results: DiscoveryMatch[] }> {
-    return searchFormDuplicates(input, { minRelevance: opts?.minRelevance, limit: opts?.limit }, getUser);
+    return searchFormDuplicates(input, { minRelevance: opts?.minRelevance, limit: capFormLimit(opts?.limit) }, getUser);
+}
+
+/** The most suggestions the form asks for: each is a detail read and a card hydration. */
+const MAX_FORM_LIMIT = 10;
+
+/** The browser picks `limit`: clamp it to [1, MAX_FORM_LIMIT]; an absent / non-finite value → the default. Not exported ('use server'). */
+function capFormLimit(limit: unknown): number | undefined {
+    const n = Math.floor(Number(limit));
+    if (limit === undefined || limit === null || !Number.isFinite(n)) return undefined;
+    return Math.min(Math.max(n, 1), MAX_FORM_LIMIT);
 }

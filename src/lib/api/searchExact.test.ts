@@ -27,10 +27,10 @@ vi.mock('./handler', async (orig) => ({
     claimIdempotencyKey: vi.fn(async () => undefined),
 }));
 
-import { runSearch } from './search';
+import { fuzzyIdentityOf, runSearch } from './search';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { contactEntriesToBlob, deserializeContactEntries, type ContactEntry } from '@/lib/contactEntries';
-import { apiSocialHandles, checkSearchRules, searchRequestSchema } from './schemas';
+import { apiSocialHandle, apiSocialHandles, checkSearchRules, searchRequestSchema } from './schemas';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[]; get: (...a: unknown[]) => Row | undefined } };
@@ -132,6 +132,28 @@ describe('API exact on the identity verdict', () => {
     });
 });
 
+// Ruling R10: a DNI written only in a free-text note (the index reads labeled ids there too)
+// is not the profile's DNI field: it identifies like an email or a phone, never «any name».
+describe('a DNI held only in a note', () => {
+    beforeEach(async () => {
+        await seed('lg', 'Laura Gómez', [e('phone', '+54 9 11 2020 3030'), e('other', 'Garante DNI 22333444')]);
+    });
+
+    it('«Marta Ruiz» + 22.333.444: not found as document, a new profile for review', async () => {
+        const r = await exact({ fullName: 'Marta Ruiz', documentId: { value: '22.333.444' } });
+        expect(r.match).not.toBe('found');
+        expect(r.profile?.nameMatchedAs).not.toBe('document');
+        expect(r.saved.action).toBe('created_profile_for_review');
+        expect(r.saved.profileId).not.toBe('lg');
+    });
+
+    it('«Laura Gómez» + 22.333.444: found on her profile by name', async () => {
+        const r = await exact({ fullName: 'Laura Gómez', documentId: { value: '22.333.444' } });
+        expect(r.match).toBe('found');
+        expect(r.profile).toMatchObject({ profileId: 'lg', matchedOn: ['documentId'], nameMatchedAs: 'profile' });
+    });
+});
+
 /** Payloads that already sent socials alongside an email (the docs' «Completo» example, Catpuccino). */
 describe('email + socials: the social now counts', () => {
     const person = { fullName: 'María José Pérez', email: 'maria.perez@gmail.com', phone: '11 4000-1234', socials: [{ platform: 'instagram', handle: '@mariajose.p' }] };
@@ -171,10 +193,80 @@ describe('email + socials: the social now counts', () => {
         expect(r.risk.profilesMatched).toBe(1);
     });
 
+    it('a Facebook handle below 3 characters or in the stoplist is no account («no», «-», «x», «photo»)', () => {
+        for (const handle of ['no', '-', 'x', '@x', 'photo', 'share']) {
+            expect(apiSocialHandle({ platform: 'facebook', handle })).toBeNull();
+        }
+        expect(apiSocialHandle({ platform: 'facebook', handle: 'ana.perez' })).toBe('ana.perez');
+        expect(apiSocialHandle({ platform: 'facebook', handle: 'facebook.com/profile.php?id=100012345' })).toBe('id:100012345');
+        const rules = checkSearchRules(searchRequestSchema.parse({
+            mode: 'exact', person: { fullName: 'Sofía Medina', socials: [{ platform: 'facebook', handle: 'no' }, { platform: 'facebook', handle: '-' }] },
+            activity: { activityType: 'adoption_request', externalId: 'x' },
+        }));
+        expect(rules.map(p => p.code)).toEqual(['exact_requires_name_and_identifier']);
+    });
+
+    // Each hit profile is one read; a placeholder handle typed by hundreds used to cost 50 per handle.
+    const profileReads = (sqls: string[]) => sqls.filter(q => /^select "id", "name", "contact_entries", "is_demo" from "adopters"/.test(q)).length;
+    function recordSql(): string[] {
+        const seen: string[] = [];
+        const real = sqlite.prepare.bind(sqlite);
+        vi.spyOn(sqlite, 'prepare').mockImplementation((q: string) => { seen.push(q); return real(q); });
+        return seen;
+    }
+
+    it('a handle shared by 60 profiles with many names reads none of them, and still links nobody', async () => {
+        for (let i = 0; i < 60; i++) await seed(`w${i}`, `Persona${'abcdefgh'[i % 8]} Apellido${'abcdefgh'[i % 8]}`, [e('social', 'refugio.oficial', 'instagram')]);
+        const seen = recordSql();
+        const r = await exact({ ...person, socials: [{ platform: 'instagram', handle: '@refugio.oficial' }] });
+        expect(r.match).toBe('found');
+        expect(r.profile).toMatchObject({ profileId: 'mj', matchedOn: ['email'] });
+        expect(r.risk.profilesMatched).toBe(1);
+        expect(profileReads(seen)).toBe(1);
+    });
+
+    it('a handle whose first 50 holders share one name but which more names hold is still junk', async () => {
+        for (let i = 0; i < 50; i++) await seed(`g${i}`, 'Ana Gil', [e('social', 'casi.junk', 'instagram')]);
+        for (const [id, n] of [['b1', 'Beto Sosa'], ['b2', 'Carla Díaz'], ['b3', 'Darío Vega']]) await seed(id, n, [e('social', 'casi.junk', 'instagram')]);
+        const seen = recordSql();
+        const r = await exact({ ...person, socials: [{ platform: 'instagram', handle: '@casi.junk' }] });
+        expect(seen.some(q => /^select distinct /.test(q))).toBe(true); // the name probe beyond the sample ran
+        expect(r.profile).toMatchObject({ profileId: 'mj', matchedOn: ['email'] });
+        expect(r.risk.profilesMatched).toBe(1);
+        expect(profileReads(seen)).toBe(1);
+    });
+
+    it('a handle on many profiles of one name reads a bounded number of them', async () => {
+        for (let i = 0; i < 15; i++) await seed(`d${i}`, 'María Pérez', [e('social', 'mariajose.p', 'instagram')]);
+        const seen = recordSql();
+        const r = await exact(person);
+        expect(r.match).toBe('ambiguous');
+        expect(r.saved).toMatchObject({ action: 'added_to_best_match', profileId: 'mj' });
+        expect(profileReads(seen)).toBe(11); // MJ (by her email) + MAX_SOCIAL_HOLDERS_READ reached only by the handle
+    });
+
     it('looks up at most the first 3 accounts that are accounts', () => {
         expect(apiSocialHandles([
             { platform: 'facebook', handle: 'Ana Perez' }, { platform: 'instagram', handle: '@a.one' }, { platform: 'instagram', handle: 'a.one' },
             { platform: 'tiktok', handle: '@a.two' }, { platform: 'x', handle: 'a.three' }, { platform: 'threads', handle: 'a.four' },
         ])).toEqual(['a.one', 'a.two', 'a.three']);
+    });
+});
+
+describe('fuzzy: the identity verdict sees the same accounts as exact', () => {
+    it('socials go through apiSocialHandles: display names, short / placeholder handles and extras beyond 3 are left out', () => {
+        const id = fuzzyIdentityOf({
+            fullName: 'Ana Pérez',
+            socials: [
+                { platform: 'facebook', handle: 'Ana Perez' }, { platform: 'facebook', handle: 'no' }, { platform: 'facebook', handle: '-' },
+                { platform: 'instagram', handle: '@a.one' }, { platform: 'facebook', handle: 'facebook.com/profile.php?id=100012345' },
+                { platform: 'tiktok', handle: '@a.two' }, { platform: 'x', handle: 'a.three' },
+            ],
+        } as never);
+        expect(id.socials).toEqual(['a.one', 'id:100012345', 'a.two']);
+    });
+
+    it('no account at all: no socials key', () => {
+        expect(fuzzyIdentityOf({ fullName: 'Ana Pérez', socials: [{ platform: 'facebook', handle: 'no' }] } as never)).not.toHaveProperty('socials');
     });
 });

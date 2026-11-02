@@ -154,3 +154,31 @@ describe('matchImportRow', () => {
         expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toMatch(/65851333/);
     });
 });
+
+// Ruling R10: a DNI written only in a free-text note is not the profile's DNI field.
+describe('matchImportRow: a DNI held only in a note', () => {
+    beforeEach(async () => {
+        await seed('lg', 'Laura Gómez', [e('phone', '+54 9 11 2020 3030'), e('other', 'Garante DNI 22333444')]);
+    });
+
+    it('another name with that DNI is possible («Revisar»), never same', async () => {
+        const r = await matchImportRow(row({ name: 'Marta Ruiz', documentIds: ['22.333.444'] }));
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        expect(r.matches.find(m => m.adopterId === 'lg')).toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+    });
+
+    it('the note holder\'s own name with that DNI is same', async () => {
+        const r = await matchImportRow(row({ name: 'Laura Gómez', documentIds: ['22333444'] }));
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        expect(r.matches[0]).toMatchObject({ adopterId: 'lg', verdict: 'same', reason: 'shared_contact_name_compatible' });
+    });
+
+    it('a DNI in the id entry still makes another name same (rule 1)', async () => {
+        const r = await matchImportRow(row({ name: 'Juan Ruiz', documentIds: ['30.123.456'] }));
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        expect(r.matches[0]).toMatchObject({ adopterId: 'mj', verdict: 'same', reason: 'shared_document' });
+    });
+});

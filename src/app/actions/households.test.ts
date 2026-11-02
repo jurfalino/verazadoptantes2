@@ -621,13 +621,13 @@ describe('getDuplicateHintMatches — the composer\'s «Ya está en otro perfil�
         expect(marta).toHaveProperty('activity');
     });
 
-    it('an identity number finds her too — the strong identifier the household check never searches', async () => {
+    it('an identity number finds her too — in the duplicate hint and the household check', async () => {
         const { results } = await getDuplicateHintMatches({ type: 'id', value: '30111222', excludeAdopterId: 'pedro' });
         expect(results.map(r => r.adopter.id)).toEqual(['marta']);
         expect(results[0].matchedEntryIndexes).toEqual([1]);
-        // The household check, by contrast, has no id search at all.
+        // The household check searches a DNI-only entry too (final review M2: it used to skip it).
         const hh = await getHouseholdMatchCandidates({ contactEntries: [{ type: 'id', value: '30111222' }], anchorAdopterId: 'pedro' });
-        expect(hh.results).toEqual([]);
+        expect(hh.results.map(r => r.adopter.id)).toEqual(['marta']);
     });
 
     it('the profile being edited is never its own match', async () => {
