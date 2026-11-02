@@ -2,6 +2,28 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.11] - 2026-11-02
+
+### Changed — every screen uses the same "is this the same person?" rule
+- A DNI now counts exactly like a phone: same DNI and the names agree → same person; same DNI with another name (or
+  no name) → «posible», for a person to review. In the sheet import such a row now goes to «Revisar», not
+  «Actualizar». Placeholder DNIs and DNIs on more than 3 differently-named profiles still link nobody.
+- «Nuevo adoptante», «Agregar conviviente» and the phone interview also check the DNI. The «Posible coincidencia
+  exacta» box shows only for the same person; a shared phone or email with another name is listed as «posible».
+  Someone with the same full name but other contacts is now listed too. The same person always comes first.
+- Social-post import: contacts are matched as typed (an Instagram account without @ now finds the profile); only
+  the same person is pre-selected; the hint and the match screen list the same people.
+- «Pendientes de revisar»: a public form, contract or API profile now leaves a pair for every «same» or «posible»
+  match, including people who only share the full name (shown with a low percentage). Pairs are never made from
+  placeholder or widely shared data, and the new profile no longer counts against that limit.
+- Search box: an email, DNI or @account typed in the search puts the person it identifies first, among the results
+  already shown. Not for visitors who aren't logged in.
+- API v1: `person.socials` is accepted as an identifier in exact mode (`matchedOn: 'social'`); socials already sent
+  now count, so some answers can change. Placeholder or widely shared data (e.g. Facebook «no», an account on more
+  than 3 different names) links nobody. Fuzzy mode puts a profile the identifiers identify first. Documented under
+  «Cambios y versiones».
+- What is typed in a social field is kept exactly as written (a visible name is never turned into «Conocido/a como»).
+
 ## [2.58.10] - 2026-11-02
 
 ### Changed — the sheet import decides who is the same person with one rule
