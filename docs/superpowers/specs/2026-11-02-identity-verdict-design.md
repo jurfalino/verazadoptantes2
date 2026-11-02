@@ -34,7 +34,7 @@ One pure verdict — **same person / possible / no** — computed the same way f
 2. **DNIs get the same junk protections as phones:** placeholder values never count (one digit repeated, `12345678`-style sequences, mirroring `isPlaceholderPhone`), and a DNI found on more than 3 differently-named profiles links nobody (mirrors `MAX_NAMES_PER_KEY` in `importGrouping`). Prod today: 76 DNIs, 0 junk, 2 shared by 2 profiles.
 3. **A social account counts like a phone or an email:** same account + compatible name = same person; same account + incompatible name = possible. Never on its own.
 4. **API exact accepts a social account as an identifier** (name + social is a valid exact call).
-5. **A visible name typed in a social field is not an account** (already true: `normalizeSocialHandle` returns null for values with spaces). It is saved as a «Conocido/a como» (alias) so search finds it. Prod: 2,569 of 7,083 social values (36%). **Converting the existing ones in production needs Jon's OK at run time.**
+5. **A visible name typed in a social field is not an account** (already true: `normalizeSocialHandle` returns null for values with spaces), **and it stays exactly as the rescuer typed it** — never converted to «Conocido/a como», in new or existing data (Jon, 2026-11-02: «we want to be faithful to information entered by users»; supersedes the earlier alias conversion). The verdict does not use it as an identifier or as a name; search already finds it as text.
 6. **The same full name always goes to «Revisar»** (rule 4), however common the name (Jon, 2026-11-02).
 7. **The surface table (§4) is confirmed** (Jon, 2026-11-02).
 8. **Two «same» matches whose names don't agree with each other → «Revisar»** (sheet import default; e.g. «Gómez» + a phone shared by Ana Gómez and Juan Gómez). Two «same» that agree with each other (likely duplicate profiles of one person) keep «Actualizar» on the best (Jon, 2026-11-02).
@@ -97,7 +97,7 @@ The 7 examples of the comparison page (plus junk-DNI and visible-name-social cas
 3. «Nuevo adoptante» form family + social-post import (DNI, handles).
 4. «Pendientes de revisar» creation and API exact (socials accepted, DNI alone).
 5. Search box + API fuzzy ranking.
-6. Visible-name socials → «Conocido/a como»: new values from step 3 on; the production conversion of existing values only on Jon's OK.
+6. ~~Visible-name socials → «Conocido/a como»~~ — dropped (Jon, 2026-11-02, decision 5).
 
 ## Calls made in the design (Claude, technical — check while reading)
 
