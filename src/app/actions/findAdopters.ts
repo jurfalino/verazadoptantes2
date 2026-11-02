@@ -1410,7 +1410,7 @@ async function runDiscoveryMode(
     if (identity && !isUnauthenticated && (mainResults.length + lowRelevanceResults.length) > 0) {
         try {
             const { findPersonMatches } = await import('@/lib/identityMatch');
-            const same = (await findPersonMatches(db, identity, { actor: user, country: userCountry }))
+            const same = (await findPersonMatches(db, identity, { actor: user, country: userCountry, skipLikeFallback: true }))
                 .filter(m => m.verdict === 'same').map(m => m.adopterId);
             if (same.length > 0) ({ main: mainResults, low: lowRelevanceResults } = promoteSame(mainResults, lowRelevanceResults, same));
         } catch (e) {

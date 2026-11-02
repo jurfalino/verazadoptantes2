@@ -27,4 +27,10 @@ describe('extractQueryIdentifiers', () => {
         expect(extractQueryIdentifiers('María José Pérez')).toEqual({ emails: [], documentIds: [], handles: [], rest: 'María José Pérez' });
         expect(extractQueryIdentifiers('')).toEqual({ emails: [], documentIds: [], handles: [], rest: '' });
     });
+    it('a CUIT is no identifier', () => {
+        expect(extractQueryIdentifiers('20-30123456-7')).toMatchObject({ documentIds: [], emails: [], handles: [] });
+    });
+    it('an email closing a sentence loses the period', () => {
+        expect(extractQueryIdentifiers('escribile a maria.perez@gmail.com.')).toMatchObject({ emails: ['maria.perez@gmail.com'] });
+    });
 });

@@ -27,7 +27,10 @@ export async function findAdopters(
             return { results: [] };
         }
     }
-    return runFindAdopters(input, capLimit(options));
+    // `identity` is for server callers (API fuzzy) only: a browser must not steer the verdict.
+    const { identity: _identity, ...fromBrowser } = (options ?? {}) as FindAdoptersOptions;
+    void _identity;
+    return runFindAdopters(input, capLimit(fromBrowser as FindAdoptersOptions));
 }
 
 /**

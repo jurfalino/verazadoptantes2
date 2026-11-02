@@ -83,6 +83,28 @@ describe('discovery on the identity verdict', () => {
         expect(findPersonMatches).not.toHaveBeenCalled();
     });
 
+    it('a possible is never moved; two same keep the verdict order', async () => {
+        spy.fn = async () => [{ adopterId: 'mp', verdict: 'same' }, { adopterId: 'mj', verdict: 'same' }, { adopterId: 'other', verdict: 'possible' }];
+        const res = await findAdoptersAsViewer({ raw: 'María Pérez' }, { enrich: true, identity: { name: 'María Pérez', emails: ['x@y.com'] } }, OWNER);
+        expect(ids(res.results).slice(0, 2)).toEqual(['mp', 'mj']);
+        spy.fn = async () => [{ adopterId: 'mj', verdict: 'possible' }];
+        const base = await findAdoptersAsViewer({ raw: 'María Pérez' }, { enrich: true }, OWNER);
+        const poss = await findAdoptersAsViewer({ raw: 'María Pérez' }, { enrich: true, identity: { name: 'María Pérez', emails: ['x@y.com'] } }, OWNER);
+        expect(ids(poss.results)).toEqual(ids(base.results));
+    });
+
+    it('asks the verdict without the LIKE fallback', async () => {
+        await findAdoptersAsViewer({ raw: 'Majo Pérez 30.123.456' }, { enrich: true }, OWNER);
+        expect(vi.mocked(findPersonMatches).mock.calls[0][2]).toMatchObject({ skipLikeFallback: true });
+    });
+
+    it('a handle query promotes through discovery', async () => {
+        spy.fn = async () => [{ adopterId: 'mp', verdict: 'same' }];
+        const res = await findAdoptersAsViewer({ raw: 'Maria @mariajose.p' }, { enrich: true }, OWNER);
+        expect(vi.mocked(findPersonMatches).mock.calls[0][1]).toMatchObject({ socials: ['mariajose.p'] });
+        if ([...ids(res.results), ...ids(res.lowRelevanceResults ?? [])].includes('mp')) expect(ids(res.results)[0]).toBe('mp');
+    });
+
     it('never adds a profile the search did not return', async () => {
         spy.fn = async () => [{ adopterId: 'ghost', verdict: 'same' }, { adopterId: 'mp', verdict: 'possible' }];
         const res = await findAdoptersAsViewer({ raw: 'María Pérez' }, { enrich: true, identity: { name: 'María Pérez', emails: ['x@y.com'] } }, OWNER);
