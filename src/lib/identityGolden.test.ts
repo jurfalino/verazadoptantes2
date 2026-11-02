@@ -4,8 +4,7 @@
  * SQL (every drizzle/*.sql replayed) and the real token index / duplicate engine.
  *
  * Today's behavior is pinned for surfaces not yet on the verdict; each rollout
- * step flips its own column (spec §Rollout). Only the sheet wizard is on the
- * verdict. Assert profile ids and actions only, never percentages.
+ * step flips its own column (spec §Rollout). Assert profile ids and actions only, never percentages.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
@@ -109,13 +108,6 @@ async function surfaces(p: Person) {
         ? ((await findAdopters(hintInput, { mode: 'duplicate', limit: 3, minRelevance: 5 })).results as Array<{ adopterId: string }>).map(r => r.adopterId)
         : null;
 
-    // «Pendientes»: pairs at relevance >= 30.
-    const pend = await findAdopters(
-        { name: p.name, phones, ids, emails, socials: p.social ? [p.social] : [] },
-        { mode: 'duplicate', minRelevance: 0, limit: 5 },
-    );
-    const pendientes = (pend.results as Array<{ adopterId: string; relevancePercent: number }>).filter(r => r.relevancePercent >= 30).map(r => r.adopterId);
-
     // API exact: rules first, then identifier lookup + decision.
     const person: SearchRequest['person'] = {
         fullName: p.name,
@@ -139,6 +131,16 @@ async function surfaces(p: Person) {
     const s = await findAdoptersAsViewer({ raw: fuzzyQueryOf(person) }, { enrich: true }, OWNER);
     const search = { main: s.results.map(r => r.adopterId), low: (s.lowRelevanceResults ?? []).map(r => r.adopterId) };
 
+    // «Pendientes de revisar» (the verdict), computed LAST: it inserts the incoming person as a live
+    // profile, which the columns above must not see. The pairs written for it, as the other profile's id.
+    await seed('incoming-golden', p.name, entries);
+    const { findAndPersistDuplicateCandidates } = await import('@/app/actions/_adopterFactory');
+    await findAndPersistDuplicateCandidates(state.db as Parameters<typeof findAndPersistDuplicateCandidates>[0], 'incoming-golden', {
+        name: p.name, phone: p.phone, email: p.email, documentId: p.dni, socials: p.social ? [p.social] : [],
+    });
+    const pendientes = sqlite.prepare(`SELECT adopter1_id AS a, adopter2_id AS b FROM duplicate_candidates WHERE status = 'pending'`)
+        .all().map(r => (r.a === 'incoming-golden' ? r.b : r.a) as string).sort();
+
     return { sheet, form, postImport, warning, pendientes, apiExact, search };
 }
 
@@ -159,22 +161,22 @@ interface Expected {
 const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true; extraSeed?: Array<[string, string, ContactEntry[]]>; expected: Expected | { sheet: Expected['sheet'] } }> = [
     { n: 1, label: 'María Pérez + MJ phone', person: { name: 'María Pérez', phone: '11 6585-1333' }, expected: {
         sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
-        pendientes: [MJ], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
+        pendientes: [MJ, MP], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
     { n: 2, label: 'Juan Carlos Ruiz + MJ phone', person: { name: 'Juan Carlos Ruiz', phone: '11 6585-1333' }, expected: {
         sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [MJ], searchLowHas: [] } },
     { n: 3, label: 'María José Pérez + another phone', person: { name: 'María José Pérez', phone: '11 2222-3333' }, expected: {
         sheet: { action: 'review', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: false, warning: [],
-        pendientes: [], apiExact: { not_found: true }, searchMain: [], searchLowHas: [MJ] } },
+        pendientes: [MJ, MP], apiExact: { not_found: true }, searchMain: [], searchLowHas: [MJ] } },
     { n: 4, label: 'María José Pérez, no contact', person: { name: 'María José Pérez' }, expected: {
         sheet: { action: 'review', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: false, warning: null,
-        pendientes: [MJ], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [MJ], searchLowHas: [] } },
+        pendientes: [MJ, MP], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [MJ], searchLowHas: [] } },
     { n: 5, label: 'Majo Pérez + MJ Instagram', person: { name: 'Majo Pérez', social: 'mariajose.p' }, expected: {
         sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 6, label: 'Maria Peres + MJ email', person: { name: 'Maria Peres', email: 'maria.perez@gmail.com' }, expected: {
         sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
-        pendientes: [MJ], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
+        pendientes: [MJ, MP], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
     { n: 7, label: 'Majo Pérez + MJ DNI', person: { name: 'Majo Pérez', dni: '30.123.456' }, expected: {
         sheet: { action: 'upsert', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: true, warning: [MJ],
         pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [], searchLowHas: [MJ] } },

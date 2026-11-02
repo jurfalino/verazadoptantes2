@@ -78,12 +78,6 @@ export interface CreateAdopterResult {
     dupCandidates: DupCandidateSummary[];
 }
 
-function bucketConfidence(relevancePercent: number): 'high' | 'medium' | 'low' {
-    if (relevancePercent >= 70) return 'high';
-    if (relevancePercent >= 40) return 'medium';
-    return 'low';
-}
-
 /**
  * The country stamped on a new profile, the same way saveAdopter /
  * /api/adopters do (v2.19.4 — before, the factory was a silent bypass:
@@ -224,7 +218,7 @@ export async function createAdopterFromSubmission(
 
     // 4. Find duplicates + persist a filtered subset as `duplicate_candidates`
     // pending rows so the pending-dedup section on /my-adopters has data
-    // (thresholds: findAndPersistDuplicateCandidates).
+    // (every same/possible match: findAndPersistDuplicateCandidates).
     const dupCandidates = await findAndPersistDuplicateCandidates(db, adopterId, {
         name: trimmedName,
         phone: input.phone,
@@ -253,28 +247,27 @@ export interface DuplicateProbe {
 }
 
 /**
- * Step 4 of every unattended creation: find the likely duplicates of a new
- * profile and persist the pairs above the noise floor as pending
- * `duplicate_candidates` («Pendientes de revisar»). `skipPair(otherId)` drops
+ * Step 4 of every unattended creation: ask the identity verdict who the new
+ * profile may be (same / possible) and persist a pending `duplicate_candidates`
+ * pair for EVERY such match («Pendientes de revisar»). `skipPair(otherId)` drops
  * a pair before it is written (households: never pair housemates — spec
  * anti-goal). Never throws: a failure is logged and gives [].
  *
- * Two thresholds intentionally split:
- *   • findAdopters minRelevance:0 — matches the existing form/contract
- *     notification recall (the prior code paths use 0). Keeps the
- *     notification banner honest about borderline matches and preserves
- *     existing e2e behavior (notably contract-link.spec.ts which sets up
- *     a low-confidence fixture and expects the "Es la misma persona"
- *     merge button to render).
- *   • PERSIST_THRESHOLD = 30 — only pairs with ≥30% relevance get
- *     written to duplicate_candidates. Stops the pending-dedup table
- *     from filling with noise that the rescuer would just dismiss.
+ * The pair's `confidence` is the verdict ('same' → 'high', 'possible' → 'medium';
+ * never 'low', which some readers filter out) and `score` is the match's
+ * relevancePercent (shown as a percentage elsewhere, so unchanged). There is no
+ * persistence threshold any more: the verdict is the noise floor.
+ *
+ * `skipLikeFallback` is still accepted but the verdict path has no equivalent
+ * switch (it always runs the same retrieval), so it is ignored. Phones are read
+ * without a country, as the previous findAdopters call did.
  */
 export async function findAndPersistDuplicateCandidates(
     db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
     adopterId: string,
     probe: DuplicateProbe,
     opts: {
+        /** Accepted for callers; ignored by the verdict path (see above). */
         skipLikeFallback?: boolean;
         skipPair?: (otherId: string) => Promise<boolean>;
         /** Candidates fetched (default 5); raise it when skipPair may drop some, so the real ones still fit. */
@@ -284,33 +277,26 @@ export async function findAndPersistDuplicateCandidates(
         ctx?: Record<string, unknown>;
     } = {},
 ): Promise<DupCandidateSummary[]> {
-    const PERSIST_THRESHOLD = 30;
     try {
         const { duplicateCandidates } = await import('@/db/schema');
         const { eq, and } = await import('drizzle-orm');
-        const { findAdopters } = await import('@/app/actions/findAdopters');
-        const { extractEmails, extractSocials } = await import('@/lib/tokenizer');
+        const { findPersonMatches } = await import('@/lib/identityMatch');
+        const { extractEmails } = await import('@/lib/tokenizer');
         const socials = (probe.socials ?? []).filter(Boolean);
+        const phone = probe.phone?.trim();
+        const documentId = probe.documentId?.trim();
 
-        const dupResult = await findAdopters(
-            {
-                name: probe.name,
-                // The phone as typed — the matcher reads it by country, so a
-                // "+54 9 11 …" applicant finds a record saved as "11 …".
-                phones: probe.phone?.trim() ? [probe.phone.trim()] : [],
-                // The DNI is matched as an identity number. It used to be pushed
-                // into `phones`, so it was probed as a phone and never against
-                // the id index — a returning applicant's DNI found nobody.
-                ids: probe.documentId?.trim() ? [probe.documentId.trim()] : [],
-                emails: probe.email ? extractEmails(probe.email) : [],
-                // Entries may carry their network ({ value, platform }) — match on the value.
-                socials: socials.length ? extractSocials(socials.join('\n')) : [],
-                excludeAdopterId: adopterId,
-            },
-            { mode: 'duplicate', minRelevance: 0, limit: opts.limit ?? 5, skipLikeFallback: opts.skipLikeFallback === true },
-        );
+        const found = await findPersonMatches(db, {
+            name: probe.name,
+            // The phone as typed — the matcher reads it by country, so a
+            // "+54 9 11 …" applicant finds a record saved as "11 …".
+            phones: phone ? [phone] : [],
+            documentIds: documentId ? [documentId] : [],
+            emails: probe.email ? extractEmails(probe.email) : [],
+            // Raw values (a visible name with spaces is not an account): never converted.
+            socials,
+        }, { country: null, excludeAdopterId: adopterId, limit: opts.limit ?? 5, ctx: opts.ctx });
 
-        const found = (dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent: number }>) || [];
         const matches: typeof found = [];
         for (const m of found) {
             if (opts.keep !== undefined && matches.length >= opts.keep) break;
@@ -318,11 +304,9 @@ export async function findAndPersistDuplicateCandidates(
             matches.push(m);
         }
 
-        // Persist only matches above the noise floor. Skip pairs that are
-        // already recorded (dismissed / merged) — the admin reconciliation
-        // route owns that state transition and we shouldn't reopen its decisions.
+        // Skip pairs that are already recorded (dismissed / merged) — the admin
+        // reconciliation route owns that state transition and we shouldn't reopen its decisions.
         for (const match of matches) {
-            if (match.relevancePercent < PERSIST_THRESHOLD) continue;
             const [id1, id2] = adopterId < match.adopterId
                 ? [adopterId, match.adopterId]
                 : [match.adopterId, adopterId];
@@ -347,7 +331,7 @@ export async function findAndPersistDuplicateCandidates(
                 matchTypes: JSON.stringify(match.matchTypes),
                 matchValues: null,
                 score: match.relevancePercent,
-                confidence: bucketConfidence(match.relevancePercent),
+                confidence: match.verdict === 'same' ? 'high' : 'medium',
                 status: 'pending',
                 detectedAt: new Date(),
             });
@@ -360,10 +344,11 @@ export async function findAndPersistDuplicateCandidates(
             relevancePercent: m.relevancePercent,
         }));
     } catch (e) {
+        const { redactedErrorFields } = await import('@/lib/identityCandidates');
         logger.warn('findAndPersistDuplicateCandidates: duplicate detection failed (continuing)', {
             ...opts.ctx,
             adopterId,
-            error: e instanceof Error ? e.message : String(e),
+            ...redactedErrorFields(e),
         });
         return [];
     }

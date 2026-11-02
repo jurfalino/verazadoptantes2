@@ -86,6 +86,10 @@ vi.mock('@/app/actions/findAdopters', async (orig) => {
     const real = await orig<typeof import('@/app/actions/findAdopters')>();
     return { ...real, findAdopters: vi.fn(real.findAdopters) };
 });
+vi.mock('@/lib/identityMatch', async (orig) => {
+    const real = await orig<typeof import('@/lib/identityMatch')>();
+    return { ...real, findPersonMatches: vi.fn(real.findPersonMatches) };
+});
 vi.mock('@/app/actions/notifications', () => ({
     createNotification: vi.fn(async (d: Record<string, unknown>) => { notify.create.push(d); return 'n'; }),
     notifyAdmins: vi.fn(async (d: Record<string, unknown>) => { notify.admins.push(d); }),
@@ -111,6 +115,7 @@ import { households as householdsTable } from '@/db/schema';
 import { addHouseholdPerson } from '@/app/actions/households';
 import { logger } from '@/lib/logger';
 import { findAdopters } from '@/app/actions/findAdopters';
+import { findPersonMatches } from '@/lib/identityMatch';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -158,6 +163,7 @@ beforeEach(async () => {
     faults.beforeBatch = null;
     faults.afterKeyRead = null;
     vi.mocked(findAdopters).mockClear();
+    vi.mocked(findPersonMatches).mockClear();
     session.user = OWNER;
     // The form link's owner, in Argentina: phones are read as Argentine ones.
     sqlite.prepare(`INSERT INTO user (id, email, name) VALUES ('u-owner', ?, 'Owner')`).run(OWNER);
@@ -566,7 +572,7 @@ describe('Task 4 fix round 1', () => {
         expect(members.map(m => m.gift_recipient)).toEqual([1, 0]);
     });
 
-    it('public form: household people are indexed and scanned after the response; name-only ones skip the LIKE fallback', async () => {
+    it('public form: household people are indexed and scanned after the response; name-only ones are scanned on the verdict', async () => {
         deferred.on = true;
         await postForm({
             name: 'Juan Diferido', email: 'jd@example.com', phone: '11 2222 5555', intent: 'self',
@@ -579,8 +585,9 @@ describe('Task 4 fix round 1', () => {
         expect(deferred.tasks.map(t => t.name)).toContain('attachHouseholdPeople.index');
         for (const t of deferred.tasks) await t.task();
         expect(tokensOf(tomas.id as string).length).toBeGreaterThan(0);
-        const scan = vi.mocked(findAdopters).mock.calls.find(c => (c[0] as { excludeAdopterId?: string }).excludeAdopterId === tomas.id);
-        expect(scan?.[1]).toMatchObject({ mode: 'duplicate', skipLikeFallback: true });
+        // The scan runs on the identity verdict, which has no LIKE-skip switch (skipLikeFallback is accepted and ignored).
+        const scan = vi.mocked(findPersonMatches).mock.calls.find(c => c[2]?.excludeAdopterId === tomas.id);
+        expect(scan).toBeDefined();
     });
 
     it('housemates never crowd a real duplicate out of the candidate slots', async () => {
@@ -588,7 +595,8 @@ describe('Task 4 fix round 1', () => {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries) VALUES ('outsider', 'Rita Sosa', '5', ?, 'AR', 1000, 1000, ?)`)
             .run(OTHER, JSON.stringify([{ id: 'oc', type: 'phone', value: P, addedBy: OTHER }]));
         await tokenizeAdopter('outsider');
-        const names = ['Ana Gomez', 'Bea Gomez', 'Ceci Gomez', 'Dora Gomez', 'Eva Gomez', 'Fede Gomez'];
+        // One housemate on the phone (+ the outsider + Zoe = 3 names): with more, the phone is held by too many names and the verdict links nobody on it (MAX_NAMES_PER_IDENTIFIER), so the old six-housemate crowding cannot happen.
+        const names = ['Ana Gomez'];
         await attachHouseholdPeople(db(), {
             anchorAdopterId: 'pedro', actor: OWNER, ownerEmail: OWNER, sourceKey: 'import:crowd',
             people: names.map((name, i) => ({ name, relationship: 'housemate', index: i, contactEntries: [{ id: `c${i}`, type: 'phone' as const, value: P, addedBy: OWNER }] })),
