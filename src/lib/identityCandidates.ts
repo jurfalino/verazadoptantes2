@@ -15,7 +15,7 @@ import { adopters, duplicateTokens } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { findAdopters } from '@/app/actions/findAdopters';
-import { isPlaceholderPhone } from '@/domain/phoneNumber';
+import { readPhones } from '@/domain/phoneNumber';
 import type { DuplicateMatch } from '@/app/actions/types';
 import type { getDb } from '@/lib/db';
 import {
@@ -61,13 +61,13 @@ export function redactedErrorFields(e: unknown): { error: string; errorName: str
     return { error: r.message, errorName: r.name, ...(cause.length ? { cause } : {}) };
 }
 
-/** "0000 0000", "+54 9 11 1111 1111": not a number. Kept out of the engine, whose contact-text
- *  LIKE would otherwise find these digits in any profile's contacts (a «00000000» DNI) and —
- *  a contact LIKE hit being evidence — list that profile as possible. */
-function isPlaceholderPhoneInput(p: string): boolean {
-    const d = p.replace(/\D/g, '');
-    const last8 = d.slice(-8);
-    return isPlaceholderPhone(d) || isPlaceholderPhone(last8) || /^(\d)\1+$/.test(last8);
+/** A phone the index never tokenizes ("0000 0000", "12345678": `readPhones`, which the index tokenizes from, reads no number).
+ *  Kept out of the engine, so the only thing dropped is its contact-text LIKE, which would
+ *  otherwise find those digits in any profile's contacts (a «00000000» DNI) and — a contact
+ *  LIKE hit being evidence — list that profile as possible. Token matching is unchanged:
+ *  such a phone has no token to match. */
+function isUnreadablePhone(p: string, country: string | null | undefined): boolean {
+    return readPhones(p, country).length === 0;
 }
 
 interface SharedToken { kind: IdentifierKind; value: string; tokenType: string; tokenValue: string }
@@ -101,7 +101,7 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
     const limit = opts.limit ?? DEFAULT_LIMIT;
     const res = await findAdopters(
         {
-            name: facts.name, aliases: facts.aliases, phones: facts.phones.filter(p => !isPlaceholderPhoneInput(p)), emails: facts.emails,
+            name: facts.name, aliases: facts.aliases, phones: facts.phones.filter(p => !isUnreadablePhone(p, facts.country)), emails: facts.emails,
             socials: facts.socials, ids: facts.documentIds, country: facts.country ?? undefined,
         },
         { mode: 'duplicate', keepNameOnly: true, minRelevance: 5, limit: ENGINE_POOL },

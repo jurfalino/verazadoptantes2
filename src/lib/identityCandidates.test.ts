@@ -190,6 +190,11 @@ describe('judgeCandidates', () => {
         const out = await judgeCandidates(db(), facts({ name: 'Ana Ruiz', phones: ['0000 0000'] }), {});
         expect(out.find(j => j.candidate.adopterId === 'ph')).toBeUndefined();
     });
+    it('a real number whose last digits repeat is still matched by its token (same)', async () => {
+        await seed('rep', 'Rosa Luna', [e('phone', '+54 9 11 4444 4444')]);
+        const out = await judgeCandidates(db(), facts({ name: 'Rosa Luna', phones: ['11 4444-4444'] }), {});
+        expect(out.find(j => j.candidate.adopterId === 'rep')).toMatchObject({ verdict: 'same', reason: 'shared_contact_name_compatible' });
+    });
     it('an untokenized contact found by the LIKE fallback is possible, never same', async () => {
         // A legacy profile: free-text contact_info holds the phone; no contact entries, no tokens.
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries, contact_info)
