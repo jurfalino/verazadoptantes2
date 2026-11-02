@@ -72,6 +72,8 @@ export interface DuplicateMatch {
     matchValues: Array<{ type: string; value: string }>;
     /** How the adopter was found — diagnostic only, not shown in UI. */
     source: 'token' | 'like' | 'both';
+    /** Identity verdict, when the surface judged this match (src/lib/identityMatch.ts). */
+    verdict?: 'same' | 'possible';
 }
 
 /**
@@ -90,6 +92,8 @@ export interface DiscoveryMatch {
     matchTypes: string[];
     matchValues: Array<{ type: string; value: string }>;
     source: 'token' | 'like' | 'both';
+    /** Identity verdict, when the surface judged this match. */
+    verdict?: 'same' | 'possible';
     /** Full adopter row — always populated in discovery mode. */
     adopter: typeof adopters.$inferSelect;
     /** Who vouched for this record, from the VIEWER's position. Computed

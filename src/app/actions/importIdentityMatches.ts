@@ -10,10 +10,10 @@
 
 import { getDb, getUser } from './_db';
 import { isRealActorEmail } from '@/lib/piiAccess';
-import { cachedOwnerCountry } from '@/lib/actorCountry';
-import { judgeCandidates, redactedError, redactedErrorFields } from '@/lib/identityCandidates';
+import { findPersonMatches } from '@/lib/identityMatch';
+import { redactedError } from '@/lib/identityCandidates';
 import { logger } from '@/lib/logger';
-import type { PersonFacts, VerdictReason } from '@/domain/identityVerdict';
+import type { VerdictReason } from '@/domain/identityVerdict';
 import type { DuplicateMatch } from './types';
 
 const MAX_VALUES = 5;
@@ -36,36 +36,15 @@ export async function matchImportRow(row: ImportRowIdentity): Promise<{ ok: true
     try {
         const db = await getDb();
         if (!db) throw new Error('No database');
-        const facts: PersonFacts = {
+        // Retrieval stays at the helper's default (5); the cap below is on what remains after filtering.
+        const found = await findPersonMatches(db, {
             name: clean(row?.name),
-            aliases: [],
             phones: list(row?.phones),
             emails: list(row?.emails),
             socials: list(row?.socials),
             documentIds: list(row?.documentIds),
-            country: null,
-        };
-        if (facts.phones.length > 0) {
-            // Phones are read with the rescuer's country, as the sibling lookup does
-            // (read once per actor for ten minutes, not once per row).
-            try {
-                facts.country = await cachedOwnerCountry(db, actor, `sheet-${crypto.randomUUID().slice(0, 8)}`);
-            } catch (e) {
-                logger.warn('matchImportRow: country lookup failed, phones read without country', { actor, ...redactedErrorFields(e) });
-            }
-        }
-        const judged = await judgeCandidates(db, facts, ctx);
-        const matches: JudgedMatch[] = [];
-        for (const j of judged) {
-            if (j.verdict !== 'same' && j.verdict !== 'possible') continue;
-            const c = j.candidate;
-            matches.push({
-                adopterId: c.adopterId, adopterName: c.name, relevancePercent: c.relevancePercent,
-                matchTypes: c.matchTypes, matchValues: c.matchValues, source: c.source,
-                verdict: j.verdict, reason: j.reason,
-            });
-            if (matches.length >= MAX_MATCHES) break;
-        }
+        }, { actor, ctx });
+        const matches: JudgedMatch[] = found.slice(0, MAX_MATCHES);
         return { ok: true, matches };
     } catch (e) {
         // Redacted: a query error escaping retrieval carries the row's phone / email / DNI in "params:".
