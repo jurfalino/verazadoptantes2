@@ -10,7 +10,7 @@
 
 import { getDb, getUser } from './_db';
 import { isRealActorEmail } from '@/lib/piiAccess';
-import { ownerCountry } from '@/lib/api/profiles';
+import { cachedOwnerCountry } from '@/lib/actorCountry';
 import { judgeCandidates, redactedError, redactedErrorFields } from '@/lib/identityCandidates';
 import { logger } from '@/lib/logger';
 import type { PersonFacts, VerdictReason } from '@/domain/identityVerdict';
@@ -46,9 +46,10 @@ export async function matchImportRow(row: ImportRowIdentity): Promise<{ ok: true
             country: null,
         };
         if (facts.phones.length > 0) {
-            // Phones are read with the rescuer's country, as the sibling lookup does.
+            // Phones are read with the rescuer's country, as the sibling lookup does
+            // (read once per actor for ten minutes, not once per row).
             try {
-                facts.country = await ownerCountry(db, actor, `sheet-${crypto.randomUUID().slice(0, 8)}`);
+                facts.country = await cachedOwnerCountry(db, actor, `sheet-${crypto.randomUUID().slice(0, 8)}`);
             } catch (e) {
                 logger.warn('matchImportRow: country lookup failed, phones read without country', { actor, ...redactedErrorFields(e) });
             }

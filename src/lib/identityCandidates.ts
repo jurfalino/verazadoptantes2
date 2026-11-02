@@ -102,8 +102,9 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
     const sharesIdentifier = (m: DuplicateMatch) => m.matchValues.some(v => IDENTIFIER_TOKEN_TYPES.has(v.type));
     const matches = [...pool.filter(sharesIdentifier), ...pool.filter(m => !sharesIdentifier(m))].slice(0, limit);
 
-    // One detail read per candidate (name + aliases).
-    const details = await Promise.all(matches.map(m =>
+    // One detail read per candidate (name + aliases), in parallel with the name counts below
+    // (those depend only on what the engine matched).
+    const detailsP = Promise.all(matches.map(m =>
         db.select({ name: adopters.name, contactEntries: adopters.contactEntries }).from(adopters)
             .where(and(eq(adopters.id, m.adopterId), isNull(adopters.deletedAt))).limit(1)
             .then((rows: Array<{ name: string; contactEntries: string | null }>) => rows[0] ?? null)
@@ -124,7 +125,7 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
         logger.warn('identityCandidates: name-count budget exceeded', { ...ctx, wanted: distinct.size, kept: probes.length });
     }
     const counts = new Map<string, number | null>();
-    await Promise.all(probes.map(async t => {
+    const countsP = Promise.all(probes.map(async t => {
         const k = keyOf(t);
         try {
             const rows: Array<{ name: string }> = await db.select({ name: adopters.name }).from(duplicateTokens)
@@ -137,6 +138,7 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
             counts.set(k, null);
         }
     }));
+    const [details] = await Promise.all([detailsP, countsP]);
 
     return matches.map((m, i): IdentityCandidate => {
         const d = details[i];

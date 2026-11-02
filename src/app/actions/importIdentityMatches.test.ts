@@ -32,6 +32,7 @@ import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
 import { judgeCandidates } from '@/lib/identityCandidates';
 import { ownerCountry } from '@/lib/api/profiles';
+import { clearActorCountryCache } from '@/lib/actorCountry';
 import { logger } from '@/lib/logger';
 import { matchImportRow, type ImportRowIdentity } from './importIdentityMatches';
 
@@ -53,6 +54,7 @@ beforeEach(async () => {
     vi.clearAllMocks();
     state.user = 'rescuer@example.com';
     state.getDbCalls = 0;
+    clearActorCountryCache();
     const m = migratedDb();
     state.db = m.db;
     sqlite = m.sqlite as unknown as typeof sqlite;
@@ -110,6 +112,33 @@ describe('matchImportRow', () => {
         const [, err] = vi.mocked(logger.error).mock.calls[0] as unknown as [string, Error];
         expect(`${err.message} ${JSON.stringify(err)} ${String((err as { cause?: unknown }).cause ?? '')}`).not.toMatch(/65851333/);
         expect(err.message).toContain('Failed query');
+    });
+    it("the actor's country is looked up once for many rows", async () => {
+        await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+        await matchImportRow(row({ name: 'Juan Gómez', phones: ['11 7777-8888'] }));
+        expect(ownerCountry).toHaveBeenCalledTimes(1);
+    });
+    it('concurrent first rows share one country lookup', async () => {
+        await Promise.all([1, 2, 3].map(() => matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }))));
+        expect(ownerCountry).toHaveBeenCalledTimes(1);
+    });
+    it('a failed country lookup is not cached', async () => {
+        vi.mocked(ownerCountry).mockRejectedValueOnce(new Error('boom'));
+        await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+        await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+        expect(ownerCountry).toHaveBeenCalledTimes(2);
+    });
+    it('the cached country expires after 10 minutes', async () => {
+        const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+        try {
+            await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+            now.mockReturnValue(1_000_000 + 9 * 60_000);
+            await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+            expect(ownerCountry).toHaveBeenCalledTimes(1);
+            now.mockReturnValue(1_000_000 + 10 * 60_000 + 1);
+            await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+            expect(ownerCountry).toHaveBeenCalledTimes(2);
+        } finally { now.mockRestore(); }
     });
     it('a failed country lookup logs no bound values', async () => {
         vi.mocked(ownerCountry).mockRejectedValueOnce(leaky());
