@@ -180,6 +180,8 @@ export interface FindAdoptersOptions {
      * run the admin duplicate scan afterwards instead (2026-10-18).
      */
     skipLikeFallback?: boolean;
+    /** Duplicate mode: keep name-only candidates even when the input carried an identifier none of them share (identity verdict, rule 4). */
+    keepNameOnly?: boolean;
     /** Max results returned. Default: SEARCH_RESULT_LIMIT. */
     limit?: number;
     /**

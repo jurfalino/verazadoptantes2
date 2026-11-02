@@ -804,7 +804,7 @@ async function runDuplicateMode(
         // person from name alone, and the user can still find the
         // candidate via the search surface, just not via duplicate
         // detection.
-        if (hasStrongInputSignal) {
+        if (hasStrongInputSignal && !options.keepNameOnly) {
             const hitStrong = types.some(t => STRONG_SIGNAL_TYPES.has(t));
             const onlyNameSignals = types.every(t => NAME_SIGNAL_TYPES.has(t));
             if (!hitStrong && onlyNameSignals) continue;
