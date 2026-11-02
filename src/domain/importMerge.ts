@@ -17,6 +17,7 @@
  * Never destructive: it only adds. Rating is intentionally NOT handled here —
  * avgRating derives from the activities, so adding the activity updates it.
  */
+import { namesCompatible } from './apiExactMatch';
 
 export type MergeContact = { type: string; value: string; streetAndNumber?: string; locality?: string };
 export interface MergeActivity { recordType?: string | null; date?: string | null; details?: string | null }
@@ -94,8 +95,13 @@ export function planRecordMerge(input: PlanRecordMergeInput): RecordMergePlan {
 }
 
 /** Default action for a sheet row from its identity-judged matches (ranked: same before possible).
- *  Same person → update; any "possible" → the reviewer decides; nothing → new profile. */
-export function defaultImportAction(matches: Array<{ verdict: 'same' | 'possible' }>): 'upsert' | 'review' | 'create' {
+ *  Same person → update; any "possible" → the reviewer decides; nothing → new profile.
+ *  Two or more "same" whose names don't agree with each other are two different people
+ *  sharing a contact → the reviewer decides (names agreeing = likely duplicate profiles). */
+export function defaultImportAction(matches: Array<{ verdict: 'same' | 'possible'; adopterName: string }>): 'upsert' | 'review' | 'create' {
     if (matches.length === 0) return 'create';
-    return matches[0].verdict === 'same' ? 'upsert' : 'review';
+    if (matches[0].verdict !== 'same') return 'review';
+    const first = matches[0];
+    const disagree = matches.slice(1).some(m => m.verdict === 'same' && !namesCompatible(first.adopterName, m.adopterName));
+    return disagree ? 'review' : 'upsert';
 }

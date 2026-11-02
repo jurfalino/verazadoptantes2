@@ -68,9 +68,17 @@ describe('planRecordMerge — name', () => {
 });
 
 describe('defaultImportAction', () => {
-    const same = { verdict: 'same' as const }, possible = { verdict: 'possible' as const };
+    const same = { verdict: 'same' as const, adopterName: 'Ana Gómez' };
+    const possible = { verdict: 'possible' as const, adopterName: 'Otra Persona' };
     it('no match → create', () => expect(defaultImportAction([])).toBe('create'));
     it('same → upsert', () => expect(defaultImportAction([same])).toBe('upsert'));
     it('same first, possible after → upsert', () => expect(defaultImportAction([same, possible])).toBe('upsert'));
     it('only possible → review', () => expect(defaultImportAction([possible])).toBe('review'));
+    it('two same whose names disagree → review', () =>
+        expect(defaultImportAction([same, { verdict: 'same', adopterName: 'Juan Gómez' }])).toBe('review'));
+    it('two same whose names agree (duplicate profiles of one person) → upsert', () =>
+        expect(defaultImportAction([
+            { verdict: 'same', adopterName: 'María José Pérez' },
+            { verdict: 'same', adopterName: 'María Pérez' },
+        ])).toBe('upsert'));
 });

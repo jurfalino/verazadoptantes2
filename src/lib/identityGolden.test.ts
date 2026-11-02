@@ -157,7 +157,7 @@ interface Expected {
     apiExact: unknown; searchMain: string[]; searchLowHas: string[];
 }
 
-const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true; expected: Expected | { sheet: Expected['sheet'] } }> = [
+const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true; extraSeed?: Array<[string, string, ContactEntry[]]>; expected: Expected | { sheet: Expected['sheet'] } }> = [
     { n: 1, label: 'María Pérez + MJ phone', person: { name: 'María Pérez', phone: '11 6585-1333' }, expected: {
         sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
@@ -183,13 +183,19 @@ const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true;
         expected: { sheet: { action: 'create', matches: [] } } },
     { n: 9, label: 'Luis Paz + email held by four other names', person: { name: 'Luis Paz', email: 'luis@x.com' }, sheetOnly: true,
         expected: { sheet: { action: 'create', matches: [] } } },
+    { n: 10, label: 'Gómez + phone shared by Ana Gómez and Juan Gómez', person: { name: 'Gómez', phone: '11 5000-1000' }, sheetOnly: true,
+        extraSeed: [['ag', 'Ana Gómez', [e('phone', '+54 9 11 5000 1000')]], ['jg2', 'Juan Gómez', [e('phone', '+54 9 11 5000 1000')]]],
+        expected: { sheet: { action: 'review', matches: ['ag', 'jg2'] } } },
 ];
 
 describe('golden table: every surface on the same examples', () => {
     for (const c of CASES) {
         it(`${c.n}. ${c.label}`, async () => {
+            for (const [id, name, entries] of c.extraSeed ?? []) await seed(id, name, entries);
             const got = await surfaces(c.person);
-            expect(got.sheet).toEqual(c.expected.sheet);
+            if (c.extraSeed) expect(got.sheet.matches).toHaveLength(c.expected.sheet.matches.length);
+            expect(c.extraSeed ? { ...got.sheet, matches: [...got.sheet.matches].sort() } : got.sheet)
+                .toEqual(c.extraSeed ? { ...c.expected.sheet, matches: [...c.expected.sheet.matches].sort() } : c.expected.sheet);
             if (c.sheetOnly) return;
             const x = c.expected as Expected;
             expect(got.form).toEqual(x.form);
