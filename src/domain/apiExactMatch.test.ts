@@ -121,20 +121,27 @@ describe('decideExactOutcome on the identity verdict (verdicts given)', () => {
             .toEqual({ result: 'found', profileId: 'mj', nameMatchedAs: 'document', otherProfileIds: [] });
     });
 
-    it('a DNI on two differently-named profiles: both same → ambiguous, both eligible', () => {
+    it('a DNI on two differently-named profiles, no name fits: two different people → ambiguous, nobody takes it (new profile)', () => {
         const o = decide('Majo Pérez', [cand('a', 'Ana Gómez', [dni('30123456', 2)]), cand('b', 'Juan Ruiz', [dni('30123456', 2)])]);
+        expect(o).toEqual({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'], compatible: [] });
+    });
+
+    it('a DNI on two profiles whose names agree (likely duplicates), no name fits: both eligible → best match', () => {
+        const o = decide('Majo Pérez', [cand('a', 'Ana Gómez', [dni('30123456', 1)]), cand('b', 'Ana María Gómez', [dni('30123456', 1)])]);
         expect(o).toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'] });
         expect(o.result === 'ambiguous' && o.compatible).toEqual([{ profileId: 'a', as: 'document' }, { profileId: 'b', as: 'document' }]);
     });
 
-    it('a compatible name still wins over a DNI-only holder (best match)', () => {
-        const o = decide('María Pérez', [
+    it('a DNI on two profiles, the name fits one: found on it (the DNI-only holder is another match)', () => {
+        expect(decide('María Pérez', [
             cand('dniOnly', 'Juan Ruiz', [dni('30123456', 2)]),
             cand('named', 'María Pérez', [dni('30123456', 2)]),
-        ]);
-        expect(o.result).toBe('ambiguous');
-        if (o.result !== 'ambiguous') return;
-        expect(pickBestMatch(o.compatible, new Map([['dniOnly', ['documentId']], ['named', ['documentId']]]), new Map())).toBe('named');
+        ])).toEqual({ result: 'found', profileId: 'named', nameMatchedAs: 'profile', otherProfileIds: ['dniOnly'] });
+    });
+
+    it('several «same» whose names fit: today\'s multiple_profiles + best match', () => {
+        const o = decide('María Pérez', [cand('a', 'María Pérez', [dni('30123456', 1)]), cand('b', 'María José Pérez', [dni('30123456', 1)])]);
+        expect(o).toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles', compatible: [{ profileId: 'a', as: 'profile' }, { profileId: 'b', as: 'profile' }] });
     });
 
     it('a placeholder DNI links nobody: not found', () => {

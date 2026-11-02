@@ -110,20 +110,35 @@ export function matchNameAgainstProfile(inputName: string, c: CandidateNames): N
 }
 
 /**
+ * Which «same» candidates may take the activity (spec decision 8): those whose name fits,
+ * if any; else the DNI-only ones (`document`) — but several of those only when their
+ * names agree with each other (likely duplicate profiles of one person). Two different
+ * people holding one DNI → none (a new profile; the factory pairs it for review).
+ */
+function sameCompatible(inputName: string, same: CandidateNames[]): Array<{ profileId: string; as: NameMatchedAs }> {
+    const named = same
+        .map(c => ({ profileId: c.profileId, as: matchNameAgainstProfile(inputName, c) }))
+        .filter((c): c is { profileId: string; as: NameMatchedAs } => c.as !== null);
+    if (named.length > 0) return named;
+    const agree = same.every((a, i) => same.slice(i + 1).every(b => namesCompatible(a.name, b.name)));
+    return agree ? same.map(c => ({ profileId: c.profileId, as: 'document' as const })) : [];
+}
+
+/**
  * The decision table (plan §Exact mode). `candidates` are the distinct live
  * profiles the identifier hit.
  *
  * `verdicts` (the identity verdict per profile id, src/domain/identityVerdict.ts):
- * the profiles that may take the activity are those judged `same` — a shared
+ * the profiles that may take the activity are among those judged `same` — a shared
  * DNI whatever the name (`as: 'document'` when no name fits), or a shared
- * contact with a compatible name; junk identifiers never count. Without
+ * contact with a compatible name; junk identifiers never count (see
+ * sameCompatible for several «same»). Without
  * `verdicts`, a profile may take it when its name fits (the original rule).
  */
 export function decideExactOutcome(inputName: string, candidates: CandidateNames[], verdicts?: Map<string, 'same' | 'possible' | 'no'>): ExactOutcome {
     if (candidates.length === 0) return { result: 'not_found' };
-    const compatible = candidates
-        .filter(c => !verdicts || verdicts.get(c.profileId) === 'same')
-        .map(c => ({ profileId: c.profileId, as: matchNameAgainstProfile(inputName, c) ?? (verdicts ? 'document' as const : null) }))
+    const compatible = verdicts ? sameCompatible(inputName, candidates.filter(c => verdicts.get(c.profileId) === 'same')) : candidates
+        .map(c => ({ profileId: c.profileId, as: matchNameAgainstProfile(inputName, c) }))
         .filter((c): c is { profileId: string; as: NameMatchedAs } => c.as !== null);
     const allIds = candidates.map(c => c.profileId);
     if (compatible.length === 1) {
