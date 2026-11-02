@@ -11,7 +11,7 @@ import type { ProfileIdentityView } from "@/domain/profileIdentity";
 import { MinorTag } from "@/components/MinorTag";
 import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from "@/components/ui/AnchoredMenu";
 import { GitMerge, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
-import { hasStrongMatch } from "@/lib/matchChips";
+import { isSamePerson } from "@/lib/matchChips";
 import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
@@ -465,6 +465,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             phones: pick('phone'),
             emails: pick('email'),
             socials: pick('social'),
+            documentIds: pick('id'),
         };
     }, [data.name, contactEntries]);
     // The rescuer's side of «Qué coincide y qué no» on every duplicate surface of this form.
@@ -776,7 +777,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     // dismissed from the strong strip. Weak-only result sets save silently
                     // (the peek bar was enough). Per Phase D of the dedup-UX redesign.
                     const strongUndismissed = confident.filter(m =>
-                        hasStrongMatch(m.matchValues) && !dismissedStrongIds.has(m.adopter.id),
+                        isSamePerson(m) && !dismissedStrongIds.has(m.adopter.id),
                     );
                     if (strongUndismissed.length > 0) {
                         setSaveDuplicateModal({ matches: strongUndismissed });

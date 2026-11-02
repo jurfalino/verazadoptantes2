@@ -20,7 +20,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { DiscoveryMatch } from '@/app/actions';
-import { hasStrongMatch } from '@/lib/matchChips';
+import { isSamePerson } from '@/lib/matchChips';
 import { highlightMatches } from '@/lib/matchHighlight';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
@@ -58,7 +58,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
 
     const count = results?.length ?? 0;
     const firstResult = results?.[0];
-    const firstIsStrong = firstResult ? hasStrongMatch(firstResult.matchValues) : false;
+    const firstIsStrong = firstResult ? isSamePerson(firstResult) : false;
 
     useEffect(() => {
         const prev = prevCountRef.current;
@@ -175,7 +175,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
 
                         <ul className="divide-y divide-stone-100">
                             {(results ?? []).map(result => {
-                                const strong = hasStrongMatch(result.matchValues);
+                                const strong = isSamePerson(result);
                                 return (
                                     <li key={result.adopter.id} className={`px-5 py-3 ${strong ? 'bg-amber-50/40' : ''}`}>
                                         {/* The shared match card (audit B6): header → household line → «Qué coincide» → actions. */}

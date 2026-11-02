@@ -12,7 +12,7 @@
  */
 
 import type { DiscoveryMatch } from '@/app/actions';
-import { hasStrongMatch } from '@/lib/matchChips';
+import { isSamePerson } from '@/lib/matchChips';
 import { useLanguage } from '@/context/LanguageContext';
 import { AlertTriangle } from 'lucide-react';
 import { AdopterName } from '@/components/AdopterName';
@@ -35,7 +35,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
     const { t } = useLanguage();
 
     const strong = (results ?? [])
-        .filter(r => hasStrongMatch(r.matchValues))
+        .filter(r => isSamePerson(r))
         .filter(r => !dismissedIds.has(r.adopter.id))
         .slice(0, 2);
 

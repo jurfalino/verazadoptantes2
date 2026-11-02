@@ -8,15 +8,16 @@
  */
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { findAdopters } from '@/app/actions/findAdopters';
+import { findPersonMatches } from '@/lib/identityMatch';
 import { hydrateDuplicateMatches } from '@/app/actions/hydrateDuplicateMatches';
-import type { DiscoveryMatch, DuplicateMatch } from '@/app/actions/types';
+import type { DiscoveryMatch } from '@/app/actions/types';
 
 export interface FormDuplicateInput {
     name: string;
     phones?: string[];
     emails?: string[];
     socials?: string[];
+    documentIds?: string[];
     excludeAdopterId?: string;
 }
 
@@ -39,28 +40,29 @@ export async function searchFormDuplicates(
         const db = await getDb();
         if (!db) return { results: [], failed: true };
 
-        // 1. Detection via the proven duplicate engine (fuzzy + phone-suffix).
-        const dup = await findAdopters(
+        // 1. The shared identity verdict (same first, then possible). Name length
+        //    only decides whether to search at all: a nameless input with a contact is «possible».
+        //    `minRelevance` stays accepted for callers; the verdict decides, not a percentage.
+        const user = await viewer();
+        const matches = await findPersonMatches(
+            db,
             {
                 name: name.length < 2 ? '' : name,
-                phones: input.phones ?? [],
-                emails: input.emails ?? [],
-                socials: input.socials ?? [],
-                excludeAdopterId: input.excludeAdopterId,
+                phones: input.phones, emails: input.emails, socials: input.socials, documentIds: input.documentIds,
             },
-            { mode: 'duplicate', minRelevance: opts.minRelevance ?? 15, limit: opts.limit ?? 5 },
+            { actor: user, excludeAdopterId: input.excludeAdopterId, limit: opts.limit ?? 5, ctx: { op: 'searchFormDuplicates' } },
         );
-        const matches = dup.results as DuplicateMatch[];
         if (matches.length === 0) return { results: [] };
 
         // 2. Re-hydrate matched IDs into card-ready enriched rows via the shared
         //    bridge. The form user is authed; no geo re-check (the form already
         //    scopes to what the rescuer is entering).
-        const user = await viewer();
-        const results = await hydrateDuplicateMatches(db, matches, {
+        const hydrated = await hydrateDuplicateMatches(db, matches, {
             viewer: user,
             isUnauthenticated: false,
         });
+        const verdictOf = new Map(matches.map(m => [m.adopterId, m.verdict]));
+        const results = hydrated.map(r => ({ ...r, verdict: verdictOf.get(r.adopterId) }));
         return { results };
     } catch (e) {
         logger.warn('findFormDuplicates failed — form falls back to no-suggestion', {

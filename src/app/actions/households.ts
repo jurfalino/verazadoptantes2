@@ -759,7 +759,7 @@ export async function getHouseholdMatchCandidates(
             .map(e => e.value.trim().slice(0, 500))
             .filter(Boolean);
         const { results, failed } = await searchFormDuplicates(
-            { name, phones: pick('phone'), emails: pick('email'), socials: pick('social'), ...(anchorId ? { excludeAdopterId: anchorId } : {}) },
+            { name, phones: pick('phone'), emails: pick('email'), socials: pick('social'), documentIds: pick('id'), ...(anchorId ? { excludeAdopterId: anchorId } : {}) },
             { minRelevance: 15, allowContactOnly: true },
             async () => actor,
         );

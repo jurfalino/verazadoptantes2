@@ -102,6 +102,11 @@ function chipFor(v: MatchValue, tr: (key: string, fallback: string) => string): 
     }
 }
 
+/** Same person? The identity verdict decides when present; otherwise the strong-chip rule. */
+export function isSamePerson(r: { verdict?: 'same' | 'possible'; matchValues?: MatchValue[] }): boolean {
+    return r.verdict ? r.verdict === 'same' : hasStrongMatch(r.matchValues);
+}
+
 /** Convenience: does this match list contain at least one strong chip? */
 export function hasStrongMatch(matchValues: MatchValue[] | undefined): boolean {
     if (!matchValues) return false;

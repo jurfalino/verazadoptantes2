@@ -89,7 +89,7 @@ async function surfaces(p: Person) {
 
     // Form family.
     const form = (await searchFormDuplicates(
-        { name: p.name, phones, emails, socials: p.social ? [p.social] : [] }, { minRelevance: 15 }, async () => OWNER,
+        { name: p.name, phones, emails, socials: p.social ? [p.social] : [], documentIds: ids }, { minRelevance: 15 }, async () => OWNER,
     )).results.map(r => r.adopter.id);
 
     // Social-post import: contact blob; pre-selected iff the top match is in the «high» band.
@@ -159,13 +159,13 @@ interface Expected {
 
 const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true; extraSeed?: Array<[string, string, ContactEntry[]]>; expected: Expected | { sheet: Expected['sheet'] } }> = [
     { n: 1, label: 'María Pérez + MJ phone', person: { name: 'María Pérez', phone: '11 6585-1333' }, expected: {
-        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
+        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
     { n: 2, label: 'Juan Carlos Ruiz + MJ phone', person: { name: 'Juan Carlos Ruiz', phone: '11 6585-1333' }, expected: {
         sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [MJ], searchLowHas: [] } },
     { n: 3, label: 'María José Pérez + another phone', person: { name: 'María José Pérez', phone: '11 2222-3333' }, expected: {
-        sheet: { action: 'review', matches: [MJ, MP] }, form: [], postListed: [], postPreselected: false, warning: [],
+        sheet: { action: 'review', matches: [MJ, MP] }, form: [MJ, MP], postListed: [], postPreselected: false, warning: [],
         pendientes: [], apiExact: { not_found: true }, searchMain: [], searchLowHas: [MJ] } },
     { n: 4, label: 'María José Pérez, no contact', person: { name: 'María José Pérez' }, expected: {
         sheet: { action: 'review', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: false, warning: null,
@@ -174,10 +174,10 @@ const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true;
         sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 6, label: 'Maria Peres + MJ email', person: { name: 'Maria Peres', email: 'maria.perez@gmail.com' }, expected: {
-        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
+        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
     { n: 7, label: 'Majo Pérez + MJ DNI', person: { name: 'Majo Pérez', dni: '30.123.456' }, expected: {
-        sheet: { action: 'upsert', matches: [MJ] }, form: [], postListed: [MJ], postPreselected: false, warning: [MJ],
+        sheet: { action: 'upsert', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 8, label: 'Ana Ruiz + DNI shared with Juan Gómez', person: { name: 'Ana Ruiz', dni: '00000000' }, sheetOnly: true,
         expected: { sheet: { action: 'create', matches: [] } } },
@@ -208,4 +208,15 @@ describe('golden table: every surface on the same examples', () => {
             expect(got.search.low).toEqual(expect.arrayContaining(x.searchLowHas));
         });
     }
+});
+
+describe('form family carries the verdict', () => {
+    it('7. Majo Pérez + MJ DNI is the same person; 2. Juan Carlos Ruiz + MJ phone is possible', async () => {
+        const run = (name: string, o: { phones?: string[]; documentIds?: string[] }) =>
+            searchFormDuplicates({ name, ...o }, { minRelevance: 15 }, async () => OWNER);
+        const dni = (await run('Majo Pérez', { documentIds: ['30.123.456'] })).results;
+        expect(dni.map(r => [r.adopter.id, r.verdict])).toEqual([[MJ, 'same']]);
+        const ph = (await run('Juan Carlos Ruiz', { phones: ['11 6585-1333'] })).results;
+        expect(ph.map(r => [r.adopter.id, r.verdict])).toEqual([[MJ, 'possible']]);
+    });
 });
