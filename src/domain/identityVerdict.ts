@@ -30,6 +30,8 @@ export interface IdentityCandidate {
     aliases: string[];
     shared: SharedIdentifier[];
     relevancePercent: number;
+    /** Engine match types. 'like_fallback_contact' with nothing in `shared` = found only by the
+     *  contact-text LIKE fallback: evidence, judged possible (never same). */
     matchTypes: string[];
     matchValues: Array<{ type: string; value: string }>;
     /** How retrieval found it. Plays no part in the verdict. */
@@ -93,6 +95,11 @@ export function judgeIdentity(incoming: PersonFacts, candidate: IdentityCandidat
     }
     if (own && nameWords(incoming.name).length >= 2 && nameWords(candidate.name).length >= 2) {
         return make('possible', 'same_full_name', own);
+    }
+    // Found only by the contact-text LIKE fallback (an untokenized contact): evidence, but
+    // unverified — possible, never same (controller ruling, final review item 7).
+    if (candidate.shared.length === 0 && candidate.matchTypes.includes('like_fallback_contact')) {
+        return make('possible', 'shared_contact_name_differs', own);
     }
     return make('no', null);
 }

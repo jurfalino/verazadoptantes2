@@ -15,6 +15,7 @@ import { adopters, duplicateTokens } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { findAdopters } from '@/app/actions/findAdopters';
+import { isPlaceholderPhone } from '@/domain/phoneNumber';
 import type { DuplicateMatch } from '@/app/actions/types';
 import type { getDb } from '@/lib/db';
 import {
@@ -60,6 +61,15 @@ export function redactedErrorFields(e: unknown): { error: string; errorName: str
     return { error: r.message, errorName: r.name, ...(cause.length ? { cause } : {}) };
 }
 
+/** "0000 0000", "+54 9 11 1111 1111": not a number. Kept out of the engine, whose contact-text
+ *  LIKE would otherwise find these digits in any profile's contacts (a «00000000» DNI) and —
+ *  a contact LIKE hit being evidence — list that profile as possible. */
+function isPlaceholderPhoneInput(p: string): boolean {
+    const d = p.replace(/\D/g, '');
+    const last8 = d.slice(-8);
+    return isPlaceholderPhone(d) || isPlaceholderPhone(last8) || /^(\d)\1+$/.test(last8);
+}
+
 interface SharedToken { kind: IdentifierKind; value: string; tokenType: string; tokenValue: string }
 
 /** What a candidate shares with the input, one entry per identifier. Name and like_fallback_* matches never count. */
@@ -91,7 +101,7 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
     const limit = opts.limit ?? DEFAULT_LIMIT;
     const res = await findAdopters(
         {
-            name: facts.name, aliases: facts.aliases, phones: facts.phones, emails: facts.emails,
+            name: facts.name, aliases: facts.aliases, phones: facts.phones.filter(p => !isPlaceholderPhoneInput(p)), emails: facts.emails,
             socials: facts.socials, ids: facts.documentIds, country: facts.country ?? undefined,
         },
         { mode: 'duplicate', keepNameOnly: true, minRelevance: 5, limit: ENGINE_POOL },

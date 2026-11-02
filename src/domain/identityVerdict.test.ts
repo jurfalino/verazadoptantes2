@@ -50,8 +50,26 @@ describe('judgeIdentity', () => {
         expect(judgeIdentity(facts({ name: 'Ana' }), cand({ name: 'Ana Gómez' }))).toMatchObject({ verdict: 'no', reason: null });
         expect(judgeIdentity(facts({ name: 'Juan Gómez' }), cand())).toMatchObject({ verdict: 'no', reason: null });
     });
-    it('a like fallback with nothing shared and incompatible names is no', () => {
+    // Controller ruling (final review item 7): a contact found only by the contact-text LIKE
+    // fallback is evidence — possible, never same. Supersedes the Task 1 'no' expectation.
+    it('a contact LIKE hit with nothing shared and incompatible names is possible', () => {
         expect(judgeIdentity(facts({ name: 'Juan Gómez' }), cand({ matchTypes: ['like_fallback_contact'], shared: [] })))
+            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+    });
+    it('a contact LIKE hit with a one-word name is possible, shared_contact_name_differs', () => {
+        expect(judgeIdentity(facts({ name: 'María' }), cand({ matchTypes: ['like_fallback_contact'], shared: [] })))
+            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+    });
+    it('a contact LIKE hit with a compatible full name is possible via rule 4, never same', () => {
+        expect(judgeIdentity(facts({ name: 'María Pérez' }), cand({ matchTypes: ['like_fallback_contact'], shared: [] })))
+            .toMatchObject({ verdict: 'possible', reason: 'same_full_name' });
+    });
+    it('a name-only LIKE hit is not evidence', () => {
+        expect(judgeIdentity(facts({ name: 'Juan Gómez' }), cand({ matchTypes: ['like_fallback_name'], shared: [] })))
+            .toMatchObject({ verdict: 'no' });
+    });
+    it('a contact LIKE hit next to a junk identifier stays no (the junk guard wins)', () => {
+        expect(judgeIdentity(facts({ name: 'Luis Paz' }), cand({ matchTypes: ['email', 'like_fallback_contact'], shared: [sh('email', 4)] })))
             .toMatchObject({ verdict: 'no' });
     });
     it('placeholder DNIs are recognised and do not count', () => {

@@ -185,6 +185,20 @@ describe('failure logs never carry the bound values', () => {
 });
 
 describe('judgeCandidates', () => {
+    it('a placeholder phone is no evidence, even when its digits sit in another profile\'s contacts', async () => {
+        await seed('ph', 'Pedro Sosa', [e('id', '00000000'), e('phone', '+54 9 11 3131 3131')]);
+        const out = await judgeCandidates(db(), facts({ name: 'Ana Ruiz', phones: ['0000 0000'] }), {});
+        expect(out.find(j => j.candidate.adopterId === 'ph')).toBeUndefined();
+    });
+    it('an untokenized contact found by the LIKE fallback is possible, never same', async () => {
+        // A legacy profile: free-text contact_info holds the phone; no contact entries, no tokens.
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries, contact_info)
+            VALUES ('legacy', 'Rosa Luna', '5', 'rescuer@example.com', 'AR', 1000, 1000, '[]', 'Tel 1124242525')`).run();
+        const out = await judgeCandidates(db(), facts({ name: 'Rosa Luna', phones: ['11 2424-2525'] }), {});
+        expect(out.find(j => j.candidate.adopterId === 'legacy')).toMatchObject({ verdict: 'possible' });
+        const other = await judgeCandidates(db(), facts({ name: 'Juan Paz', phones: ['11 2424-2525'] }), {});
+        expect(other.find(j => j.candidate.adopterId === 'legacy')).toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+    });
     async function seedNamesakes() {
         for (let i = 1; i <= 5; i++) await seed(`lf${i}`, 'Lucía Fernández', [e('phone', `+54 9 11 5000 000${i}`)]);
     }
