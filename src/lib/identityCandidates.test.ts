@@ -123,6 +123,9 @@ describe('findIdentityCandidates', () => {
         expect(mj.degraded).toBe(true);
         expect(mj.name).toBe('María José Pérez');
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('D1 fallback hit'), expect.objectContaining({ adopterId: 'mj', op: 'test' }));
+        const judged = await judgeCandidates(failing, facts({ name: 'María Pérez', phones: ['11 6585-1333'] }), { op: 'test' });
+        expect(judged.find(j => j.candidate.adopterId === 'mj')).toMatchObject({ verdict: 'possible', reason: 'details_unavailable' });
+        expect(judged.find(j => j.candidate.adopterId === 'mj')!.verdict).not.toBe('same');
     });
 
     it('a failed name-count leaves namesHolding null, logged, and the verdict is never same', async () => {
@@ -142,6 +145,9 @@ describe('findIdentityCandidates', () => {
         const list = await findIdentityCandidates(failing, facts({ name: 'María José Pérez', phones: ['11 6585-1333'] }), {});
         expect(byId(list, 'mj')!.shared[0].namesHolding).toBeNull();
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('D1 fallback hit'), expect.anything());
+        const judged = await judgeCandidates(failing, facts({ name: 'María José Pérez', phones: ['11 6585-1333'] }), {});
+        expect(judged.find(j => j.candidate.adopterId === 'mj')).toMatchObject({ verdict: 'possible', reason: 'details_unavailable' });
+        expect(judged.some(j => j.verdict === 'same')).toBe(false);
     });
 });
 

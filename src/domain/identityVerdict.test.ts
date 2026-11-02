@@ -32,9 +32,13 @@ describe('judgeIdentity', () => {
         expect(judgeIdentity(facts({ name: 'Juan Carlos Ruiz' }), cand({ shared: [sh('phone')] })))
             .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
     });
-    it('a social account alone is never enough: possible', () => {
+    it('social account + incompatible name is possible', () => {
         expect(judgeIdentity(facts({ name: 'Majo Pérez' }), cand({ shared: [sh('social')] })))
-            .toMatchObject({ verdict: 'possible' });
+            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+    });
+    it('social account + compatible name is same (decision 3)', () => {
+        expect(judgeIdentity(facts({ name: 'María Pérez' }), cand({ shared: [sh('social')] })))
+            .toMatchObject({ verdict: 'same', reason: 'shared_contact_name_compatible' });
     });
     it('same full name with nothing shared is possible', () => {
         expect(judgeIdentity(facts({ name: 'María José Pérez' }), cand()))
