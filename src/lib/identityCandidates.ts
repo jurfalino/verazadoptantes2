@@ -4,7 +4,10 @@
  * candidates that share no identifier, then reads what each one shares and how many
  * differently-named live profiles hold it, so the pure verdict can decide.
  *
- * D1 budget per call: 1 engine call + <= limit detail reads + <= MAX_COUNT_QUERIES name-count queries.
+ * D1 budget per call: 1 engine call + <= limit detail reads + <= MAX_COUNT_QUERIES name-count
+ * queries, the last two in parallel. The engine is asked for ENGINE_POOL results (its limit
+ * only slices its final list — no extra queries) so profiles sharing an identifier come
+ * before same-name ones; the pool is cut to `limit` before any read here.
  * Never logs names, contacts or token values — ids and counts only.
  */
 import { and, eq, isNull } from 'drizzle-orm';
@@ -22,6 +25,10 @@ import {
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 const DEFAULT_LIMIT = 5;
+/** How many engine results are ranked before cutting to the caller's limit. */
+const ENGINE_POOL = 20;
+/** Token types that mean "shares an identifier" (never a name or a LIKE fallback). */
+const IDENTIFIER_TOKEN_TYPES = new Set(['phone', 'phone_suffix', 'email', 'social', 'social_handle', 'id_number']);
 const MAX_COUNT_QUERIES = 12;
 const NAMES_SAMPLE = 10;
 
@@ -62,9 +69,13 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
             name: facts.name, aliases: facts.aliases, phones: facts.phones, emails: facts.emails,
             socials: facts.socials, ids: facts.documentIds, country: facts.country ?? undefined,
         },
-        { mode: 'duplicate', keepNameOnly: true, minRelevance: 5, limit },
+        { mode: 'duplicate', keepNameOnly: true, minRelevance: 5, limit: ENGINE_POOL },
     );
-    const matches = (res.results as DuplicateMatch[]).slice(0, limit);
+    // Profiles that share an identifier first (engine order kept within each tier), so
+    // many same-name profiles can't push the one holding the DNI or email out of the list.
+    const pool = res.results as DuplicateMatch[];
+    const sharesIdentifier = (m: DuplicateMatch) => m.matchValues.some(v => IDENTIFIER_TOKEN_TYPES.has(v.type));
+    const matches = [...pool.filter(sharesIdentifier), ...pool.filter(m => !sharesIdentifier(m))].slice(0, limit);
 
     // One detail read per candidate (name + aliases).
     const details = await Promise.all(matches.map(m =>

@@ -146,6 +146,23 @@ describe('findIdentityCandidates', () => {
 });
 
 describe('judgeCandidates', () => {
+    async function seedNamesakes() {
+        for (let i = 1; i <= 5; i++) await seed(`lf${i}`, 'Lucía Fernández', [e('phone', `+54 9 11 5000 000${i}`)]);
+    }
+    it('five namesakes do not crowd out the profile holding the DNI (judged same)', async () => {
+        await seedNamesakes();
+        await seed('dni', 'Paola Ríos', [e('id', '27999888')]);
+        const out = await judgeCandidates(db(), facts({ name: 'Lucía Fernández', documentIds: ['27.999.888'] }), {});
+        expect(out.find(j => j.candidate.adopterId === 'dni')).toMatchObject({ verdict: 'same', reason: 'shared_document' });
+        expect(out.length).toBeLessThanOrEqual(5);
+    });
+    it('five namesakes do not crowd out the profile holding the email (judged possible)', async () => {
+        await seedNamesakes();
+        await seed('em', 'Paola Ríos', [e('email', 'lucia.f@example.com')]);
+        const out = await judgeCandidates(db(), facts({ name: 'Lucía Fernández', emails: ['lucia.f@example.com'] }), {});
+        expect(out.find(j => j.candidate.adopterId === 'em')).toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+        expect(out.length).toBeLessThanOrEqual(5);
+    });
     it('a different name on a shared phone is possible, not same', async () => {
         const out = await judgeCandidates(db(), facts({ name: 'Juan Carlos Ruiz', phones: ['11 6585-1333'] }), {});
         expect(out).toHaveLength(1);
