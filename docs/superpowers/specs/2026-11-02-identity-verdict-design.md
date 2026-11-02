@@ -35,6 +35,8 @@ One pure verdict — **same person / possible / no** — computed the same way f
 3. **A social account counts like a phone or an email:** same account + compatible name = same person; same account + incompatible name = possible. Never on its own.
 4. **API exact accepts a social account as an identifier** (name + social is a valid exact call).
 5. **A visible name typed in a social field is not an account** (already true: `normalizeSocialHandle` returns null for values with spaces). It is saved as a «Conocido/a como» (alias) so search finds it. Prod: 2,569 of 7,083 social values (36%). **Converting the existing ones in production needs Jon's OK at run time.**
+6. **The same full name always goes to «Revisar»** (rule 4), however common the name (Jon, 2026-11-02).
+7. **The surface table (§4) is confirmed** (Jon, 2026-11-02).
 
 ## Design
 
@@ -55,15 +57,15 @@ Returns `{ verdict: 'same' | 'possible' | 'no', reasons[] }`, first rule that fi
 | 1 | a non-junk DNI | any | same |
 | 2 | phone, email or social account | compatible | same |
 | 3 | phone, email or social account | incompatible | possible |
-| 4 | nothing | full name compatible, 2+ words, and the full name is rare | possible |
+| 4 | nothing | full name compatible, 2+ words (however common) | possible |
 | 5 | — | — | no |
 
 - *Compatible* = `namesCompatible` from `src/domain/apiExactMatch.ts` (every word of the shorter name in the longer, any order, one typo per word; aliases count). The sheet's within-file `namesAgree` moves to the same rule.
 - *Junk identifier* (any type): placeholder value, or found on more than 3 differently-named profiles → it does not count as shared.
-- *Rare full name* (rule 4): its `name_full` token is held by at most **N** profiles. **N is open (Jon)**; proposal: 5.
+- Rule 4 applies however many profiles share the name (Jon, 2026-11-02: «always go to Revisar»). Accepted cost: very common names always land in «Revisar».
 - An incoming person with no contacts at all can only reach rule 4 or 5.
 
-### 4. What each surface does (proposal — Jon to confirm)
+### 4. What each surface does (Jon confirmed, 2026-11-02)
 
 | Surface | same | possible |
 |---|---|---|
@@ -100,7 +102,7 @@ The 7 examples of the comparison page (plus junk-DNI and visible-name-social cas
 - **«Actualizar» on «same» is a default, not a silent write.** The sheet's Duplicados step still shows it before anything is saved. Only API exact acts without a human, as today.
 - **DNI sources:** `id` contact entries plus labeled ids in notes («DNI 30123456»), exactly what the index holds today (`extractIds`, ≥5 chars, ≥4 digits). The form (`id` entries), the sheet (DNI column → `ids`), the post import (`id` entries) and the API (`documentId`) all feed `documentIds`. One normalizer (`normalizeIdValue`).
 - **Junk counts are computed by retrieval, not the verdict:** for each shared identifier, the number of distinct names among live (non-deleted) profiles holding it. The verdict stays pure and takes those counts as input. The sheet's within-file grouping keeps its own guard.
-- **Rare full name counts exact `name_full` tokens** (primary names and aliases) over all live profiles, not scoped to the viewer. A typo variant of the full name does not reach rule 4 — accepted.
+- **Rule 4 compares full names with `namesCompatible`** against candidates found by the `name_full` token or name words (primary names and aliases), not scoped to the viewer. Retrieval stays bounded, so with a very common name only the best-ranked candidates are listed.
 - **Visibility unchanged:** retrieval is not viewer-scoped (as duplicate mode today); everything shown goes through the existing hydration and PII masking, and «Pendientes» pairs are created across owners as today (collaborative vetting).
 - **Several «same» candidates:** the one sharing the most identifiers wins (then the profile's own name over an alias, then the most recent activity — today's `pickBestMatch`); the others stay listed («También coincide con» / `otherMatches`).
 - **API exact contract:** «same via DNI with an incompatible name» answers `found` with `nameMatchedAs: 'document'` (new value); `matchedOn` gains `social`. Both announced in the API changelog before release.
@@ -108,8 +110,7 @@ The 7 examples of the comparison page (plus junk-DNI and visible-name-social cas
 
 ## Open (Jon)
 
-- Confirm the surface table (§4).
-- N for a rare full name (proposal 5).
+Nothing. Surface table confirmed; rule 4 has no rarity threshold.
 
 ## Left to the builder
 
