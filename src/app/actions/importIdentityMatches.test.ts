@@ -118,9 +118,15 @@ describe('matchImportRow', () => {
         await matchImportRow(row({ name: 'Juan Gómez', phones: ['11 7777-8888'] }));
         expect(ownerCountry).toHaveBeenCalledTimes(1);
     });
-    it('concurrent first rows share one country lookup', async () => {
+    it('concurrent first rows each look up (an in-flight lookup is never shared across requests)', async () => {
         await Promise.all([1, 2, 3].map(() => matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }))));
-        expect(ownerCountry).toHaveBeenCalledTimes(1);
+        expect(ownerCountry).toHaveBeenCalledTimes(3);
+    });
+    it('once a lookup has resolved, later rows within the TTL make no new lookup', async () => {
+        await Promise.all([1, 2].map(() => matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }))));
+        vi.mocked(ownerCountry).mockClear();
+        await matchImportRow(row({ name: 'Juan Gómez', phones: ['11 7777-8888'] }));
+        expect(ownerCountry).not.toHaveBeenCalled();
     });
     it('a failed country lookup is not cached', async () => {
         vi.mocked(ownerCountry).mockRejectedValueOnce(new Error('boom'));
