@@ -5,11 +5,11 @@
  *   found     → the activity goes on that profile (the identity verdict is
  *               the confirmation of who the person is). Contact details it did
  *               not have yet are added, with a trail (./contacts.ts) — only
- *               when the name fits the profile's own (never on a DNI-only fit).
+ *               when the name fits the profile's own.
  *   not_found → a new profile + the activity, through the same path the
  *               adoption form uses (tokenized, duplicate candidates written).
- *   ambiguous → several profiles may take it (names fit, or DNI holders whose
- *               names agree): on the BEST match (pickBestMatch, Jon 2026-10-13).
+ *   ambiguous → several profiles may take it (their names fit): on the BEST
+ *               match (pickBestMatch, Jon 2026-10-13).
  *               None may (the identifier is someone else's, or junk): a NEW
  *               profile, with its duplicate candidates for an admin.
  */

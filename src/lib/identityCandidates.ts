@@ -16,7 +16,6 @@ import { logger } from '@/lib/logger';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { findAdopters } from '@/app/actions/findAdopters';
 import { readPhones } from '@/domain/phoneNumber';
-import { normalizeIdValue } from '@/lib/tokenizer';
 import type { DuplicateMatch } from '@/app/actions/types';
 import type { getDb } from '@/lib/db';
 import {
@@ -144,13 +143,8 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
     return matches.map((m, i): IdentityCandidate => {
         const d = details[i];
         const entries = d ? deserializeContactEntries(d.contactEntries) : [];
-        // A DNI counts as the profile's DNI only in an `id` entry (the index also reads labeled ids
-        // from free-text notes, ruling R10). Unknown when the details failed (degraded decides) or the profile has no entries (a legacy blob
-        // can't tell a note from a DNI field): left out.
-        const idEntryValues = new Set(entries.filter(e => e.type === 'id').map(e => normalizeIdValue(e.value)));
         const shared: SharedIdentifier[] = sharedPer[i].map(t => ({
             kind: t.kind, value: t.value, namesHolding: counts.get(keyOf(t)) ?? null,
-            ...(t.kind === 'document' && d && entries.length > 0 ? { inIdEntry: idEntryValues.has(t.value) } : {}),
         }));
         return {
             adopterId: m.adopterId,

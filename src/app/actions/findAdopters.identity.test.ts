@@ -72,9 +72,17 @@ describe('discovery on the identity verdict', () => {
         expect(ids(res.lowRelevanceResults ?? [])).not.toContain('mj');
     });
 
-    it('a typed DNI does the same', async () => {
+    it('a typed DNI + a compatible name does the same', async () => {
+        const res = await findAdoptersAsViewer({ raw: 'Maria Peres 30.123.456' }, { enrich: true }, OWNER);
+        expect(ids(res.results)[0]).toBe('mj');
+        expect(ids(res.lowRelevanceResults ?? [])).not.toContain('mj');
+    });
+
+    it('a typed DNI + another name is not promoted, like a phone (Jon 2026-11-02)', async () => {
         const res = await findAdoptersAsViewer({ raw: 'Majo Pérez 30.123.456' }, { enrich: true }, OWNER);
-        expect(ids(res.results)).toEqual(['mj']);
+        expect(findPersonMatches).toHaveBeenCalledTimes(1);
+        expect(ids(res.results)).not.toContain('mj');
+        expect(ids(res.lowRelevanceResults ?? [])).toContain('mj');
     });
 
     it('a guest makes no verdict call', async () => {

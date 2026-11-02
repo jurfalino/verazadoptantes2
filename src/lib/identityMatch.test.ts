@@ -69,9 +69,15 @@ describe('findPersonMatches', () => {
     });
 
     it('compatible name + DNI -> same', async () => {
-        const r = await findPersonMatches(db(), { name: 'Majo Pérez', documentIds: ['30.123.456'] }, { actor: OWNER, country: 'AR' });
-        expect(brief(r)).toEqual([{ adopterId: 'mj', verdict: 'same' }]);
+        const r = await findPersonMatches(db(), { name: 'María Pérez', documentIds: ['30.123.456'] }, { actor: OWNER, country: 'AR' });
+        // 'mp' («María Pérez», no DNI) is the same full name: possible.
+        expect(brief(r)).toEqual([{ adopterId: 'mj', verdict: 'same' }, { adopterId: 'mp', verdict: 'possible' }]);
         expect(r[0]).toMatchObject({ adopterName: 'María José Pérez', source: expect.any(String) });
+    });
+
+    it('another name + DNI -> possible, like a phone (Jon 2026-11-02)', async () => {
+        const r = await findPersonMatches(db(), { name: 'Majo Pérez', documentIds: ['30.123.456'] }, { actor: OWNER, country: 'AR' });
+        expect(brief(r)).toEqual([{ adopterId: 'mj', verdict: 'possible' }]);
     });
 
     it('excludeAdopterId removes the profile', async () => {

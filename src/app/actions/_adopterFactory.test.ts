@@ -67,10 +67,16 @@ describe('findAndPersistDuplicateCandidates on the verdict', () => {
         expect(pairWith('mj')).toMatchObject({ status: 'pending', confidence: 'medium' });
     });
 
-    it('a DNI match is the same person: high, score is the relevance', async () => {
+    it('a DNI + a compatible name is the same person: high, score is the relevance', async () => {
+        const res = await findAndPersistDuplicateCandidates(db(), 'new', { name: 'María José Pérez', documentId: '30.123.456' });
+        expect(res[0].adopterId).toBe('mj');
+        expect(pairWith('mj')).toMatchObject({ status: 'pending', confidence: 'high', score: res[0].relevancePercent });
+    });
+
+    it('a DNI + another name is possible, like a phone: medium (Jon 2026-11-02)', async () => {
         const res = await findAndPersistDuplicateCandidates(db(), 'new', { name: 'Majo Pérez', documentId: '30.123.456' });
         expect(res.map(r => r.adopterId)).toEqual(['mj']);
-        expect(pairWith('mj')).toMatchObject({ status: 'pending', confidence: 'high', score: res[0].relevancePercent });
+        expect(pairWith('mj')).toMatchObject({ status: 'pending', confidence: 'medium' });
     });
 
     it('never writes low, and leaves an already dismissed pair untouched', async () => {

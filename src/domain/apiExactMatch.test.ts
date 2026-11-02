@@ -116,9 +116,15 @@ describe('decideExactOutcome on the identity verdict (verdicts given)', () => {
         decideExactOutcome(name, cs.map(c => c.names), new Map(cs.map(c => [c.names.profileId, judgeIdentity(facts(name), c.identity).verdict])));
     const dni = (value: string, namesHolding = 1): SharedIdentifier => ({ kind: 'document', value, namesHolding });
 
-    it('a DNI alone is enough: an incompatible name is found, matched as document', () => {
+    // Jon 2026-11-02: a DNI counts exactly like a phone — another name is never «same».
+    it('a DNI + an incompatible name is name_mismatch, like a phone (new profile + pair)', () => {
         expect(decide('Majo Pérez', [cand('mj', 'María José Pérez', [dni('30123456')])]))
-            .toEqual({ result: 'found', profileId: 'mj', nameMatchedAs: 'document', otherProfileIds: [] });
+            .toEqual({ result: 'ambiguous', reason: 'name_mismatch', profileIds: ['mj'], compatible: [] });
+    });
+
+    it('a DNI + a compatible name is found, matched as profile', () => {
+        expect(decide('María Pérez', [cand('mj', 'María José Pérez', [dni('30123456')])]))
+            .toEqual({ result: 'found', profileId: 'mj', nameMatchedAs: 'profile', otherProfileIds: [] });
     });
 
     it('a DNI on two differently-named profiles, no name fits: two different people → ambiguous, nobody takes it (new profile)', () => {
@@ -126,24 +132,16 @@ describe('decideExactOutcome on the identity verdict (verdicts given)', () => {
         expect(o).toEqual({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'], compatible: [] });
     });
 
-    it('a DNI on two profiles whose names agree (likely duplicates), no name fits: both eligible → best match', () => {
+    it('a DNI on two profiles whose names agree with each other but not the sent name: nobody takes it', () => {
         const o = decide('Majo Pérez', [cand('a', 'Ana Gómez', [dni('30123456', 1)]), cand('b', 'Ana María Gómez', [dni('30123456', 1)])]);
-        expect(o).toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'] });
-        expect(o.result === 'ambiguous' && o.compatible).toEqual([{ profileId: 'a', as: 'document' }, { profileId: 'b', as: 'document' }]);
+        expect(o).toEqual({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'], compatible: [] });
     });
 
-    it('agreement between DNI holders counts aliases', () => {
-        const withAlias = cand('a', 'Majo Pérez', [dni('30123456', 2)]);
-        withAlias.names.aliases = ['María José Pérez'];
-        const o = decide('Ana Ruiz', [withAlias, cand('b', 'María José Pérez', [dni('30123456', 2)])]);
-        expect(o.result === 'ambiguous' && o.compatible.map(c => c.profileId)).toEqual(['a', 'b']);
-    });
-
-    it('a DNI on two profiles, the name fits one: found on it (the DNI-only holder is another match)', () => {
+    it('a DNI on two profiles, the name fits one: found on it (the other holder is another match)', () => {
         expect(decide('María Pérez', [
-            cand('dniOnly', 'Juan Ruiz', [dni('30123456', 2)]),
+            cand('other', 'Juan Ruiz', [dni('30123456', 2)]),
             cand('named', 'María Pérez', [dni('30123456', 2)]),
-        ])).toEqual({ result: 'found', profileId: 'named', nameMatchedAs: 'profile', otherProfileIds: ['dniOnly'] });
+        ])).toEqual({ result: 'found', profileId: 'named', nameMatchedAs: 'profile', otherProfileIds: ['other'] });
     });
 
     it('several «same» whose names fit: today\'s multiple_profiles + best match', () => {

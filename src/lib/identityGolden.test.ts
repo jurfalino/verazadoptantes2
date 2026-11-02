@@ -177,9 +177,10 @@ const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true;
     { n: 6, label: 'Maria Peres + MJ email', person: { name: 'Maria Peres', email: 'maria.perez@gmail.com' }, expected: {
         sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
         pendientes: [MJ, MP], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
+    // Jon 2026-11-02: a DNI counts exactly like a phone — another name is possible, as in 2 and 5.
     { n: 7, label: 'Majo Pérez + MJ DNI', person: { name: 'Majo Pérez', dni: '30.123.456' }, expected: {
-        sheet: { action: 'upsert', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: true, warning: [MJ],
-        pendientes: [MJ], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
+        sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
+        pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 8, label: 'Ana Ruiz + DNI shared with Juan Gómez', person: { name: 'Ana Ruiz', dni: '00000000' }, sheetOnly: true,
         expected: { sheet: { action: 'create', matches: [] }, apiExact: { ambiguous: 'name_mismatch' } } },
     { n: 9, label: 'Luis Paz + email held by four other names', person: { name: 'Luis Paz', email: 'luis@x.com' }, sheetOnly: true,
@@ -215,20 +216,21 @@ describe('golden table: every surface on the same examples', () => {
 });
 
 describe('form family carries the verdict', () => {
-    it('7. Majo Pérez + MJ DNI is the same person; 2. Juan Carlos Ruiz + MJ phone is possible', async () => {
+    it('7. Majo Pérez + MJ DNI and 2. Juan Carlos Ruiz + MJ phone are both possible', async () => {
         const run = (name: string, o: { phones?: string[]; documentIds?: string[] }) =>
             searchFormDuplicates({ name, ...o }, { minRelevance: 15 }, async () => OWNER);
         const dni = (await run('Majo Pérez', { documentIds: ['30.123.456'] })).results;
-        expect(dni.map(r => [r.adopter.id, r.verdict])).toEqual([[MJ, 'same']]);
+        expect(dni.map(r => [r.adopter.id, r.verdict])).toEqual([[MJ, 'possible']]);
         const ph = (await run('Juan Carlos Ruiz', { phones: ['11 6585-1333'] })).results;
         expect(ph.map(r => [r.adopter.id, r.verdict])).toEqual([[MJ, 'possible']]);
     });
 
     it('lists same before possible even when the possible has the stronger name', async () => {
-        await seed('majo', 'Majo Pérez', []);
+        // «María Pérez» is MP's exact name (possible: same full name, nothing shared) and fits MJ,
+        // who also holds the DNI (same).
         const r = (await searchFormDuplicates(
-            { name: 'Majo Pérez', documentIds: ['30.123.456'] }, { minRelevance: 15 }, async () => OWNER,
+            { name: 'María Pérez', documentIds: ['30.123.456'] }, { minRelevance: 15 }, async () => OWNER,
         )).results;
-        expect(r.map(x => [x.adopter.id, x.verdict])).toEqual([[MJ, 'same'], ['majo', 'possible']]);
+        expect(r.map(x => [x.adopter.id, x.verdict])).toEqual([[MJ, 'same'], [MP, 'possible']]);
     });
 });

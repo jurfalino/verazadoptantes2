@@ -67,23 +67,23 @@ describe('buildOpenApi', () => {
         expect(new Set(ids).size).toBe(ids.length);
     });
 
-    it('exact answers may say matchedOn social and nameMatchedAs document (additive values, documented)', () => {
+    it('exact answers may say matchedOn social (additive value, documented); nameMatchedAs has no document value', () => {
         const exact = search.responses['200'].content['application/json'].schema.oneOf[0];
         const profile = exact.properties.profile;
         expect(profile.properties.matchedOn.items.enum).toEqual(['email', 'phone', 'documentId', 'social']);
         expect(profile.properties.matchedOn.description).toMatch(/social/);
-        expect(profile.properties.nameMatchedAs.enum).toEqual(['profile', 'alias', 'household_member', 'document']);
-        expect(profile.properties.nameMatchedAs.description).toMatch(/document:/);
+        expect(profile.properties.nameMatchedAs.enum).toEqual(['profile', 'alias', 'household_member']);
+        expect(profile.properties.nameMatchedAs.description).not.toMatch(/document/);
         const candidate = exact.properties.candidates.items.properties.nameMatchedAs;
-        expect(candidate.enum ?? candidate.anyOf?.[0]?.enum).toEqual(['profile', 'alias', 'household_member', 'document']);
+        expect(candidate.enum ?? candidate.anyOf?.[0]?.enum).toEqual(['profile', 'alias', 'household_member']);
         expect(search.requestBody.content['application/json'].schema.properties.person.properties.socials.description).toMatch(/exact mode an account counts as an identifier/);
         const guide: string = doc.info.description;
         expect(guide).toContain('`social`');
-        expect(guide).toContain('nameMatchedAs: "document"');
+        expect(guide).not.toContain('"document"');
         expect(guide).not.toMatch(/\| `socials` .*solo la usa fuzzy/);
         expect(exactResponseSchema.safeParse({
             requestId: 'r', mode: 'exact', match: 'found',
-            profile: { profileId: 'p', url: 'u', rating: null, ratingLevel: 0, ratingLabel: 'not_rated', matchedOn: ['social', 'documentId'], nameMatchedAs: 'document', flags: [], alerts: [], records: {}, lastRecordAt: null, createdAt: null, registeredByYourRescue: false },
+            profile: { profileId: 'p', url: 'u', rating: null, ratingLevel: 0, ratingLabel: 'not_rated', matchedOn: ['social', 'documentId'], nameMatchedAs: 'profile', flags: [], alerts: [], records: {}, lastRecordAt: null, createdAt: null, registeredByYourRescue: false },
             risk: { worstRating: { rating: null, ratingLevel: 0, ratingLabel: 'not_rated' }, flags: [], alerts: [], profilesMatched: 1 },
             saved: { action: 'added_to_profile' },
         }).success).toBe(true);

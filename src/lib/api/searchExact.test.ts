@@ -1,6 +1,6 @@
 /**
  * POST /api/v1/search exact mode on the identity verdict (spec 2026-11-02 decisions 1–4):
- * a social account is an identifier, a DNI alone is the same person, junk links nobody.
+ * a social account is an identifier, a DNI counts exactly like a phone (Jon 2026-11-02), junk links nobody.
  * Real SQL (every drizzle/*.sql replayed), the real token index, the real save path.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -93,13 +93,22 @@ describe('API exact on the identity verdict', () => {
         expect(r.saved).toMatchObject({ action: 'added_to_profile', profileId: 'mj' });
     });
 
-    it('«Majo Pérez» + MJ\'s DNI: found, matched as document, and no contact is added', async () => {
+    it('«Majo Pérez» + MJ\'s DNI: like a phone + another name — ambiguous / name_mismatch, a new profile, MJ untouched', async () => {
         const r = await exact({ fullName: 'Majo Pérez', documentId: { value: '30.123.456' }, email: 'majo.nueva@example.com' });
-        expect(r.match).toBe('found');
-        expect(r.profile).toMatchObject({ profileId: 'mj', matchedOn: ['documentId'], nameMatchedAs: 'document' });
-        expect(r.saved).toMatchObject({ action: 'added_to_profile', profileId: 'mj', contactsAdded: [] });
+        expect(r.match).toBe('ambiguous');
+        expect(r.reason).toBe('name_mismatch');
+        expect(r.candidates).toEqual([expect.objectContaining({ profileId: 'mj', nameMatchedAs: null })]);
+        expect(r.saved.action).toBe('created_profile_for_review');
+        expect(r.saved.profileId).not.toBe('mj');
         const entries = deserializeContactEntries(sqlite.prepare(`SELECT contact_entries AS c FROM adopters WHERE id = 'mj'`).get()!.c as string);
         expect(entries.some(x => x.value === 'majo.nueva@example.com')).toBe(false);
+    });
+
+    it('«María Pérez» + MJ\'s DNI: a compatible name is found on her profile', async () => {
+        const r = await exact({ fullName: 'María Pérez', documentId: { value: '30.123.456' } });
+        expect(r.match).toBe('found');
+        expect(r.profile).toMatchObject({ profileId: 'mj', matchedOn: ['documentId'], nameMatchedAs: 'profile' });
+        expect(r.saved).toMatchObject({ action: 'added_to_profile', profileId: 'mj' });
     });
 
     it('a placeholder DNI (00000000) links nobody: a new profile, never found', async () => {
@@ -123,26 +132,26 @@ describe('API exact on the identity verdict', () => {
         expect(entries.find(x => x.type === 'social')).toMatchObject({ value: 'Sofia Medina', platform: 'facebook' });
     });
 
-    it('dry run on the DNI-only path: says found / document / added_to_profile and writes nothing', async () => {
+    it('dry run on a DNI + another name: says ambiguous / created_profile_for_review and writes nothing', async () => {
         const r = await exact({ fullName: 'Majo Pérez', documentId: { value: '30.123.456' } }, { dryRun: true });
-        expect(r.match).toBe('found');
-        expect(r.profile).toMatchObject({ profileId: 'mj', nameMatchedAs: 'document' });
-        expect(r.saved).toEqual({ action: 'added_to_profile', dryRun: true });
+        expect(r.match).toBe('ambiguous');
+        expect(r.reason).toBe('name_mismatch');
+        expect(r.saved).toEqual({ action: 'created_profile_for_review', dryRun: true });
         expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adoptions`).get()!.n).toBe(0);
     });
 });
 
-// Ruling R10: a DNI written only in a free-text note (the index reads labeled ids there too)
-// is not the profile's DNI field: it identifies like an email or a phone, never «any name».
+// A DNI written only in a free-text note (the index reads labeled ids there too) answers like
+// any DNI — and any DNI like a phone: the same person only with a compatible name.
 describe('a DNI held only in a note', () => {
     beforeEach(async () => {
         await seed('lg', 'Laura Gómez', [e('phone', '+54 9 11 2020 3030'), e('other', 'Garante DNI 22333444')]);
     });
 
-    it('«Marta Ruiz» + 22.333.444: not found as document, a new profile for review', async () => {
+    it('«Marta Ruiz» + 22.333.444: ambiguous / name_mismatch, a new profile for review', async () => {
         const r = await exact({ fullName: 'Marta Ruiz', documentId: { value: '22.333.444' } });
-        expect(r.match).not.toBe('found');
-        expect(r.profile?.nameMatchedAs).not.toBe('document');
+        expect(r.match).toBe('ambiguous');
+        expect(r.reason).toBe('name_mismatch');
         expect(r.saved.action).toBe('created_profile_for_review');
         expect(r.saved.profileId).not.toBe('lg');
     });

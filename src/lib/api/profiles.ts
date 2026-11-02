@@ -91,7 +91,7 @@ const KIND_OF: Record<MatchedOn, IdentifierKind> = { email: 'email', phone: 'pho
  * distinct (folded) names among the live hit profiles holding that same token. A phone's
  * last-8 suffix is not counted again when the full number hit the profile too.
  */
-function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<string, string>, idEntries: Map<string, Set<string>>, namesHoldingOf: Map<number, number>): Map<string, SharedIdentifier[]> {
+function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<string, string>, namesHoldingOf: Map<number, number>): Map<string, SharedIdentifier[]> {
     const out = new Map<string, SharedIdentifier[]>();
     lookups.forEach((l, i) => {
         const holders = [...new Set(hitsPerLookup[i])].filter(id => names.has(id));
@@ -100,12 +100,7 @@ function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<strin
         for (const id of holders) {
             if (l.type === 'phone_suffix' && lookups.some((m, j) => m.type === 'phone' && hitsPerLookup[j].includes(id))) continue;
             const list = out.get(id) ?? [];
-            // A DNI is the profile's own only in its `id` entry; one read from a free-text note
-            // identifies like an email or a phone (ruling R10).
-            list.push({
-                kind: KIND_OF[l.field], value: l.value, namesHolding,
-                ...(l.field === 'documentId' && idEntries.has(id) ? { inIdEntry: idEntries.get(id)!.has(l.value) } : {}),
-            });
+            list.push({ kind: KIND_OF[l.field], value: l.value, namesHolding });
             out.set(id, list);
         }
     });
@@ -197,18 +192,14 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
     const live = profiles.filter((p): p is NonNullable<typeof p> => !!p && !p.isDemo);
     // A profile's OWN names only: a housemate is a profile of its own, found by its own
     // tokens (households as profiles — no `household_member` match any more).
-    const entriesOf = new Map(live.map(p => [p.id, deserializeContactEntries(p.contactEntries)]));
     const candidates: CandidateNames[] = live.map(p => ({
         profileId: p.id,
         name: p.name,
-        aliases: entriesOf.get(p.id)!.filter(e => e.type === 'alias').map(e => e.value),
+        aliases: deserializeContactEntries(p.contactEntries).filter(e => e.type === 'alias').map(e => e.value),
     }));
-    // A profile with no entries (legacy blob only) is left out: unknown, not «no DNI field».
-    const idEntries = new Map(live.filter(p => entriesOf.get(p.id)!.length > 0)
-        .map(p => [p.id, new Set(entriesOf.get(p.id)!.filter(e => e.type === 'id').map(e => normalizeDocumentId(e.value)))]));
     // Tokens pointing at deleted / demo profiles are dropped; that's expected.
     for (const id of matchedOn.keys()) if (!candidates.some(c => c.profileId === id)) matchedOn.delete(id);
-    const shared = sharedOf(lookups, hitsPerLookup, new Map(candidates.map(c => [c.profileId, c.name])), idEntries, namesHoldingOf);
+    const shared = sharedOf(lookups, hitsPerLookup, new Map(candidates.map(c => [c.profileId, c.name])), namesHoldingOf);
     logger.info('api: identifier lookup', {
         requestId, lookups: lookups.length, hits: candidates.length,
         ...(socialJunk ? { socialJunk } : {}), ...(socialCut ? { socialHoldersNotRead: socialCut } : {}),

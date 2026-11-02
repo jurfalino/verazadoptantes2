@@ -115,8 +115,8 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
         logger.error('api: identifier lookup failed', e, { requestId: ctx.requestId, keyId: ctx.key.id });
         throw new ApiError(503, 'temporarily_unavailable', 'could not search for the person right now; nothing was saved — retry in a moment', { 'Retry-After': '5' });
     }
-    // The identity verdict decides (spec 2026-11-02): a DNI alone is the same person, a social
-    // account counts like a phone or an email, junk identifiers link nobody.
+    // The identity verdict decides (spec 2026-11-02): a shared DNI, phone, email or social account
+    // is the same person only with a compatible name; junk identifiers link nobody.
     const outcome = exactOutcomeOf(req.person, hits);
     const ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
     ctx.log.outcome = outcome.result;

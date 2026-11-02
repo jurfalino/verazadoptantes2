@@ -14,32 +14,25 @@ const cand = (o: Partial<IdentityCandidate> = {}): IdentityCandidate => ({
 const sh = (kind: SharedIdentifier['kind'], namesHolding: number | null = 1, value = 'x'): SharedIdentifier => ({ kind, value, namesHolding });
 
 describe('judgeIdentity', () => {
-    it('shared DNI is same even when the name differs a lot', () => {
-        const r = judgeIdentity(facts({ name: 'Majo Pérez' }), cand({ shared: [sh('document', 1, '30123456')] }));
-        expect(r).toMatchObject({ verdict: 'same', reason: 'shared_document' });
-        const r2 = judgeIdentity(facts({ name: 'Juan Ruiz' }), cand({ shared: [sh('document', 1, '30123456')] }));
-        expect(r2).toMatchObject({ verdict: 'same', reason: 'shared_document' });
-    });
-    // Ruling R10: rule 1 («DNI → same, any name») only for a DNI the candidate holds in an `id` entry.
-    // One written only in a free-text note counts like a phone or an email.
-    it('a DNI held only in a note + incompatible name is possible, not same', () => {
-        const noteDni: SharedIdentifier = { kind: 'document', value: '22333444', namesHolding: 1, inIdEntry: false };
-        expect(judgeIdentity(facts({ name: 'Marta Ruiz' }), cand({ name: 'Laura Gómez', shared: [noteDni] })))
-            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
-    });
-    it('a DNI held only in a note + compatible name is same, as a contact', () => {
-        const noteDni: SharedIdentifier = { kind: 'document', value: '22333444', namesHolding: 1, inIdEntry: false };
-        expect(judgeIdentity(facts({ name: 'Laura Gómez' }), cand({ name: 'Laura Gómez', shared: [noteDni] })))
+    // Jon 2026-11-02: a DNI counts exactly like a phone — no «DNI alone = same person».
+    it('shared DNI + compatible name is same', () => {
+        expect(judgeIdentity(facts({ name: 'María Pérez' }), cand({ shared: [sh('document', 1, '30123456')] })))
             .toMatchObject({ verdict: 'same', reason: 'shared_contact_name_compatible', nameMatchedAs: 'profile' });
     });
-    it('a DNI in an id entry (inIdEntry: true) keeps rule 1', () => {
-        const idDni: SharedIdentifier = { kind: 'document', value: '30123456', namesHolding: 1, inIdEntry: true };
-        expect(judgeIdentity(facts({ name: 'Juan Ruiz' }), cand({ shared: [idDni] })))
-            .toMatchObject({ verdict: 'same', reason: 'shared_document' });
+    it('shared DNI + incompatible name is possible, like a phone', () => {
+        expect(judgeIdentity(facts({ name: 'Majo Pérez' }), cand({ shared: [sh('document', 1, '30123456')] })))
+            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+        expect(judgeIdentity(facts({ name: 'Juan Ruiz' }), cand({ shared: [sh('document', 1, '30123456')] })))
+            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
     });
-    it('a note-only DNI with a placeholder value still counts for nothing', () => {
-        const junk: SharedIdentifier = { kind: 'document', value: '00000000', namesHolding: 1, inIdEntry: false };
-        expect(judgeIdentity(facts({ name: 'Laura Gómez' }), cand({ name: 'Laura Gómez', shared: [junk] })))
+    it('a nameless incoming person sharing a DNI is possible, like a phone', () => {
+        expect(judgeIdentity(facts({ name: '' }), cand({ shared: [sh('document', 1, '30123456')] })))
+            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+        expect(judgeIdentity(facts({ name: '' }), cand({ shared: [sh('phone')] })))
+            .toMatchObject({ verdict: 'possible', reason: 'shared_contact_name_differs' });
+    });
+    it('a placeholder DNI counts for nothing, even with a compatible name', () => {
+        expect(judgeIdentity(facts({ name: 'Laura Gómez' }), cand({ name: 'Laura Gómez', shared: [sh('document', 1, '00000000')] })))
             .toMatchObject({ verdict: 'possible', reason: 'same_full_name' });
     });
     it('phone + compatible name is same', () => {

@@ -9,7 +9,7 @@ Eight surfaces ask the same question — *is the person arriving someone we alre
 - The «Nuevo adoptante» form (also «Agregar conviviente» and the phone interview) never sends the DNI (`FormDuplicateInput` has no ids).
 - The social-post import turns contacts into text and back (`contactEntriesToBlob` → `parseBlobToContactEntries`); a bare handle comes back as `other` and never matches.
 - The search box and API fuzzy treat an email, DNI or handle in the query as a word; one non-matching name word demotes an identical-email profile to «Otras posibles coincidencias».
-- API exact refuses socials as an identifier, and creates a new profile on a matching DNI with an incompatible name.
+- API exact refuses socials as an identifier. (It also creates a new profile on a matching DNI with an incompatible name — listed here as a gap at first; since the 2026-11-02 correction, decision 1, that is the intended answer.)
 
 ## Goal
 
@@ -30,7 +30,7 @@ One pure verdict — **same person / possible / no** — computed the same way f
 
 ## Decisions (Jon, 2026-11-02)
 
-1. **A matching DNI is enough on its own** — same person even when the name is incompatible, on every surface (API exact included).
+1. **A DNI counts exactly like a phone** (Jon 2026-11-02 correction: «do the same for documents that we do for phones»): a shared DNI + compatible name → same; + another name → possible, on every surface (API exact included). There is no «DNI alone = same person» rule, and it no longer matters whether the profile holds the DNI in its DNI field or only in a note. *(Supersedes the first version of this decision, «a matching DNI is enough on its own».)*
 2. **DNIs get the same junk protections as phones:** placeholder values never count (one digit repeated, `12345678`-style sequences, mirroring `isPlaceholderPhone`), and a DNI found on more than 3 differently-named profiles links nobody (mirrors `MAX_NAMES_PER_KEY` in `importGrouping`). Prod today: 76 DNIs, 0 junk, 2 shared by 2 profiles.
 3. **A social account counts like a phone or an email:** same account + compatible name = same person; same account + incompatible name = possible. Never on its own.
 4. **API exact accepts a social account as an identifier** (name + social is a valid exact call).
@@ -38,7 +38,7 @@ One pure verdict — **same person / possible / no** — computed the same way f
 6. **The same full name always goes to «Revisar»** (rule 4), however common the name (Jon, 2026-11-02).
 7. **The surface table (§4) is confirmed** (Jon, 2026-11-02).
 8. **Two «same» matches whose names don't agree with each other → «Revisar»** (sheet import default; e.g. «Gómez» + a phone shared by Ana Gómez and Juan Gómez). Two «same» that agree with each other (likely duplicate profiles of one person) keep «Actualizar» on the best (Jon, 2026-11-02).
-9. **A row with no name** sharing a phone, email or social is «possible» → «Revisar»; a shared DNI still makes it «same» (Jon, 2026-11-02).
+9. **A row with no name** sharing a phone, email, social or DNI is «possible» → «Revisar» (Jon, 2026-11-02; the DNI exception was removed by the decision 1 correction).
 10. **On an identical-copy row, picking a «También coincide con» profile** shows «Posible duplicado de» and is left out of bulk «apply to all exact» (Jon, 2026-11-02).
 
 ## Design
@@ -57,9 +57,9 @@ Returns `{ verdict: 'same' | 'possible' | 'no', reasons[] }`, first rule that fi
 
 | # | Shares | Name | Verdict |
 |---|---|---|---|
-| 1 | a non-junk DNI | any | same |
-| 2 | phone, email or social account | compatible | same |
-| 3 | phone, email or social account | incompatible | possible |
+| 1 | ~~a non-junk DNI~~ | ~~any~~ | removed — a DNI is in rows 2–3 (decision 1 correction) |
+| 2 | DNI, phone, email or social account | compatible | same |
+| 3 | DNI, phone, email or social account | incompatible | possible |
 | 4 | nothing | full name compatible, 2+ words (however common) | possible |
 | 5 | — | — | no |
 
@@ -80,7 +80,7 @@ Returns `{ verdict: 'same' | 'possible' | 'no', reasons[] }`, first rule that fi
 | API exact | activity added to that profile | new profile + pair in «Pendientes de revisar» |
 | Search box · API fuzzy | top of the main list | today's ranking |
 
-«Ya existe en otro perfil» receives one contact only, so its candidates are judged on that contact alone (rules 1–3 with the name treated as compatible).
+«Ya existe en otro perfil» receives one contact only, so its candidates are judged on that contact alone (rules 2–3 with the name treated as compatible).
 
 ### 5. Search box and API fuzzy
 
@@ -95,7 +95,7 @@ The 7 examples of the comparison page (plus junk-DNI and visible-name-social cas
 1. `PersonFacts` + `judgeIdentity` + junk guards + the golden test (surfaces still old: the test documents today's gaps as expected failures).
 2. Sheet import (fixes the partner-phone «Actualizar» and the silent same-name row).
 3. «Nuevo adoptante» form family + social-post import (DNI, handles).
-4. «Pendientes de revisar» creation and API exact (socials accepted, DNI alone).
+4. «Pendientes de revisar» creation and API exact (socials accepted; a DNI like a phone).
 5. Search box + API fuzzy ranking.
 6. ~~Visible-name socials → «Conocido/a como»~~ — dropped (Jon, 2026-11-02, decision 5).
 
@@ -108,7 +108,7 @@ The 7 examples of the comparison page (plus junk-DNI and visible-name-social cas
 - **Rule 4 compares full names with `namesCompatible`** against candidates found by the `name_full` token or name words (primary names and aliases), not scoped to the viewer. Retrieval stays bounded, so with a very common name only the best-ranked candidates are listed.
 - **Visibility unchanged:** retrieval is not viewer-scoped (as duplicate mode today); everything shown goes through the existing hydration and PII masking, and «Pendientes» pairs are created across owners as today (collaborative vetting).
 - **Several «same» candidates:** the one sharing the most identifiers wins (then the profile's own name over an alias, then the most recent activity — today's `pickBestMatch`); the others stay listed («También coincide con» / `otherMatches`).
-- **API exact contract:** «same via DNI with an incompatible name» answers `found` with `nameMatchedAs: 'document'` (new value); `matchedOn` gains `social`. Both announced in the API changelog before release.
+- **API exact contract:** `matchedOn` gains `social`, announced in the API changelog before release. A DNI + another name answers `ambiguous` / `name_mismatch` (new profile + «Pendientes» pair), like a phone + another name; `nameMatchedAs` keeps its values (no `document`).
 - **Golden test shape:** a table of expected actions per surface; each rollout step flips its own surface's expectations from today's behavior to the verdict's. No skipped or `fails` tests.
 
 ## Open (Jon)

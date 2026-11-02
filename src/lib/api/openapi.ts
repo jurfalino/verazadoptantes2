@@ -74,7 +74,7 @@ Mandá \`activity\` con su tipo (\`activityType\`: \`adoption_request\`, \`adopt
 La respuesta dice dos cosas por separado:
 
 **\`match\`: qué había en BuenAdoptante antes de tu llamada**
-- \`found\`: una persona conocida; viene en \`profile\` (calificación, marcas, alertas, link a su perfil). \`profile.matchedOn\` dice qué datos coincidieron: \`email\`, \`phone\`, \`documentId\` o \`social\` (una de las cuentas de \`socials\`). Con \`profile.nameMatchedAs: "document"\` el nombre no coincide pero el documento sí: es el del campo DNI del perfil, que solo alcanza para identificarla, y no se le agregan los datos de contacto que mandaste. Un documento escrito solo en una nota del perfil cuenta como un email o un teléfono: identifica solo si el nombre coincide.
+- \`found\`: una persona conocida; viene en \`profile\` (calificación, marcas, alertas, link a su perfil). \`profile.matchedOn\` dice qué datos coincidieron: \`email\`, \`phone\`, \`documentId\` o \`social\` (una de las cuentas de \`socials\`).
 - \`not_found\`: nadie tiene ese email, teléfono, documento o cuenta.
 - \`ambiguous\`: el dato es de más de un perfil, o de alguien con otro nombre (por ejemplo un teléfono familiar); vienen en \`candidates\`.
 
@@ -83,7 +83,7 @@ La respuesta dice dos cosas por separado:
 |---|---|---|
 | \`found\` | \`added_to_profile\` | La actividad se sumó al perfil de esa persona. |
 | \`not_found\` | \`created_profile\` | Se creó su perfil, con esta actividad. |
-| \`ambiguous\` | \`added_to_best_match\` | Varios perfiles encajan con el nombre (o tienen tu documento y sus nombres coinciden entre sí, aunque no con el tuyo): se sumó al que mejor coincide. |
+| \`ambiguous\` | \`added_to_best_match\` | Varios perfiles encajan con el nombre: se sumó al que mejor coincide. |
 | \`ambiguous\` | \`created_profile_for_review\` | El dato es de alguien con otro nombre, o es un dato de relleno o compartido por muchos (un documento 00000000, un email de más de 3 personas distintas), que no identifica a nadie: se creó un perfil nuevo. Si BuenAdoptante encuentra un perfil que puede ser la misma persona, se marca el par para que un admin lo revise como posible duplicado; un dato de relleno solo no empareja a nadie. |
 
 \`saved\` trae además \`activityId\` (para adjuntar el contrato o anularla), los links al perfil y \`contactsAdded\` (los datos de contacto que mandaste y la persona no tenía, que se agregaron a su perfil).
@@ -199,7 +199,6 @@ Esta es la versión 1 (\`/api/v1\`). **Sin aviso** pueden aparecer campos nuevos
 
 **2026-11-02: cómo se decide si es la misma persona** (las respuestas a un mismo pedido pueden cambiar)
 - La búsqueda exacta acepta una cuenta de \`person.socials\` como dato identificador, como un email o un teléfono (\`profile.matchedOn: "social"\`). Las cuentas que ya mandabas junto al email o al teléfono ahora también cuentan, así que una respuesta puede cambiar (por ejemplo, de \`found\` a \`ambiguous\`). Un nombre visible ("Ana Perez") o un valor de relleno ("no", "-") no es una cuenta.
-- Un documento que está en el campo DNI del perfil identifica a la persona aunque mandes otro nombre (\`profile.nameMatchedAs: "document"\`). Uno escrito solo en una nota cuenta como un email o un teléfono.
 - Un dato de relleno o compartido por muchos (un documento 00000000, o un dato que tienen más de 3 personas con nombres distintos) no vincula a nadie.
 - En la búsqueda fuzzy, un perfil al que identifican el email, el teléfono, el documento o la cuenta que mandaste aparece primero.
 `.trim();
