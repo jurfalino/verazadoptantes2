@@ -3,8 +3,8 @@
  * people, called as its screen calls it, on the same nine examples, over real
  * SQL (every drizzle/*.sql replayed) and the real token index / duplicate engine.
  *
- * The sheet, form, social-post import, «Pendientes» and API exact columns are on the verdict;
- * the rest pin today's behavior until their rollout step flips them (spec §Rollout). Assert profile ids and actions only, never percentages.
+ * Every surface is on the verdict: sheet, form, social-post import, «Pendientes», API exact, and
+ * the search box / API fuzzy (a «same» profile the search returned goes to the top of the main list). Assert profile ids and actions only, never percentages.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
@@ -27,7 +27,7 @@ import { contactEntriesToBlob, contactEntriesToIdentity, type ContactEntry } fro
 import { matchImportRow } from '@/app/actions/importIdentityMatches';
 import { findAdopters, findAdoptersAsViewer } from '@/app/actions/findAdopters';
 import { searchFormDuplicates } from './formDuplicates';
-import { fuzzyQueryOf } from './api/search';
+import { fuzzyQueryOf, fuzzyIdentityOf } from './api/search';
 import { checkSearchRules, type SearchRequest } from './api/schemas';
 import { findIdentifierHits, exactOutcomeOf } from './api/profiles';
 import { dupHintSearchInput } from '@/domain/dupHint';
@@ -126,8 +126,8 @@ async function surfaces(p: Person) {
             : { ambiguous: o.reason };
     }
 
-    // Search box / API fuzzy: main list vs low-relevance list.
-    const s = await findAdoptersAsViewer({ raw: fuzzyQueryOf(person) }, { enrich: true }, OWNER);
+    // API fuzzy (the verdict): main list vs low-relevance list, as runFuzzy calls it.
+    const s = await findAdoptersAsViewer({ raw: fuzzyQueryOf(person) }, { enrich: true, identity: fuzzyIdentityOf(person) }, OWNER);
     const search = { main: s.results.map(r => r.adopterId), low: (s.lowRelevanceResults ?? []).map(r => r.adopterId) };
 
     // «Pendientes de revisar» (the verdict), computed LAST: it inserts the incoming person as a live
@@ -144,7 +144,7 @@ async function surfaces(p: Person) {
 }
 
 /**
- * One row per example. The verdict columns are named in the header; search is TODAY.
+ * One row per example. The verdict columns are named in the header.
  * `search.low` lists only the profile the table names (the low list may carry
  * unrelated weak name hits, which are not part of the contract).
  */
@@ -176,10 +176,10 @@ const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true;
         pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 6, label: 'Maria Peres + MJ email', person: { name: 'Maria Peres', email: 'maria.perez@gmail.com' }, expected: {
         sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
-        pendientes: [MJ, MP], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
+        pendientes: [MJ, MP], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
     { n: 7, label: 'Majo Pérez + MJ DNI', person: { name: 'Majo Pérez', dni: '30.123.456' }, expected: {
         sheet: { action: 'upsert', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: true, warning: [MJ],
-        pendientes: [MJ], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
+        pendientes: [MJ], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
     { n: 8, label: 'Ana Ruiz + DNI shared with Juan Gómez', person: { name: 'Ana Ruiz', dni: '00000000' }, sheetOnly: true,
         expected: { sheet: { action: 'create', matches: [] }, apiExact: { ambiguous: 'name_mismatch' } } },
     { n: 9, label: 'Luis Paz + email held by four other names', person: { name: 'Luis Paz', email: 'luis@x.com' }, sheetOnly: true,

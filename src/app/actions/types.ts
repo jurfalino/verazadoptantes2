@@ -3,6 +3,7 @@ import type { ActivityCounts } from '@/domain/activityCounts';
 import type { AdopterFlags } from '@/types/adopter';
 import type { VisibilityBadge } from '@/domain/visibilityBadge';
 import type { CardHousehold } from '@/domain/households';
+import type { PersonInput } from '@/lib/identityMatch';
 
 export type SnippetField = 'name' | 'contact' | 'address' | 'family' | 'adoption' | 'history';
 
@@ -195,6 +196,12 @@ export interface FindAdoptersOptions {
      * already an answer, so asking about it later would be noise.
      */
     trackPending?: boolean;
+    /**
+     * Discovery mode: structured identifiers from a caller that has them (API fuzzy). Without it the
+     * query text is parsed for an email, DNI or @handle. When any identifier exists, a profile the
+     * identity verdict calls «same» that the search already returned goes to the top of the main list.
+     */
+    identity?: PersonInput;
 }
 
 export interface FindAdoptersResponse {

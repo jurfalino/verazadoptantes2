@@ -37,6 +37,9 @@ import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE, DUPLICATE_MATCH_WEIGHTS, FUZZY_NAME_MATCH_TYPE } from '@/lib/scoring';
 import { classifyNameMatch, NAME_MATCH_WEIGHT, NAME_MATCH_TYPE, isNameLikeQuery, qualifiesForMainList } from '@/lib/searchRanking';
 import { phoneQueryPlan, phoneDuplicateTokens } from '@/domain/phoneNumber';
+import { extractQueryIdentifiers } from '@/domain/queryIdentifiers';
+import { redactedErrorFields } from '@/lib/redactedError';
+import type { PersonInput } from '@/lib/identityMatch';
 import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
@@ -829,6 +832,24 @@ async function runDuplicateMode(
  *  FindAdoptersOptions, which the session action forwards from the client). */
 interface DiscoveryOrigin { origin: 'app' | 'api' }
 
+/** The identifiers a discovery search can ask the verdict about: the caller's structured ones, else those typed in the query. */
+function discoveryIdentityOf(given: PersonInput | undefined, query: string): PersonInput | null {
+    const has = (p: PersonInput) => !!(p.phones?.length || p.emails?.length || p.socials?.length || p.documentIds?.length);
+    if (given) return has(given) ? given : null;
+    const q = extractQueryIdentifiers(query);
+    const p: PersonInput = { name: q.rest, emails: q.emails, documentIds: q.documentIds, socials: q.handles };
+    return has(p) ? p : null;
+}
+
+/** «Same» profiles already in either list go to the top of the main list, in the verdict's order; nothing is added. */
+function promoteSame(main: DiscoveryMatch[], low: DiscoveryMatch[], sameIds: string[]): { main: DiscoveryMatch[]; low: DiscoveryMatch[] } {
+    const byId = new Map([...main, ...low].map(r => [r.adopterId, r]));
+    const promoted = [...new Set(sameIds)].flatMap(id => { const r = byId.get(id); return r ? [r] : []; });
+    if (promoted.length === 0) return { main, low };
+    const out = new Set(promoted.map(r => r.adopterId));
+    return { main: [...promoted, ...main.filter(r => !out.has(r.adopterId))], low: low.filter(r => !out.has(r.adopterId)) };
+}
+
 async function runDiscoveryMode(
     input: FindAdoptersInput,
     options: FindAdoptersOptions,
@@ -1378,8 +1399,24 @@ async function runDiscoveryMode(
         });
     }
 
-    const mainResults = allResults.filter(isStrong);
-    const lowRelevanceResults = allResults.filter(r => !isStrong(r));
+    let mainResults = allResults.filter(isStrong);
+    let lowRelevanceResults = allResults.filter(r => !isStrong(r));
+
+    // Identity verdict (spec 2026-11-02): an email, DNI or handle that identifies someone puts them
+    // on top. Only profiles this search already returned move (discovery is geo-filtered and
+    // guest-masked; the verdict's retrieval is not viewer-scoped, so adding one would widen
+    // visibility). A plain-name query asks nothing extra. A failed verdict keeps today's ranking.
+    const identity = discoveryIdentityOf(options.identity, normalizedQuery);
+    if (identity && (mainResults.length + lowRelevanceResults.length) > 0) {
+        try {
+            const { findPersonMatches } = await import('@/lib/identityMatch');
+            const same = (await findPersonMatches(db, identity, { actor: isUnauthenticated ? null : user, country: userCountry }))
+                .filter(m => m.verdict === 'same').map(m => m.adopterId);
+            if (same.length > 0) ({ main: mainResults, low: lowRelevanceResults } = promoteSame(mainResults, lowRelevanceResults, same));
+        } catch (e) {
+            logger.warn('findAdopters: identity verdict failed, ranking as today', { origin: caller.origin, ...redactedErrorFields(e) });
+        }
+    }
 
     const singleTokenResultCount = (!isMultiToken && allResults.length > REFINEMENT_NUDGE_THRESHOLD)
         ? allResults.length : undefined;

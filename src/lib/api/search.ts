@@ -4,6 +4,7 @@
  */
 import { matchNameAgainstProfile } from '@/domain/apiExactMatch';
 import { cleanApiPerson } from '@/domain/apiPersonCleanup';
+import type { PersonInput } from '@/lib/identityMatch';
 import { SEARCH_RESULT_LIMIT } from '@/config/constants';
 import { logger } from '@/lib/logger';
 import type { DiscoveryMatch } from '@/app/actions/types';
@@ -171,9 +172,20 @@ export function fuzzyQueryOf(person: SearchRequest['person']): string {
     ].filter((v): v is string => !!v && !!v.trim()).join(' ');
 }
 
+/** The structured identifiers of a fuzzy query, for the identity verdict (the free text above still ranks). */
+export function fuzzyIdentityOf(person: SearchRequest['person']): PersonInput {
+    return {
+        name: person.fullName,
+        ...(person.email ? { emails: [person.email] } : {}),
+        ...(person.phone ? { phones: [person.phone] } : {}),
+        ...(person.documentId?.value ? { documentIds: [person.documentId.value] } : {}),
+        ...(person.socials?.length ? { socials: person.socials.map(s => s.handle) } : {}),
+    };
+}
+
 async function runFuzzy(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {
     const { findAdoptersAsViewer } = await import('@/app/actions/findAdopters');
-    const res = await findAdoptersAsViewer({ raw: fuzzyQueryOf(req.person) }, { enrich: true }, ctx.key.ownerEmail);
+    const res = await findAdoptersAsViewer({ raw: fuzzyQueryOf(req.person) }, { enrich: true, identity: fuzzyIdentityOf(req.person) }, ctx.key.ownerEmail);
     if (res.validationError) {
         logger.info('api: fuzzy query refused by the search engine', { requestId: ctx.requestId, validationError: res.validationError });
         throw new ApiError(422, 'invalid_request', `the search engine refused this query (${res.validationError})`);
