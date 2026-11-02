@@ -236,13 +236,14 @@ describe('email + socials: the social now counts', () => {
         expect(profileReads(seen)).toBe(1);
     });
 
-    it('a handle on many profiles of one name reads a bounded number of them', async () => {
+    it('a handle on many profiles of one name is no junk: every holder is read and in the risk', async () => {
         for (let i = 0; i < 15; i++) await seed(`d${i}`, 'María Pérez', [e('social', 'mariajose.p', 'instagram')]);
         const seen = recordSql();
         const r = await exact(person);
         expect(r.match).toBe('ambiguous');
         expect(r.saved).toMatchObject({ action: 'added_to_best_match', profileId: 'mj' });
-        expect(profileReads(seen)).toBe(11); // MJ (by her email) + MAX_SOCIAL_HOLDERS_READ reached only by the handle
+        expect(r.risk.profilesMatched).toBe(16); // MJ + all 15 holders of the handle
+        expect(profileReads(seen)).toBe(16);
     });
 
     it('looks up at most the first 3 accounts that are accounts', () => {

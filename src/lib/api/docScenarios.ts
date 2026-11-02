@@ -191,7 +191,7 @@ const DEFS: ScenarioDef[] = [
         profiles: [{ id: 'demo-api-martin', name: 'Martín Ortiz', phone: '11 5550-3109', history: [{ type: 'adoption_request', rating: 2, daysAgo: 190 }, { type: 'adoption_request', rating: 2, daysAgo: 175 }] }],
         person: { fullName: 'Valeria Castro', phone: '11 5550-3109' },
         activity: { activityType: 'adoption_request' },
-        why: 'El teléfono es de un perfil con otro nombre → `ambiguous` (`name_mismatch`): nunca adivinamos que son la misma persona. `saved.action` es `created_profile_for_review`: la actividad va a un perfil nuevo que un admin revisa como posible duplicado. `risk` igual te muestra el 2★ de ese teléfono.',
+        why: 'El teléfono es de un perfil con otro nombre → `ambiguous` (`name_mismatch`): nunca adivinamos que son la misma persona. `saved.action` es `created_profile_for_review`: la actividad va a un perfil nuevo, y el par queda en «Pendientes de revisar» como posible duplicado. `risk` igual te muestra el 2★ de ese teléfono.',
     },
     {
         key: 'multiple_profiles',

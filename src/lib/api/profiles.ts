@@ -104,7 +104,7 @@ function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<strin
             // identifies like an email or a phone (ruling R10).
             list.push({
                 kind: KIND_OF[l.field], value: l.value, namesHolding,
-                ...(l.field === 'documentId' ? { inIdEntry: idEntries.get(id)?.has(l.value) === true } : {}),
+                ...(l.field === 'documentId' && idEntries.has(id) ? { inIdEntry: idEntries.get(id)!.has(l.value) } : {}),
             });
             out.set(id, list);
         }
@@ -121,8 +121,9 @@ export function identifierQueryCount(ids: IdentifierSet, country: string | null,
 
 /** Holders read per lookup (and the name sample of a social handle). */
 const HOLDERS_SAMPLE = 50;
-/** At most this many profiles reached ONLY through one social handle that is not junk are read (the others are left out). */
-export const MAX_SOCIAL_HOLDERS_READ = 10;
+/** Profiles reached ONLY through one social handle that is not junk: read like any other identifier's holders
+ *  (the lookup's own sample), so `risk` covers every one — many profiles of one name are not junk. */
+export const MAX_SOCIAL_HOLDERS_READ = HOLDERS_SAMPLE;
 
 /**
  * The live, non-demo profiles holding a social handle, and how many distinct (folded) names
@@ -162,8 +163,8 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
     ));
     // Social handles: a junk one (held by more than MAX_NAMES_PER_IDENTIFIER names: applicants typing
     // the rescue's own account) is nobody — it reaches only profiles another identifier already hit,
-    // where it counts for nothing. A real one reads at most MAX_SOCIAL_HOLDERS_READ profiles, those
-    // another identifier hit first. Social only: the other identifier types answer as they always did.
+    // where it counts for nothing. A real one reads its holders like any other identifier (the lookup's sample),
+    // those another identifier hit first. Social only: the other identifier types answer as they always did.
     const hitByOther = new Set(found.flatMap((f, i) => (lookups[i].field === 'social' ? [] : f.ids)));
     const namesHoldingOf = new Map<number, number>();
     let socialJunk = 0;
@@ -202,7 +203,9 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
         name: p.name,
         aliases: entriesOf.get(p.id)!.filter(e => e.type === 'alias').map(e => e.value),
     }));
-    const idEntries = new Map(live.map(p => [p.id, new Set(entriesOf.get(p.id)!.filter(e => e.type === 'id').map(e => normalizeDocumentId(e.value)))]));
+    // A profile with no entries (legacy blob only) is left out: unknown, not «no DNI field».
+    const idEntries = new Map(live.filter(p => entriesOf.get(p.id)!.length > 0)
+        .map(p => [p.id, new Set(entriesOf.get(p.id)!.filter(e => e.type === 'id').map(e => normalizeDocumentId(e.value)))]));
     // Tokens pointing at deleted / demo profiles are dropped; that's expected.
     for (const id of matchedOn.keys()) if (!candidates.some(c => c.profileId === id)) matchedOn.delete(id);
     const shared = sharedOf(lookups, hitsPerLookup, new Map(candidates.map(c => [c.profileId, c.name])), idEntries, namesHoldingOf);
