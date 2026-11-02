@@ -1405,12 +1405,12 @@ async function runDiscoveryMode(
     // Identity verdict (spec 2026-11-02): an email, DNI or handle that identifies someone puts them
     // on top. Only profiles this search already returned move (discovery is geo-filtered and
     // guest-masked; the verdict's retrieval is not viewer-scoped, so adding one would widen
-    // visibility). A plain-name query asks nothing extra. A failed verdict keeps today's ranking.
+    // visibility). A plain-name query asks nothing extra, and so does a guest (promoting a masked result would confirm the DNI or handle they typed). A failed verdict keeps today's ranking.
     const identity = discoveryIdentityOf(options.identity, normalizedQuery);
-    if (identity && (mainResults.length + lowRelevanceResults.length) > 0) {
+    if (identity && !isUnauthenticated && (mainResults.length + lowRelevanceResults.length) > 0) {
         try {
             const { findPersonMatches } = await import('@/lib/identityMatch');
-            const same = (await findPersonMatches(db, identity, { actor: isUnauthenticated ? null : user, country: userCountry }))
+            const same = (await findPersonMatches(db, identity, { actor: user, country: userCountry }))
                 .filter(m => m.verdict === 'same').map(m => m.adopterId);
             if (same.length > 0) ({ main: mainResults, low: lowRelevanceResults } = promoteSame(mainResults, lowRelevanceResults, same));
         } catch (e) {

@@ -77,6 +77,12 @@ describe('discovery on the identity verdict', () => {
         expect(ids(res.results)).toEqual(['mj']);
     });
 
+    it('a guest makes no verdict call', async () => {
+        await findAdoptersAsViewer({ raw: 'Majo Pérez 30.123.456' }, { enrich: true }, 'unknown');
+        await findAdoptersAsViewer({ raw: 'x' }, { enrich: true, identity: { name: 'Majo', documentIds: ['30123456'] } }, 'unknown');
+        expect(findPersonMatches).not.toHaveBeenCalled();
+    });
+
     it('never adds a profile the search did not return', async () => {
         spy.fn = async () => [{ adopterId: 'ghost', verdict: 'same' }, { adopterId: 'mp', verdict: 'possible' }];
         const res = await findAdoptersAsViewer({ raw: 'María Pérez' }, { enrich: true, identity: { name: 'María Pérez', emails: ['x@y.com'] } }, OWNER);
