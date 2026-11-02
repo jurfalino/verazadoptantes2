@@ -219,4 +219,12 @@ describe('form family carries the verdict', () => {
         const ph = (await run('Juan Carlos Ruiz', { phones: ['11 6585-1333'] })).results;
         expect(ph.map(r => [r.adopter.id, r.verdict])).toEqual([[MJ, 'possible']]);
     });
+
+    it('lists same before possible even when the possible has the stronger name', async () => {
+        await seed('majo', 'Majo Pérez', []);
+        const r = (await searchFormDuplicates(
+            { name: 'Majo Pérez', documentIds: ['30.123.456'] }, { minRelevance: 15 }, async () => OWNER,
+        )).results;
+        expect(r.map(x => [x.adopter.id, x.verdict])).toEqual([[MJ, 'same'], ['majo', 'possible']]);
+    });
 });

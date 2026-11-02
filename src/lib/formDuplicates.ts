@@ -62,7 +62,10 @@ export async function searchFormDuplicates(
             isUnauthenticated: false,
         });
         const verdictOf = new Map(matches.map(m => [m.adopterId, m.verdict]));
-        const results = hydrated.map(r => ({ ...r, verdict: verdictOf.get(r.adopterId) }));
+        // hydrate re-sorts by relevance; same-person first is the contract (stable: relevance order within each group).
+        const results = hydrated
+            .map(r => ({ ...r, verdict: verdictOf.get(r.adopterId) }))
+            .sort((a, b) => Number(b.verdict === 'same') - Number(a.verdict === 'same'));
         return { results };
     } catch (e) {
         logger.warn('findFormDuplicates failed — form falls back to no-suggestion', {
