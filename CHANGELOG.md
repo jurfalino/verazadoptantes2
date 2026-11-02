@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.10] - 2026-11-02
+
+### Changed — the sheet import decides who is the same person with one rule
+- A row with the same DNI as a profile is the same person, even if the name is written differently. Placeholder DNIs
+  (one digit repeated, «12345678») and a DNI found on more than 3 differently-named profiles don't count.
+- A row sharing a phone, email or social account with a profile is the same person only when the names agree. When
+  they don't (e.g. a partner's phone), the row goes to «Revisar» instead of «Actualizar».
+- A row with the same full name as a profile but different contacts now goes to «Revisar» (before, it was silently
+  created as a new profile).
+- A row that matches two different people (e.g. «Gómez» with a phone shared by Ana and Juan Gómez) goes to «Revisar».
+- A row with no name that shares a contact goes to «Revisar».
+- Rows inside the same sheet are only grouped as one person when all their names agree.
+- On an identical-copy row, picking a «También coincide con» profile shows «Posible duplicado de» and is left out of
+  «aplicar a todos los exactos».
+
 ## [2.58.9] - 2026-11-01
 
 ### Changed — joining two profiles of the same person
