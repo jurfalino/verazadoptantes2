@@ -32,6 +32,12 @@ describe('groupSamePerson', () => {
             row(1, { name: 'luz', addresses: ['calle 1'] }),
         ])).toEqual([{ indices: [0, 1], reason: 'identical' }]);
     });
+    it('still joins identical rows that have no name', () => {
+        expect(multi([
+            row(0, { name: '', phones: ['11 6585 1333'] }),
+            row(1, { name: ' ', phones: ['11 6585 1333'] }),
+        ])).toEqual([{ indices: [0, 1], reason: 'identical' }]);
+    });
     it('is transitive (email links 0–1, phone links 1–2)', () => {
         const g = multi([
             row(0, { name: 'Sol Díaz', emails: ['sol@x.com'] }),
@@ -99,6 +105,39 @@ describe('different people are never one person (review 2026-10-14)', () => {
     });
     it('a value that is not an email links nobody', () => {
         expect(multi([row(0, { name: 'Ana Ruiz', emails: ['@'] }), row(1, { name: 'Ana Ruiz', emails: ['@'], phones: ['1'] })])).toEqual([]);
+    });
+    it('a surname-only row never bridges two household members, in any row order', () => {
+        const names = ['Ana Gómez', 'Gómez', 'Juan Gómez'];
+        const perms = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+        for (const order of perms) {
+            const rows = order.map((n, i) => row(i, { name: names[n], phones: ['11 6585 1333'] }));
+            const ana = order.indexOf(0), juan = order.indexOf(2);
+            const together = groupSamePerson(rows).some(g => g.indices.includes(ana) && g.indices.includes(juan));
+            expect(together, `order ${order.map(n => names[n]).join(', ')}`).toBe(false);
+        }
+    });
+    it('the two orderings from the review: Ana and Juan stay apart', () => {
+        const ph = ['11 6585 1333'];
+        const a = groupSamePerson([row(0, { name: 'Ana Gómez', phones: ph }), row(1, { name: 'Gómez', phones: ph }), row(2, { name: 'Juan Gómez', phones: ph })]);
+        expect(a.some(g => g.indices.includes(0) && g.indices.includes(2))).toBe(false);
+        const b = groupSamePerson([row(0, { name: 'Ana Gómez', phones: ph }), row(1, { name: 'Juan Gómez', phones: ph }), row(2, { name: 'Gómez', phones: ph })]);
+        expect(b.some(g => g.indices.includes(0) && g.indices.includes(1))).toBe(false);
+    });
+    it('a bridge across two keys is refused too (email links one pair, phone the other)', () => {
+        const g = groupSamePerson([
+            row(0, { name: 'Ana Pérez Gómez', emails: ['ana@x.com'] }),
+            row(1, { name: 'Ana Pérez', emails: ['ana@x.com'], phones: ['11 6585 1333'] }),
+            row(2, { name: 'Ana Pérez Ruiz', phones: ['11 6585 1333'] }),
+        ]);
+        expect(g.some(x => x.indices.includes(0) && x.indices.includes(2))).toBe(false);
+    });
+    it('a row refused by one compatible earlier group still joins a later compatible one', () => {
+        const ph = ['11 6585 1333'];
+        const g = groupSamePerson([
+            row(0, { name: 'Ana Gómez', phones: ph }), row(1, { name: 'Gómez', phones: ph }),
+            row(2, { name: 'Juan Gómez', phones: ph }), row(3, { name: 'Juan Gómez', phones: ph, emails: ['j@x.com'] }),
+        ]);
+        expect(g.find(x => x.indices.includes(3))!.indices).toEqual([2, 3]);
     });
     it('groupName keeps the most complete name', () => {
         expect(groupName(['Juan', 'juan gomez', 'Juan Gómez'])).toBe('Juan Gómez');

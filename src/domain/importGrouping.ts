@@ -15,8 +15,11 @@
  * people. An email or phone written by more than MAX_NAMES_PER_KEY different
  * names is a shared or junk value ("no@gmail.com") and links nobody.
  *
- * Grouping is transitive (A~B and B~C ⇒ one group). The reviewer sees every
- * group before anything is written and can split it ("Separar").
+ * Grouping is transitive (A~B and B~C ⇒ one group), but a join happens only when
+ * every name in the two groups agrees with every other — so a one-word row
+ * ("Gómez") can never bring two different people ("Ana Gómez", "Juan Gómez")
+ * into one group. The reviewer sees every group before anything is written and
+ * can split it ("Separar").
  */
 
 import { computeContentFingerprint } from './contentFingerprint';
@@ -79,16 +82,28 @@ export function groupSamePerson(rows: GroupableRow[]): PersonGroup[] {
         while (parent.get(x) !== r) { const n = parent.get(x)!; parent.set(x, r); x = n; }
         return r;
     };
-    const union = (a: number, b: number, why: GroupReason) => {
-        const ra = find(a), rb = find(b);
-        if (ra === rb) return;
-        const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
-        parent.set(drop, keep);
-        if (!reasonOf.has(keep)) reasonOf.set(keep, reasonOf.get(drop) ?? why);
-    };
-
     const nameOf = new Map(sorted.map(r => [r.index, r.name]));
     const shareName = (a: number, b: number) => namesAgree(nameOf.get(a)!, nameOf.get(b)!);
+    /** Within a group: the same written name (an identical row, nameless ones included) or agreeing names. */
+    const sameOrAgree = (a: number, b: number) =>
+        nameWords(nameOf.get(a)!).join(' ') === nameWords(nameOf.get(b)!).join(' ') || shareName(a, b);
+    const membersOf = new Map<number, number[]>(sorted.map(r => [r.index, [r.index]])); // keyed by root
+
+    /** Join a's and b's groups — only when every name in one agrees with every name in the
+     *  other, so a one-word row («Gómez») never bridges two different people
+     *  («Ana Gómez», «Juan Gómez»), whatever order the rows come in. */
+    const union = (a: number, b: number, why: GroupReason): boolean => {
+        const ra = find(a), rb = find(b);
+        if (ra === rb) return true;
+        const ma = membersOf.get(ra)!, mb = membersOf.get(rb)!;
+        if (!ma.every(x => mb.every(y => sameOrAgree(x, y)))) return false;
+        const [keep, drop] = ra < rb ? [ra, rb] : [rb, ra];
+        parent.set(drop, keep);
+        membersOf.set(keep, [...membersOf.get(keep)!, ...membersOf.get(drop)!]);
+        membersOf.delete(drop);
+        if (!reasonOf.has(keep)) reasonOf.set(keep, reasonOf.get(drop) ?? why);
+        return true;
+    };
 
     // Identical content: same as the old fold (the fingerprint already includes the name).
     const byFp = new Map<string, number>();
@@ -112,8 +127,9 @@ export function groupSamePerson(rows: GroupableRow[]): PersonGroup[] {
         for (const r of sorted) {
             for (const k of new Set(keysOf(r).filter(k => k && namesByKey.get(k)!.size <= MAX_NAMES_PER_KEY))) {
                 const earlier = seen.get(k) ?? [];
-                const mate = earlier.find(i => shareName(i, r.index));
-                if (mate !== undefined) union(mate, r.index, why);
+                // Every earlier holder whose name agrees is tried: one refused group
+                // (it holds an incompatible name) must not stop a join with the next.
+                for (const i of earlier) if (shareName(i, r.index)) union(i, r.index, why);
                 earlier.push(r.index);
                 seen.set(k, earlier);
             }
