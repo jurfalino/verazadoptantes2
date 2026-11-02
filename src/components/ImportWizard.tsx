@@ -2079,7 +2079,7 @@ export default function ImportWizard() {
                             names the strongest match and offers to add to it
                             (decision B7, 2026-10-21); the decision still happens
                             on the duplicate screen, which opens pre-selected.
-                            Hits under the 15% noise floor stay hidden. */}
+                            Every judged match shows, same person first. */}
                         {(() => {
                             const visible = fieldOverlapHints
                                 .slice()
