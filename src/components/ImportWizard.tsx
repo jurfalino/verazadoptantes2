@@ -1011,10 +1011,11 @@ export default function ImportWizard() {
         // and not updated when the user edits a chip (v2.16.0-44). Social values go
         // as entered.
         if (extractedData) {
+            let matchErrorId: string | undefined;
             try {
                 const response = await matchImportRow({ name: extractedData.name || '', ...contactEntriesToIdentity(contactEntries) });
                 // A server-side failure is a failed check, like a thrown one: never a silent "no match".
-                if (!response.ok) throw new Error(`matchImportRow failed (${response.errorId})`);
+                if (!response.ok) { matchErrorId = response.errorId; throw new Error('matchImportRow failed'); }
                 const tokenResults = response.matches;
                 if (tokenResults.length > 0) {
                     const matches: PersonMatch[] = tokenResults.map(r => ({
@@ -1037,7 +1038,7 @@ export default function ImportWizard() {
                     trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
-                logUxIssue('import: duplicate (name/contact) check failed', { error: e instanceof Error ? e.message : String(e) });
+                logUxIssue('import: duplicate (name/contact) check failed', { errorId: matchErrorId, error: e instanceof Error ? e.message : String(e) });
                 setDuplicateCheckFailed(true);
                 checkFailed = true;
             }
@@ -2081,8 +2082,8 @@ export default function ImportWizard() {
                             Hits under the 15% noise floor stay hidden. */}
                         {(() => {
                             const visible = fieldOverlapHints
-                                .filter(h => h.relevancePercent >= 15)
-                                .sort((x, y) => y.relevancePercent - x.relevancePercent);
+                                .slice()
+                                .sort((x, y) => (Number(y.verdict === 'same') - Number(x.verdict === 'same')) || (y.relevancePercent - x.relevancePercent));
                             if (visible.length === 0) return null;
                             const top = visible[0];
                             return (

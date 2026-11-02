@@ -642,7 +642,6 @@ export function parseBlobToContactEntries(blob: string | null | undefined): Cont
     return categorizeContactText(blob);
 }
 
-
 /**
  * The typed identifiers of a contact list, as the identity verdict takes them
  * (`matchImportRow`). Values are passed as entered: a social with spaces is not an
