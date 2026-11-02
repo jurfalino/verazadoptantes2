@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planRecordMerge, isExactIdentifierMatch, type PlanRecordMergeInput } from './importMerge';
+import { planRecordMerge, defaultImportAction, type PlanRecordMergeInput } from './importMerge';
 
 const base: PlanRecordMergeInput = {
     existingName: 'Ana Pérez',
@@ -67,18 +67,10 @@ describe('planRecordMerge — name', () => {
     });
 });
 
-describe('isExactIdentifierMatch', () => {
-    it('true for phone/email/id/social/phone_suffix', () => {
-        expect(isExactIdentifierMatch(['name_word', 'phone'])).toBe(true);
-        expect(isExactIdentifierMatch(['email'])).toBe(true);
-        expect(isExactIdentifierMatch(['id_number'])).toBe(true);
-        expect(isExactIdentifierMatch(['phone_suffix'])).toBe(true);
-    });
-    it('false for name-only or address-only overlap (must be reviewed)', () => {
-        expect(isExactIdentifierMatch(['name_word'])).toBe(false);
-        expect(isExactIdentifierMatch(['name_word_fuzzy'])).toBe(false);
-        expect(isExactIdentifierMatch(['address_word'])).toBe(false);
-        expect(isExactIdentifierMatch([])).toBe(false);
-        expect(isExactIdentifierMatch(null)).toBe(false);
-    });
+describe('defaultImportAction', () => {
+    const same = { verdict: 'same' as const }, possible = { verdict: 'possible' as const };
+    it('no match → create', () => expect(defaultImportAction([])).toBe('create'));
+    it('same → upsert', () => expect(defaultImportAction([same])).toBe('upsert'));
+    it('same first, possible after → upsert', () => expect(defaultImportAction([same, possible])).toBe('upsert'));
+    it('only possible → review', () => expect(defaultImportAction([possible])).toBe('review'));
 });

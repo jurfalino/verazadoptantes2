@@ -21,6 +21,7 @@
 
 import { computeContentFingerprint } from './contentFingerprint';
 import { isPlaceholderPhone } from './phoneNumber';
+import { namesCompatible } from './apiExactMatch';
 
 export interface GroupableRow {
     index: number;
@@ -52,13 +53,9 @@ function fold(s: string): string {
 function nameWords(name: string): string[] {
     return fold(name).split(/[^a-z0-9ñ]+/).filter(w => w.length >= 2 && !NAME_PARTICLES.has(w));
 }
-/** Same first name; and when both have more words, another word in common. */
+/** Same person's name by the one shared name rule (order-free; a one-word name agrees with a longer one). */
 export function namesAgree(a: string, b: string): boolean {
-    const wa = nameWords(a), wb = nameWords(b);
-    if (!wa.length || !wb.length || wa[0] !== wb[0]) return false;
-    if (wa.length === 1 || wb.length === 1) return true;
-    const rest = new Set(wa.slice(1));
-    return wb.slice(1).some(w => rest.has(w));
+    return namesCompatible(a, b);
 }
 function phoneKey(p: string): string {
     const d = (p.match(/\d/g) ?? []).join('');

@@ -79,6 +79,7 @@ export type { ImportBatchRow, ImportBatchResult } from './importBatch';
 export { matchFingerprints } from './importIdentical';
 export { findIdenticalRowsOtherMatches } from './importOtherMatches';
 export { matchImportRow } from './importIdentityMatches';
+export type { ImportRowIdentity, JudgedMatch } from './importIdentityMatches';
 
 // Presence-only match context for the import "por qué" panel (PII-safe)
 export { getMatchContext } from './matchContext';

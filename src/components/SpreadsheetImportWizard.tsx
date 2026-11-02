@@ -5,8 +5,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import MatchCompare from '@/components/MatchCompare';
 import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, findIdenticalRowsOtherMatches, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
-import { isExactIdentifierMatch } from '@/domain/importMerge';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, matchImportRow, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, findIdenticalRowsOtherMatches, type DuplicateMatch, type JudgedMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
+import { defaultImportAction } from '@/domain/importMerge';
 import type { IdenticalRowIdentifiers } from '@/app/actions/importOtherMatches';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
 import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
@@ -245,10 +245,10 @@ export default function SpreadsheetImportWizard() {
     }, [step, importDone]);
     // Duplicate-aware import: top existing match per row index (null = checked, no
     // match; absent = not checked yet), and the per-row create/upsert/skip choice.
-    const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
+    const [matches, setMatches] = useState<Record<number, RowMatch | null>>({});
     // Every OTHER profile a row also matches (Jon 2026-10-31: a row matching two
     // profiles showed only one, so «Actualizar» left the other a silent duplicate).
-    const [otherMatches, setOtherMatches] = useState<Record<number, DuplicateMatch[]>>({});
+    const [otherMatches, setOtherMatches] = useState<Record<number, RowMatch[]>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
     // "Por qué" expansion on the Duplicados triage row: which row (by index) is
     // expanded. The comparison card loads the profile's details itself.
@@ -631,7 +631,7 @@ export default function SpreadsheetImportWizard() {
     }, [importable, rowAction, records]);
 
     // Look for an existing adopter that matches each selected row, reusing the
-    // same duplicate engine the manual form uses (findAdopters, mode 'duplicate').
+    // same identity verdict the manual form uses (matchImportRow).
     // Opt-in (a button), like AI interpretation — 1 lightweight lookup per row,
     // bounded concurrency. Keys on name/phone/email/social (the engine's inputs);
     // address-only / DNI-only rows won't match here and default to "crear".
@@ -646,8 +646,8 @@ export default function SpreadsheetImportWizard() {
         setDetectionDegraded(false); setDetectFailedRows(new Set());
         let detectionHadError = false;
         const failedIdx: number[] = [];
-        const found: Record<number, DuplicateMatch | null> = {};
-        const others: Record<number, DuplicateMatch[]> = {};
+        const found: Record<number, RowMatch | null> = {};
+        const others: Record<number, RowMatch[]> = {};
         const actions: Record<number, RowAction> = {};
 
         // Phase 1 — EXACT identical-record match. One server scan fingerprints all
@@ -674,7 +674,7 @@ export default function SpreadsheetImportWizard() {
         // Phase 1b — «también coincide» for the identical rows, one lookup per distinct
         // fingerprint. The action checks what fits its query budget and hands the rest
         // back as `deferred`, which goes into the next call.
-        const otherByFp: Record<string, DuplicateMatch[]> = {};
+        const otherByFp: Record<string, RowMatch[]> = {};
         const identical = new Map<string, IdenticalRowIdentifiers>();
         for (const t of targets) {
             const fp = fpByIndex[t.index];
@@ -723,28 +723,22 @@ export default function SpreadsheetImportWizard() {
                     done++; setDetectProgress({ done, total: targets.length });
                     continue;
                 }
-                // DNIs go via contactInfo, LABELED ("DNI 12345678"), because
-                // findAdopters extracts id_number tokens from contactInfo (there's
-                // no structured `dnis` input) — without this a same-DNI record only
-                // matches on name (~50%) and never counts as an exact identifier.
                 const g = splitGroupedContacts(eff);
-                // Retry with backoff: the per-row lookup runs heavy full-scan LIKE
-                // queries and D1 rejects some under the import's concurrent burst
-                // (intermittent "Failed query"). A couple of spaced retries clear
-                // the transient ones so the row isn't dropped from comparison.
-                let dup: DuplicateMatch[] | null = null;
+                // Retry with backoff: the per-row lookup runs heavy queries and D1
+                // rejects some under the import's concurrent burst (intermittent
+                // "Failed query"). A couple of spaced retries clear the transient
+                // ones so the row isn't dropped from comparison. `{ ok: false }`
+                // (the server action caught its own failure) counts as a failed attempt.
+                let dup: JudgedMatch[] | null = null;
                 let lastError: unknown = null;
                 for (let attempt = 0; attempt < 3 && dup === null; attempt++) {
                     if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
                     try {
-                        const res = await findAdopters(
-                            {
-                                name: eff.name || undefined, phones: g.phones, emails: g.emails, socials: g.socials,
-                                contactInfo: g.ids.length ? g.ids.map(d => `DNI ${d}`).join('\n') : undefined,
-                            },
-                            { mode: 'duplicate', limit: MAX_ROW_MATCHES, minRelevance: 5 },
-                        );
-                        dup = (res.results as DuplicateMatch[]) ?? [];
+                        const res = await matchImportRow({
+                            name: eff.name || '', phones: g.phones, emails: g.emails, socials: g.socials, documentIds: g.ids,
+                        });
+                        if (res.ok) dup = res.matches;
+                        else lastError = new Error(`matchImportRow failed (${res.errorId})`);
                     } catch (e) {
                         lastError = e; // fall through to the next attempt
                     }
@@ -755,12 +749,11 @@ export default function SpreadsheetImportWizard() {
                     const top = dup[0] ?? null;
                     found[index] = top;
                     others[index] = dup.slice(1);
-                    // High confidence (exact identifier) defaults to "actualizar"; a
-                    // weaker match (e.g. name-only) defaults to 'review' — unresolved,
-                    // NOT 'create' — so it can't be silently imported as a duplicate.
-                    // No match at all (top === null) isn't shown in triage and imports
-                    // as new, so 'create' here is inert.
-                    actions[index] = top ? (isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'review') : 'create';
+                    // The same person defaults to "actualizar"; a possible one to 'review'
+                    // — unresolved, NOT 'create' — so it can't be silently imported as a
+                    // duplicate. No match at all isn't shown in triage and imports as
+                    // new, so 'create' here is inert.
+                    actions[index] = defaultImportAction(dup);
                 }
                 if (!compared) {
                     void reportClientError({ message: 'sheet import: row not compared after 3 attempts', source: 'SpreadsheetImportWizard', level: 'warn', extra: { row: index, error: lastError instanceof Error ? lastError.message : String(lastError) } });
@@ -1086,7 +1079,7 @@ export default function SpreadsheetImportWizard() {
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
     // «Actualizar este»: another profile the row matches becomes the one it updates.
-    const chooseMatch = (index: number, chosen: DuplicateMatch) => {
+    const chooseMatch = (index: number, chosen: RowMatch) => {
         const current = matches[index];
         setMatches(prev => ({ ...prev, [index]: chosen }));
         setOtherMatches(prev => ({ ...prev, [index]: [...(current ? [current] : []), ...(prev[index] ?? []).filter(m => m.adopterId !== chosen.adopterId)] }));
@@ -1111,7 +1104,7 @@ export default function SpreadsheetImportWizard() {
             const next = { ...prev };
             for (const row of matchedRows) {
                 const m = matches[row.index];
-                if (m && (m.matchTypes?.includes('identical') || isExactIdentifierMatch(m.matchTypes))) next[row.index] = a;
+                if (m && (m.matchTypes?.includes('identical') || m.verdict === 'same')) next[row.index] = a;
             }
             return next;
         });
@@ -1717,11 +1710,12 @@ function matchTypeLabels(types: string[]): string {
 
 
 /** How many profiles one row is compared against: the one it updates plus up to two «también coincide». */
-const MAX_ROW_MATCHES = 3;
+/** A match shown on a row: «verdict» is absent on identical-copy matches (those count as the same person). */
+type RowMatch = DuplicateMatch & { verdict?: 'same' | 'possible' };
 
 // Shared match badge — used both in the confirm grid's inline sub-row (RowView)
 // and the Duplicados triage list, so the ● Idéntico/○ Posible copy never drifts.
-function MatchBadge({ match, isExact }: { match: DuplicateMatch; isExact: boolean }) {
+function MatchBadge({ match, isExact }: { match: RowMatch; isExact: boolean }) {
     const identical = match.matchTypes?.includes('identical');
     const strong = identical || isExact;
     return (
@@ -1916,9 +1910,9 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
     groupReason?: GroupReason | null; onSplit?: () => void;
     editingCell: { index: number; field: string } | null; onEditCell: (index: number, field: string | null) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
-    match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
+    match?: RowMatch | null; action: RowAction; onAction: (a: RowAction) => void;
     // The other profiles this row also matches: «También coincide con …», each one openable or choosable.
-    otherMatches?: DuplicateMatch[]; onChooseMatch?: (m: DuplicateMatch) => void;
+    otherMatches?: RowMatch[]; onChooseMatch?: (m: RowMatch) => void;
     failureByIndex: Record<number, string>; onToggleGroup: () => void;
     // "Por qué" expansion on the match sub-row below (group-level, keyed to primary).
     expanded?: boolean; onToggleWhy?: () => void;
@@ -1931,7 +1925,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
     const { built, selected } = primary;
     // A group's profile carries every member's contacts — show what will be saved.
     const eff = grouped ? { ...primary.eff, ...mergedGroupContacts(members.map(m => m.eff)) } : primary.eff;
-    const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
+    const isExact = match ? (match.matchTypes?.includes('identical') || match.verdict === 'same') : false;
     const contactChips: Array<{ t: string; v: string }> = [
         ...eff.phones.map(v => ({ t: 'Tel', v })),
         ...eff.emails.map(v => ({ t: 'Email', v })),
@@ -2133,9 +2127,9 @@ function RecordGrid({
     rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     editingCell: { index: number; field: string } | null;
     onEditCell: (index: number, field: string | null) => void;
-    matches: Record<number, DuplicateMatch | null>;
-    otherMatches: Record<number, DuplicateMatch[]>;
-    onChooseMatch: (index: number, m: DuplicateMatch) => void;
+    matches: Record<number, RowMatch | null>;
+    otherMatches: Record<number, RowMatch[]>;
+    onChooseMatch: (index: number, m: RowMatch) => void;
     rowAction: Record<number, RowAction>;
     onAction: (index: number, a: RowAction) => void;
     failureByIndex: Record<number, string>;

@@ -93,10 +93,9 @@ export function planRecordMerge(input: PlanRecordMergeInput): RecordMergePlan {
     return { contactsToAdd, addActivity, nameAction, nameValue };
 }
 
-/** Token types that represent an EXACT identifier match (safe to auto-update).
- *  A name-only or address-only overlap is NOT exact — it must be reviewed. */
-const EXACT_IDENTIFIER_TOKENS = new Set(['phone', 'phone_suffix', 'email', 'id_number', 'social']);
-
-export function isExactIdentifierMatch(matchTypes: string[] | null | undefined): boolean {
-    return Array.isArray(matchTypes) && matchTypes.some(t => EXACT_IDENTIFIER_TOKENS.has(t));
+/** Default action for a sheet row from its identity-judged matches (ranked: same before possible).
+ *  Same person → update; any "possible" → the reviewer decides; nothing → new profile. */
+export function defaultImportAction(matches: Array<{ verdict: 'same' | 'possible' }>): 'upsert' | 'review' | 'create' {
+    if (matches.length === 0) return 'create';
+    return matches[0].verdict === 'same' ? 'upsert' : 'review';
 }

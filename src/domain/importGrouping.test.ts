@@ -78,6 +78,15 @@ describe('different people are never one person (review 2026-10-14)', () => {
         expect(namesAgree('Ana Pérez', 'ana perez gomez')).toBe(true);
         expect(namesAgree('María de los Ángeles', 'Juan de los Santos')).toBe(false);
     });
+    it('names agree in any word order, and a one-word name agrees with a longer one', () => {
+        expect(namesAgree('Ana Pérez', 'Pérez Ana')).toBe(true);
+        expect(namesAgree('María Pérez', 'Juan Pérez')).toBe(false);
+        expect(namesAgree('Ana', 'Ana Gómez')).toBe(true);
+        expect(multi([
+            row(0, { name: 'Ana Pérez', emails: ['a@x.com'] }),
+            row(1, { name: 'Pérez Ana', emails: ['a@x.com'] }),
+        ]).map(g => g.indices)).toEqual([[0, 1]]);
+    });
     it('no chain through a junk email shared by many names', () => {
         expect(multi([
             row(0, { name: 'María Gómez', emails: ['no@gmail.com'] }),
