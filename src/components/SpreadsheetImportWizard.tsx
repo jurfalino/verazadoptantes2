@@ -630,11 +630,13 @@ export default function SpreadsheetImportWizard() {
         return { create, update, review, skipCount: (records.filter(x => x.selected).length - importable.length) + skipByAction };
     }, [importable, rowAction, records]);
 
-    // Look for an existing adopter that matches each selected row, reusing the
-    // same identity verdict the manual form uses (matchImportRow).
-    // Opt-in (a button), like AI interpretation — 1 lightweight lookup per row,
-    // bounded concurrency. Keys on name/phone/email/social (the engine's inputs);
-    // address-only / DNI-only rows won't match here and default to "crear".
+    // Look for an existing adopter that matches each selected row: Phase 1 finds
+    // identical copies; every other row gets the identity verdict (matchImportRow —
+    // same / possible, spec 2026-11-02-identity-verdict-design §3; the manual form
+    // moves to it in a later rollout step). Opt-in (a button), like AI
+    // interpretation — 1 lookup per row, bounded concurrency. Keys on
+    // name/phone/email/social/DNI, so a DNI-only row does match; an address-only
+    // row matches only as an identical copy (Phase 1) and otherwise defaults to "crear".
     const detectGenRef = useRef(0);
     const runDetection = async () => {
         const targets = records.filter(r => r.selected);
@@ -1709,8 +1711,11 @@ function matchTypeLabels(types: string[]): string {
 
 
 
-/** How many profiles one row is compared against: the one it updates plus up to two «también coincide». */
-/** A match shown on a row: «verdict» is absent on identical-copy matches (those count as the same person). */
+/**
+ * A match shown on a row. «verdict» comes only from matchImportRow; it is absent on
+ * every Phase 1 / 1b match (the identical copy and its «también coincide» list).
+ * Of those, only the one with matchTypes ['identical'] counts as the same person.
+ */
 type RowMatch = DuplicateMatch & { verdict?: 'same' | 'possible' };
 
 // Shared match badge — used both in the confirm grid's inline sub-row (RowView)
