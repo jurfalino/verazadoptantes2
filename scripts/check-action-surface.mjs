@@ -392,7 +392,8 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // names of profiles sharing an identifier the caller already holds — what the fuzzy search it
 // replaces already answered. Never logs a value.
 // 172 = 171 + 1.
-const EXPECTED_ACTIONS = 172;
+// 173 = 172 + 1. 2026-11-02 matchImportRow — sheet import identity verdict (spec docs/superpowers/specs/2026-11-02-identity-verdict-design.md).
+const EXPECTED_ACTIONS = 173;
 
 let manifest;
 try {
