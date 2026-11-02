@@ -33,7 +33,32 @@ const MAX_COUNT_QUERIES = 12;
 const NAMES_SAMPLE = 10;
 
 const foldName = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Drizzle ends a failed query's message with "params: <bound values>" — the phone, email or
+ *  DNI looked up. Everything from there on is cut; the SQL (placeholders only) stays. */
+const cutParams = (msg: string) => { const i = msg.indexOf('params:'); return (i === -1 ? msg : msg.slice(0, i)).trim(); };
+
+/**
+ * The same error with its message, stack and cause chain cut before "params:", so a
+ * failed lookup can be logged without the contact values it was bound to.
+ * Fields for a warn: `{ error, errorName, cause? }`.
+ */
+export function redactedError(e: unknown, depth = 0): Error {
+    const src = e instanceof Error ? e : new Error(String(e));
+    const out = new Error(cutParams(src.message));
+    out.name = src.name;
+    const frames = (src.stack ?? '').split('\n').filter(l => /^\s+at /.test(l));
+    out.stack = [`${out.name}: ${out.message}`, ...frames].join('\n');
+    const cause = (src as { cause?: unknown }).cause;
+    if (cause !== undefined && depth < 3) (out as { cause?: unknown }).cause = redactedError(cause, depth + 1);
+    return out;
+}
+export function redactedErrorFields(e: unknown): { error: string; errorName: string; cause?: Array<{ name: string; message: string }> } {
+    const r = redactedError(e);
+    const cause: Array<{ name: string; message: string }> = [];
+    for (let c = (r as { cause?: unknown }).cause; c instanceof Error; c = (c as { cause?: unknown }).cause) cause.push({ name: c.name, message: c.message });
+    return { error: r.message, errorName: r.name, ...(cause.length ? { cause } : {}) };
+}
 
 interface SharedToken { kind: IdentifierKind; value: string; tokenType: string; tokenValue: string }
 
@@ -83,7 +108,7 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
             .where(and(eq(adopters.id, m.adopterId), isNull(adopters.deletedAt))).limit(1)
             .then((rows: Array<{ name: string; contactEntries: string | null }>) => rows[0] ?? null)
             .catch((e: unknown) => {
-                logger.warn('identityCandidates: D1 fallback hit (details)', { ...ctx, adopterId: m.adopterId, error: errMsg(e) });
+                logger.warn('identityCandidates: D1 fallback hit (details)', { ...ctx, adopterId: m.adopterId, ...redactedErrorFields(e) });
                 return undefined;
             }),
     ));
@@ -108,7 +133,7 @@ export async function findIdentityCandidates(db: Db, facts: PersonFacts, ctx: Re
                 .limit(NAMES_SAMPLE);
             counts.set(k, new Set(rows.map(r => foldName(r.name))).size);
         } catch (e) {
-            logger.warn('identityCandidates: D1 fallback hit (name count)', { ...ctx, tokenType: t.tokenType, error: errMsg(e) });
+            logger.warn('identityCandidates: D1 fallback hit (name count)', { ...ctx, tokenType: t.tokenType, ...redactedErrorFields(e) });
             counts.set(k, null);
         }
     }));

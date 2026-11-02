@@ -11,7 +11,7 @@
 import { getDb, getUser } from './_db';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { ownerCountry } from '@/lib/api/profiles';
-import { judgeCandidates } from '@/lib/identityCandidates';
+import { judgeCandidates, redactedError, redactedErrorFields } from '@/lib/identityCandidates';
 import { logger } from '@/lib/logger';
 import type { PersonFacts, VerdictReason } from '@/domain/identityVerdict';
 import type { DuplicateMatch } from './types';
@@ -50,7 +50,7 @@ export async function matchImportRow(row: ImportRowIdentity): Promise<{ ok: true
             try {
                 facts.country = await ownerCountry(db, actor, `sheet-${crypto.randomUUID().slice(0, 8)}`);
             } catch (e) {
-                logger.warn('matchImportRow: country lookup failed, phones read without country', { actor, error: e instanceof Error ? e.message : String(e) });
+                logger.warn('matchImportRow: country lookup failed, phones read without country', { actor, ...redactedErrorFields(e) });
             }
         }
         const judged = await judgeCandidates(db, facts, ctx);
@@ -67,7 +67,8 @@ export async function matchImportRow(row: ImportRowIdentity): Promise<{ ok: true
         }
         return { ok: true, matches };
     } catch (e) {
-        const errorId = logger.error('matchImportRow failed', e, ctx);
+        // Redacted: a query error escaping retrieval carries the row's phone / email / DNI in "params:".
+        const errorId = logger.error('matchImportRow failed', redactedError(e), ctx);
         return { ok: false, errorId };
     }
 }

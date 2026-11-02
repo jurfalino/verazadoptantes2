@@ -19,6 +19,10 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
     withTrace: (_op: string, fn: () => unknown) => fn(),
 }));
+vi.mock('@/lib/api/profiles', async (orig) => {
+    const real = await orig<typeof import('@/lib/api/profiles')>();
+    return { ...real, ownerCountry: vi.fn(real.ownerCountry) };
+});
 vi.mock('@/lib/identityCandidates', async (orig) => {
     const real = await orig<typeof import('@/lib/identityCandidates')>();
     return { ...real, judgeCandidates: vi.fn(real.judgeCandidates) };
@@ -27,6 +31,7 @@ vi.mock('@/lib/identityCandidates', async (orig) => {
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
 import { judgeCandidates } from '@/lib/identityCandidates';
+import { ownerCountry } from '@/lib/api/profiles';
 import { logger } from '@/lib/logger';
 import { matchImportRow, type ImportRowIdentity } from './importIdentityMatches';
 
@@ -93,5 +98,24 @@ describe('matchImportRow', () => {
         const r = await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
         expect(r).toEqual({ ok: false, errorId: 'err12345' });
         expect(logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(Error), { actor: 'rescuer@example.com' });
+    });
+
+    const leaky = () => Object.assign(new Error('Failed query: select 1 where "token_value" = ?\nparams: phone,1165851333'), {
+        cause: new Error('D1_ERROR: boom\nparams: 1165851333'),
+    });
+    it('a thrown retrieval logs no bound values (Drizzle "params:")', async () => {
+        vi.mocked(judgeCandidates).mockRejectedValueOnce(leaky());
+        const r = await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+        expect(r).toEqual({ ok: false, errorId: 'err12345' });
+        const [, err] = vi.mocked(logger.error).mock.calls[0] as unknown as [string, Error];
+        expect(`${err.message} ${JSON.stringify(err)} ${String((err as { cause?: unknown }).cause ?? '')}`).not.toMatch(/65851333/);
+        expect(err.message).toContain('Failed query');
+    });
+    it('a failed country lookup logs no bound values', async () => {
+        vi.mocked(ownerCountry).mockRejectedValueOnce(leaky());
+        const r = await matchImportRow(row({ name: 'María Pérez', phones: ['11 6585-1333'] }));
+        expect(r.ok).toBe(true);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('country lookup failed'), expect.anything());
+        expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toMatch(/65851333/);
     });
 });

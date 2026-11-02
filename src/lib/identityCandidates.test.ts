@@ -145,6 +145,39 @@ describe('findIdentityCandidates', () => {
     });
 });
 
+describe('failure logs never carry the bound values', () => {
+    // Drizzle's DrizzleQueryError message ends with "params: <bound values>" — a phone, an email, a DNI.
+    const leaky = () => Object.assign(new Error('Failed query: select "name" from "duplicate_tokens" where "token_value" = ?\nparams: phone,1165851333'), {
+        cause: new Error('D1_ERROR: bad thing\nparams: 1165851333'),
+    });
+    const failingWhere = (pick: (fields: Record<string, unknown>) => boolean, join: boolean) => new Proxy(db() as object, {
+        get(t, prop, r) {
+            const v = Reflect.get(t, prop, r);
+            if (prop !== 'select') return typeof v === 'function' ? v.bind(t) : v;
+            return (fields: Record<string, unknown>) => {
+                if (fields && pick(fields)) {
+                    const tail = { where: () => ({ limit: () => Promise.reject(leaky()) }) };
+                    return { from: () => (join ? { innerJoin: () => tail } : tail) };
+                }
+                return (v as (f: unknown) => unknown).call(t, fields);
+            };
+        },
+    }) as ReturnType<typeof db>;
+
+    it('a failed name count logs no digits of the phone', async () => {
+        const failing = failingWhere(f => Object.keys(f).length === 1 && 'name' in f, true);
+        await findIdentityCandidates(failing, facts({ name: 'María José Pérez', phones: ['11 6585-1333'] }), {});
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('name count'), expect.anything());
+        expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toMatch(/65851333|1165851333/);
+    });
+    it('a failed detail read logs no digits of the phone', async () => {
+        const failing = failingWhere(f => 'contactEntries' in f, false);
+        await findIdentityCandidates(failing, facts({ name: 'María José Pérez', phones: ['11 6585-1333'] }), {});
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('details'), expect.objectContaining({ adopterId: 'mj' }));
+        expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toMatch(/65851333|1165851333/);
+    });
+});
+
 describe('judgeCandidates', () => {
     async function seedNamesakes() {
         for (let i = 1; i <= 5; i++) await seed(`lf${i}`, 'Lucía Fernández', [e('phone', `+54 9 11 5000 000${i}`)]);
