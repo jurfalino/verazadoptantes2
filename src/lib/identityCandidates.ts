@@ -19,7 +19,7 @@ import { readPhones } from '@/domain/phoneNumber';
 import type { DuplicateMatch } from '@/app/actions/types';
 import type { getDb } from '@/lib/db';
 import {
-    judgeIdentity, rankJudged,
+    judgeIdentity, rankJudged, foldHolderName,
     type IdentifierKind, type IdentityCandidate, type Judged, type PersonFacts, type SharedIdentifier,
 } from '@/domain/identityVerdict';
 
@@ -33,7 +33,7 @@ const IDENTIFIER_TOKEN_TYPES = new Set(['phone', 'phone_suffix', 'email', 'socia
 const MAX_COUNT_QUERIES = 12;
 const NAMES_SAMPLE = 10;
 
-const foldName = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+const foldName = foldHolderName;
 
 export { redactedError, redactedErrorFields } from '@/lib/redactedError';
 import { redactedErrorFields } from '@/lib/redactedError';

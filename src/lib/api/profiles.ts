@@ -13,18 +13,21 @@ import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { getRatingDisplayLevel, getRatingLabelKey } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
 import { openAlertKinds } from '@/domain/flags';
-import { normalizeDocumentId, type CandidateNames } from '@/domain/apiExactMatch';
+import { decideExactOutcome, normalizeDocumentId, type CandidateNames, type ExactOutcome } from '@/domain/apiExactMatch';
+import { foldHolderName, judgeIdentity, type IdentifierKind, type PersonFacts, type SharedIdentifier, type Verdict } from '@/domain/identityVerdict';
 import { phoneDuplicateTokens } from '@/domain/phoneNumber';
-import type { ProfileSummary, SearchRequest } from './schemas';
+import { apiSocialHandle, type ProfileSummary, type SearchRequest } from './schemas';
 import { ApiError } from './handler';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
-export type MatchedOn = 'email' | 'phone' | 'documentId';
+export type MatchedOn = 'email' | 'phone' | 'documentId' | 'social';
 
 export interface IdentifierHits {
     candidates: CandidateNames[];
     matchedOn: Map<string, MatchedOn[]>;
+    /** Per hit profile: each identifier it shares and how many differently-named hit profiles hold it (the verdict's input). */
+    shared: Map<string, SharedIdentifier[]>;
 }
 
 export function profileUrl(origin: string, profileId: string): string {
@@ -61,21 +64,71 @@ export async function findIdentifierHits(db: Db, person: SearchRequest['person']
         emails: person.email ? [person.email] : [],
         phones: person.phone ? [person.phone] : [],
         documentIds: person.documentId ? [person.documentId.value] : [],
+        // Accounts only: a display name ("Ana Perez") has no handle and looks nobody up.
+        socials: (person.socials ?? []).map(apiSocialHandle).filter((h): h is string => h !== null),
     }, requestId, country);
 }
 
-/** Several identifiers of one person (a sheet row with two phones): the same lookup as findIdentifierHits. */
-export interface IdentifierSet { emails: string[]; phones: string[]; documentIds: string[] }
+/**
+ * Several identifiers of one person (a sheet row with two phones): the same lookup as findIdentifierHits.
+ * `socials`: handles as `normalizeSocialHandle` returns them (looked up as `social_handle`, as the index stores them).
+ */
+export interface IdentifierSet { emails: string[]; phones: string[]; documentIds: string[]; socials?: string[] }
 
-function identifierLookups(ids: IdentifierSet, country: string | null): Array<{ type: string; value: string; field: MatchedOn }> {
-    const lookups: Array<{ type: string; value: string; field: MatchedOn }> = [];
-    const push = (l: { type: string; value: string; field: MatchedOn }) => {
+type Lookup = { type: string; value: string; field: MatchedOn };
+
+function identifierLookups(ids: IdentifierSet, country: string | null): Lookup[] {
+    const lookups: Lookup[] = [];
+    const push = (l: Lookup) => {
         if (l.value && !lookups.some(x => x.type === l.type && x.value === l.value)) lookups.push(l);
     };
     for (const e of ids.emails) push({ type: 'email', value: e.trim().toLowerCase(), field: 'email' });
     for (const p of ids.phones) for (const t of phoneDuplicateTokens(p, country)) push({ type: t.type, value: t.value, field: 'phone' });
     for (const d of ids.documentIds) push({ type: 'id_number', value: normalizeDocumentId(d), field: 'documentId' });
+    for (const h of ids.socials ?? []) push({ type: 'social_handle', value: h, field: 'social' });
     return lookups;
+}
+
+const KIND_OF: Record<MatchedOn, IdentifierKind> = { email: 'email', phone: 'phone', documentId: 'document', social: 'social' };
+
+/**
+ * What each hit profile shares, one entry per lookup that hit it, with the number of
+ * distinct (folded) names among the live hit profiles holding that same token. A phone's
+ * last-8 suffix is not counted again when the full number hit the profile too.
+ */
+function sharedOf(lookups: Lookup[], hitsPerLookup: string[][], names: Map<string, string>): Map<string, SharedIdentifier[]> {
+    const out = new Map<string, SharedIdentifier[]>();
+    lookups.forEach((l, i) => {
+        const holders = [...new Set(hitsPerLookup[i])].filter(id => names.has(id));
+        const namesHolding = new Set(holders.map(id => foldHolderName(names.get(id)!))).size;
+        for (const id of holders) {
+            if (l.type === 'phone_suffix' && lookups.some((m, j) => m.type === 'phone' && hitsPerLookup[j].includes(id))) continue;
+            const list = out.get(id) ?? [];
+            list.push({ kind: KIND_OF[l.field], value: l.value, namesHolding });
+            out.set(id, list);
+        }
+    });
+    return out;
+}
+
+/** The identity verdict for every hit profile (pure, src/domain/identityVerdict.ts). */
+export function judgeHits(person: SearchRequest['person'], hits: IdentifierHits): Map<string, Verdict> {
+    const facts: PersonFacts = {
+        name: person.fullName ?? '', aliases: [],
+        phones: person.phone ? [person.phone] : [], emails: person.email ? [person.email] : [],
+        socials: (person.socials ?? []).map(apiSocialHandle).filter((h): h is string => h !== null),
+        documentIds: person.documentId ? [person.documentId.value] : [],
+    };
+    return new Map(hits.candidates.map(c => [c.profileId, judgeIdentity(facts, {
+        adopterId: c.profileId, name: c.name, aliases: c.aliases,
+        shared: hits.shared.get(c.profileId) ?? [],
+        relevancePercent: 0, matchTypes: [], matchValues: [], source: 'token',
+    }).verdict]));
+}
+
+/** API exact's answer for the hits: the decision table on the identity verdict. runExact's one rule set. */
+export function exactOutcomeOf(person: SearchRequest['person'], hits: IdentifierHits): ExactOutcome {
+    return decideExactOutcome(person.fullName ?? '', hits.candidates, judgeHits(person, hits));
 }
 
 /** At most how many D1 queries findIdentifierHitsFor issues for `ids` with `maxProfiles` (a caller's budget). */
@@ -123,8 +176,9 @@ export async function findIdentifierHitsFor(db: Db, ids: IdentifierSet, requestI
     }));
     // Tokens pointing at deleted / demo profiles are dropped; that's expected.
     for (const id of matchedOn.keys()) if (!candidates.some(c => c.profileId === id)) matchedOn.delete(id);
+    const shared = sharedOf(lookups, rows.map((r: Array<{ adopterId: string }>) => r.map(x => x.adopterId)), new Map(candidates.map(c => [c.profileId, c.name])));
     logger.info('api: identifier lookup', { requestId, lookups: lookups.length, hits: candidates.length });
-    return { candidates, matchedOn };
+    return { candidates, matchedOn, shared };
 }
 
 type RatingFields = Pick<ProfileSummary, 'rating' | 'ratingLevel' | 'ratingLabel'>;

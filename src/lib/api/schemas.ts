@@ -10,6 +10,7 @@ import { isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { readPhones } from '@/domain/phoneNumber';
 import { API_EMAIL_RE } from '@/domain/apiPersonCleanup';
 import { normalizeSpecies } from '@/domain/importRow';
+import { detectSocialPlatformFromValue, normalizeSocialHandle } from '@/lib/tokenizer';
 
 /** Activity types that place the animal with the person (they create it in the rescue's list). */
 export const PLACEMENT_TYPES: readonly string[] = [RECORD_TYPES.ADOPTION, RECORD_TYPES.FOSTER];
@@ -42,8 +43,18 @@ const personSchema = z.object({
         platform: z.enum(SOCIAL_PLATFORMS_API),
         handle: z.string().trim().min(1).max(200).meta({ example: '@mariajose' }),
     }).strict()).max(10).optional()
-        .meta({ description: 'Used by fuzzy search. Accepted but not used to decide an exact match.' }),
+        .meta({ description: 'Social network accounts. In exact mode an account counts as an identifier, like an email or a phone; a display name with spaces ("Ana Perez") is kept as text but identifies nobody.' }),
 }).strict();
+
+/**
+ * The account a social entry names, as the token index stores it (`social_handle`,
+ * src/lib/tokenizer.ts: the entry's platform, or the one its link shows when `other`).
+ * null: no account (a display name, a bare domain) — it identifies nobody.
+ */
+export function apiSocialHandle(s: { platform: string; handle: string }): string | null {
+    const platform = s.platform && s.platform !== 'other' ? s.platform : detectSocialPlatformFromValue(s.handle);
+    return normalizeSocialHandle(s.handle, platform);
+}
 
 /** formContent: any JSON object, as the rescue's own form produced it. */
 export const FORM_CONTENT_MAX_BYTES = 50_000;
@@ -132,8 +143,8 @@ export function checkSearchRules(req: SearchRequest): RuleProblem[] {
     }
     const a = req.activity;
     if (req.mode === 'exact') {
-        if (!p.fullName || !(p.email || p.phone || p.documentId)) {
-            add('exact_requires_name_and_identifier', p.fullName ? 'person' : 'person.fullName', 'exact mode needs person.fullName plus person.email, person.phone or person.documentId');
+        if (!p.fullName || !(p.email || p.phone || p.documentId || (p.socials ?? []).some(x => apiSocialHandle(x) !== null))) {
+            add('exact_requires_name_and_identifier', p.fullName ? 'person' : 'person.fullName', 'exact mode needs person.fullName plus person.email, person.phone, person.documentId or a social account in person.socials');
         } else if (!isFullName(p.fullName)) add('full_name_required', 'person.fullName', 'person.fullName must be a first name and surname (not an email, a phone number or a single word)');
         // An exact call always saves (Jon, 2026-10-17): to look someone up, use fuzzy.
         if (!a) add('activity_required', 'activity', 'an exact call always saves an activity; to look someone up without saving anything, use mode "fuzzy"');
@@ -185,9 +196,10 @@ export type ApiAlert = z.infer<typeof alertSchema>;
 export const profileSummarySchema = ratingSchema.extend({
     profileId: z.string(),
     url: z.string().meta({ description: 'The profile page. Opens for logged-in BuenAdoptante users, with their own access rules.' }),
-    matchedOn: z.array(z.enum(['email', 'phone', 'documentId'])).optional(),
-    nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional()
-        .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). household_member is no longer returned: each person in a household is a profile of their own.' }),
+    matchedOn: z.array(z.enum(['email', 'phone', 'documentId', 'social'])).optional()
+        .meta({ description: 'Which of the identifiers you sent this profile holds. social: one of the accounts in person.socials.' }),
+    nameMatchedAs: z.enum(['profile', 'alias', 'household_member', 'document']).optional()
+        .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). document: no name fits, but the profile holds the document you sent, which identifies the person on its own (no contact details are added). household_member is no longer returned: each person in a household is a profile of their own.' }),
     flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs). duplicate is an open report only: once the two profiles are merged or kept separate it is no longer listed.' }),
     alerts: z.array(alertSchema).meta({ description: 'Activity alerts BuenAdoptante computed for this person: too_many_requests, too_many_adoptions. Empty when none.' }),
     records: z.partialRecord(z.enum(API_CONTEXTS), z.number().int()).meta({ description: 'Number of records per type.' }),
@@ -263,7 +275,7 @@ export const exactResponseSchema = z.object({
     reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'match = ambiguous. multiple_profiles: several profiles fit the name. name_mismatch: the email / phone / document belongs to someone with another name.' }),
     candidates: z.array(z.object({
         profileId: z.string(), url: z.string(),
-        nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does. household_member is no longer returned: each person in a household is a profile of their own.' }),
+        nameMatchedAs: z.enum(['profile', 'alias', 'household_member', 'document']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does. document: no name fits, but the profile holds the document you sent, so it can take the activity. household_member is no longer returned: each person in a household is a profile of their own.' }),
     })).optional().meta({ description: 'match = ambiguous: the profiles the email / phone / document belongs to. Their ratings and alerts are in `risk`.' }),
     risk: riskSchema,
     saved: savedSchema.meta({ description: 'Always present: what this call did.' }),

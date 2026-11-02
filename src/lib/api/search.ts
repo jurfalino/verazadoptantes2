@@ -2,13 +2,13 @@
  * POST /api/v1/search: exact and fuzzy modes (.agents/plans/2026-10-09-third-party-api.md).
  * Server-only; the route file is a thin wrapper around `runSearch`.
  */
-import { decideExactOutcome } from '@/domain/apiExactMatch';
+import { matchNameAgainstProfile } from '@/domain/apiExactMatch';
 import { cleanApiPerson } from '@/domain/apiPersonCleanup';
 import { SEARCH_RESULT_LIMIT } from '@/config/constants';
 import { logger } from '@/lib/logger';
 import type { DiscoveryMatch } from '@/app/actions/types';
 import { ApiError, claimIdempotencyKey, enforceDailyCap, replayIdempotent, requireScope, type ApiCallContext, type ApiResult } from './handler';
-import { buildProfileSummaries, findIdentifierHits, ownerCountry, profileUrl, ratingFields } from './profiles';
+import { buildProfileSummaries, exactOutcomeOf, findIdentifierHits, ownerCountry, profileUrl, ratingFields } from './profiles';
 import { bestMatchFor, saveApiActivity } from './records';
 import { environmentForHost, importModeOn } from './keys';
 import { isExampleData } from './docScenarios';
@@ -114,7 +114,9 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
         logger.error('api: identifier lookup failed', e, { requestId: ctx.requestId, keyId: ctx.key.id });
         throw new ApiError(503, 'temporarily_unavailable', 'could not search for the person right now; nothing was saved — retry in a moment', { 'Retry-After': '5' });
     }
-    const outcome = decideExactOutcome(req.person.fullName!, hits.candidates);
+    // The identity verdict decides (spec 2026-11-02): a DNI alone is the same person, a social
+    // account counts like a phone or an email, junk identifiers link nobody.
+    const outcome = exactOutcomeOf(req.person, hits);
     const ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
     ctx.log.outcome = outcome.result;
 
@@ -133,7 +135,13 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
             body.otherMatches = orderCandidates(outcome.otherProfileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id) })), matched);
         }
     } else if (outcome.result === 'ambiguous') {
+        // Which name fits each candidate: the one that may take the activity says how; any other
+        // still says whether its name fits (it may not take it: e.g. its only shared identifier is junk).
         const fits = new Map(outcome.compatible.map(c => [c.profileId, c.as]));
+        for (const c of hits.candidates) if (!fits.has(c.profileId)) {
+            const as = matchNameAgainstProfile(req.person.fullName!, c);
+            if (as) fits.set(c.profileId, as);
+        }
         body.reason = outcome.reason;
         body.candidates = orderCandidates(outcome.profileIds.map(id => ({ profileId: id, url: profileUrl(ctx.origin, id), nameMatchedAs: fits.get(id) ?? null })), matched);
     }

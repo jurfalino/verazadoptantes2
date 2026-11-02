@@ -56,6 +56,9 @@ export interface Judged {
     nameMatchedAs?: 'profile' | 'alias';
 }
 
+/** How `namesHolding` tells names apart: accent- and case-folded, spaces collapsed. */
+export const foldHolderName = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+
 /** An identifier held by more than this many differently-named profiles links nobody. */
 export const MAX_NAMES_PER_IDENTIFIER = 3;
 

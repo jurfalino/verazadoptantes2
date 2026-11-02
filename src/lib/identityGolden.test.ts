@@ -3,7 +3,7 @@
  * people, called as its screen calls it, on the same nine examples, over real
  * SQL (every drizzle/*.sql replayed) and the real token index / duplicate engine.
  *
- * The sheet, form, social-post import and «Pendientes» columns are on the verdict;
+ * The sheet, form, social-post import, «Pendientes» and API exact columns are on the verdict;
  * the rest pin today's behavior until their rollout step flips them (spec §Rollout). Assert profile ids and actions only, never percentages.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -29,8 +29,7 @@ import { findAdopters, findAdoptersAsViewer } from '@/app/actions/findAdopters';
 import { searchFormDuplicates } from './formDuplicates';
 import { fuzzyQueryOf } from './api/search';
 import { checkSearchRules, type SearchRequest } from './api/schemas';
-import { findIdentifierHits } from './api/profiles';
-import { decideExactOutcome } from '@/domain/apiExactMatch';
+import { findIdentifierHits, exactOutcomeOf } from './api/profiles';
 import { dupHintSearchInput } from '@/domain/dupHint';
 import { defaultImportAction } from '@/domain/importMerge';
 
@@ -108,7 +107,7 @@ async function surfaces(p: Person) {
         ? ((await findAdopters(hintInput, { mode: 'duplicate', limit: 3, minRelevance: 5 })).results as Array<{ adopterId: string }>).map(r => r.adopterId)
         : null;
 
-    // API exact: rules first, then identifier lookup + decision.
+    // API exact (the verdict): rules first, then identifier lookup + the verdict's decision, as runExact.
     const person: SearchRequest['person'] = {
         fullName: p.name,
         ...(p.email ? { email: p.email } : {}),
@@ -121,7 +120,7 @@ async function surfaces(p: Person) {
     if (problems.length > 0) apiExact = { rejected: problems[0].code };
     else {
         const hits = await findIdentifierHits(state.db as Parameters<typeof findIdentifierHits>[0], person, 'req', 'AR');
-        const o = decideExactOutcome(p.name, hits.candidates);
+        const o = exactOutcomeOf(person, hits);
         apiExact = o.result === 'found' ? { found: o.profileId }
             : o.result === 'not_found' ? { not_found: true }
             : { ambiguous: o.reason };
@@ -145,7 +144,7 @@ async function surfaces(p: Person) {
 }
 
 /**
- * One row per example. `sheet` is the verdict (new); everything else is TODAY.
+ * One row per example. The verdict columns are named in the header; search is TODAY.
  * `search.low` lists only the profile the table names (the low list may carry
  * unrelated weak name hits, which are not part of the contract).
  */
@@ -158,7 +157,8 @@ interface Expected {
     apiExact: unknown; searchMain: string[]; searchLowHas: string[];
 }
 
-const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true; extraSeed?: Array<[string, string, ContactEntry[]]>; expected: Expected | { sheet: Expected['sheet'] } }> = [
+/** sheetOnly rows assert the sheet and API exact columns only. */
+const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true; extraSeed?: Array<[string, string, ContactEntry[]]>; expected: Expected | Pick<Expected, 'sheet' | 'apiExact'> }> = [
     { n: 1, label: 'María Pérez + MJ phone', person: { name: 'María Pérez', phone: '11 6585-1333' }, expected: {
         sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
         pendientes: [MJ, MP], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
@@ -173,20 +173,20 @@ const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true;
         pendientes: [MJ, MP], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [MJ], searchLowHas: [] } },
     { n: 5, label: 'Majo Pérez + MJ Instagram', person: { name: 'Majo Pérez', social: 'mariajose.p' }, expected: {
         sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
-        pendientes: [MJ], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [], searchLowHas: [MJ] } },
+        pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 6, label: 'Maria Peres + MJ email', person: { name: 'Maria Peres', email: 'maria.perez@gmail.com' }, expected: {
         sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
         pendientes: [MJ, MP], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
     { n: 7, label: 'Majo Pérez + MJ DNI', person: { name: 'Majo Pérez', dni: '30.123.456' }, expected: {
         sheet: { action: 'upsert', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: true, warning: [MJ],
-        pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [], searchLowHas: [MJ] } },
+        pendientes: [MJ], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
     { n: 8, label: 'Ana Ruiz + DNI shared with Juan Gómez', person: { name: 'Ana Ruiz', dni: '00000000' }, sheetOnly: true,
-        expected: { sheet: { action: 'create', matches: [] } } },
+        expected: { sheet: { action: 'create', matches: [] }, apiExact: { ambiguous: 'name_mismatch' } } },
     { n: 9, label: 'Luis Paz + email held by four other names', person: { name: 'Luis Paz', email: 'luis@x.com' }, sheetOnly: true,
-        expected: { sheet: { action: 'create', matches: [] } } },
+        expected: { sheet: { action: 'create', matches: [] }, apiExact: { ambiguous: 'multiple_profiles' } } },
     { n: 10, label: 'Gómez + phone shared by Ana Gómez and Juan Gómez', person: { name: 'Gómez', phone: '11 5000-1000' }, sheetOnly: true,
         extraSeed: [['ag', 'Ana Gómez', [e('phone', '+54 9 11 5000 1000')]], ['jg2', 'Juan Gómez', [e('phone', '+54 9 11 5000 1000')]]],
-        expected: { sheet: { action: 'review', matches: ['ag', 'jg2'] } } },
+        expected: { sheet: { action: 'review', matches: ['ag', 'jg2'] }, apiExact: { rejected: 'full_name_required' } } },
 ];
 
 describe('golden table: every surface on the same examples', () => {
@@ -197,14 +197,17 @@ describe('golden table: every surface on the same examples', () => {
             if (c.extraSeed) expect(got.sheet.matches).toHaveLength(c.expected.sheet.matches.length);
             expect(c.extraSeed ? { ...got.sheet, matches: [...got.sheet.matches].sort() } : got.sheet)
                 .toEqual(c.extraSeed ? { ...c.expected.sheet, matches: [...c.expected.sheet.matches].sort() } : c.expected.sheet);
-            if (c.sheetOnly) return;
+            expect(got.apiExact).toEqual(c.expected.apiExact);
+            if (c.sheetOnly) {
+                expect(got.apiExact).not.toHaveProperty('found');
+                return;
+            }
             const x = c.expected as Expected;
             expect(got.form).toEqual(x.form);
             expect(got.postImport.listed).toEqual(x.postListed);
             expect(got.postImport.preselected).toBe(x.postPreselected);
             expect(got.warning).toEqual(x.warning);
             expect(got.pendientes).toEqual(x.pendientes);
-            expect(got.apiExact).toEqual(x.apiExact);
             expect(got.search.main).toEqual(x.searchMain);
             expect(got.search.low).toEqual(expect.arrayContaining(x.searchLowHas));
         });

@@ -51,7 +51,7 @@ Cada clave pertenece a un rescatista. Enviala en cada llamada: \`Authorization: 
 | \`mode\` | Para qué | ¿Guarda algo? |
 |---|---|---|
 | \`fuzzy\` | **Buscar** a alguien con cualquier dato, como la página de inicio. Devuelve una lista ordenada por relevancia, cada una con su calificación, marcas y alertas. | **Nunca.** |
-| \`exact\` | **Registrar** algo de una persona (una solicitud, una adopción…): con nombre y apellido **más** email, teléfono o documento, la identifica y guarda la actividad. | **Siempre.** |
+| \`exact\` | **Registrar** algo de una persona (una solicitud, una adopción…): con nombre y apellido **más** email, teléfono, documento o una cuenta de red social, la identifica y guarda la actividad. | **Siempre.** |
 
 Datos de la persona que podés mandar:
 
@@ -62,7 +62,7 @@ Datos de la persona que podés mandar:
 | \`phone\` | +54 9 11 5550-3101 (cualquier formato) |
 | \`documentId.value\` | 99.555.310 (DNI, CI, CPF, RUT…) |
 | \`address\` | Av. Siempreviva 742, CABA (solo la usa fuzzy) |
-| \`socials\` | [{ "platform": "instagram", "handle": "@mariajose.demo" }] (solo la usa fuzzy) |
+| \`socials\` | [{ "platform": "instagram", "handle": "@mariajose.demo" }] (una cuenta identifica como un email o un teléfono; un nombre con espacios, como "Ana Perez", no) |
 
 ## Búsqueda exacta: registrar una actividad
 Mandá \`activity\` con su tipo (\`activityType\`: \`adoption_request\`, \`adoption\`, \`foster\`, \`follow_up\`, \`returned_pet\` u \`observation\`) y **\`externalId\`: tu propio id de ese registro** (el número de respuesta de tu formulario, la fila de tu planilla…). Lo demás es opcional: el animal (\`animalName\`, \`species\`), la fecha, notas y la calificación (si no la tenés, no la mandes: nunca se infiere).
@@ -74,8 +74,8 @@ Mandá \`activity\` con su tipo (\`activityType\`: \`adoption_request\`, \`adopt
 La respuesta dice dos cosas por separado:
 
 **\`match\`: qué había en BuenAdoptante antes de tu llamada**
-- \`found\`: una persona conocida; viene en \`profile\` (calificación, marcas, alertas, link a su perfil).
-- \`not_found\`: nadie tiene ese email, teléfono o documento.
+- \`found\`: una persona conocida; viene en \`profile\` (calificación, marcas, alertas, link a su perfil). \`profile.matchedOn\` dice qué datos coincidieron: \`email\`, \`phone\`, \`documentId\` o \`social\` (una de las cuentas de \`socials\`). Con \`profile.nameMatchedAs: "document"\` el nombre no coincide pero el documento sí: el documento solo alcanza para identificarla, y no se le agregan los datos de contacto que mandaste.
+- \`not_found\`: nadie tiene ese email, teléfono, documento o cuenta.
 - \`ambiguous\`: el dato es de más de un perfil, o de alguien con otro nombre (por ejemplo un teléfono familiar); vienen en \`candidates\`.
 
 **\`saved.action\`: qué hizo tu llamada** (siempre viene)
@@ -164,7 +164,7 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 | \`access_blocked\` | La persona dueña de la clave fue bloqueada de la API. | Escribinos si creés que es un error. |
 | \`forbidden\` | La clave no tiene el permiso para eso. | Pedile a BuenAdoptante el permiso (\`search\`, \`search:fuzzy\`, \`record:write\`). |
 | \`not_found\` | Ese id no existe para tu clave. | Revisá el id. |
-| \`exact_requires_name_and_identifier\` | \`exact\` necesita nombre y apellido más email, teléfono o documento. | Completá los datos, o usá \`fuzzy\`. |
+| \`exact_requires_name_and_identifier\` | \`exact\` necesita nombre y apellido más email, teléfono, documento o una cuenta de red social. | Completá los datos, o usá \`fuzzy\`. |
 | \`full_name_required\` | \`fullName\` no tiene nombre y apellido. | Mandá el nombre completo. |
 | \`invalid_email\` | El email no se puede leer. | Corregilo o no lo mandes. |
 | \`invalid_phone\` | El teléfono no se puede leer. | Corregilo o no lo mandes. |

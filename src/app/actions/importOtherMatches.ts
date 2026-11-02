@@ -41,7 +41,7 @@ export type IdenticalRowsOtherMatchesResult =
     | { ok: true; others: Record<string, DuplicateMatch[]>; failed: string[]; deferred: string[] }
     | { ok: false; errorId: string };
 
-const FIELD_TYPE = { email: 'email', phone: 'phone', documentId: 'id_number' } as const;
+const FIELD_TYPE = { email: 'email', phone: 'phone', documentId: 'id_number', social: 'social_handle' } as const;
 
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, MAX_PER_TYPE) : []);
 

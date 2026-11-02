@@ -13,15 +13,17 @@
  * Which of a profile's names the input fits. `household_member` is never
  * produced since households are profiles (2026-10-26): a housemate is a
  * profile of its own, matched as `profile`. It stays in the type (and the API
- * schema) so clients that switch on it keep compiling.
+ * schema) so clients that switch on it keep compiling. `document`: no name
+ * fits, but the profile holds the DNI sent — a DNI alone is the same person
+ * (identity verdict, decision 1).
  */
-export type NameMatchedAs = 'profile' | 'alias' | 'household_member';
+export type NameMatchedAs = 'profile' | 'alias' | 'household_member' | 'document';
 
 export type ExactOutcome =
     /** `otherProfileIds`: profiles the identifier ALSO hit under an unrelated name (shown, never chosen). */
     | { result: 'found'; profileId: string; nameMatchedAs: NameMatchedAs; otherProfileIds: string[] }
     | { result: 'not_found' }
-    /** `compatible`: the candidates whose name fits (2+, or none). The activity goes on the best of them (pickBestMatch); none → a new profile. */
+    /** `compatible`: the candidates that may take the activity (2+, or none) — name fits, or judged same with `verdicts`. The activity goes on the best of them (pickBestMatch); none → a new profile. */
     | { result: 'ambiguous'; reason: 'multiple_profiles' | 'name_mismatch'; profileIds: string[]; compatible: Array<{ profileId: string; as: NameMatchedAs }> };
 
 /** Accent- and case-folded words of a name; punctuation splits words. */
@@ -110,11 +112,18 @@ export function matchNameAgainstProfile(inputName: string, c: CandidateNames): N
 /**
  * The decision table (plan §Exact mode). `candidates` are the distinct live
  * profiles the identifier hit.
+ *
+ * `verdicts` (the identity verdict per profile id, src/domain/identityVerdict.ts):
+ * the profiles that may take the activity are those judged `same` — a shared
+ * DNI whatever the name (`as: 'document'` when no name fits), or a shared
+ * contact with a compatible name; junk identifiers never count. Without
+ * `verdicts`, a profile may take it when its name fits (the original rule).
  */
-export function decideExactOutcome(inputName: string, candidates: CandidateNames[]): ExactOutcome {
+export function decideExactOutcome(inputName: string, candidates: CandidateNames[], verdicts?: Map<string, 'same' | 'possible' | 'no'>): ExactOutcome {
     if (candidates.length === 0) return { result: 'not_found' };
     const compatible = candidates
-        .map(c => ({ profileId: c.profileId, as: matchNameAgainstProfile(inputName, c) }))
+        .filter(c => !verdicts || verdicts.get(c.profileId) === 'same')
+        .map(c => ({ profileId: c.profileId, as: matchNameAgainstProfile(inputName, c) ?? (verdicts ? 'document' as const : null) }))
         .filter((c): c is { profileId: string; as: NameMatchedAs } => c.as !== null);
     const allIds = candidates.map(c => c.profileId);
     if (compatible.length === 1) {
@@ -125,7 +134,7 @@ export function decideExactOutcome(inputName: string, candidates: CandidateNames
     return { result: 'ambiguous', reason: 'multiple_profiles', profileIds: allIds, compatible };
 }
 
-const NAME_RANK: Record<NameMatchedAs, number> = { profile: 3, alias: 2, household_member: 1 };
+const NAME_RANK: Record<NameMatchedAs, number> = { profile: 3, alias: 2, household_member: 1, document: 0 };
 
 /**
  * Ambiguous, but more than one name fits (Jon, 2026-10-13): the activity goes on

@@ -3,6 +3,7 @@ import {
     isFullName, namesCompatible, decideExactOutcome, pickBestMatch,
     normalizeDocumentId, isUsableDocumentId, type CandidateNames,
 } from './apiExactMatch';
+import { judgeIdentity, type PersonFacts, type SharedIdentifier } from './identityVerdict';
 
 const cand = (profileId: string, name: string, extra: Partial<CandidateNames> = {}): CandidateNames =>
     ({ profileId, name, aliases: [], ...extra });
@@ -102,5 +103,63 @@ describe('document id', () => {
     it('rejects ids the index never stores', () => {
         expect(isUsableDocumentId('30.123.456')).toBe(true);
         expect(isUsableDocumentId('AB12')).toBe(false);
+    });
+});
+
+describe('decideExactOutcome on the identity verdict (verdicts given)', () => {
+    const cand = (profileId: string, name: string, shared: SharedIdentifier[]) => ({
+        names: { profileId, name, aliases: [] as string[] },
+        identity: { adopterId: profileId, name, aliases: [], shared, relevancePercent: 0, matchTypes: [], matchValues: [], source: 'token' as const },
+    });
+    const facts = (name: string): PersonFacts => ({ name, aliases: [], phones: [], emails: [], socials: [], documentIds: [] });
+    const decide = (name: string, cs: Array<ReturnType<typeof cand>>) =>
+        decideExactOutcome(name, cs.map(c => c.names), new Map(cs.map(c => [c.names.profileId, judgeIdentity(facts(name), c.identity).verdict])));
+    const dni = (value: string, namesHolding = 1): SharedIdentifier => ({ kind: 'document', value, namesHolding });
+
+    it('a DNI alone is enough: an incompatible name is found, matched as document', () => {
+        expect(decide('Majo Pérez', [cand('mj', 'María José Pérez', [dni('30123456')])]))
+            .toEqual({ result: 'found', profileId: 'mj', nameMatchedAs: 'document', otherProfileIds: [] });
+    });
+
+    it('a DNI on two differently-named profiles: both same → ambiguous, both eligible', () => {
+        const o = decide('Majo Pérez', [cand('a', 'Ana Gómez', [dni('30123456', 2)]), cand('b', 'Juan Ruiz', [dni('30123456', 2)])]);
+        expect(o).toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles', profileIds: ['a', 'b'] });
+        expect(o.result === 'ambiguous' && o.compatible).toEqual([{ profileId: 'a', as: 'document' }, { profileId: 'b', as: 'document' }]);
+    });
+
+    it('a compatible name still wins over a DNI-only holder (best match)', () => {
+        const o = decide('María Pérez', [
+            cand('dniOnly', 'Juan Ruiz', [dni('30123456', 2)]),
+            cand('named', 'María Pérez', [dni('30123456', 2)]),
+        ]);
+        expect(o.result).toBe('ambiguous');
+        if (o.result !== 'ambiguous') return;
+        expect(pickBestMatch(o.compatible, new Map([['dniOnly', ['documentId']], ['named', ['documentId']]]), new Map())).toBe('named');
+    });
+
+    it('a placeholder DNI links nobody: not found', () => {
+        const o = decide('Ana Ruiz', [cand('jg', 'Juan Gómez', [dni('00000000')])]);
+        expect(o).toEqual({ result: 'ambiguous', reason: 'name_mismatch', profileIds: ['jg'], compatible: [] });
+    });
+
+    it('«Beto Sosa» + an email held by 4 names: the email is junk → not found', () => {
+        const email: SharedIdentifier = { kind: 'email', value: 'luis@x.com', namesHolding: 4 };
+        const o = decide('Beto Sosa', [
+            cand('lu1', 'Beto Sosa', [email]), cand('lu2', 'Carla Díaz', [email]), cand('lu3', 'Darío Vega', [email]), cand('lu4', 'Elsa Ortiz', [email]),
+        ]);
+        expect(o.result).not.toBe('found');
+        expect(o).toMatchObject({ result: 'ambiguous', reason: 'multiple_profiles', compatible: [] });
+    });
+
+    it('an incompatible name with a shared phone or social stays name_mismatch (new profile + pair)', () => {
+        const social: SharedIdentifier = { kind: 'social', value: 'mariajose.p', namesHolding: 1 };
+        expect(decide('Majo Pérez', [cand('mj', 'María José Pérez', [social])]))
+            .toEqual({ result: 'ambiguous', reason: 'name_mismatch', profileIds: ['mj'], compatible: [] });
+    });
+
+    it('a compatible name with a shared social is found, matched as profile', () => {
+        const social: SharedIdentifier = { kind: 'social', value: 'mariajose.p', namesHolding: 1 };
+        expect(decide('María Pérez', [cand('mj', 'María José Pérez', [social])]))
+            .toEqual({ result: 'found', profileId: 'mj', nameMatchedAs: 'profile', otherProfileIds: [] });
     });
 });

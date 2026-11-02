@@ -67,6 +67,28 @@ describe('buildOpenApi', () => {
         expect(new Set(ids).size).toBe(ids.length);
     });
 
+    it('exact answers may say matchedOn social and nameMatchedAs document (additive values, documented)', () => {
+        const exact = search.responses['200'].content['application/json'].schema.oneOf[0];
+        const profile = exact.properties.profile;
+        expect(profile.properties.matchedOn.items.enum).toEqual(['email', 'phone', 'documentId', 'social']);
+        expect(profile.properties.matchedOn.description).toMatch(/social/);
+        expect(profile.properties.nameMatchedAs.enum).toEqual(['profile', 'alias', 'household_member', 'document']);
+        expect(profile.properties.nameMatchedAs.description).toMatch(/document:/);
+        const candidate = exact.properties.candidates.items.properties.nameMatchedAs;
+        expect(candidate.enum ?? candidate.anyOf?.[0]?.enum).toEqual(['profile', 'alias', 'household_member', 'document']);
+        expect(search.requestBody.content['application/json'].schema.properties.person.properties.socials.description).toMatch(/exact mode an account counts as an identifier/);
+        const guide: string = doc.info.description;
+        expect(guide).toContain('`social`');
+        expect(guide).toContain('nameMatchedAs: "document"');
+        expect(guide).not.toMatch(/\| `socials` .*solo la usa fuzzy/);
+        expect(exactResponseSchema.safeParse({
+            requestId: 'r', mode: 'exact', match: 'found',
+            profile: { profileId: 'p', url: 'u', rating: null, ratingLevel: 0, ratingLabel: 'not_rated', matchedOn: ['social', 'documentId'], nameMatchedAs: 'document', flags: [], alerts: [], records: {}, lastRecordAt: null, createdAt: null, registeredByYourRescue: false },
+            risk: { worstRating: { rating: null, ratingLevel: 0, ratingLabel: 'not_rated' }, flags: [], alerts: [], profilesMatched: 1 },
+            saved: { action: 'added_to_profile' },
+        }).success).toBe(true);
+    });
+
     it('the dry-run header is not pre-filled into generated requests (no enum/const/example)', () => {
         const header = search.parameters.find((p: { name: string }) => p.name === 'X-Dry-Run');
         expect(header.schema).toEqual({ type: 'string' });
@@ -180,6 +202,15 @@ describe('checkSearchRules', () => {
         const problems = checkSearchRules(parsed);
         expect(problems.map(p => p.code)).toEqual(expect.arrayContaining(['invalid_email', 'invalid_phone', 'full_name_required', 'external_id_required', 'species_required']));
         expect(problems.find(p => p.code === 'invalid_email')!.field).toBe('person.email');
+    });
+    it('exact: a social account is an identifier; a display name is not', () => {
+        const rules = (socials: Array<{ platform: string; handle: string }>) => checkSearchRules(searchRequestSchema.parse({
+            mode: 'exact', person: { fullName: 'Ana Pérez', socials }, activity: { activityType: 'adoption_request', externalId: 'x' },
+        })).map(p => p.code);
+        expect(rules([{ platform: 'instagram', handle: '@ana.perez' }])).toEqual([]);
+        expect(rules([{ platform: 'other', handle: 'https://www.tiktok.com/@ana.perez' }])).toEqual([]);
+        expect(rules([{ platform: 'facebook', handle: 'Ana Perez' }])).toEqual(['exact_requires_name_and_identifier']);
+        expect(rules([])).toEqual(['exact_requires_name_and_identifier']);
     });
     it('an exact call without activity points to fuzzy', () => {
         const parsed = searchRequestSchema.parse({ mode: 'exact', person: { fullName: 'Ana Pérez', email: 'ana@x.com' } });
