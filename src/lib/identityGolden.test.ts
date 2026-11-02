@@ -24,7 +24,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { tokenizeAdopter } from './adopterTokenize';
-import { contactEntriesToBlob, type ContactEntry } from './contactEntries';
+import { contactEntriesToBlob, contactEntriesToIdentity, type ContactEntry } from './contactEntries';
 import { matchImportRow } from '@/app/actions/importIdentityMatches';
 import { findAdopters, findAdoptersAsViewer } from '@/app/actions/findAdopters';
 import { searchFormDuplicates } from './formDuplicates';
@@ -34,7 +34,6 @@ import { findIdentifierHits } from './api/profiles';
 import { decideExactOutcome } from '@/domain/apiExactMatch';
 import { dupHintSearchInput } from '@/domain/dupHint';
 import { defaultImportAction } from '@/domain/importMerge';
-import { confidenceBand } from './scoring';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -92,16 +91,16 @@ async function surfaces(p: Person) {
         { name: p.name, phones, emails, socials: p.social ? [p.social] : [], documentIds: ids }, { minRelevance: 15 }, async () => OWNER,
     )).results.map(r => r.adopter.id);
 
-    // Social-post import: contact blob; pre-selected iff the top match is in the «high» band.
+    // Social-post import (the verdict): the wizard's typed contacts → matchImportRow; pre-selected iff the top verdict is «same».
     const entries: ContactEntry[] = [
         ...(p.phone ? [e('phone', p.phone)] : []),
         ...(p.email ? [e('email', p.email)] : []),
         ...(p.social ? [e('social', p.social, 'instagram')] : []),
         ...(p.dni ? [e('id', p.dni)] : []),
     ];
-    const post = await findAdopters({ name: p.name, contactInfo: contactEntriesToBlob(entries) }, { mode: 'duplicate' });
-    const postList = post.results as Array<{ adopterId: string; relevancePercent: number }>;
-    const postImport = { listed: postList.map(r => r.adopterId), preselected: postList.length > 0 && confidenceBand(postList[0].relevancePercent) === 'high' };
+    const postRes = await matchImportRow({ name: p.name, ...contactEntriesToIdentity(entries) });
+    if (!postRes.ok) throw new Error('matchImportRow (post) failed');
+    const postImport = { listed: postRes.matches.map(r => r.adopterId), preselected: postRes.matches[0]?.verdict === 'same' };
 
     // «Ya existe en otro perfil» on the first contact: phone, email, social, id.
     const first = p.phone ? ['phone', p.phone] : p.email ? ['email', p.email] : p.social ? ['social', p.social] : p.dni ? ['id', p.dni] : null;
@@ -153,31 +152,31 @@ const MP = 'mp';
 
 interface Expected {
     sheet: { action: 'upsert' | 'review' | 'create'; matches: string[] };
-    form: string[]; postListed: string[]; postPreselected: false; warning: string[] | null; pendientes: string[];
+    form: string[]; postListed: string[]; postPreselected: boolean; warning: string[] | null; pendientes: string[];
     apiExact: unknown; searchMain: string[]; searchLowHas: string[];
 }
 
 const CASES: Array<{ n: number; label: string; person: Person; sheetOnly?: true; extraSeed?: Array<[string, string, ContactEntry[]]>; expected: Expected | { sheet: Expected['sheet'] } }> = [
     { n: 1, label: 'María Pérez + MJ phone', person: { name: 'María Pérez', phone: '11 6585-1333' }, expected: {
-        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ], postPreselected: false, warning: [MJ],
+        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
         pendientes: [MJ], apiExact: { found: MJ }, searchMain: [MJ], searchLowHas: [] } },
     { n: 2, label: 'Juan Carlos Ruiz + MJ phone', person: { name: 'Juan Carlos Ruiz', phone: '11 6585-1333' }, expected: {
         sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [MJ], searchLowHas: [] } },
     { n: 3, label: 'María José Pérez + another phone', person: { name: 'María José Pérez', phone: '11 2222-3333' }, expected: {
-        sheet: { action: 'review', matches: [MJ, MP] }, form: [MJ, MP], postListed: [], postPreselected: false, warning: [],
+        sheet: { action: 'review', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: false, warning: [],
         pendientes: [], apiExact: { not_found: true }, searchMain: [], searchLowHas: [MJ] } },
     { n: 4, label: 'María José Pérez, no contact', person: { name: 'María José Pérez' }, expected: {
         sheet: { action: 'review', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: false, warning: null,
         pendientes: [MJ], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [MJ], searchLowHas: [] } },
     { n: 5, label: 'Majo Pérez + MJ Instagram', person: { name: 'Majo Pérez', social: 'mariajose.p' }, expected: {
-        sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [], postPreselected: false, warning: [MJ],
+        sheet: { action: 'review', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
         pendientes: [MJ], apiExact: { rejected: 'exact_requires_name_and_identifier' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 6, label: 'Maria Peres + MJ email', person: { name: 'Maria Peres', email: 'maria.perez@gmail.com' }, expected: {
-        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ], postPreselected: false, warning: [MJ],
+        sheet: { action: 'upsert', matches: [MJ, MP] }, form: [MJ, MP], postListed: [MJ, MP], postPreselected: true, warning: [MJ],
         pendientes: [MJ], apiExact: { found: MJ }, searchMain: [], searchLowHas: [MJ] } },
     { n: 7, label: 'Majo Pérez + MJ DNI', person: { name: 'Majo Pérez', dni: '30.123.456' }, expected: {
-        sheet: { action: 'upsert', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: false, warning: [MJ],
+        sheet: { action: 'upsert', matches: [MJ] }, form: [MJ], postListed: [MJ], postPreselected: true, warning: [MJ],
         pendientes: [MJ], apiExact: { ambiguous: 'name_mismatch' }, searchMain: [], searchLowHas: [MJ] } },
     { n: 8, label: 'Ana Ruiz + DNI shared with Juan Gómez', person: { name: 'Ana Ruiz', dni: '00000000' }, sheetOnly: true,
         expected: { sheet: { action: 'create', matches: [] } } },

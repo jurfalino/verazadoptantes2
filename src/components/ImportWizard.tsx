@@ -12,13 +12,12 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { findAdopters, addHouseholdPerson, getMatchContext } from '@/app/actions';
+import { matchImportRow, addHouseholdPerson, getMatchContext } from '@/app/actions';
 import type { MatchContext } from '@/app/actions';
-import type { DuplicateMatch } from '@/app/actions';
-import { confidenceBand } from '@/lib/scoring';
+import type { JudgedMatch } from '@/app/actions';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 import ContactEntriesInput from '@/components/ContactEntriesInput';
-import { buildContactEntries, contactEntriesToBlob, CONTACT_ENTRIES_FULL, type ContactEntry } from '@/lib/contactEntries';
+import { buildContactEntries, contactEntriesToBlob, contactEntriesToIdentity, CONTACT_ENTRIES_FULL, type ContactEntry } from '@/lib/contactEntries';
 import { humanMatchSentence } from '@/lib/importMatch';
 import { dedupeImages } from '@/domain/facebookExtraction';
 import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, SparkIcon, SaveIcon } from '@/components/ui/Glyph';
@@ -357,7 +356,7 @@ export default function ImportWizard() {
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
-    const [fieldOverlapHints, setFieldOverlapHints] = useState<DuplicateMatch[]>([]);
+    const [fieldOverlapHints, setFieldOverlapHints] = useState<JudgedMatch[]>([]);
     const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
     // Load shared images from Service Worker cache
@@ -933,12 +932,16 @@ export default function ImportWizard() {
         if (step !== 3 || !extractedData) return;
         const timer = setTimeout(async () => {
             try {
-                const response = await findAdopters(
-                    { name: extractedData.name, contactInfo: contactEntriesToBlob(contactEntries) },
-                    { mode: 'duplicate' },
-                );
-                setFieldOverlapHints(response.results as DuplicateMatch[]);
-            } catch {
+                const res = await matchImportRow({ name: extractedData.name || '', ...contactEntriesToIdentity(contactEntries) });
+                if (!res.ok) {
+                    // The hint is optional: show none, but report it. The save-time check still runs.
+                    logUxIssue('import: overlap hint failed', { errorId: res.errorId });
+                    setFieldOverlapHints([]);
+                    return;
+                }
+                setFieldOverlapHints(res.matches);
+            } catch (e) {
+                logUxIssue('import: overlap hint failed', { error: e instanceof Error ? e.message : String(e) });
                 setFieldOverlapHints([]);
             }
         }, 600);
@@ -1002,33 +1005,23 @@ export default function ImportWizard() {
             }
         }
 
-        // Check for person match via token index.
-        //
-        // Pass ONLY `name` + the freshly-rebuilt contactInfo blob. We used to
-        // also forward `phones`/`emails`/`socials` from `extractedData`, but
-        // those fields are populated once (AI extraction or the contact-import
-        // hydrator) and never updated when the user edits a chip in
-        // ContactEntriesInput — the chip editor only mutates `contactEntries`.
-        // findAdopters' input contract preferred the structured arrays over
-        // the contactInfo blob (`input.phones?.length ? input.phones : extractPhones(blob)`),
-        // so the stale fields silently overrode the user's edits and the
-        // duplicate check ran against the original values. Dropping them
-        // makes contactEntries the single source of truth (v2.16.0-44).
+        // Check for a person match: the identity verdict over the typed contacts
+        // (the same one the spreadsheet import uses). contactEntries is the single
+        // source of truth: extractedData's phones/emails/socials are populated once
+        // and not updated when the user edits a chip (v2.16.0-44). Social values go
+        // as entered.
         if (extractedData) {
             try {
-                const response = await findAdopters(
-                    {
-                        name: extractedData.name,
-                        contactInfo: contactEntriesToBlob(contactEntries),
-                    },
-                    { mode: 'duplicate' },
-                );
-                const tokenResults = response.results as DuplicateMatch[];
+                const response = await matchImportRow({ name: extractedData.name || '', ...contactEntriesToIdentity(contactEntries) });
+                // A server-side failure is a failed check, like a thrown one: never a silent "no match".
+                if (!response.ok) throw new Error(`matchImportRow failed (${response.errorId})`);
+                const tokenResults = response.matches;
                 if (tokenResults.length > 0) {
                     const matches: PersonMatch[] = tokenResults.map(r => ({
                         id: r.adopterId,
                         name: r.adopterName,
-                        confidence: confidenceBand(r.relevancePercent) as 'high' | 'medium' | 'low',
+                        // Only «same» is pre-selected (see pick below).
+                        confidence: (r.verdict === 'same' ? 'high' : 'medium') as 'high' | 'medium' | 'low',
                         score: r.relevancePercent,
                         matchTypes: r.matchTypes,
                     }));
@@ -1486,12 +1479,12 @@ export default function ImportWizard() {
      * It used to open the match screen directly and skip the same-post check
      * (review of 2.56.213, item 4).
      */
-    const openMatchFromHint = (hint: DuplicateMatch) => {
+    const openMatchFromHint = (hint: JudgedMatch) => {
         trackImport('import_duplicate_choice', { choice: 'hint', kind: 'person' });
         handlePreSave({
             id: hint.adopterId,
             name: hint.adopterName,
-            confidence: confidenceBand(hint.relevancePercent) as 'high' | 'medium' | 'low',
+            confidence: hint.verdict === 'same' ? 'high' : 'medium',
             score: hint.relevancePercent,
             matchTypes: hint.matchTypes,
         });

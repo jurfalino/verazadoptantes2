@@ -642,6 +642,19 @@ export function parseBlobToContactEntries(blob: string | null | undefined): Cont
     return categorizeContactText(blob);
 }
 
+
+/**
+ * The typed identifiers of a contact list, as the identity verdict takes them
+ * (`matchImportRow`). Values are passed as entered: a social with spaces is not an
+ * account and is never converted to an alias; the verdict decides what it is.
+ */
+export function contactEntriesToIdentity(entries: readonly Pick<ContactEntry, 'type' | 'value'>[] | null | undefined): {
+    phones: string[]; emails: string[]; socials: string[]; documentIds: string[];
+} {
+    const of = (type: ContactEntryType) => (entries ?? []).filter(e => e.type === type).map(e => (e.value || '').trim()).filter(Boolean);
+    return { phones: of('phone'), emails: of('email'), socials: of('social'), documentIds: of('id') };
+}
+
 /**
  * Derive the labeled `contactInfo` blob from entries — one line per entry.
  * `other` entries are written verbatim so a parse→derive round-trip keeps
