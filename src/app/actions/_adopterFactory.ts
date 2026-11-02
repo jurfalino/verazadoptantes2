@@ -32,7 +32,7 @@
  */
 
 import { logger } from '@/lib/logger';
-import { redactedErrorFields } from '@/lib/identityCandidates';
+import { redactedErrorFields } from '@/lib/redactedError';
 import type { ContactEntry, SocialPlatform } from '@/lib/contactEntries';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
