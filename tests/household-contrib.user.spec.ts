@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
-import { cleanupProfiles, execD1, fillAddForm, housemates, insertHousehold, insertProfile, memberMenuPanel, profileNamed, rows, saveAsNew } from './householdFixtures';
+import { cleanupProfiles, execD1Batch, fillAddForm, householdSql, housemates, profileSql, memberMenuPanel, profileNamed, rows, saveAsNew } from './householdFixtures';
 
 /**
  * Household contributions (D54 + D55) on households as profiles (Task 8), as a
@@ -36,20 +36,24 @@ const contactsOf = (id: string) => JSON.parse(String(rows(`SELECT contact_entrie
 test.describe('household contributions by a non-owner (D54, D55)', () => {
     test.beforeAll(() => {
         cleanupProfiles([HOST, MARTA, BRUNO]);
-        execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PII_ACCESS_GATING', 'true', strftime('%s','now'), 'e2e')`);
-        insertProfile({ id: HOST, name: HOST_NAME, owner: OWNER, contacts: [{ id: 'ce-host-1', type: 'phone', value: '11 4100-0001', addedBy: OWNER }] });
-        insertProfile({ id: MARTA, name: MARTA_NAME, owner: OWNER, contacts: [{ id: 'ce-m-1', type: 'phone', value: '11 4200-0002', addedBy: OWNER }] });
-        insertProfile({ id: BRUNO, name: BRUNO_NAME, owner: OWNER, contacts: [{ id: 'ce-b-1', type: 'email', value: `bruno-${stamp}@example.com`, addedBy: OWNER }] });
-        insertHousehold(HH, HOST, [
-            { id: `${HH}-m`, adopterId: MARTA, relationship: 'partner', addedBy: OWNER },
-            { id: `${HH}-b`, adopterId: BRUNO, relationship: 'sibling', addedBy: OWNER },
+        execD1Batch([
+            `INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PII_ACCESS_GATING', 'true', strftime('%s','now'), 'e2e')`,
+            profileSql({ id: HOST, name: HOST_NAME, owner: OWNER, contacts: [{ id: 'ce-host-1', type: 'phone', value: '11 4100-0001', addedBy: OWNER }] }),
+            profileSql({ id: MARTA, name: MARTA_NAME, owner: OWNER, contacts: [{ id: 'ce-m-1', type: 'phone', value: '11 4200-0002', addedBy: OWNER }] }),
+            profileSql({ id: BRUNO, name: BRUNO_NAME, owner: OWNER, contacts: [{ id: 'ce-b-1', type: 'email', value: `bruno-${stamp}@example.com`, addedBy: OWNER }] }),
+            ...householdSql(HH, HOST, [
+                { id: `${HH}-m`, adopterId: MARTA, relationship: 'partner', addedBy: OWNER },
+                { id: `${HH}-b`, adopterId: BRUNO, relationship: 'sibling', addedBy: OWNER },
+            ]),
         ]);
     });
     test.afterAll(() => {
         const made = profileNamed(NEW_MEMBER)?.id;
         cleanupProfiles([HOST, MARTA, BRUNO, ...(made ? [String(made)] : [])]);
-        execD1(`DELETE FROM notifications WHERE user_id = '${OWNER}'`);
-        execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`);
+        execD1Batch([
+            `DELETE FROM notifications WHERE user_id = '${OWNER}'`,
+            `DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`,
+        ]);
     });
 
     test('adds a person with a phone, gets only «Editar» on what the owner added, and adds a phone to a housemate\'s own profile', async ({ page }) => {

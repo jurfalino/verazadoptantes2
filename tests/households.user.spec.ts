@@ -1,7 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 import {
-    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, fillAddForm, housemates, insertHousehold, insertProfile, isDbNull, memberMenu, memberMenuPanel, profileNamed, rows, saveAsNew,
+    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, execD1Batch, fillAddForm, housemates, insertHousehold, insertProfile, isDbNull, memberMenu, memberMenuPanel, profileNamed, rows, saveAsNew,
 } from './householdFixtures';
 
 /**
@@ -61,17 +61,21 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         PEDRO = await createProfileViaApi(admin, { name: PEDRO_NAME, phone: PEDRO_PHONE });
         ROSA = await createProfileViaApi(admin, { name: ROSA_NAME, phone: ROSA_PHONE });
         // Pedro is rated 1 with an open alert: the line a relative's card carries.
-        execD1(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-hh-fixture-ev-${stamp}', '${PEDRO}', 'observation', 1, '${ADMIN_EMAIL}', strftime('%s','now','-3 days'))`);
-        execD1(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, created_at) VALUES ('test-hh-fixture-fl-${stamp}', '${PEDRO}', '${ADMIN_EMAIL}', 'inaccurate_information', strftime('%s','now','-3 days'))`);
-        // Rosa fosters an animal right now: a transit on her «Actividad», so on her household row too.
-        execD1(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${FOSTER_ANIMAL}', 'Michi ${stamp}', 'cat', '${ADMIN_EMAIL}', strftime('%s','now','-3 days'), strftime('%s','now','-3 days'))`);
-        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('test-hh-fixture-pl-${stamp}', '${FOSTER_ANIMAL}', '${ROSA}', 'foster', strftime('%s','now','-2 days'), '${ADMIN_EMAIL}')`);
+        execD1Batch([
+            `INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-hh-fixture-ev-${stamp}', '${PEDRO}', 'observation', 1, '${ADMIN_EMAIL}', strftime('%s','now','-3 days'))`,
+            `INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, created_at) VALUES ('test-hh-fixture-fl-${stamp}', '${PEDRO}', '${ADMIN_EMAIL}', 'inaccurate_information', strftime('%s','now','-3 days'))`,
+            // Rosa fosters an animal right now: a transit on her «Actividad», so on her household row too.
+            `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${FOSTER_ANIMAL}', 'Michi ${stamp}', 'cat', '${ADMIN_EMAIL}', strftime('%s','now','-3 days'), strftime('%s','now','-3 days'))`,
+            `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('test-hh-fixture-pl-${stamp}', '${FOSTER_ANIMAL}', '${ROSA}', 'foster', strftime('%s','now','-2 days'), '${ADMIN_EMAIL}')`,
+        ]);
     });
     test.afterAll(async () => {
         const made = [MARTA_NAME, `Marta P. ${stamp}`, TOMAS_NAME, HUGO_NAME].map(n => profileNamed(n)?.id).filter(Boolean) as string[];
         cleanupProfiles([PEDRO, ROSA, ...made]);
-        execD1(`DELETE FROM animals WHERE id = '${FOSTER_ANIMAL}'`);
-        execD1(`DELETE FROM notifications WHERE type = 'profile_renamed' AND body LIKE '%${stamp}%'`);
+        execD1Batch([
+            `DELETE FROM animals WHERE id = '${FOSTER_ANIMAL}'`,
+            `DELETE FROM notifications WHERE type = 'profile_renamed' AND body LIKE '%${stamp}%'`,
+        ]);
         await admin?.dispose();
     });
 

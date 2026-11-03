@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1Batch, isDbNull, rows } from './db';
 
 /**
  * Merge requests end to end (layout D, spec 2026-10-25-pendientes-d):
@@ -25,35 +25,19 @@ import { dismissCountryBanner } from './helpers';
 
 const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
-const rows = (sql: string) => parseD1Rows(execD1(sql));
 
-/** Wrangler's --json renders SQL NULL as the string "null" in CI — normalize. */
-const isDbNull = (v: unknown) => v === null || v === undefined || v === 'null';
 
 /** A non-admin rescuer: user + profile rows (terms accepted, country confirmed) and a signed-in context. */
 async function rescuer(browser: Browser, tag: string, stamp: number) {
     const id = `test-mergereq-fixture-user-${tag}-${stamp}`;
     const email = `mergereq-${tag}-${stamp}@example.com`;
     const name = `Mergereq ${tag.toUpperCase()} ${stamp}`;
-    execD1(`INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`);
-    execD1(`INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`);
+    execD1Batch([
+        `INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`,
+        `INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`,
+    ]);
     const { encode } = await import('next-auth/jwt');
     const token = await encode({
         secret: process.env.AUTH_SECRET!,
@@ -71,11 +55,13 @@ async function rescuer(browser: Browser, tag: string, stamp: number) {
 }
 
 function seedPair(ids: { older: string; newer: string; cand: string }, name: string, owners: { older: string; newer: string }, tail: string) {
-    execD1(`INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${ids.older}', '${name}', 'Tel: 11 5100-${tail}', 'AR', '5', '${owners.older}', NULL, NULL, strftime('%s','now','-30 days'), strftime('%s','now'))`);
-    execD1(`INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${ids.newer}', '${name}', 'Tel: 11 5200-${tail}', 'AR', '5', '${owners.newer}', NULL, NULL, strftime('%s','now'), strftime('%s','now'))`);
-    // high + 100 + detected now: the feed hides low pairs and pages by score
-    // then detection time, so this lands on page 1.
-    execD1(`INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) VALUES ('${ids.cand}', '${ids.newer}', '${ids.older}', '["name_full"]', '{}', 100, 'high', 'pending', strftime('%s','now'), NULL, NULL)`);
+    execD1Batch([
+        `INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${ids.older}', '${name}', 'Tel: 11 5100-${tail}', 'AR', '5', '${owners.older}', NULL, NULL, strftime('%s','now','-30 days'), strftime('%s','now'))`,
+        `INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${ids.newer}', '${name}', 'Tel: 11 5200-${tail}', 'AR', '5', '${owners.newer}', NULL, NULL, strftime('%s','now'), strftime('%s','now'))`,
+        // high + 100 + detected now: the feed hides low pairs and pages by score
+        // then detection time, so this lands on page 1.
+        `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) VALUES ('${ids.cand}', '${ids.newer}', '${ids.older}', '["name_full"]', '{}', 100, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
+    ]);
 }
 
 async function openPendingCard(page: Page, name: string) {

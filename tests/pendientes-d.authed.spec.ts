@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1Batch, isDbNull, rows } from './db';
 
 /**
  * «Pendientes de revisar», layout D, end to end (spec
@@ -25,27 +25,9 @@ import { dismissCountryBanner } from './helpers';
  * seed adopters. Selectors are data-testids: Chromium renders English.
  */
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
-const rows = (sql: string) => parseD1Rows(execD1(sql));
 
-/** Wrangler's --json renders SQL NULL as the string "null" in CI — normalize. */
-const isDbNull = (v: unknown) => v === null || v === undefined || v === 'null';
 
 /** Same as src/domain/dedupPair.ts pairKey. */
 const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
@@ -57,8 +39,10 @@ async function rescuer(browser: Browser, tag: string, stamp: number): Promise<Re
     const id = `test-pendd-fixture-user-${tag}-${stamp}`;
     const email = `pendd-${tag}-${stamp}@example.com`;
     const name = `Pendd ${tag.toUpperCase()} ${stamp}`;
-    execD1(`INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`);
-    execD1(`INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`);
+    execD1Batch([
+        `INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`,
+        `INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`,
+    ]);
     const { encode } = await import('next-auth/jwt');
     const token = await encode({
         secret: process.env.AUTH_SECRET!,
@@ -75,12 +59,13 @@ async function rescuer(browser: Browser, tag: string, stamp: number): Promise<Re
     return { email, name, page, close: () => ctx.close() };
 }
 
-function seedAdopter(id: string, name: string, owner: string, daysAgo: number, tail: string) {
-    execD1(`INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${id}', '${name}', 'Tel: 11 5${tail}-${tail}', 'AR', '5', '${owner}', NULL, NULL, strftime('%s','now','-${daysAgo} days'), strftime('%s','now'))`);
+// Seed helpers return SQL; each scenario seeds in ONE execD1Batch.
+function adopterSql(id: string, name: string, owner: string, daysAgo: number, tail: string): string {
+    return (`INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${id}', '${name}', 'Tel: 11 5${tail}-${tail}', 'AR', '5', '${owner}', NULL, NULL, strftime('%s','now','-${daysAgo} days'), strftime('%s','now'))`);
 }
 
-function seedCandidate(id: string, newerId: string, olderId: string, matchTypes = '["name_full"]') {
-    execD1(`INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) VALUES ('${id}', '${newerId}', '${olderId}', '${matchTypes}', '{}', 100, 'high', 'pending', strftime('%s','now'), NULL, NULL)`);
+function candidateSql(id: string, newerId: string, olderId: string, matchTypes = '["name_full"]'): string {
+    return (`INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) VALUES ('${id}', '${newerId}', '${olderId}', '${matchTypes}', '{}', 100, 'high', 'pending', strftime('%s','now'), NULL, NULL)`);
 }
 
 /** Open «Pendientes de revisar» and the row whose names include `name`. */
@@ -110,9 +95,11 @@ test.describe('Pendientes de revisar (layout D)', () => {
         const MINE = `test-pendd-fixture-mine-${stamp}`;     // newer → absorbed
         const CAND = `test-pendd-fixture-cand-k-${stamp}`;
         const NAME = `Pendd Keep ${stamp}`;
-        seedAdopter(THEIRS, NAME, OTHER, 30, tail);
-        seedAdopter(MINE, NAME, me.email, 0, tail);
-        seedCandidate(CAND, MINE, THEIRS);
+        execD1Batch([
+            adopterSql(THEIRS, NAME, OTHER, 30, tail),
+            adopterSql(MINE, NAME, me.email, 0, tail),
+            candidateSql(CAND, MINE, THEIRS),
+        ]);
 
         try {
             const page = me.page;
@@ -165,16 +152,21 @@ test.describe('Pendientes de revisar (layout D)', () => {
         const MINE = `test-pendd-fixture-req-${stamp}`;     // the requester's, newer — her chosen survivor
         const CAND = `test-pendd-fixture-cand-r-${stamp}`;
         const NAME = `Pendd Request ${stamp}`;
-        seedAdopter(THEIRS, NAME, owner.email, 30, tail);
-        seedAdopter(MINE, NAME, requester.email, 0, tail);
-        seedCandidate(CAND, MINE, THEIRS);
+        const seed = [
+            adopterSql(THEIRS, NAME, owner.email, 30, tail),
+            adopterSql(MINE, NAME, requester.email, 0, tail),
+            candidateSql(CAND, MINE, THEIRS),
+        ];
         // A second pair of hers (both her own) keeps the section on screen once the first is hidden.
         const ANCHOR_A = `test-pendd-fixture-anchor-a-${stamp}`;
         const ANCHOR_B = `test-pendd-fixture-anchor-b-${stamp}`;
         const ANCHOR = `Pendd Anchor ${stamp}`;
-        seedAdopter(ANCHOR_A, ANCHOR, requester.email, 20, String(Number(tail) + 1).padStart(3, '0').slice(-3));
-        seedAdopter(ANCHOR_B, ANCHOR, requester.email, 1, String(Number(tail) + 2).padStart(3, '0').slice(-3));
-        seedCandidate(`test-pendd-fixture-cand-anchor-${stamp}`, ANCHOR_B, ANCHOR_A);
+        seed.push(
+            adopterSql(ANCHOR_A, ANCHOR, requester.email, 20, String(Number(tail) + 1).padStart(3, '0').slice(-3)),
+            adopterSql(ANCHOR_B, ANCHOR, requester.email, 1, String(Number(tail) + 2).padStart(3, '0').slice(-3)),
+            candidateSql(`test-pendd-fixture-cand-anchor-${stamp}`, ANCHOR_B, ANCHOR_A),
+        );
+        execD1Batch(seed);
 
         const requestRows = () => rows(
             `SELECT id, primary_id, secondary_id, requester_email, owner_email, candidate_id, status FROM merge_requests WHERE candidate_id = '${CAND}'`,
@@ -271,10 +263,12 @@ test.describe('Pendientes de revisar (layout D)', () => {
         const CAND = `test-pendd-fixture-cand-hh-${stamp}`;
         const NAME_MINE = `Pendd Andrea ${stamp}`;
         const NAME_THEIRS = `Pendd Bruno ${stamp}`;
-        seedAdopter(MINE, NAME_MINE, me.email, 30, tail);
-        seedAdopter(THEIRS, NAME_THEIRS, OTHER, 0, tail);
-        // A contact match, not a name match: «¿Es la misma persona?» is asked (D35).
-        seedCandidate(CAND, THEIRS, MINE, '["phone"]');
+        execD1Batch([
+            adopterSql(MINE, NAME_MINE, me.email, 30, tail),
+            adopterSql(THEIRS, NAME_THEIRS, OTHER, 0, tail),
+            // A contact match, not a name match: «¿Es la misma persona?» is asked (D35).
+            candidateSql(CAND, THEIRS, MINE, '["phone"]'),
+        ]);
 
         try {
             const page = me.page;
@@ -300,10 +294,10 @@ test.describe('Pendientes de revisar (layout D)', () => {
             expect(rows(`SELECT status FROM duplicate_candidates WHERE id = '${CAND}'`)[0]?.status).not.toBe('pending');
             expect(rows(`SELECT COUNT(*) AS n FROM merge_requests WHERE candidate_id = '${CAND}'`)[0]?.n).toBe(0);
         } finally {
-            for (const r of rows(`SELECT household_id AS h FROM household_memberships WHERE adopter_id IN ('${MINE}', '${THEIRS}')`)) {
-                execD1(`DELETE FROM household_memberships WHERE household_id = '${String(r.h)}'`);
-                execD1(`DELETE FROM households WHERE id = '${String(r.h)}'`);
-            }
+            execD1Batch(rows(`SELECT household_id AS h FROM household_memberships WHERE adopter_id IN ('${MINE}', '${THEIRS}')`).flatMap(r => [
+                `DELETE FROM household_memberships WHERE household_id = '${String(r.h)}'`,
+                `DELETE FROM households WHERE id = '${String(r.h)}'`,
+            ]));
             await me.close();
         }
     });

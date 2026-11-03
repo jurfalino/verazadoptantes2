@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1, execD1Batch, isDbNull, parseD1Rows } from './db';
 
 /**
  * Mass-merge + undo round-trip (v2.55.x). Exercises the dangerous server path
@@ -32,40 +32,21 @@ const HH_B = 'test-hh-massmerge-b';
 const HH_M = 'test-hh-massmerge-m';
 const CAND_BC = 'test-cand-massmerge-bc';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
-/** Wrangler's --json renders SQL NULL as the string "null" in CI — normalize. */
-function isDbNull(v: unknown): boolean {
-    return v === null || v === undefined || v === 'null';
-}
-
-function seedAdopter(id: string, name: string, contact: string, entriesJson: string | null = null, createdAtExpr = `strftime('%s','now')`) {
+// Seed helpers return SQL; call sites run a whole scenario's seed as ONE execD1Batch.
+function adopterSql(id: string, name: string, contact: string, entriesJson: string | null = null, createdAtExpr = `strftime('%s','now')`): string {
     const entries = entriesJson === null ? 'NULL' : `'${entriesJson}'`;
-    execD1(
+    return (
         `INSERT OR REPLACE INTO adopters (id, name, contact_info, contact_entries, country, status, added_by, deleted_at, token_hash, created_at, updated_at) ` +
-        `VALUES ('${id}', '${name}', '${contact}', ${entries}, 'AR', '5', 'gatitosolivos@gmail.com', NULL, NULL, ${createdAtExpr}, strftime('%s','now'))`,
+        `VALUES ('${id}', '${name}', '${contact}', ${entries}, 'AR', '5', 'gatitosolivos@gmail.com', NULL, NULL, ${createdAtExpr}, strftime('%s','now'))`
     );
 }
 
-function seedCandidate(candId: string, id1: string, id2: string) {
-    execD1(
+function candidateSql(candId: string, id1: string, id2: string): string {
+    return (
         `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) ` +
-        `VALUES ('${candId}', '${id1}', '${id2}', '["name_full"]', '{}', 50, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
+        `VALUES ('${candId}', '${id1}', '${id2}', '["name_full"]', '{}', 50, 'high', 'pending', strftime('%s','now'), NULL, NULL)`
     );
 }
 
@@ -73,34 +54,34 @@ test.describe('Duplicate mass-merge and undo', () => {
     test('mass-merge absorbs B and C into A (aliases, ghost pair) and undo restores everything', async ({ page }) => {
         // ── Seed: three clean fixture adopters + two pending pairs (A↔B, B↔C).
         // B↔C is the "ghost" case: it names B, which the first merge absorbs.
-        seedAdopter(A, NAME_A, 'alpha-contact-original');
-        seedAdopter(B, NAME_B, 'beta-contact 1111-2222');
-        seedAdopter(C, NAME_C, 'gamma-contact 3333-4444');
-        seedCandidate(CAND_AB, A, B);
-        seedCandidate(CAND_BC, B, C);
-        // B is marked publicly known — the merge must carry the flag onto the
-        // survivor (public status travels with the absorbed evidence), and
-        // undo must take it back off.
-        execD1(`UPDATE adopters SET is_public = 1 WHERE id = '${B}'`);
-        // Households as profiles: B's own household holds Tomás (his son, a
-        // profile). The merge must move B's membership onto A (Tomás now «hijo
-        // de A»), and undo must give it back to B.
-        // A and B both live in Marta's household (B's row carries a form's
-        // source key): they collapse into A's one row, which keeps the key; undo
-        // puts B's row back exactly.
-        seedAdopter(T, 'MassMergeFixture Tomas', 'tomas-contact');
-        seedAdopter(M, 'MassMergeFixture Marta', 'marta-contact');
-        seedAdopter(L, 'MassMergeFixture Laura', 'laura-contact');
-        execD1(`DELETE FROM household_memberships WHERE household_id IN ('${HH_B}', '${HH_M}')`);
-        execD1(`INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('${HH_B}', NULL, 1000), ('${HH_M}', NULL, 1000)`);
-        execD1(
+        execD1Batch([
+            adopterSql(A, NAME_A, 'alpha-contact-original'),
+            adopterSql(B, NAME_B, 'beta-contact 1111-2222'),
+            adopterSql(C, NAME_C, 'gamma-contact 3333-4444'),
+            candidateSql(CAND_AB, A, B),
+            candidateSql(CAND_BC, B, C),
+            // B is marked publicly known — the merge must carry the flag onto the
+            // survivor (public status travels with the absorbed evidence), and
+            // undo must take it back off.
+            `UPDATE adopters SET is_public = 1 WHERE id = '${B}'`,
+            // Households as profiles: B's own household holds Tomás (his son, a
+            // profile). The merge must move B's membership onto A (Tomás now «hijo
+            // de A»), and undo must give it back to B.
+            // A and B both live in Marta's household (B's row carries a form's
+            // source key): they collapse into A's one row, which keeps the key; undo
+            // puts B's row back exactly.
+            adopterSql(T, 'MassMergeFixture Tomas', 'tomas-contact'),
+            adopterSql(M, 'MassMergeFixture Marta', 'marta-contact'),
+            adopterSql(L, 'MassMergeFixture Laura', 'laura-contact'),
+            `DELETE FROM household_memberships WHERE household_id IN ('${HH_B}', '${HH_M}')`,
+            `INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('${HH_B}', NULL, 1000), ('${HH_M}', NULL, 1000)`,
             `INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at, source_key) VALUES ` +
             `('test-hm-mm-b', '${HH_B}', '${B}', 'unknown', NULL, 0, NULL, 1000, NULL), ` +
             `('test-hm-mm-t', '${HH_B}', '${T}', 'child', '${B}', 0, 'gatitosolivos@gmail.com', 1001, NULL), ` +
             `('test-hm-mm-m', '${HH_M}', '${M}', 'unknown', NULL, 0, NULL, 1000, NULL), ` +
             `('test-hm-mm-ma', '${HH_M}', '${A}', 'sibling', '${M}', 0, 'gatitosolivos@gmail.com', 1001, NULL), ` +
             `('test-hm-mm-mb', '${HH_M}', '${B}', 'sibling', '${M}', 0, 'gatitosolivos@gmail.com', 1002, 'test-massmerge-key')`,
-        );
+        ]);
         const membershipRows = () => parseD1Rows(execD1(
             `SELECT id, household_id, adopter_id, relative_to_adopter_id, source_key FROM household_memberships WHERE household_id IN ('${HH_B}', '${HH_M}') ORDER BY id`,
         )).map(r => ({
@@ -234,14 +215,16 @@ test.describe('Duplicate mass-merge and undo', () => {
         const CAND_RS = 'test-cand-pairmerge-rs';
         const CAND_QE = 'test-cand-pairmerge-qe';
 
-        seedAdopter(P, 'PairMergeFixture Uno', 'p-contact', '[{"type":"phone","value":"555111"},{"type":"email","value":"p@fixture.test"}]');
-        seedAdopter(Q, 'PairMergeFixture Dos', 'q-contact');
-        seedAdopter(R, 'PairMergeFixture Tres', 'r-contact', null, `strftime('%s','now') - 5000`);
-        seedAdopter(S, 'PairMergeFixture Cuatro', 's-contact');
-        seedAdopter(E, 'PairMergeFixture Cinco', 'e-contact');
-        seedCandidate(CAND_PQ, P, Q);
-        seedCandidate(CAND_RS, R, S);
-        seedCandidate(CAND_QE, Q, E);
+        execD1Batch([
+            adopterSql(P, 'PairMergeFixture Uno', 'p-contact', '[{"type":"phone","value":"555111"},{"type":"email","value":"p@fixture.test"}]'),
+            adopterSql(Q, 'PairMergeFixture Dos', 'q-contact'),
+            adopterSql(R, 'PairMergeFixture Tres', 'r-contact', null, `strftime('%s','now') - 5000`),
+            adopterSql(S, 'PairMergeFixture Cuatro', 's-contact'),
+            adopterSql(E, 'PairMergeFixture Cinco', 'e-contact'),
+            candidateSql(CAND_PQ, P, Q),
+            candidateSql(CAND_RS, R, S),
+            candidateSql(CAND_QE, Q, E),
+        ]);
 
         const res = await page.request.post('/api/admin/duplicates/merge', {
             data: { candidateIds: [CAND_PQ, CAND_RS, CAND_QE] },
@@ -282,7 +265,6 @@ test.describe('Duplicate mass-merge and undo', () => {
         // expanding the weak tier is the assertion.
         const ACC = 'test-accent-fixture-1';
         const ACC_NAME = 'AccentFixture Vázquez Ramírez';
-        seedAdopter(ACC, ACC_NAME, 'accent-fixture-contact');
         // Name tokens exactly as tokenizeAdopter writes them (NFD-stripped) —
         // SQL-seeded fixtures never pass through the app's tokenizer.
         const toks: Array<[string, string, string]> = [
@@ -291,9 +273,10 @@ test.describe('Duplicate mass-merge and undo', () => {
             ['test-tok-accent-3', 'name_word', 'ramirez'],
             ['test-tok-accent-4', 'name_full', 'accentfixture vazquez ramirez'],
         ];
-        for (const [id, type, value] of toks) {
-            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${ACC}', '${type}', '${value}')`);
-        }
+        execD1Batch([
+            adopterSql(ACC, ACC_NAME, 'accent-fixture-contact'),
+            ...toks.map(([id, type, value]) => `INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${ACC}', '${type}', '${value}')`),
+        ]);
 
         await page.goto('/');
         await dismissCountryBanner(page);
@@ -314,24 +297,22 @@ test.describe('Duplicate mass-merge and undo', () => {
         const HH_NAME = 'HouseholdFixture Titular';
         const REL = 'test-household-fixture-2';
         const REL_NAME = 'RelativeFixture Ondina';
-        seedAdopter(HH, HH_NAME, 'household-fixture-contact');
-        seedAdopter(REL, REL_NAME, 'relative-fixture-contact');
-        execD1(`DELETE FROM adopter_events WHERE id = 'test-hh-fixture-ev-1'`);
-        execD1(`INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('test-hh-fixture-1', NULL, strftime('%s','now'))`);
-        execD1(
-            `INSERT OR REPLACE INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES ` +
-            `('test-hm-fixture-1', 'test-hh-fixture-1', '${HH}', 'unknown', 0, NULL, strftime('%s','now')), ` +
-            `('test-hm-fixture-2', 'test-hh-fixture-1', '${REL}', 'partner', 0, NULL, strftime('%s','now'))`,
-        );
-        // Tokens as extractTokens writes them: the relative's own name, on the relative.
         const toks: Array<[string, string, string]> = [
             ['test-tok-hh-1', 'name_word', 'relativefixture'],
             ['test-tok-hh-2', 'name_word', 'ondina'],
             ['test-tok-hh-3', 'name_full', 'relativefixture ondina'],
         ];
-        for (const [id, type, value] of toks) {
-            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${REL}', '${type}', '${value}')`);
-        }
+        execD1Batch([
+            adopterSql(HH, HH_NAME, 'household-fixture-contact'),
+            adopterSql(REL, REL_NAME, 'relative-fixture-contact'),
+            `DELETE FROM adopter_events WHERE id = 'test-hh-fixture-ev-1'`,
+            `INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('test-hh-fixture-1', NULL, strftime('%s','now'))`,
+            `INSERT OR REPLACE INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES ` +
+            `('test-hm-fixture-1', 'test-hh-fixture-1', '${HH}', 'unknown', 0, NULL, strftime('%s','now')), ` +
+            `('test-hm-fixture-2', 'test-hh-fixture-1', '${REL}', 'partner', 0, NULL, strftime('%s','now'))`,
+            // Tokens as extractTokens writes them: the relative's own name, on the relative.
+            ...toks.map(([id, type, value]) => `INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${REL}', '${type}', '${value}')`),
+        ]);
 
         const search = async () => {
             await page.goto('/');
@@ -365,8 +346,10 @@ test.describe('Duplicate mass-merge and undo', () => {
     test("a record added to a merged-away profile (import wizard) lands on the profile it was merged into", async ({ page }) => {
         const P = 'test-addrec-fixture-survivor';
         const S = 'test-addrec-fixture-absorbed';
-        seedAdopter(P, 'AddRecFixture Survivor', 'ar-contact 2222-0001');
-        seedAdopter(S, 'AddRecFixture Absorbed', 'ar-contact 2222-0002');
+        execD1Batch([
+            adopterSql(P, 'AddRecFixture Survivor', 'ar-contact 2222-0001'),
+            adopterSql(S, 'AddRecFixture Absorbed', 'ar-contact 2222-0002'),
+        ]);
         const mergeRes = await page.request.post('/api/admin/duplicates/merge', { data: { primaryId: P, secondaryIds: [S] } });
         expect(mergeRes.ok()).toBeTruthy();
 
@@ -387,16 +370,16 @@ test.describe('Duplicate mass-merge and undo', () => {
         const M1 = 'test-mergeowner-fixture-1';
         const M2 = 'test-mergeowner-fixture-2';
         const CAND = 'test-cand-mergeowner-12';
-        seedAdopter(M1, 'MergeOwnerFixture Milagros', 'mo-contact 1111-0001');
-        seedAdopter(M2, 'MergeOwnerFixture Mili', 'mo-contact 1111-0002');
-        // M2 was registered by another rescuer (the seed's regular test user).
-        execD1(`UPDATE adopters SET added_by = 'testuser@example.com' WHERE id = '${M2}'`);
-        execD1(`DELETE FROM notifications WHERE type = 'adopter_merged'`);
-        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${M1}' OR adopter_id = '${M2}'`);
-        execD1(
+        execD1Batch([
+            adopterSql(M1, 'MergeOwnerFixture Milagros', 'mo-contact 1111-0001'),
+            adopterSql(M2, 'MergeOwnerFixture Mili', 'mo-contact 1111-0002'),
+            // M2 was registered by another rescuer (the seed's regular test user).
+            `UPDATE adopters SET added_by = 'testuser@example.com' WHERE id = '${M2}'`,
+            `DELETE FROM notifications WHERE type = 'adopter_merged'`,
+            `DELETE FROM adopter_history WHERE adopter_id = '${M1}' OR adopter_id = '${M2}'`,
             `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) ` +
             `VALUES ('${CAND}', '${M1}', '${M2}', '["phone"]', '{}', 999, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
-        );
+        ]);
 
         // The pair card says who registered each side.
         await page.goto('/admin/data-quality');

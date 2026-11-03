@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1Batch, rows } from './db';
 
 /**
  * "Es la misma persona" on /form-results — the flow that looked broken:
@@ -21,21 +21,6 @@ import { dismissCountryBanner } from './helpers';
  */
 
 const ADMIN_USER_ID = 'test-admin-id';
-
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-
-/** Throws on a failed query, so a broken read can't pass an assertion by returning nothing. */
-function rows(sql: string): Array<Record<string, unknown>> {
-    const wrapped = JSON.parse(execD1(sql));
-    const results = (Array.isArray(wrapped) ? wrapped[0] : wrapped)?.results;
-    if (!Array.isArray(results)) throw new Error(`D1 query returned no result set: ${sql}`);
-    return results;
-}
 
 /** Exactly one row, or the test fails here — not later on an `undefined`. */
 function one(sql: string): Record<string, unknown> {
@@ -81,8 +66,10 @@ test.describe('form-results: linking to an existing profile', () => {
 
         // Give the existing person a history worth reading: one 4-star
         // adoption (own fixture rows, never a seed adopter).
-        execD1(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('test-formlink-fixture-animal-${stamp}', 'E2E Fixture Pet', 'dog', 'test-seed', strftime('%s','now'), strftime('%s','now'))`);
-        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES ('test-formlink-fixture-placement-${stamp}', 'test-formlink-fixture-animal-${stamp}', '${existingId}', 'adoption', strftime('%s','now','-10 days'), NULL, 'completed', 4, 'test-seed')`);
+        execD1Batch([
+            `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('test-formlink-fixture-animal-${stamp}', 'E2E Fixture Pet', 'dog', 'test-seed', strftime('%s','now'), strftime('%s','now'))`,
+            `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES ('test-formlink-fixture-placement-${stamp}', 'test-formlink-fixture-animal-${stamp}', '${existingId}', 'adoption', strftime('%s','now','-10 days'), NULL, 'completed', 4, 'test-seed')`,
+        ]);
 
         // Before deciding: the page asks, instead of claiming "linked".
         await page.goto(`/form-results/${secondId}`);
@@ -319,14 +306,18 @@ test.describe('form-results: linking to an existing profile', () => {
             expect(laura).toEqual([expect.objectContaining({ gift_recipient: 1 })]);
         } finally {
             // Laura's profile and the gift household, whatever happened above.
-            for (const r of rows(`SELECT adopter_id AS a FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}' AND gift_recipient = 1`)) {
-                const id = String(r.a);
-                execD1(`DELETE FROM duplicate_tokens WHERE adopter_id = '${id}'`);
-                execD1(`DELETE FROM adopter_history WHERE adopter_id = '${id}'`);
-                execD1(`DELETE FROM adopters WHERE id = '${id}'`);
-            }
-            execD1(`DELETE FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}'`);
-            execD1(`DELETE FROM households WHERE id = 'hh-gift-${submissionId}'`);
+            execD1Batch([
+                ...rows(`SELECT adopter_id AS a FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}' AND gift_recipient = 1`).flatMap(r => {
+                    const id = String(r.a);
+                    return [
+                        `DELETE FROM duplicate_tokens WHERE adopter_id = '${id}'`,
+                        `DELETE FROM adopter_history WHERE adopter_id = '${id}'`,
+                        `DELETE FROM adopters WHERE id = '${id}'`,
+                    ];
+                }),
+                `DELETE FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}'`,
+                `DELETE FROM households WHERE id = 'hh-gift-${submissionId}'`,
+            ]);
         }
     });
 

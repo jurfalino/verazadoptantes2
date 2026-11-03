@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1Batch, isDbNull, rows } from './db';
 
 /**
  * One shared reality, end to end (spec
@@ -31,27 +31,9 @@ import { dismissCountryBanner } from './helpers';
  * adopters. Selectors are data-testids: Chromium renders English.
  */
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
-const rows = (sql: string) => parseD1Rows(execD1(sql));
 
-/** Wrangler's --json renders SQL NULL as the string "null" in CI — normalize. */
-const isDbNull = (v: unknown) => v === null || v === undefined || v === 'null';
 
 interface Rescuer { email: string; name: string; page: Page; close: () => Promise<void> }
 
@@ -64,8 +46,10 @@ async function rescuer(browser: Browser, tag: string, stamp: number): Promise<Re
     const id = `test-onereal-fixture-user-${tag}-${stamp}`;
     const email = `onereal-${tag}-${stamp}@example.com`;
     const name = `Onereal ${tag.toUpperCase()} ${stamp}`;
-    execD1(`INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`);
-    execD1(`INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`);
+    execD1Batch([
+        `INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`,
+        `INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`,
+    ]);
     const { encode } = await import('next-auth/jwt');
     const token = await encode({
         secret,
@@ -82,12 +66,13 @@ async function rescuer(browser: Browser, tag: string, stamp: number): Promise<Re
     return { email, name, page, close: () => ctx.close() };
 }
 
-function seedAdopter(id: string, name: string, owner: string, daysAgo: number, tail: string) {
-    execD1(`INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${id}', '${name}', 'Tel: 11 5${tail}-${tail}', 'AR', '5', '${owner}', NULL, NULL, strftime('%s','now','-${daysAgo} days'), strftime('%s','now'))`);
+// Seed helpers return SQL; each scenario seeds in ONE execD1Batch.
+function adopterSql(id: string, name: string, owner: string, daysAgo: number, tail: string): string {
+    return (`INSERT OR REPLACE INTO adopters (id, name, contact_info, country, status, added_by, deleted_at, token_hash, created_at, updated_at) VALUES ('${id}', '${name}', 'Tel: 11 5${tail}-${tail}', 'AR', '5', '${owner}', NULL, NULL, strftime('%s','now','-${daysAgo} days'), strftime('%s','now'))`);
 }
 
-function seedCandidate(id: string, newerId: string, olderId: string, matchTypes = '["name_full"]') {
-    execD1(`INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) VALUES ('${id}', '${newerId}', '${olderId}', '${matchTypes}', '{}', 100, 'high', 'pending', strftime('%s','now'), NULL, NULL)`);
+function candidateSql(id: string, newerId: string, olderId: string, matchTypes = '["name_full"]'): string {
+    return (`INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) VALUES ('${id}', '${newerId}', '${olderId}', '${matchTypes}', '{}', 100, 'high', 'pending', strftime('%s','now'), NULL, NULL)`);
 }
 
 /** Open «Pendientes de revisar» and the row whose names include `name`. */
@@ -122,9 +107,11 @@ test.describe('One shared reality (D48–D52)', () => {
         const MINE = `test-onereal-fixture-dsp-req-${stamp}`;     // the requester's, newer
         const CAND = `test-onereal-fixture-cand-dsp-${stamp}`;
         const NAME = `Onereal Dispute ${stamp}`;
-        seedAdopter(THEIRS, NAME, owner.email, 30, tail);
-        seedAdopter(MINE, NAME, requester.email, 0, tail);
-        seedCandidate(CAND, MINE, THEIRS);
+        execD1Batch([
+            adopterSql(THEIRS, NAME, owner.email, 30, tail),
+            adopterSql(MINE, NAME, requester.email, 0, tail),
+            candidateSql(CAND, MINE, THEIRS),
+        ]);
 
         const pairRequests = () => rows(
             `SELECT id, primary_id, secondary_id, requester_email, owner_email, status, dispute FROM merge_requests WHERE (primary_id = '${MINE}' AND secondary_id = '${THEIRS}') OR (primary_id = '${THEIRS}' AND secondary_id = '${MINE}')`,
@@ -205,9 +192,11 @@ test.describe('One shared reality (D48–D52)', () => {
         const MINE = `test-onereal-fixture-mrg-absorbed-${stamp}`;   // newer → absorbed
         const CAND = `test-onereal-fixture-cand-mrg-${stamp}`;
         const NAME = `Onereal Merge ${stamp}`;
-        seedAdopter(THEIRS, NAME, keeper.email, 30, tail);
-        seedAdopter(MINE, NAME, actor.email, 0, tail);
-        seedCandidate(CAND, MINE, THEIRS);
+        execD1Batch([
+            adopterSql(THEIRS, NAME, keeper.email, 30, tail),
+            adopterSql(MINE, NAME, actor.email, 0, tail),
+            candidateSql(CAND, MINE, THEIRS),
+        ]);
 
         try {
             // ── D52: joining keeps the row, as its confirmation, with «Abrir perfil ↗».
@@ -292,10 +281,12 @@ test.describe('One shared reality (D48–D52)', () => {
         const CAND = `test-onereal-fixture-cand-hh-${stamp}`;
         const HOST_NAME = `Onereal Andrea ${stamp}`;
         const LINKED_NAME = `Onereal Bruno ${stamp}`;
-        seedAdopter(HOST, HOST_NAME, host.email, 30, tail);
-        seedAdopter(LINKED, LINKED_NAME, linked.email, 0, tail);
-        // A contact match between different names: «¿Es la misma persona?» → «alguien de su hogar» (D35).
-        seedCandidate(CAND, LINKED, HOST, '["phone"]');
+        execD1Batch([
+            adopterSql(HOST, HOST_NAME, host.email, 30, tail),
+            adopterSql(LINKED, LINKED_NAME, linked.email, 0, tail),
+            // A contact match between different names: «¿Es la misma persona?» → «alguien de su hogar» (D35).
+            candidateSql(CAND, LINKED, HOST, '["phone"]'),
+        ]);
 
         // Households as profiles: who lives with whom is household_memberships, nothing else.
         const together = () => rows(
@@ -304,11 +295,11 @@ test.describe('One shared reality (D48–D52)', () => {
         ).length > 0;
         const cleanup = () => {
             const hh = rows(`SELECT household_id AS h FROM household_memberships WHERE adopter_id IN ('${HOST}', '${LINKED}')`).map(r => String(r.h));
-            for (const h of hh) {
-                execD1(`DELETE FROM household_memberships WHERE household_id = '${h}'`);
-                execD1(`DELETE FROM household_corrections WHERE household_id = '${h}'`);
-                execD1(`DELETE FROM households WHERE id = '${h}'`);
-            }
+            execD1Batch(hh.flatMap(h => [
+                `DELETE FROM household_memberships WHERE household_id = '${h}'`,
+                `DELETE FROM household_corrections WHERE household_id = '${h}'`,
+                `DELETE FROM households WHERE id = '${h}'`,
+            ]));
         };
 
         try {

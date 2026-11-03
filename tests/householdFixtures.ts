@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execD1, execD1Batch, rows, sqlJson } from './db';
 import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 
 /**
@@ -8,51 +8,41 @@ import { expect, type APIRequestContext, type Browser, type Page } from '@playwr
  * the fixture's households.
  */
 
-export function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-
-export function rows(sql: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(execD1(sql));
-        return (Array.isArray(wrapped) ? wrapped[0] : wrapped)?.results ?? [];
-    } catch {
-        return [];
-    }
-}
-
-/** Wrangler's --json renders SQL NULL as the string "null" in CI — normalize. */
-export const isDbNull = (v: unknown) => v === null || v === undefined || v === 'null';
-export const sqlJson = (v: unknown) => JSON.stringify(v).replace(/'/g, "''");
+// The DB helpers live in ./db (shared by every spec); re-exported so the household specs keep one import.
+export { execD1, execD1Batch, isDbNull, rows, sqlJson } from './db';
 export const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 export const USER_EMAIL = 'testuser@example.com';
 
 /** A profile written directly (no tokens: not findable by search — use `createProfileViaApi` for that). */
-export function insertProfile(p: { id: string; name: string; owner: string; contacts?: unknown[]; age?: number | null; isMinor?: boolean; daysAgo?: number }) {
+export function profileSql(p: { id: string; name: string; owner: string; contacts?: unknown[]; age?: number | null; isMinor?: boolean; daysAgo?: number }) {
     const entries = p.contacts ?? [];
     const blob = entries.map(e => (e as { value?: string }).value ?? '').filter(Boolean).join('\n');
     const age = typeof p.age === 'number' ? String(p.age) : 'NULL';
     const asOf = typeof p.age === 'number' ? `'${new Date().toISOString().slice(0, 10)}'` : 'NULL';
-    execD1(
+    return (
         `INSERT OR REPLACE INTO adopters (id, name, contact_info, contact_entries, country, status, added_by, is_public, deleted_at, age, age_as_of, is_minor, created_at, updated_at) ` +
-        `VALUES ('${p.id}', '${p.name.replace(/'/g, "''")}', '${blob.replace(/'/g, "''")}', '${sqlJson(entries)}', 'AR', '5', '${p.owner}', 0, NULL, ${age}, ${asOf}, ${p.isMinor ? 1 : 0}, strftime('%s','now','-${p.daysAgo ?? 5} days'), strftime('%s','now'))`,
+        `VALUES ('${p.id}', '${p.name.replace(/'/g, "''")}', '${blob.replace(/'/g, "''")}', '${sqlJson(entries)}', 'AR', '5', '${p.owner}', 0, NULL, ${age}, ${asOf}, ${p.isMinor ? 1 : 0}, strftime('%s','now','-${p.daysAgo ?? 5} days'), strftime('%s','now'))`
     );
 }
 
+export function insertProfile(p: Parameters<typeof profileSql>[0]) {
+    execD1(profileSql(p));
+}
+
 /** A household with its anchor row (no adder, next to nobody) and the given members next to the anchor. */
-export function insertHousehold(householdId: string, anchorId: string, members: Array<{ id: string; adopterId: string; relationship?: string; addedBy: string; relativeTo?: string | null }>) {
-    execD1(`INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('${householdId}', NULL, strftime('%s','now','-5 days'))`);
-    execD1(
+export function householdSql(householdId: string, anchorId: string, members: Array<{ id: string; adopterId: string; relationship?: string; addedBy: string; relativeTo?: string | null }>): string[] {
+    return [
+        `INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('${householdId}', NULL, strftime('%s','now','-5 days'))`,
         `INSERT OR REPLACE INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at, recorded_at) ` +
         `VALUES ('${householdId}-anchor', '${householdId}', '${anchorId}', 'unknown', NULL, 0, NULL, strftime('%s','now','-5 days'), strftime('%s','now','-5 days'))`,
-    );
-    members.forEach((m, i) => execD1(
-        `INSERT OR REPLACE INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at, recorded_at) ` +
-        `VALUES ('${m.id}', '${householdId}', '${m.adopterId}', '${m.relationship ?? 'unknown'}', ${m.relativeTo === null ? 'NULL' : `'${m.relativeTo ?? anchorId}'`}, 0, '${m.addedBy}', strftime('%s','now','-${4 - Math.min(i, 3)} days'), strftime('%s','now','-4 days'))`,
-    ));
+        ...members.map((m, i) =>
+            `INSERT OR REPLACE INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at, recorded_at) ` +
+            `VALUES ('${m.id}', '${householdId}', '${m.adopterId}', '${m.relationship ?? 'unknown'}', ${m.relativeTo === null ? 'NULL' : `'${m.relativeTo ?? anchorId}'`}, 0, '${m.addedBy}', strftime('%s','now','-${4 - Math.min(i, 3)} days'), strftime('%s','now','-4 days'))`),
+    ];
+}
+
+export function insertHousehold(householdId: string, anchorId: string, members: Parameters<typeof householdSql>[2]) {
+    execD1Batch(householdSql(householdId, anchorId, members));
 }
 
 /** A profile made through the app (tokenized, so search and «¿Es este perfil?» find it), as the context's session user. */
@@ -84,24 +74,30 @@ export function profileNamed(name: string): Record<string, unknown> | undefined 
 /** Deletes the given profiles and everything a household spec leaves on them, and every household they were in. */
 export function cleanupProfiles(ids: string[]) {
     const all = new Set(ids.filter(Boolean));
+    if (all.size === 0) return;
+    const inList = (set: Iterable<string>) => [...set].map(id => `'${id}'`).join(', ');
     // Anyone the UI added to these profiles' households goes too.
-    for (const id of [...all]) for (const h of housemates(id)) all.add(String(h.profileId));
-    const households = new Set<string>();
-    for (const id of all) for (const r of rows(`SELECT household_id AS h FROM household_memberships WHERE adopter_id = '${id}'`)) households.add(String(r.h));
+    for (const r of rows(
+        `SELECT DISTINCT o.adopter_id AS p FROM household_memberships m JOIN household_memberships o ON o.household_id = m.household_id AND o.adopter_id <> m.adopter_id WHERE m.adopter_id IN (${inList(all)})`,
+    )) all.add(String(r.p));
+    const households = rows(`SELECT DISTINCT household_id AS h FROM household_memberships WHERE adopter_id IN (${inList(all)})`).map(r => String(r.h));
+    // One batch (one transaction): every table is in the CI seed, so a missing one must fail loudly.
+    const stmts: string[] = [];
     for (const h of households) {
-        execD1(`DELETE FROM household_memberships WHERE household_id = '${h}'`);
-        execD1(`DELETE FROM household_corrections WHERE household_id = '${h}'`);
-        execD1(`DELETE FROM households WHERE id = '${h}'`);
+        stmts.push(`DELETE FROM household_memberships WHERE household_id = '${h}'`);
+        stmts.push(`DELETE FROM household_corrections WHERE household_id = '${h}'`);
+        stmts.push(`DELETE FROM households WHERE id = '${h}'`);
     }
     for (const id of all) {
         for (const table of ['adopter_history', 'pii_access_grants', 'pii_access_requests', 'duplicate_tokens', 'adopter_flags', 'adopter_events', 'placements', 'household_corrections', 'household_conversions']) {
             const col = table === 'household_conversions' ? 'profile_id' : 'adopter_id';
-            try { execD1(`DELETE FROM ${table} WHERE ${col} = '${id}'`); } catch { /* table/column absent on an older seed: nothing to clean */ }
+            stmts.push(`DELETE FROM ${table} WHERE ${col} = '${id}'`);
         }
-        execD1(`DELETE FROM duplicate_candidates WHERE adopter1_id = '${id}' OR adopter2_id = '${id}'`);
-        execD1(`DELETE FROM notifications WHERE url LIKE '%${id}%'`);
-        execD1(`DELETE FROM adopters WHERE id = '${id}'`);
+        stmts.push(`DELETE FROM duplicate_candidates WHERE adopter1_id = '${id}' OR adopter2_id = '${id}'`);
+        stmts.push(`DELETE FROM notifications WHERE url LIKE '%${id}%'`);
+        stmts.push(`DELETE FROM adopters WHERE id = '${id}'`);
     }
+    execD1Batch(stmts);
 }
 
 /** A non-admin rescuer: user + profile rows and a signed-in context (the pattern of tests/one-reality.authed.spec.ts). */
@@ -111,8 +107,10 @@ export async function rescuerContext(browser: Browser, tag: string, stamp: numbe
     const id = `test-hh-fixture-user-${tag}-${stamp}`;
     const email = `hh-${tag}-${stamp}@example.com`;
     const name = `Hh ${tag.toUpperCase()} ${stamp}`;
-    execD1(`INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`);
-    execD1(`INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`);
+    execD1Batch([
+        `INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES ('${id}', '${name}', '${email}', strftime('%s','now'), NULL)`,
+        `INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES ('${id}', 'AR', 1, 1, strftime('%s','now'))`,
+    ]);
     const { encode } = await import('next-auth/jwt');
     const token = await encode({ secret, token: { email, name, sub: id, sessionVersion: 3 }, salt: 'authjs.session-token' });
     const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
@@ -126,9 +124,11 @@ export async function rescuerContext(browser: Browser, tag: string, stamp: numbe
         email, name, page,
         close: async () => {
             await ctx.close();
-            execD1(`DELETE FROM user_profiles WHERE user_id = '${id}'`);
-            execD1(`DELETE FROM user WHERE id = '${id}'`);
-            execD1(`DELETE FROM notifications WHERE user_id = '${email}'`);
+            execD1Batch([
+                `DELETE FROM user_profiles WHERE user_id = '${id}'`,
+                `DELETE FROM user WHERE id = '${id}'`,
+                `DELETE FROM notifications WHERE user_id = '${email}'`,
+            ]);
         },
     };
 }
