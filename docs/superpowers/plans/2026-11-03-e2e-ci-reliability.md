@@ -35,14 +35,14 @@
 
 ## Phase A — unblock releases (one version)
 
-### Task A0: Coverage baseline
+### Task 1 (A0): Coverage baseline
 
 **Files:** Create `.agents/audits/2026-11-03-e2e-coverage-ledger.md`; scratch `baseline/` (untracked).
 
 - [ ] Save `npx playwright test --list --reporter=list` for each project (`setup`, `user`, `authed`, `unauthed`, `mobile`) to `baseline/<project>.txt`, and one listing per current `ci.yml` e2e matrix leg using that leg's exact `projects` args to `baseline/leg-<group>.txt`.
 - [ ] Record totals (expect 367 incl. setup; audit §4) and the vitest count in the ledger header, plus one section per later task for mappings. Commit the ledger.
 
-### Task A1: Partition guard
+### Task 2 (A1): Partition guard
 
 **Files:** Create `scripts/e2e-partition-check.mjs`, `src/lib/e2ePartitionCheck.test.ts`; modify `.github/workflows/ci.yml` (build-and-lint job).
 
@@ -53,7 +53,7 @@
 - [ ] Run it on the unchanged config: expect OK (today's matrix is a partition). Add a build-and-lint step "E2E partition: every test runs in exactly one leg" after Lint.
 - [ ] Commit.
 
-### Task A2: Households leg (Q1)
+### Task 3 (A2): Households leg (Q1)
 
 **Files:** Modify `tests/households.user.spec.ts:56`, `.github/workflows/ci.yml` (user legs + new group).
 
@@ -63,7 +63,7 @@
 - [ ] Partition check OK; `--list` counts: user legs + households = 108 user tests (audit Q1).
 - [ ] Commit.
 
-### Task A3: Budget-aware retry, step timeout, leg-budget warning (Q2 + Q3)
+### Task 4 (A3): Budget-aware retry, step timeout, leg-budget warning (Q2 + Q3)
 
 **Files:** Modify `scripts/ci-e2e.sh`, `src/lib/ciE2eRetry.test.ts`, `.github/workflows/ci.yml` (Run Playwright tests step).
 
@@ -74,13 +74,13 @@
 - [ ] Workflow: the step gets `timeout-minutes: 25` and env `E2E_STEP_BUDGET_SEC: 1500`, `E2E_WARN_AT_SEC: 900`; keep the job's `timeout-minutes: 30`; the upload step's `if: ${{ !cancelled() }}` stays (a step timeout fails the step, it does not cancel the job — verify on the staging run and say so if unverified).
 - [ ] Commit.
 
-### Task A4: Ship Phase A
+### Task 5 (A4): Ship Phase A
 
 - [ ] vitest, tsc, lint, partition check. Bump version, CHANGELOG ("CI: households tests run in their own leg; a re-run is only tried when it can finish; legs near their limit warn; a build check proves every test runs exactly once"). Push to staging, watch, record per-leg durations in the ledger. Expected: no leg near 25 min.
 
 ## Phase B — faster, steadier tests (one version)
 
-### Task B1: One shared, batched test-DB helper (N1 step 1)
+### Task 6 (B1): One shared, batched test-DB helper (N1 step 1)
 
 **Files:** Create `tests/db.ts`; modify `tests/householdFixtures.ts` and the 33 specs with a private `execD1` (list: `grep -ln "function execD1" tests/`).
 
@@ -92,11 +92,11 @@
 - [ ] Local e2e: run every spec that imports `tests/db.ts` on the local harness; record before/after durations of `households.user.spec.ts` in the ledger. Partition check OK.
 - [ ] Commit.
 
-### Task B2: Direct-sqlite spike (N1 step 2) — evidence only
+### Task 7 (B2): Direct-sqlite spike (N1 step 2) — evidence only
 
 - [ ] On a throwaway branch, swap `execD1Batch` for better-sqlite3 on the miniflare file with `busy_timeout` (as `scripts/setup-test-db.js:41`), run the households + one-reality specs 3× locally. Ship only if all 3 runs are green with no `SQLITE_BUSY`/WAL errors and it saves ≥ 30% more than B1; otherwise record the result in the ledger and drop it.
 
-### Task B3: Fix the chronic flakes (N3)
+### Task 8 (B3): Fix the chronic flakes (N3)
 
 **Files:** `tests/wizards.spec.ts:9–28`, `tests/landing-pages-smoke-shared.ts:71`, `tests/public-api.authed.spec.ts:386`, `tests/sheet-import-form-export.authed.spec.ts:96`.
 
@@ -105,7 +105,7 @@
 - [ ] No skip/fixme, no extra retries, no longer timeouts as the fix. Run each fixed spec 3× locally green.
 - [ ] Commit.
 
-### Task B4: Clean-ups (audit §4)
+### Task 9 (B4): Clean-ups (audit §4)
 
 - [ ] **§4.1 tests that never run.**
   - `funcionalidades.unauthed.spec.ts:11` skips when `storageState` is truthy, but the unauthed project's `storageState` is `{ cookies: [], origins: [] }` (truthy), so it never runs: change the condition to "has cookies", run it, fix what fails.
@@ -117,14 +117,14 @@
 - [ ] **§4.5** public-api stays as is (audit). No change.
 - [ ] Partition check: the only removals are ledger-mapped. Commit.
 
-### Task B5: N2 decision, then ship Phase B
+### Task 10 (B5): N2 decision, then ship Phase B
 
 - [ ] After B1 lands on staging, count households-file failures that were not a memory restart over that run and the next ones. If any: split the `describe.serial` into independent tests, each with its own `test-hh-fixture-*` rows; otherwise ledger "N2 not needed: <evidence>".
 - [ ] Ship Phase B (version, CHANGELOG, push, watch, durations in the ledger).
 
 ## Phase C — measure the dev server (E1)
 
-### Task C1: Heap sampler and source-map experiment
+### Task 11 (C1): Heap sampler and source-map experiment
 
 **Files:** `.github/workflows/ci.yml`, `scripts/e2e-heap-sampler.sh` (new), `playwright.config.ts` webServer command.
 
@@ -135,17 +135,17 @@
 
 ## Phase D — e2e on the Cloudflare build (S1)
 
-### Task D1: CF-build leg alongside (non-gating)
+### Task 12 (D1): CF-build leg alongside (non-gating)
 
 - [ ] Rebuild the spike on this branch from its diff (`git diff $(git merge-base origin/staging spike/e2e-prod-build) spike/e2e-prod-build`) as `playwright.cf.config.ts`: no absolute paths, `wrangler pages dev .vercel/output/static`, local D1 seeded by `scripts/setup-test-db.js`, `APP_BUILD_ID=e2e-build` at build so the deploy-skew guard matches (tests/deploy-skew.authed.spec.ts).
 - [ ] No product-code env backdoor: the spike's `E2E_LOCAL_DB` changes to `src/lib/db.ts` / `emailOtp.ts` are not carried (the CF build has the D1 binding; email OTP tests seed the code row — find the CF-compatible way, e.g. a test-only Resend stub key, and ask before any production-code change).
 - [ ] CI: build-and-lint uploads the next-on-pages output; a separate job `e2e-cf` (same matrix groups) runs the suite against it. It is **not** in any deploy job's `needs` while non-gating — never `continue-on-error` (ci.yml removed it on purpose: it masks failures).
 
-### Task D2: Make the CF leg green — fix, never skip
+### Task 13 (D2): Make the CF leg green — fix, never skip
 
 - [ ] Inventory every test that fails only on the CF build (the spike left ~20). Each gets a root cause in the ledger and one of: a test fix that keeps its assertion, a real bug ticket/fix in the app (ask Jon when it changes product behaviour), or it stays on the dev path (listed).
 
-### Task D3: Switch the gate
+### Task 14 (D3): Switch the gate
 
 - [ ] After 3 consecutive green CF runs with test counts equal to the dev legs (partition check extended to the CF matrix), the CF matrix becomes the deploy gate; the dev-server matrix stays one week as non-gating fallback, then is removed in its own version. Ship, watch, ledger.
 
