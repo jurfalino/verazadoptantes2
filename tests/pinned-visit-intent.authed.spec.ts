@@ -13,7 +13,6 @@ import { execD1 } from './db';
 
 const PROFILE = '/adopter/test-adopter-1';
 
-
 async function cardBox(page: Page) {
     const card = page.locator('.visit-intent-card');
     await expect(card).toBeVisible({ timeout: 30000 });

@@ -17,7 +17,6 @@ const ID = 'test-household-legacy-fixture-1';
 const NAME = 'LegacyFamilyFixture Titular';
 const FAMILY = 'LegacyRelative Ondina (hermana), LegacyRelative Bruno';
 
-
 test.describe('legacy family text under the household section', () => {
     test.beforeAll(() => {
         execD1(

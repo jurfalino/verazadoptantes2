@@ -71,12 +71,18 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
     });
     test.afterAll(async () => {
         const made = [MARTA_NAME, `Marta P. ${stamp}`, TOMAS_NAME, HUGO_NAME].map(n => profileNamed(n)?.id).filter(Boolean) as string[];
-        cleanupProfiles([PEDRO, ROSA, ...made]);
-        execD1Batch([
-            `DELETE FROM animals WHERE id = '${FOSTER_ANIMAL}'`,
-            `DELETE FROM notifications WHERE type = 'profile_renamed' AND body LIKE '%${stamp}%'`,
-        ]);
-        await admin?.dispose();
+        try {
+            cleanupProfiles([PEDRO, ROSA, ...made]);
+        } finally {
+            try {
+                execD1Batch([
+                    `DELETE FROM animals WHERE id = '${FOSTER_ANIMAL}'`,
+                    `DELETE FROM notifications WHERE type = 'profile_renamed' AND body LIKE '%${stamp}%'`,
+                ]);
+            } finally {
+                await admin?.dispose();
+            }
+        }
     });
 
     test('1. a non-owner adds «Marta Paez» with a phone: her own profile, owned by Pedro\'s owner, living with Pedro', async ({ page }) => {
@@ -311,7 +317,6 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         await page.waitForURL(new RegExp(`/adopter/${tomas.id}\\?newAdoption=adoption`), { timeout: 30_000 });
         await expect(page.getByTestId('wizard-next-step1')).toBeVisible({ timeout: 30_000 });
     });
-
 
     test('6. «Quitar del hogar» → «No vive acá» removes Marta from the household on every profile', async ({ page }) => {
         test.setTimeout(150_000);

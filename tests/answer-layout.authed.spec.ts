@@ -18,7 +18,6 @@ const ADMIN_USER_ID = 'test-admin-id';
 const LONG_LABEL = 'Compromiso de castración/esterilización:';
 const EMAIL = 'diego.ruiz@ejemplo.com.ar';
 
-
 type RowBox = { label: string; labelW: number; valueX: number; valueW: number; valueH: number; lineH: number };
 
 /** Every answer row in the "Respuestas completas" section: label text + the value cell's box. */

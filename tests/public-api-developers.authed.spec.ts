@@ -31,7 +31,6 @@ test.describe('public API v1 — /developers and access approval', { tag: '@leg-
         await api?.dispose();
     });
 
-
     test('/developers: sign in, accept the terms, create your own key (shown once), use it, revoke it', async ({ page, browser, baseURL }) => {
         // Signed out: the page explains and asks to sign in.
         const anon = await browser.newContext({ storageState: { cookies: [], origins: [] } });

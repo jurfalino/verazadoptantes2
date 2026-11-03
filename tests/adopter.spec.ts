@@ -2,13 +2,6 @@ import { test, expect } from '@playwright/test';
 import { TEST_ADOPTERS, TEST_NAMES, dismissCountryBanner, createAnywayIfAsked } from './helpers';
 import { execD1, parseD1Rows } from './db';
 
-/**
- * Execute a single SQL statement against the local D1 dev DB via wrangler.
- * Used by the "available → adopted" test to seed and re-query the fixture
- * row directly, since neither operation has a stable browser endpoint.
- * Pattern mirrors tests/contract-link.spec.ts:21.
- */
-
 test.setTimeout(60000);
 
 test.describe('Adopter Profile', () => {

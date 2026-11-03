@@ -54,10 +54,19 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         execD1(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-duphint-fixture-ev-${stamp}', '${HOUSEMATE}', 'observation', 1, '${ADMIN_EMAIL}', strftime('%s','now','-3 days'))`);
     });
     test.afterAll(async () => {
-        cleanupProfiles([ANCHOR, HOUSEMATE, UNO_ID, DOS_ID]);
-        execD1(`DELETE FROM adopter_events WHERE id = 'test-duphint-fixture-ev-${stamp}'`);
-        if (!hadGating) execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`);
-        await admin?.dispose();
+        try {
+            cleanupProfiles([ANCHOR, HOUSEMATE, UNO_ID, DOS_ID]);
+        } finally {
+            try {
+                execD1(`DELETE FROM adopter_events WHERE id = 'test-duphint-fixture-ev-${stamp}'`);
+            } finally {
+                try {
+                    if (!hadGating) execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`);
+                } finally {
+                    await admin?.dispose();
+                }
+            }
+        }
     });
 
     test('compact box → window → «No es esta persona» hides the row → «Marcar como posible duplicado» flags the pair', async ({ page, browser, baseURL }) => {
@@ -147,8 +156,11 @@ test.describe.serial('composer duplicate hint — «Unir con este perfil» on my
         execD1(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-duphint-fixture-ev-mine-${stamp}', '${MINE}', 'observation', 4, '${USER_EMAIL}', strftime('%s','now','-2 days'))`);
     });
     test.afterAll(async () => {
-        cleanupProfiles([MINE, MATCH_ID]);
-        execD1(`DELETE FROM adopter_events WHERE id = 'test-duphint-fixture-ev-mine-${stamp}'`);
+        try {
+            cleanupProfiles([MINE, MATCH_ID]);
+        } finally {
+            execD1(`DELETE FROM adopter_events WHERE id = 'test-duphint-fixture-ev-mine-${stamp}'`);
+        }
     });
 
     test('continue → the confirmation → lands on the match with «Listo», once; mine absorbed, the phone not doubled', async ({ page }) => {

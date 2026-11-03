@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
 
 vi.mock('child_process', () => ({ execSync: vi.fn() }));
@@ -35,7 +35,7 @@ describe('execD1Batch', () => {
             throw Object.assign(new Error('Command failed'), { stderr: 'boom: no such table', stdout: '{"error":{"text":"no such table: zz"}}' });
         }) as never);
         expect(() => execD1Batch(['DELETE FROM ok', 'DELETE FROM zz'])).toThrow(/boom: no such table[\s\S]*no such table: zz/);
-        expect(() => execD1Batch(['DELETE FROM ok', 'DELETE FROM zz'])).toThrow(/batch of 2 statements failed \(none applied\)\. First: DELETE FROM ok/);
+        expect(() => execD1Batch(['DELETE FROM ok', 'DELETE FROM zz'])).toThrow(/batch of 2 statements failed \(none applied[^)]*\)\. First: DELETE FROM ok \| Last: DELETE FROM zz/);
         expect(existsSync(sqlFile)).toBe(false);
     });
 
@@ -65,5 +65,37 @@ describe('rows / execD1', () => {
         mocked.mockReturnValue('[]' as never);
         execD1('SELECT "a"');
         expect(String(mocked.mock.calls[0][0])).toContain('--command="SELECT \\"a\\""');
+    });
+
+    it('throws (never returns []) on output with no result set, e.g. a non-SELECT', () => {
+        mocked.mockReturnValue('{"success":true}' as never);
+        expect(() => rows('DELETE FROM t')).toThrow(/no result set/);
+    });
+});
+
+describe('SQLITE_BUSY retry', () => {
+    const wait = vi.spyOn(Atomics, 'wait').mockImplementation(() => 'ok');
+    beforeEach(() => { wait.mockClear(); });
+    afterEach(() => { wait.mockClear(); });
+    const busy = () => Object.assign(new Error('x'), { stderr: 'SQLITE_BUSY: database is locked' });
+
+    it('retries once when the first call is busy, then returns the result', () => {
+        mocked.mockImplementationOnce((() => { throw busy(); }) as never).mockReturnValueOnce('[{"results":[]}]' as never);
+        expect(execD1('SELECT 1')).toBe('[{"results":[]}]');
+        expect(mocked).toHaveBeenCalledTimes(2);
+        expect(wait).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives up after 6 tries when always busy and throws', () => {
+        mocked.mockImplementation((() => { throw busy(); }) as never);
+        expect(() => execD1('SELECT 1')).toThrow(/database is locked/);
+        expect(mocked).toHaveBeenCalledTimes(6);
+        expect(wait).toHaveBeenCalledTimes(5);
+    });
+
+    it('does not retry a non-busy error', () => {
+        mocked.mockImplementation((() => { throw Object.assign(new Error('x'), { stderr: 'no such table' }); }) as never);
+        expect(() => execD1('SELECT 1')).toThrow(/no such table/);
+        expect(mocked).toHaveBeenCalledTimes(1);
     });
 });

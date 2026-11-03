@@ -15,7 +15,6 @@ import { execD1 } from './db';
 const ID = 'test-deploy-skew-fixture-1';
 const NAME = 'SkewFixture Titular';
 
-
 /** Make this tab's server-action calls claim an old, unknown build. Returns the statuses seen. */
 async function goStale(page: Page): Promise<number[]> {
     const statuses: number[] = [];

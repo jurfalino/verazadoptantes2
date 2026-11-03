@@ -17,7 +17,6 @@ import { execD1 } from './db';
 const ADMIN_USER_ID = 'test-admin-id';
 const USER_ID = 'test-user-id';
 
-
 function one(sql: string): Record<string, unknown> {
     const wrapped = JSON.parse(execD1(sql));
     const results = (Array.isArray(wrapped) ? wrapped[0] : wrapped)?.results;

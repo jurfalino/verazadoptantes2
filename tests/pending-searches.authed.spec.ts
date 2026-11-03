@@ -22,7 +22,6 @@ const ADOPTER = 'test-adopter-1';
 const KNOWN = 'María García López';
 const UNKNOWN = 'Fulano Inexistente 11-5556666';
 
-
 /**
  * Reload the homepage until the deck matches what the flag was just set to.
  * The page reads the flags server-side in its own edge isolate, with its own

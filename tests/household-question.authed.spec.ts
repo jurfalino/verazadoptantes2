@@ -12,7 +12,6 @@ import { execD1 } from './db';
 
 const OWNER = "owner_type = 'user' AND owner_id = 'gatitosolivos@gmail.com'";
 
-
 /** The stored hidden_steps value, raw (null when the row has none). Throws on a failed query. */
 function storedRaw(): string | null {
     const r = JSON.parse(execD1(`SELECT hidden_steps FROM adoption_doc_settings WHERE ${OWNER}`));

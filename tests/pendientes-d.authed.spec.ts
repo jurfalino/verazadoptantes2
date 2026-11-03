@@ -25,10 +25,6 @@ import { execD1Batch, isDbNull, rows } from './db';
  * seed adopters. Selectors are data-testids: Chromium renders English.
  */
 
-
-
-
-
 /** Same as src/domain/dedupPair.ts pairKey. */
 const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 

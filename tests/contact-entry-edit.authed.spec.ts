@@ -11,7 +11,6 @@ import { execD1, rows } from './db';
 const ID = 'test-contact-edit-fixture-1';
 const OWNER = 'gatitosolivos@gmail.com';
 
-
 const ENTRIES = JSON.stringify([
     { id: 'legacy-392d646f-ab375739', type: 'phone', value: '4864-0000', addedBy: OWNER },
     { id: 'legacy-ba853e0e-b3e4fbf5', type: 'phone', value: '156-1010000', addedBy: OWNER },

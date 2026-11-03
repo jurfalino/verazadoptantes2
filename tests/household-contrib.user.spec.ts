@@ -49,11 +49,15 @@ test.describe('household contributions by a non-owner (D54, D55)', () => {
     });
     test.afterAll(() => {
         const made = profileNamed(NEW_MEMBER)?.id;
-        cleanupProfiles([HOST, MARTA, BRUNO, ...(made ? [String(made)] : [])]);
-        execD1Batch([
-            `DELETE FROM notifications WHERE user_id = '${OWNER}'`,
-            `DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`,
-        ]);
+        try {
+            cleanupProfiles([HOST, MARTA, BRUNO, ...(made ? [String(made)] : [])]);
+        } finally {
+            // Shared state (the PII-gating flag) is reset even if the profile cleanup throws.
+            execD1Batch([
+                `DELETE FROM notifications WHERE user_id = '${OWNER}'`,
+                `DELETE FROM app_config WHERE key = 'ENABLE_PII_ACCESS_GATING'`,
+            ]);
+        }
     });
 
     test('adds a person with a phone, gets only «Editar» on what the owner added, and adds a phone to a housemate\'s own profile', async ({ page }) => {

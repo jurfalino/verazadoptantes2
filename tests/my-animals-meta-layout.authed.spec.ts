@@ -15,7 +15,6 @@ import { execD1 } from './db';
 
 const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 
-
 for (const width of [390, 1280]) {
     test(`card meta line at ${width}px is never cut`, async ({ page }) => {
         test.setTimeout(120_000);

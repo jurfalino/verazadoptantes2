@@ -24,7 +24,6 @@ const NAME = 'ContributionFlow Titular';
 const OWNER = 'gatitosolivos@gmail.com';
 const CONTRIBUTOR = 'testuser@example.com';
 
-
 function cleanup() {
     execD1(`DELETE FROM notifications WHERE url LIKE '%${ID}%'`);
     execD1(`DELETE FROM pii_access_requests WHERE adopter_id = '${ID}'`);

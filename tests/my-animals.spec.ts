@@ -16,7 +16,6 @@ const ADOPTED_ID = 'test-animal-fixture-ma-adopted';
 const PLACEMENT_ID = 'test-plc-fixture-ma-adopted';
 const ADOPTER_ID = 'test-adopter-fixture-ma';
 
-
 function cleanup() {
     execD1(`DELETE FROM placements WHERE id='${PLACEMENT_ID}'`);
     execD1(`DELETE FROM animals WHERE id IN ('${AVAILABLE_ID}','${ADOPTED_ID}')`);

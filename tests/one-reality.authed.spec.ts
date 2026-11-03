@@ -31,10 +31,6 @@ import { execD1Batch, isDbNull, rows } from './db';
  * adopters. Selectors are data-testids: Chromium renders English.
  */
 
-
-
-
-
 interface Rescuer { email: string; name: string; page: Page; close: () => Promise<void> }
 
 /** A non-admin rescuer: user + profile rows (terms accepted, country confirmed) and a signed-in context. */

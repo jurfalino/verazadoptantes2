@@ -14,9 +14,6 @@ import { execD1, execD1Batch, parseD1Rows } from './db';
  * locale-agnostic.
  */
 
-/** Execute a single SQL statement against the local D1 dev DB via wrangler. */
-
-
 /**
  * `wrangler d1 execute --local --json` serializes a SQL NULL as the literal
  * string "null" (verified empirically against this worktree's wrangler

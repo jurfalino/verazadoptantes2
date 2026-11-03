@@ -75,7 +75,7 @@ export function execD1Batch(statements: string[]): void {
         writeFileSync(file, statements.map(s => s.trim().replace(/;+\s*$/, '') + ';').join('\n') + '\n');
         run(
             `npx wrangler d1 execute DB --local --file="${file}" --json`,
-            `D1 batch of ${statements.length} statements failed (none applied). First: ${sqlHead(statements[0])}`,
+            `D1 batch of ${statements.length} statements failed (none applied; wrangler does not say which one). First: ${sqlHead(statements[0])} | Last: ${sqlHead(statements[statements.length - 1])}`,
         );
     } finally {
         rmSync(dir, { recursive: true, force: true });

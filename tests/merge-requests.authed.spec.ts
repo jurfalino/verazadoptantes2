@@ -25,10 +25,6 @@ import { execD1Batch, isDbNull, rows } from './db';
 
 const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 
-
-
-
-
 /** A non-admin rescuer: user + profile rows (terms accepted, country confirmed) and a signed-in context. */
 async function rescuer(browser: Browser, tag: string, stamp: number) {
     const id = `test-mergereq-fixture-user-${tag}-${stamp}`;

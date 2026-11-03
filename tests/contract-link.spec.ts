@@ -11,15 +11,6 @@ import { execD1, parseD1Rows } from './db';
 const FIXTURE_ADOPTER_ID = 'test-contract-fixture-target';
 const FIXTURE_ADOPTER_NAME = 'ContractFixturePerson Sintética';
 
-/**
- * Execute a single SQL statement against the local D1 dev DB via wrangler.
- * Used here to seed an "available" animal fixture and assert orphan soft-deletion
- * after the merge — neither operation has a public app endpoint we can hit from a
- * browser context. Slow (~5s per call) but acceptable for the small number of
- * setup/assertion calls this test makes.
- */
-
-
 test.describe('Contract-results merge — "Es la misma persona"', () => {
     test('signing a contract for a fuzzy-matched person and confirming the merge attaches the adoption to the existing profile and soft-deletes the orphan', async ({ browser }) => {
         // Unique animal id per run so the test is idempotent (the fixture row stays

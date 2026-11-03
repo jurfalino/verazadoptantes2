@@ -32,8 +32,6 @@ const HH_B = 'test-hh-massmerge-b';
 const HH_M = 'test-hh-massmerge-m';
 const CAND_BC = 'test-cand-massmerge-bc';
 
-
-
 // Seed helpers return SQL; call sites run a whole scenario's seed as ONE execD1Batch.
 function adopterSql(id: string, name: string, contact: string, entriesJson: string | null = null, createdAtExpr = `strftime('%s','now')`): string {
     const entries = entriesJson === null ? 'NULL' : `'${entriesJson}'`;
