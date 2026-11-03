@@ -50,21 +50,27 @@ export function parseLegs(yamlText) {
     return legs;
 }
 
+/** `playwright test --list` output -> test ids; drops banners/totals, strips the column. */
+export function normalizeListOutput(out) {
+    // "  [proj] › file:line:col › title" -> "[proj] › file:line › title"
+    return out.split('\n')
+        .map((l) => l.trim())
+        .filter((l) => /^\[[^\]]+\] ›/.test(l))
+        .map((l) => l.replace(/^(\[[^\]]+\] › [^›]*?:\d+):\d+( ›)/, '$1$2'));
+}
+
 function list(args) {
     const out = execFileSync('npx', ['playwright', 'test', '--list', '--reporter=list', ...args], {
         encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'],
     });
-    // "  [proj] › file:line:col › title" -> "[proj] › file:line › title"
-    return out.split('\n')
-        .map((l) => l.trim())
-        .filter((l) => /^\[[a-z]+\] ›/.test(l))
-        .map((l) => l.replace(/^(\[[^\]]+\] › [^›]*?:\d+):\d+( ›)/, '$1$2'));
+    return normalizeListOutput(out);
 }
 
 function main() {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const legDefs = parseLegs(readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
-    const all = list(['--project=user', '--project=authed', '--project=unauthed', '--project=mobile']);
+    // No --project: every project the config defines, so a newly added one cannot bypass the guard.
+    const all = list([]);
     const legs = {};
     for (const { group, args } of legDefs) legs[group] = list(args);
     const { missing, duplicated } = checkPartition(all, legs);

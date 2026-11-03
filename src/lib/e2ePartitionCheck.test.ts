@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkPartition, parseLegs } from '../../scripts/e2e-partition-check.mjs';
+import { checkPartition, parseLegs, normalizeListOutput } from '../../scripts/e2e-partition-check.mjs';
 
 const A = '[user] › a.spec.ts:1 › one';
 const B = '[authed] › b.spec.ts:2 › two';
@@ -37,6 +37,25 @@ describe('parseLegs', () => {
         expect(parseLegs(yaml)).toEqual([
             { group: 'g1', args: ['--project=user', '--shard=1/2'] },
             { group: 'g2', args: ['--project=authed', '--grep', '@leg-x'] },
+        ]);
+    });
+});
+
+describe('normalizeListOutput', () => {
+    it('strips the column from test ids and drops non-test lines (dotenv banner, totals)', () => {
+        const out = [
+            '[dotenv@17.2.3] injecting env (5) from .env.local',
+            'Listing tests:',
+            '  [user] › households.user.spec.ts:60:5 › households › one',
+            '  [authed] › a.spec.ts:12:9 › two',
+            '  [setup] › auth.setup.ts:14:6 › authenticate as admin',
+            'Total: 3 tests in 3 files',
+            '',
+        ].join('\n');
+        expect(normalizeListOutput(out)).toEqual([
+            '[user] › households.user.spec.ts:60 › households › one',
+            '[authed] › a.spec.ts:12 › two',
+            '[setup] › auth.setup.ts:14 › authenticate as admin',
         ]);
     });
 });
