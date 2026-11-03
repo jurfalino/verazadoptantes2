@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.13] - 2026-11-03
+
+### Changed — CI: releases stop getting stuck in the e2e tests (audit 2026-11-03)
+- The households tests (13 that run in order) have their own e2e leg, `user-households`. They had pushed the `user-1`
+  leg to 95% of its 30-minute limit, so 3 of the last 6 releases timed out and needed a manual re-run.
+- The automatic re-run after a test-server memory restart only starts when it can finish (attempt 1 ≤ 12 min); the
+  test step stops at 25 minutes so its report is still uploaded; a leg that runs over 15 minutes prints a warning.
+- A build check (`scripts/e2e-partition-check.mjs`) fails the pipeline if any e2e test runs in no leg or in two.
+  Today: 367 tests in 17 legs, nothing lost.
+
 ## [2.58.12] - 2026-11-02
 
 ### Changed — sheet import: the document Id joins rows like a phone
