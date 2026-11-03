@@ -9,7 +9,7 @@ import { mapImportColumns, interpretRows, aiCleanRowContacts, matchImportRow, st
 import { defaultImportAction } from '@/domain/importMerge';
 import type { IdenticalRowIdentifiers } from '@/app/actions/importOtherMatches';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
-import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
+import { groupSamePerson, groupName, unionValues, phoneDigitsKey, documentIdKey, type GroupReason } from '@/domain/importGrouping';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { buildImportBody } from '@/lib/importRow';
 import { inferDateOrder } from '@/domain/importRow';
@@ -60,12 +60,12 @@ function mergedGroupContacts(effs: MappedRow[]): Pick<MappedRow, 'name' | 'phone
         emails: unionValues(effs.map(e => e.emails)),
         socials: unionValues(effs.map(e => e.socials)),
         addresses: unionValues(effs.map(e => e.addresses)),
-        dnis: unionValues(effs.map(e => e.dnis)),
+        dnis: unionValues(effs.map(e => e.dnis), documentIdKey),
         combinedContacts: unionValues(effs.map(e => e.combinedContacts)),
     };
 }
 
-const GROUP_REASON_LABEL: Record<GroupReason, string> = { identical: 'mismos datos', email: 'mismo email', phone: 'mismo teléfono' };
+const GROUP_REASON_LABEL: Record<GroupReason, string> = { identical: 'mismos datos', email: 'mismo email', phone: 'mismo teléfono', document: 'mismo documento' };
 
 // 'grouped' = an intra-batch twin whose activity was folded into another row's
 // adopter (same person on multiple rows). It IS imported — just not as its own

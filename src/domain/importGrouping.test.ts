@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupSamePerson, groupName, namesAgree, unionValues, phoneDigitsKey, type GroupableRow } from './importGrouping';
+import { groupSamePerson, groupName, namesAgree, unionValues, phoneDigitsKey, documentIdKey, type GroupableRow } from './importGrouping';
 
 const row = (index: number, o: Partial<GroupableRow>): GroupableRow =>
     ({ index, name: '', phones: [], emails: [], socials: [], ids: [], addresses: [], ...o });
@@ -59,11 +59,44 @@ describe('groupSamePerson', () => {
     });
 });
 
+describe('a document Id joins rows exactly like a phone (Jon 2026-11-02)', () => {
+    it('same document Id written differently + agreeing names → one person', () => {
+        expect(multi([
+            row(0, { name: 'Lucía Fernández', phones: ['+54 9 11 3000-1111'], ids: ['35.111.222'] }),
+            row(1, { name: 'Lucía Fernández Gómez', phones: ['+54 9 11 3000-2222'], ids: ['35111222'] }),
+        ])).toEqual([{ indices: [0, 1], reason: 'document' }]);
+    });
+    it('same document Id + different names stays apart', () => {
+        expect(multi([
+            row(0, { name: 'Pedro Acosta', ids: ['36.222.333'] }),
+            row(1, { name: 'Martín Acosta', ids: ['36222333'] }),
+        ])).toEqual([]);
+    });
+    it('a placeholder or too-short document Id links nobody, even with the same name', () => {
+        expect(multi([
+            row(0, { name: 'Ana Ruiz', phones: ['11 5555 0001'], ids: ['00.000.000'] }),
+            row(1, { name: 'Ana Ruiz', phones: ['11 5555 0002'], ids: ['00000000'] }),
+            row(2, { name: 'Bea Luna', phones: ['11 5555 0003'], ids: ['12345678'] }),
+            row(3, { name: 'Bea Luna', phones: ['11 5555 0004'], ids: ['12.345.678'] }),
+            row(4, { name: 'Caro Paz', phones: ['11 5555 0005'], ids: ['123'] }),
+            row(5, { name: 'Caro Paz', phones: ['11 5555 0006'], ids: ['123'] }),
+        ])).toEqual([]);
+    });
+    it('a document Id written by more than 3 different names links nobody', () => {
+        const names = ['Ana Ruiz', 'Bea Luna', 'Caro Paz', 'Dora Sol'];
+        expect(multi([
+            ...names.map((name, i) => row(i, { name, ids: ['30111222'] })),
+            row(4, { name: 'Ana Ruiz', phones: ['11 5555 0009'], ids: ['30.111.222'] }),
+        ])).toEqual([]);
+    });
+});
+
 describe('unionValues', () => {
     it('keeps every distinct contact once, first spelling wins', () => {
         expect(unionValues([['11-5555-1234', 'a@x.com'], ['1155551234'], ['11 4444 0000']], phoneDigitsKey))
             .toEqual(['11-5555-1234', 'a@x.com', '11 4444 0000']);
         expect(unionValues([['Ana@X.com'], ['ana@x.com', 'b@x.com']])).toEqual(['Ana@X.com', 'b@x.com']);
+        expect(unionValues([['35.111.222'], ['35111222', '36 222 333']], documentIdKey)).toEqual(['35.111.222', '36 222 333']);
     });
 });
 

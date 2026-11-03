@@ -6,14 +6,16 @@
  * are the same person when:
  *   - their identifying content is identical (name + every contact — the content
  *     fingerprint, as before), or
- *   - they share an email or a phone (last 8 digits, so "+54 9 11…", "011 15…"
- *     and "11…" coincide) AND their names agree: the same first name, and —
+ *   - they share an email, a phone (last 8 digits, so "+54 9 11…", "011 15…"
+ *     and "11…" coincide) or a document Id (letters and digits only, so
+ *     "35.111.222" = "35111222") AND their names agree: the same first name, and —
  *     when both names have more than one word — another word in common
  *     ("Ana Pérez" ~ "ana perez gomez", "Juan" ~ "Juan Gómez"; never
  *     "María Pérez" ~ "Juan Pérez" or "María Gómez" ~ "María Ruiz").
  * Households and couples share a phone or an email, and they are different
- * people. An email or phone written by more than MAX_NAMES_PER_KEY different
- * names is a shared or junk value ("no@gmail.com") and links nobody.
+ * people. An email, phone or document Id written by more than MAX_NAMES_PER_KEY
+ * different names is a shared or junk value ("no@gmail.com") and links nobody;
+ * so does a placeholder ("00000000", "12345678").
  *
  * Grouping is transitive (A~B and B~C ⇒ one group), but a join happens only when
  * every name in the two groups agrees with every other — so a one-word row
@@ -25,7 +27,8 @@
 
 import { computeContentFingerprint } from './contentFingerprint';
 import { isPlaceholderPhone } from './phoneNumber';
-import { namesCompatible } from './apiExactMatch';
+import { namesCompatible, normalizeDocumentId, isUsableDocumentId } from './apiExactMatch';
+import { isPlaceholderDocument } from './identityVerdict';
 
 export interface GroupableRow {
     index: number;
@@ -37,7 +40,7 @@ export interface GroupableRow {
     addresses: string[];
 }
 
-export type GroupReason = 'identical' | 'email' | 'phone';
+export type GroupReason = 'identical' | 'email' | 'phone' | 'document';
 
 export interface PersonGroup {
     /** Row indices, ascending; the first is the primary (it becomes the profile). */
@@ -65,6 +68,10 @@ function phoneKey(p: string): string {
     const d = (p.match(/\d/g) ?? []).join('');
     if (d.length < PHONE_KEY_DIGITS || isPlaceholderPhone(d)) return '';
     return d.slice(-PHONE_KEY_DIGITS);
+}
+function documentKey(v: string): string {
+    const n = normalizeDocumentId(v);
+    return isUsableDocumentId(v) && !isPlaceholderDocument(n) ? n : '';
 }
 function emailKey(e: string): string {
     const v = fold(e);
@@ -117,7 +124,7 @@ export function groupSamePerson(rows: GroupableRow[]): PersonGroup[] {
         if (first === undefined) byFp.set(fp, r.index); else union(first, r.index, 'identical');
     }
 
-    // A shared email / phone, only between rows whose names have a word in common.
+    // A shared email / phone / document Id, only between rows whose names agree.
     const link = (keysOf: (r: GroupableRow) => string[], why: GroupReason) => {
         // A value written by many different names is shared or junk: it links nobody.
         const namesByKey = new Map<string, Set<string>>();
@@ -168,6 +175,7 @@ export function groupSamePerson(rows: GroupableRow[]): PersonGroup[] {
     };
     link(r => r.emails.map(emailKey), 'email');
     link(r => r.phones.map(phoneKey), 'phone');
+    link(r => r.ids.map(documentKey), 'document');
 
     const groups = new Map<number, number[]>();
     for (const r of sorted) {
@@ -206,6 +214,9 @@ export function groupName(names: string[]): string {
     }
     return best;
 }
+
+/** Document Id comparison key for unionValues: letters and digits ("35.111.222" = "35111222"). */
+export const documentIdKey = normalizeDocumentId;
 
 /** Phone comparison key for unionValues: the digits. */
 export function phoneDigitsKey(p: string): string {
