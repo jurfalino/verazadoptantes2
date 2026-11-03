@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
 import { phoneIndexTokens } from '../src/domain/phoneNumber';
+import { execD1 } from './db';
 
 /**
  * Phone and DNI search (2.56.155; two numbers in one field 2.56.156). A rescuer types a number in whatever format
@@ -21,12 +21,6 @@ const DNI = 'test-phonesearch-fixture-dni';     // DNI 27.111.222, no phone
 const FB = 'test-phonesearch-fixture-fb';       // only a Facebook profile link
 const MULTI = 'test-phonesearch-fixture-multi'; // two numbers in one phone field
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
 const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 function insertAdopter(id: string, name: string, entries: Array<{ type: string; value: string }>, tokens: Array<{ type: string; value: string }>) {

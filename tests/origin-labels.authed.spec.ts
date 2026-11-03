@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * ENABLE_ORIGIN_LABELS: where a profile and its activities came from, as a
@@ -8,9 +8,6 @@ import { dismissCountryBanner } from './helpers';
  * the profile's origin). Off → no tags on the profile.
  * Dedicated fixtures, removed afterwards; the flag is restored to off.
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
 const ID = 'test-origin-fixture-1';
 const EVENT = 'test-origin-fixture-event-1';
 const NAME = 'Origenfixture Importada';

@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execD1 } from './db';
 
 /**
  * Third-party API v1 (.agents/plans/2026-10-09-third-party-api.md), end to end:
@@ -13,9 +13,6 @@ import { execSync } from 'child_process';
  * and public-api-docs.authed.spec.ts are the only specs that touch it (each serial, each in its own CI leg). Every person it creates is unique
  * to the run (letters-only stamp: digits in a name would tokenize as a phone).
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
 const flagOn = () => execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PUBLIC_API', 'true', strftime('%s','now'), 'e2e')`);
 const flagOff = () => execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PUBLIC_API'`);
 

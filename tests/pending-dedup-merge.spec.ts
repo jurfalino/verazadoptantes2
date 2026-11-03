@@ -1,6 +1,6 @@
 import { test, expect, type Locator } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1, rows } from './db';
 
 /**
  * «Unir perfiles» on /my-adopters goes through mergePendingDedupPair: the
@@ -17,16 +17,6 @@ import { dismissCountryBanner } from './helpers';
 
 const USER_EMAIL = 'testuser@example.com';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-const rows = (sql: string) => {
-    const w = JSON.parse(execD1(sql));
-    return ((Array.isArray(w) ? w[0] : w)?.results ?? []) as Array<Record<string, unknown>>;
-};
 const isNull = (v: unknown) => v === null || v === undefined || v === 'null';
 
 /** Layout D: rows open one at a time — open this one (its header is the first expandable button). */

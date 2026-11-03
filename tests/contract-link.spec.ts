@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1, parseD1Rows } from './db';
 
 /**
  * Test-isolated fixture adopter — created here, mutated only by this test.
@@ -18,23 +18,7 @@ const FIXTURE_ADOPTER_NAME = 'ContractFixturePerson Sintética';
  * browser context. Slow (~5s per call) but acceptable for the small number of
  * setup/assertion calls this test makes.
  */
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
-/** Parse `[{ results: [...] }]`-style wrangler JSON output. */
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
 test.describe('Contract-results merge — "Es la misma persona"', () => {
     test('signing a contract for a fuzzy-matched person and confirming the merge attaches the adoption to the existing profile and soft-deletes the orphan', async ({ browser }) => {

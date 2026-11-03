@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * Family text in the legacy free-text column must stay visible on the profile
@@ -17,12 +17,6 @@ const ID = 'test-household-legacy-fixture-1';
 const NAME = 'LegacyFamilyFixture Titular';
 const FAMILY = 'LegacyRelative Ondina (hermana), LegacyRelative Bruno';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
 
 test.describe('legacy family text under the household section', () => {
     test.beforeAll(() => {

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * /my-animals list: the card shows the species and the date in the app's
@@ -16,12 +16,6 @@ const ADOPTED_ID = 'test-animal-fixture-ma-adopted';
 const PLACEMENT_ID = 'test-plc-fixture-ma-adopted';
 const ADOPTER_ID = 'test-adopter-fixture-ma';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
 
 function cleanup() {
     execD1(`DELETE FROM placements WHERE id='${PLACEMENT_ID}'`);

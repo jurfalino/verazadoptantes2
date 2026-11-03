@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { TEST_ADOPTERS, TEST_NAMES, dismissCountryBanner, createAnywayIfAsked } from './helpers';
+import { execD1, parseD1Rows } from './db';
 
 /**
  * Execute a single SQL statement against the local D1 dev DB via wrangler.
@@ -8,21 +8,6 @@ import { TEST_ADOPTERS, TEST_NAMES, dismissCountryBanner, createAnywayIfAsked } 
  * row directly, since neither operation has a stable browser endpoint.
  * Pattern mirrors tests/contract-link.spec.ts:21.
  */
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
 test.setTimeout(60000);
 

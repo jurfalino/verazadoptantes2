@@ -45,18 +45,22 @@ export function execD1(sql: string): string {
     );
 }
 
-/** A SELECT → its rows. Throws on a failed query or an unreadable result; never returns [] for an error. */
-export function rows(sql: string): Array<Record<string, unknown>> {
-    const out = execD1(sql);
+/** wrangler `--json` output → rows. Throws on unparseable output or a missing result set; never returns [] for an error. */
+export function parseD1Rows(output: string, sqlHint = ''): Array<Record<string, unknown>> {
     let results: unknown;
     try {
-        const wrapped = JSON.parse(out);
+        const wrapped = JSON.parse(output);
         results = (Array.isArray(wrapped) ? wrapped[0] : wrapped)?.results;
     } catch {
-        throw new Error(`D1 query returned unparseable output: ${sqlHead(sql)}\n${out.slice(0, 300)}`);
+        throw new Error(`D1 query returned unparseable output: ${sqlHead(sqlHint)}\n${output.slice(0, 300)}`);
     }
-    if (!Array.isArray(results)) throw new Error(`D1 query returned no result set: ${sqlHead(sql)}`);
+    if (!Array.isArray(results)) throw new Error(`D1 query returned no result set: ${sqlHead(sqlHint)}`);
     return results as Array<Record<string, unknown>>;
+}
+
+/** A SELECT → its rows. Throws on a failed query or an unreadable result; never returns [] for an error. */
+export function rows(sql: string): Array<Record<string, unknown>> {
+    return parseD1Rows(execD1(sql), sql);
 }
 
 /**

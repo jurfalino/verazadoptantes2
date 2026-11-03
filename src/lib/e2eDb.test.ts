@@ -35,7 +35,7 @@ describe('execD1Batch', () => {
             throw Object.assign(new Error('Command failed'), { stderr: 'boom: no such table', stdout: '{"error":{"text":"no such table: zz"}}' });
         }) as never);
         expect(() => execD1Batch(['DELETE FROM ok', 'DELETE FROM zz'])).toThrow(/boom: no such table[\s\S]*no such table: zz/);
-        expect(() => execD1Batch(['DELETE FROM ok', 'DELETE FROM zz'])).toThrow(/batch of 2 statements failed.*DELETE FROM ok/s);
+        expect(() => execD1Batch(['DELETE FROM ok', 'DELETE FROM zz'])).toThrow(/batch of 2 statements failed \(none applied\)\. First: DELETE FROM ok/);
         expect(existsSync(sqlFile)).toBe(false);
     });
 

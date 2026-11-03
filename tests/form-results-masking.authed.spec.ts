@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * The form-results match card must not show another rescuer's protected
@@ -17,12 +17,6 @@ import { dismissCountryBanner } from './helpers';
 const ADMIN_USER_ID = 'test-admin-id';
 const USER_ID = 'test-user-id';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
 function one(sql: string): Record<string, unknown> {
     const wrapped = JSON.parse(execD1(sql));

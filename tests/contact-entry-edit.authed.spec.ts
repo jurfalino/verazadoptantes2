@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1, rows } from './db';
 
 /**
  * Editing an existing phone on someone's profile and pressing Guardar must
@@ -11,13 +11,6 @@ import { dismissCountryBanner } from './helpers';
 const ID = 'test-contact-edit-fixture-1';
 const OWNER = 'gatitosolivos@gmail.com';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
-const rows = (sql: string) => JSON.parse(execD1(sql))[0].results as Array<Record<string, unknown>>;
 
 const ENTRIES = JSON.stringify([
     { id: 'legacy-392d646f-ab375739', type: 'phone', value: '4864-0000', addedBy: OWNER },

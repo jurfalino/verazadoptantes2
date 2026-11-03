@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * The «Actualizado por <Nombre> · hace 20 días» line on a Mis Animales card
@@ -15,12 +15,6 @@ import { dismissCountryBanner } from './helpers';
 
 const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
 for (const width of [390, 1280]) {
     test(`card meta line at ${width}px is never cut`, async ({ page }) => {

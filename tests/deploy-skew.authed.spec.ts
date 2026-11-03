@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * A tab older than the running deployment (audit 2026-09-19).
@@ -15,12 +15,6 @@ import { dismissCountryBanner } from './helpers';
 const ID = 'test-deploy-skew-fixture-1';
 const NAME = 'SkewFixture Titular';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
 
 /** Make this tab's server-action calls claim an old, unknown build. Returns the statuses seen. */
 async function goStale(page: Page): Promise<number[]> {

@@ -1,15 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * Admin → Calidad de datos → «Datos compartidos»: a phone on two live profiles
  * is listed (those are who an exact API call can answer "ambiguous" for); a
  * deleted profile doesn't count. Dedicated fixture rows, removed afterwards.
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
 const IDS = ['test-shared-fixture-1', 'test-shared-fixture-2', 'test-shared-fixture-3'];
 const PHONE = '5491100009977';
 

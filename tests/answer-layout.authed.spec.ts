@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * Layout of the form answers on /form-results (Reel 06 re-recording): a long
@@ -18,12 +18,6 @@ const ADMIN_USER_ID = 'test-admin-id';
 const LONG_LABEL = 'Compromiso de castración/esterilización:';
 const EMAIL = 'diego.ruiz@ejemplo.com.ar';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
 
 type RowBox = { label: string; labelW: number; valueX: number; valueW: number; valueH: number; lineH: number };
 
