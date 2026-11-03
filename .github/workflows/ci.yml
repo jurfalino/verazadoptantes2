@@ -100,6 +100,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # A test that no leg runs passes by not running; one that two legs run
+      # wastes a slot. Lists the matrix above with Playwright's own --list.
+      - name: "E2E partition: every test runs in exactly one leg"
+        run: node scripts/e2e-partition-check.mjs
+
       - name: Build
         run: npm run build
         env:
