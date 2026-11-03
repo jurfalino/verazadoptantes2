@@ -433,10 +433,19 @@ jobs:
       # Playwright's own retries land on the same dying server. Never
       # --last-failed: it skips tests that never ran and can go green without
       # them. Logic + tests: scripts/ci-e2e.sh, src/lib/ciE2eRetry.test.ts.
+      #
+      # Budget (2026-11-03): the step times out at 25 min (the job's 30 leaves
+      # room for setup and the report upload), and the re-run happens only if
+      # attempt 1 took at most (E2E_STEP_BUDGET_SEC - 60) / 2 = 720 s — a re-run
+      # that cannot finish would be killed and hide the first failure. A leg
+      # over E2E_WARN_AT_SEC (15 min) prints a warning, green or not.
       # Root fix (e2e on the Cloudflare build): .agents/plans/e2e-shard-the-suite.md.
       - name: Run Playwright tests
+        timeout-minutes: 25
         run: bash scripts/ci-e2e.sh ${{ matrix.projects }}
         env:
+          E2E_STEP_BUDGET_SEC: 1500
+          E2E_WARN_AT_SEC: 900
           CI: true
           SKIP_ENV_VALIDATION: 'true'
           AUTH_SECRET: ${{ secrets.AUTH_SECRET != '' && secrets.AUTH_SECRET || 'fallback_test_secret_for_ci_environments_only_32_chars' }}
