@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.12] - 2026-11-02
+
+### Changed — sheet import: the document Id joins rows like a phone
+- Rows of one sheet with the same document Id and agreeing names become one profile with several activities
+  («🔗 N actividades · mismo documento»). Same document Id with another name stays separate. Placeholder values
+  («00000000», «12345678»), values too short to be a document, and a document Id written by more than 3 different
+  names join nobody. «Separar» still undoes any group.
+
+### Fixed
+- The «Revisar» screen listed a joined row's document Id twice when the rows wrote it differently («35.111.222» and
+  «35111222»). It now shows it once, as first written (the profile already saved it once).
+
 ## [2.58.11] - 2026-11-02
 
 ### Changed — every screen uses the same "is this the same person?" rule
