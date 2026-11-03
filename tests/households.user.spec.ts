@@ -53,7 +53,9 @@ let admin: APIRequestContext;
 
 const card = (page: Page, name: string) => page.getByTestId('household-member').filter({ hasText: name });
 
-test.describe.serial('households as profiles (Task 8), by a non-owner', () => {
+// @leg-households: CI runs this file in a leg of its own (ci.yml) — 13 serial tests,
+// ~7-9 min, which pushed the user leg it landed in to the job's time limit.
+test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '@leg-households' }, () => {
     test.beforeAll(async ({ baseURL }) => {
         admin = await playwrightRequest.newContext({ baseURL, storageState: '.auth/admin.json' });
         PEDRO = await createProfileViaApi(admin, { name: PEDRO_NAME, phone: PEDRO_PHONE });
