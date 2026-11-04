@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
-import { execD1 } from './db';
+import { execD1Batch } from './db';
 
 /**
  * The «Actualizado por <Nombre> · hace 20 días» line on a Mis Animales card
@@ -10,20 +10,32 @@ import { execD1 } from './db';
  *
  * Measured at 390 and 1280, in Spanish. Own animal + own user row per run
  * (the admin owns the animal; a named teammate last touched it 20 days ago),
- * removed at the end.
+ * made once per file (beforeAll, one batch) and shared by both widths, removed at the end.
  */
 
 const ADMIN_EMAIL = 'gatitosolivos@gmail.com';
 
-for (const width of [390, 1280]) {
-    test(`card meta line at ${width}px is never cut`, async ({ page }) => {
-        test.setTimeout(120_000);
-        const stamp = Date.now();
-        const animalId = `test-animal-meta-${stamp}`;
-        const email = `meta-layout-${stamp}@example.com`;
-        execD1(`INSERT INTO user (id, name, email) VALUES ('test-meta-user-${stamp}', 'Carolina Méndez Etchegaray', '${email}')`);
-        execD1(`INSERT INTO animals (id, name, species, added_by, updated_by, created_at, updated_at) VALUES ('${animalId}', 'Meta${stamp}', 'cat', '${ADMIN_EMAIL}', '${email}', strftime('%s','now','-40 days'), strftime('%s','now','-20 days'))`);
-        try {
+const stamp = Date.now();
+const animalId = `test-animal-meta-${stamp}`;
+const email = `meta-layout-${stamp}@example.com`;
+
+test.describe('Mis Animales card meta line', () => {
+    test.beforeAll(() => {
+        execD1Batch([
+            `INSERT INTO user (id, name, email) VALUES ('test-meta-user-${stamp}', 'Carolina Méndez Etchegaray', '${email}')`,
+            `INSERT INTO animals (id, name, species, added_by, updated_by, created_at, updated_at) VALUES ('${animalId}', 'Meta${stamp}', 'cat', '${ADMIN_EMAIL}', '${email}', strftime('%s','now','-40 days'), strftime('%s','now','-20 days'))`,
+        ]);
+    });
+    test.afterAll(() => {
+        execD1Batch([
+            `DELETE FROM animals WHERE id = '${animalId}'`,
+            `DELETE FROM user WHERE email = '${email}'`,
+        ]);
+    });
+
+    for (const width of [390, 1280]) {
+        test(`card meta line at ${width}px is never cut`, async ({ page }) => {
+            test.setTimeout(120_000);
             await page.addInitScript(() => { try { localStorage.setItem('app-locale', 'es'); } catch { /* private mode */ } });
             await page.setViewportSize({ width, height: 900 });
             await page.goto('/my-animals?view=available');
@@ -56,9 +68,6 @@ for (const width of [390, 1280]) {
             expect(m.colW).toBeGreaterThanOrEqual(144);
             // No horizontal page scroll.
             expect(m.pageScrollW).toBeLessThanOrEqual(m.pageClientW);
-        } finally {
-            execD1(`DELETE FROM animals WHERE id = '${animalId}'`);
-            execD1(`DELETE FROM user WHERE email = '${email}'`);
-        }
-    });
-}
+        });
+    }
+});
