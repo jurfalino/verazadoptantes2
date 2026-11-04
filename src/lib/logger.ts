@@ -27,7 +27,9 @@ export function scrubDbParams(text: string): string {
     if (i === -1) return text;
     // Everything after "params:" goes — a bound value can span lines (a pretty-printed
     // request body) — except a stack's "at" frames, which hold no values.
-    const frames = text.slice(i).split('\n').filter(l => /^\s+at /.test(l));
+    // Only lines shaped like real stack frames ("    at fn (file.js:12:3)"): a bound value
+    // that happens to start with "  at casa de Ana…" must not survive as a "frame".
+    const frames = text.slice(i).split('\n').filter(l => /^\s+at .*(:\d+(:\d+)?\)?|\(native\)|\(<anonymous>\))$/.test(l));
     return `${text.slice(0, i)}params: [redacted]${frames.length ? `\n${frames.join('\n')}` : ''}`;
 }
 
@@ -43,12 +45,22 @@ export function scrubLogValues<T>(value: T, depth = 0): T {
         const e = { name: value.name, message: scrubDbParams(value.message), ...causeChain(value) };
         return e as T;
     }
+    // Logging must never throw into its caller: a circular object, a BigInt or a
+    // self-returning toJSON becomes a marker instead (review 2026-11-04).
     const withJson = value as { toJSON?: () => unknown };
-    if (typeof withJson.toJSON === 'function') return scrubLogValues(withJson.toJSON(), depth) as T;
-    if (depth > 4) return scrubDbParams(JSON.stringify(value) ?? '') as T;
+    if (typeof withJson.toJSON === 'function') {
+        try {
+            const json = withJson.toJSON();
+            return (json === value ? '[unserializable]' : scrubLogValues(json, depth + 1)) as T;
+        } catch { return '[unserializable]' as T; }
+    }
+    if (depth > 4) {
+        try { return scrubDbParams(JSON.stringify(value) ?? '') as T; } catch { return '[unserializable]' as T; }
+    }
     if (Array.isArray(value)) return value.map(v => scrubLogValues(v, depth + 1)) as T;
     const proto = Object.getPrototypeOf(value);
-    if (proto !== Object.prototype && proto !== null) return scrubDbParams(String(value)) as T;
+    // A class instance (Map, Headers, URLSearchParams…) is named, never printed: its text may hold a query.
+    if (proto !== Object.prototype && proto !== null) return `[${(value as object).constructor?.name ?? 'object'}]` as T;
     return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, scrubLogValues(v, depth + 1)])) as T;
 }
 

@@ -2,7 +2,7 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.58.17] - 2026-11-04
+## [2.58.18] - 2026-11-04
 
 ### Changed — CI: e2e also runs on the real Cloudflare build (audit 2026-11-03, phases C + D)
 - New jobs `build-cf` + `e2e-cf`: the same 17 legs run against the production bundle served by
@@ -17,6 +17,17 @@ All notable changes to BuenAdoptante are documented here.
 - Manual experiment runs (`workflow_dispatch`) run build and tests only — never migrations or deploys.
 - The partition check also fails the build if the Cloudflare matrix drifts from the e2e one or its config selects
   different tests. Today: 362 tests, both paths identical.
+
+## [2.58.17] - 2026-11-04
+
+### Fixed — logging can never crash a request (re-review of 2.58.16)
+
+- The log scrubber never throws: circular data, BigInts and a self-returning toJSON become
+  `[unserializable]` instead of turning a handled error into a crash.
+- Class instances in log data are named (`[URLSearchParams]`), never printed — their text can
+  hold a search query.
+- After `params:` only real stack frames (`at fn (file.js:12:3)`) are kept: a value line that
+  merely starts with "at" is cut too.
 
 ## [2.58.16] - 2026-11-04
 
