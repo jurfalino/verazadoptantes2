@@ -244,6 +244,12 @@ test.describe('Import wizard', () => {
 });
 
 test.describe('Import wizard — duplicates', () => {
+    // The production build registers /sw.js (next dev removes it), and a worker
+    // controlling the page serves /api/ GETs itself: page.route never sees
+    // those requests, so the same-post stubs below were never hit on the
+    // Cloudflare build. Blocking it keeps the stubs in charge on both paths.
+    test.use({ serviceWorkers: 'block' });
+
     test('an already-imported post leads with "Ver perfil"', async ({ page }) => {
         await page.route('**/api/facebook/fetch-post', route => route.fulfill({
             status: 200, contentType: 'application/json',
