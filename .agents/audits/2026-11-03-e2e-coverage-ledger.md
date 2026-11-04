@@ -159,6 +159,8 @@ Removed (households test 8, `households.user.spec.ts`):
 | Q1: no `household_corrections` row | same | `households.test.ts:466` (new); history side already at `:458` |
 | Q1: the profile stays (`deleted_at IS NULL`) | same | `households.test.ts:466` (new) |
 
+**Restored after the Task 9 review (2026-11-03):** the D1 `data_requests` poll is back in test 8. The unit test calls the action directly, so only the e2e proves the card passes the right profile id (`MemberCard.tsx:181`). Net: 5 SQL assertions moved to unit tests, not 6. The new unit tests stay.
+
 The `data_requests` cleanup in test 8's `finally` stays. Test 8's row inserts (`adopter_history` seed for D1) stay: they are setup.
 
 Kept (not an exact duplicate, or no UI result, or in doubt):

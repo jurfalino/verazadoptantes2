@@ -388,7 +388,8 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
             await expect(req).toContainText('1');
             await req.getByTestId('hh-request-confirm').click();
             await expect(req).toHaveCount(0, { timeout: 30_000 });
-            // (the pending data request: src/app/actions/requestAdopterDeletion.test.ts; the dialog closes only once it succeeded)
+            // The request lands on Dos (the card's profile id is wired to the action); its rules: requestAdopterDeletion.test.ts.
+            await expect.poll(() => rows(`SELECT status FROM data_requests WHERE adopter_id = '${dos}' AND request_type = 'deletion'`).map(r => r.status), { timeout: 15_000 }).toEqual(['pending']);
             await expect(card(page, DOS)).toHaveCount(1);
 
             // Q1 «Lo cargué por error»: out of the household, no correction remembered.
