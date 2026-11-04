@@ -280,7 +280,7 @@ Commits: fe70835a (build-cf + e2e-cf jobs, `playwright.cf.config.ts`, Resend stu
 | authed-apidev | 182 (2.1m) | 4 | 4 | 94 (34s) | 4 | 4 | 0 | 0 | 0 | success |
 | rest | 180 (2.1m) | 41 | 41 | 94 (42s) | 41 | 41 | 0 | 0 | 0 | success |
 
-Totals: 395 executions (361 tests + 34 setup). **Dev:** 386 passed (4 of them flaky), 5 skipped. **CF:** 386 passed (1 flaky), 3 failed, 5 skipped.
+Totals: 395 executions (361 tests + 34 setup). **Dev:** 386 passed + 4 flaky + 5 skipped. **CF:** 386 passed + 1 flaky + 3 failed + 5 skipped. Playwright counts flaky tests separately from `passed`; in the table above, "tests" = pass + fail + flaky + skip.
 
 Wall clock:
 - The CF legs ran in waves, because `max-parallel: 8` caps them at 8 at a time. The first leg started 02:48:26 and the last finished 02:55:02.

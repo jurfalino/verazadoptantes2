@@ -54,9 +54,10 @@ export default defineConfig({
             'node scripts/e2e-cf-prepare.mjs',
             // D1 binding `DB` comes from wrangler.toml; --persist-to is the same
             // state dir `wrangler d1 execute DB --local` uses (tests/db.ts).
-            // --ip: wrangler's default on Linux is the NAME localhost, which in a
-            // container can resolve to an IPv6 address the network lacks; the
-            // browser and Playwright reach 127.0.0.1 for localhost either way.
+            // --ip: wrangler's default on Linux is the NAME localhost. Suspected
+            // (not proven) cause of every leg timing out at startup in run
+            // 41760919813; with 127.0.0.1 the next run started. The browser and
+            // Playwright still reach it as localhost.
             // wrangler's stdout (banner, bindings, one line per request) goes to
             // e2e-cf-server.log (uploaded by CI); its stderr stays in the test log.
             `npx wrangler pages dev .vercel/e2e-cf-static --ip 127.0.0.1 --port ${PORT} --persist-to .wrangler/state ${bindings} --show-interactive-dev-session=false > e2e-cf-server.log`,
