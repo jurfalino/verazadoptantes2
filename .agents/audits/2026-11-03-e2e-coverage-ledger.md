@@ -245,3 +245,69 @@ Branch `ci/e2e-reliability` (pushed to origin; its `on.push` is master/staging o
 Totals (17 legs): mean of per-leg peak heap 3660 MB default vs 3644 MB without source maps; restarts 2 vs 2 (authed-6 and user-1 in both); sum of job seconds 4916 vs 4783.
 
 Verdict: do NOT keep. Peak heap does not drop (authed-6 5399 -> 6356, authed-2/5 up, authed-4/7 down: noise at 1 run each), restarts are identical and in the same two legs, and user-1/authed-6 still sit near the 6393 MB restart line either way. Default unchanged. The `next_dev_args` input and the sampler stay for further experiments. Takeaway: the two restarting legs (user-1 6803/6521 MB, authed-6 5399/6356 MB) are the ones to split or slim; source maps are not the lever.
+
+## Task 12 (D1): CF-build leg alongside the gate (non-gating)
+
+Commits: fe70835a (build-cf + e2e-cf jobs, `playwright.cf.config.ts`, Resend stub), e3103f5f (bind wrangler to 127.0.0.1, server log + probe debug).
+
+- **Run 41760919813** (dispatch, fe70835a). Dev e2e 17/17 green; migrate and deploy skipped. Every finished e2e-cf leg (8 of 8; the rest were cancelled) timed out at server start (`Timed out waiting 240000ms from config.webServer`), with nothing on stderr. No test ran in the CF legs. Fix: `--ip 127.0.0.1` (wrangler's Linux default is the name `localhost`). Run 2 is consistent with that fix but does not prove it; the diagnostics added in e3103f5f would show the cause if it comes back.
+- **Run 41762495313** (dispatch, e3103f5f), the run of record. Run conclusion: **failure**, because of e2e-cf authed-4 only.
+  - Dev e2e 17/17 green.
+  - CF 16/17 green.
+  - Migrate staging/production and deploy staging/production were **skipped**.
+  - build-cf took 348 s; the artifact `cf-build-e2e` is `.vercel/output/static`, about 32 MB.
+  - Wrangler log: `Ready on http://127.0.0.1:3000`.
+- The test counts below include the 2 `[setup]` tests per leg (the `rest` leg also has 2, for mobile). **CF total = dev total in every leg.** The 5 user-2 skips are `scraper.spec.ts` (no `SCRAPER_URL`), which skips on both paths by an earlier ruling.
+- The CF build never hit a memory restart. Dev hit one each in authed-6 and user-1.
+
+| Leg | dev job s | dev tests | dev result | CF job s | CF tests | CF pass | CF fail | CF flaky | CF skip | CF result |
+|---|---|---|---|---|---|---|---|---|---|---|
+| user-1 | 665 (10.3m tests) | 36 | 34 pass + 2 flaky | 244 (3.3m) | 36 | 36 | 0 | 0 | 0 | success |
+| user-2 | 287 (3.9m) | 33 | 28 + 5 skip | 121 (1.2m) | 33 | 28 | 0 | 0 | 5 | success |
+| user-3 | 254 (3.4m) | 28 | 28 | 104 (54s) | 28 | 28 | 0 | 0 | 0 | success |
+| user-households | 243 (3.3m) | 15 | 15 | 189 (2.2m) | 15 | 15 | 0 | 0 | 0 | success |
+| authed-1 | 290 (4.0m) | 25 | 25 | 122 (1.2m) | 25 | 25 | 0 | 0 | 0 | success |
+| authed-2 | 415 (6.2m) | 25 | 25 | 212 (2.7m) | 25 | 25 | 0 | 0 | 0 | success |
+| authed-3 | 348 (5.0m) | 27 | 27 | 183 (2.2m) | 27 | 27 | 0 | 0 | 0 | success |
+| authed-4 | 349 (5.0m) | 36 | 36 | 396 (5.6m) | 36 | 33 | **3** | 0 | 0 | **failure** |
+| authed-5 | 298 (4.1m) | 18 | 18 | 104 (44s) | 18 | 18 | 0 | 0 | 0 | success |
+| authed-6 | 800 (12.5m) | 19 | 18 + 1 flaky | 199 (2.5m) | 19 | 18 | 0 | 1 | 0 | success |
+| authed-7 | 308 (4.3m) | 27 | 27 | 223 (3.0m) | 27 | 27 | 0 | 0 | 0 | success |
+| authed-8 | 337 (4.8m) | 23 | 22 + 1 flaky | 164 (1.7m) | 23 | 23 | 0 | 0 | 0 | success |
+| authed-viewas | 281 (3.8m) | 7 | 7 | 87 (25s) | 7 | 7 | 0 | 0 | 0 | success |
+| authed-apicore | 164 (1.9m) | 24 | 24 | 109 (53s) | 24 | 24 | 0 | 0 | 0 | success |
+| authed-apidocs | 113 (1.0m) | 7 | 7 | 73 (23s) | 7 | 7 | 0 | 0 | 0 | success |
+| authed-apidev | 182 (2.1m) | 4 | 4 | 94 (34s) | 4 | 4 | 0 | 0 | 0 | success |
+| rest | 180 (2.1m) | 41 | 41 | 94 (42s) | 41 | 41 | 0 | 0 | 0 | success |
+
+Totals: 395 executions (361 tests + 34 setup). **Dev:** 386 passed (4 of them flaky), 5 skipped. **CF:** 386 passed (1 flaky), 3 failed, 5 skipped.
+
+Wall clock:
+- The CF legs ran in waves, because `max-parallel: 8` caps them at 8 at a time. The first leg started 02:48:26 and the last finished 02:55:02.
+- The dev legs all started at 02:42:36, so none of them queued behind the CF legs.
+- The run took 13.4 min in total. Its last job to finish was the dev authed-6 leg.
+
+### CF-only failures for Task 13 (run 41762495313)
+
+| Test id | First error line | Guessed cause |
+|---|---|---|
+| `[authed] import-wizard.authed.spec.ts:247` "an already-imported post leads with «Ver perfil»" | `expect(getByRole('heading', /already imported\|Ya importaste/)).toBeVisible()` failed. On retries the failure is `expect(lookedUp).toBe(POST)` with `Received: ""`. | The `page.route('**/api/adopters?sourceUrl=*')` stub is never hit. On the CF build the client's same-post lookup is skipped or uses a different URL shape. All three tests in this describe depend on that stub. |
+| `[authed] import-wizard.authed.spec.ts:288` "when the same-post check fails, it says so instead of saving as new" | `expect(getByText(/Could not verify\|No se pudo verificar/)).toBeVisible()` failed: element not found | Same as :247. The failing lookup is never intercepted, so the error message never appears. |
+| `[authed] import-wizard.authed.spec.ts:316` "a failed same-post check is shown on the match screen too" | `expect(getByRole('heading', /may already exist\|ya exista/)).toBeVisible()` failed: element not found | Same as :247. |
+
+CF flaky (passed on retry; listed for Task 13, not fixed):
+- `[authed] merge-undo.authed.spec.ts:52` failed with `apiRequestContext.post: socket hang up` on `POST /api/admin/duplicates/unmerge` (line 197, the double-undo call).
+- Guess: workerd dropped the request, possibly a worker exception or a CPU/time limit on the second unmerge. Read `e2e-cf-server.log` in `playwright-report-cf-authed-6`.
+
+Local-only CF failures. These ran on this machine with Node 20, `E2E_CF_PORT=3141` and DBs restored and recovered; they passed in CI. Not counted for Task 13, but noted:
+- `[authed] animal-profile.authed.spec.ts:222`, `:290` and `:454` (authed-1 locally: 22 pass, 3 fail). The photo tests timed out on `inline-edit-form` staying visible. The adoption test stayed on `?newAdoption=`. Many `Failed to revalidate tag … internal error` warnings in the local wrangler output; probably a local R2/cache-simulator difference.
+
+Count needing Task 13: **3 failures** (plus 1 flake). The spike's ~20 failures did not reproduce in CI. Email OTP passes on the CF build: `rest` 41/41, both locally and in CI.
+
+Email OTP on the CF build, with no product-code change:
+- The worker gets the dummy `RESEND_API_KEY=re_e2e_stub_not_a_real_key`.
+- `scripts/e2e-cf-prepare.mjs` copies the build to `.vercel/e2e-cf-static` and imports `scripts/e2e-cf-resend-stub.js` ahead of the real entry. The stub answers only `https://api.resend.com/`.
+- Negative control (stub pointed elsewhere): Resend answered `401 API key is invalid` and the spec failed. So the stub is what makes it pass.
+- Notification emails still skip, because `isLocalRun()` holds: `APP_ENVIRONMENT` is unset at build.
+
+No test was added, removed, skipped or retried. Partition check: `partition OK: 361 tests in 17 legs`. `--list` with the CF config gives 363, the same as the base config.
