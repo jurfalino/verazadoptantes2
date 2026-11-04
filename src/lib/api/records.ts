@@ -62,8 +62,10 @@ export async function saveApiActivity(
         const taken = await db.select({ id: apiRequests.id }).from(apiRequests).where(and(
             eq(apiRequests.keyId, key.id), eq(apiRequests.externalId, save.externalId),
             eq(apiRequests.endpoint, 'search'), isNull(apiRequests.voidedAt),
-            // Saved something: a record, or (a crashed call) at least the profile.
-            or(isNotNull(apiRequests.recordId), eq(apiRequests.profileCreated, 1)),
+            // Saved something: a record, or (a crashed call) at least the profile — unless that
+            // crashed call was released for a retry (idempotency key cleared): the retry adds
+            // the activity to the profile it made, and must not be refused (review 2026-11-04).
+            or(isNotNull(apiRequests.recordId), and(eq(apiRequests.profileCreated, 1), isNotNull(apiRequests.idempotencyKey))),
         )).get();
         if (taken && taken.id !== ctx.requestId) {
             throw new ApiError(409, 'external_id_reused', `externalId ${save.externalId} was already saved by this key; use a new externalId, or void the earlier activity first`, {}, { originalRequestId: taken.id });

@@ -482,6 +482,18 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(row.decision).not.toContain(NAME);
         await api.post(`/api/v1/activities/${r.saved.activityId}/void`, { headers: auth() });
         execD1(`DELETE FROM api_requests WHERE id = 'crashed-${STAMP}'`);
+
+        // A call that crashed right AFTER creating the profile (record not saved): the retry is
+        // released and adds the activity to that profile — never refused as external_id_reused.
+        const extP = `${ext}-p`;
+        execD1(`INSERT INTO api_requests (id, key_id, owner_email, endpoint, mode, http_status, error_id, idempotency_key, external_id, profile_created, profile_ids, dry_run, degraded, created_at) VALUES ('crashedp-${STAMP}', '${keyId}', '${ADMIN_EMAIL}', 'search', 'exact', 500, 'cafebabe', 'ext:${extP}', '${extP}', 1, '["${profileId}"]', 0, 0, strftime('%s','now') - 30)`);
+        const retryP = await search({ ...body, activity: { ...body.activity, externalId: extP } });
+        expect(retryP.status()).toBe(200);
+        const rp = await retryP.json();
+        expect(rp.saved.profileId).toBe(profileId);
+        expect(JSON.parse(execD1(`SELECT http_status, (idempotency_key IS NULL) AS released FROM api_requests WHERE id = 'crashedp-${STAMP}'`))[0].results).toEqual([{ http_status: 500, released: 1 }]);
+        await api.post(`/api/v1/activities/${rp.saved.activityId}/void`, { headers: auth() });
+        execD1(`DELETE FROM api_requests WHERE id = 'crashedp-${STAMP}'`);
     });
 
     test('void: only once; the API-created profile goes only when nothing is left on it', async () => {

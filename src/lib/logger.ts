@@ -23,14 +23,32 @@ import { getRequestContext } from '@/lib/requestContext';
  * (2026-11-04 audit: two production errors had shipped them to Axiom). Pure.
  */
 export function scrubDbParams(text: string): string {
-    return text.includes('params:') ? text.replace(/(^|\n|\s)params:[^\n]*/g, '$1params: [redacted]') : text;
+    const i = text.indexOf('params:');
+    if (i === -1) return text;
+    // Everything after "params:" goes — a bound value can span lines (a pretty-printed
+    // request body) — except a stack's "at" frames, which hold no values.
+    const frames = text.slice(i).split('\n').filter(l => /^\s+at /.test(l));
+    return `${text.slice(0, i)}params: [redacted]${frames.length ? `\n${frames.join('\n')}` : ''}`;
 }
 
-/** Every string in a log entry, scrubbed (nested objects and arrays, a few levels deep). */
+/**
+ * Every string in a log entry, scrubbed. Recurses into plain objects and arrays
+ * only; an Error becomes its redacted fields (a raw one carries the query's
+ * values), a value with toJSON (Date, URL) its JSON, anything deeper a string.
+ */
 export function scrubLogValues<T>(value: T, depth = 0): T {
     if (typeof value === 'string') return scrubDbParams(value) as T;
-    if (depth > 4 || value === null || typeof value !== 'object') return value;
+    if (value === null || typeof value !== 'object') return value;
+    if (value instanceof Error) {
+        const e = { name: value.name, message: scrubDbParams(value.message), ...causeChain(value) };
+        return e as T;
+    }
+    const withJson = value as { toJSON?: () => unknown };
+    if (typeof withJson.toJSON === 'function') return scrubLogValues(withJson.toJSON(), depth) as T;
+    if (depth > 4) return scrubDbParams(JSON.stringify(value) ?? '') as T;
     if (Array.isArray(value)) return value.map(v => scrubLogValues(v, depth + 1)) as T;
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return scrubDbParams(String(value)) as T;
     return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, scrubLogValues(v, depth + 1)])) as T;
 }
 

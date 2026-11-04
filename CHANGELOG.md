@@ -2,6 +2,22 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.16] - 2026-11-04
+
+### Fixed — independent review of 2.58.15 (before production)
+
+- A call that crashed right after creating a profile, once released for a retry, no longer
+  holds its externalId: the retry adds the activity to that profile instead of being refused
+  forever as `external_id_reused` (blocker, with an e2e test).
+- Error scrubbing cuts everything after `params:`, not just its first line: a pretty-printed
+  request body or a multi-line note no longer leaks its later lines; an Error placed in log
+  data is reduced to its scrubbed message; Dates and URLs keep their value.
+- A released abandoned call becomes `504 abandoned` instead of counting as a call that ran
+  (daily limits, usage), and shows as such in Admin → API.
+- The partner's externalId (free text that could be a document or an email) stays out of
+  Axiom; «api: call started» is logged after the key check, so keyless scanners don't double
+  the log.
+
 ## [2.58.15] - 2026-11-04
 
 ### Fixed — API troubleshooting: every call leaves a trace; no personal data in error logs
