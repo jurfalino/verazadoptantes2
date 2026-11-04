@@ -115,3 +115,69 @@ routes). Until then Playwright's own CI retry absorbs these (each costs the test
 
 Local results for the spec fixes (Node 20, both DBs restored and recovered before every run): see
 `.superpowers/sdd/2026-11-03-e2e-ci-reliability/task-8-report.md`.
+
+
+## Task 9: clean-ups (audit §4)
+
+Test count (`node scripts/e2e-partition-check.mjs`): **367 -> 364** tests in 17 legs. `playwright --list` (incl. 2 setup): 369 -> 366.
+Difference = -2 (mobile in `user`) -1 (duplicates: two skipped tests -> one test). Two ids were only renamed (meta-layout). Nothing else changed.
+
+### §4.1 Tests that never ran
+
+| Removed / changed id | Now covered by |
+|---|---|
+| `funcionalidades.unauthed.spec.ts:13` and `:21` (conditional skip, never ran: the unauthed project's `storageState` is `{cookies:[],origins:[]}`, truthy) | Same tests, same lines of code, now RUN: the skip condition is "a string path or an object with cookies". Ran locally in `unauthed`: 3/3 pass (`:15`, `:23`, `:32`). No id lost. |
+| `[user] duplicates.spec.ts:17` "System duplicate banner appears on profile with candidates" (`test.skip`) | `[user] duplicates.spec.ts › The pending-duplicate line appears on the profile and links to the other profile` (last test of the file). The banner is gone but the behaviour exists as `profile-pending-dup` in `AdopterProfileV2.tsx` (~l.440): «Posible duplicado de <name>», name links to the other profile. Asserts the line, the text and the link's href (Ana). Passes locally. The old `phone` match-type badge assertion has no counterpart: the new line renders no match-type badges (grep `matchTypes` in the line: none). Feature removed, nothing to cover. |
+| `[user] duplicates.spec.ts:35` "System duplicate banner can be dismissed" (`test.skip`) | Feature removed v2.12.1-19: the replacing line (`ProfilePromptBanner`, testid `profile-pending-dup`) has no dismiss control (grep dismiss/close/✕ in `ProfilePromptBanner.tsx`: none) — no behaviour to cover. |
+| `scraper.spec.ts` (5 tests, skipped without `SCRAPER_URL`) | **Kept, no change.** External service; skips in 0 s in CI; covers the scraper when run with `SCRAPER_URL`. |
+
+The new duplicates test is placed last in the file: placed second, the dev server dropped the `goto('/')` of the following test (`[Error: aborted]`, 3 of 3 local runs; the shared dev-server cause already in the Task 8 ledger). Baseline (11c7a358 spec) passes in the old order.
+
+### §4.2 mobile twice
+
+`mobile.spec.ts` asserts only mobile-size behaviour (iPhone 14: search usable at mobile width, footer visible). Added to the `user` project's `testIgnore`.
+
+| Removed id | Now covered by |
+|---|---|
+| `[user] mobile.spec.ts:13` Homepage search is usable at mobile width | `[mobile] mobile.spec.ts:13` (rest leg) |
+| `[user] mobile.spec.ts:41` Footer is visible at mobile width | `[mobile] mobile.spec.ts:41` (rest leg) |
+
+Ran locally with `--project=mobile --project=user`: 2 passed, both in `mobile`.
+
+### §4.3 rule checks (SQL assertion <-> unit test)
+
+Rule: an e2e SQL assertion goes only if a unit test is an exact duplicate AND the e2e test still asserts the click's UI result.
+
+Removed (households test 8, `households.user.spec.ts`):
+
+| e2e assertion removed | UI result still asserted | Unit test (file:line) |
+|---|---|---|
+| D2: `adopters` row for «Borrar Uno» gone | `card(UNO)` count 0 after «Eliminar perfil» | `src/app/actions/deleteHouseholdCleanup.test.ts:53` (owner's delete: row gone) |
+| D2: `household_memberships` for it gone | same | `deleteHouseholdCleanup.test.ts:53` (ordinary membership gone) |
+| D1: `data_requests` row for «Pedir Dos» is `pending` / `deletion` | dialog closes (it closes only after `requestAdopterDeletion` resolved; an error leaves it open with a toast) and the card stays (count 1) | **NEW** `src/app/actions/requestAdopterDeletion.test.ts:43` (one pending deletion request); `:49` (twice -> one); `:56` (non-owner refused, nothing written) |
+| Q1: «Error Tres» not among `housemates(OWN)` | `card(TRES)` count 0 | **NEW** `src/app/actions/households.test.ts:466` (membership gone) |
+| Q1: no `household_corrections` row | same | `households.test.ts:466` (new); history side already at `:458` |
+| Q1: the profile stays (`deleted_at IS NULL`) | same | `households.test.ts:466` (new) |
+
+The `data_requests` cleanup in test 8's `finally` stays. Test 8's row inserts (`adopter_history` seed for D1) stay: they are setup.
+
+Kept (not an exact duplicate, or no UI result, or in doubt):
+
+| e2e assertion | Why kept / nearest unit test |
+|---|---|
+| households 6: `housemates(PEDRO)`, `housemates(marta)==[]`, `household_corrections.corrected_by` | Outside tests 8-10. Unit: `households.test.ts:437` (correction row, membership gone) does not assert "removed from every household of Marta" (`housemates(marta)==[]`). Kept. |
+| households 9: `housemates(made)` both memberships in `HH_DAD` | New person into the picked home of two: no unit test for that path (`households.test.ts:283` covers an existing profile). Sole proof of the picked home. Kept. |
+| households 10: all four profiles still exist after the cancelled dialogs | A cancel guard, no rule; UI-only. Kept. |
+| `merge-undo.authed.spec.ts` (mass-merge + undo; batch pair-merge; admin merge): `adopters` soft-deleted / `MERGED`, memberships restored, `duplicate_candidates` statuses, is_public, aliases | The e2e drives `/api/admin/duplicates/merge` and `/unmerge` with `page.request`: the SQL **is** the result of the call, there is no UI result left to keep. Related unit coverage: `src/lib/householdMerge.test.ts:177,190,200,233,336` (memberships, corrections), `src/lib/mergeDisputes.test.ts:202` (undo), `src/lib/mergeRequests.test.ts:110`. Not exact duplicates (they stub parts of the pipeline). All kept. |
+| `one-reality.authed.spec.ts` (`merge_requests` rows, `MERGED` token, `merge_disputes`, `notifications`, `household_corrections` / `adopter_history` rows) | Same: multi-user flows where the polled rows are the cross-user effect. Unit: `mergeRequests.test.ts:110,132,144`, `mergeDisputes.test.ts:98,121,202,219`, `households.test.ts:437`. Not exact. All kept. |
+
+### §4.4 shared setup
+
+| Test | Before | After |
+|---|---|---|
+| households 10 | fixture (5 profiles, 3 households) written inside the test with ~7 wrangler spawns | written in the file's `beforeAll` batch (same batch as the other fixtures); cleaned in the existing `afterAll` (`try/finally` kept). Both viewports (390, 1280) still looped inside the one test. Id unchanged apart from the line. |
+| `my-animals-meta-layout.authed.spec.ts` x2 | each width inserted its own user + animal and deleted them | one `beforeAll` / `afterAll` batch each, shared by both widths. Both width tests kept. Ids gain the describe title: `[authed] › card meta line at 390px...` -> `[authed] › Mis Animales card meta line › card meta line at 390px...` (same for 1280px). |
+
+### §4.5 public-api
+
+No change (audit).
