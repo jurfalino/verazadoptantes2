@@ -543,11 +543,4 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(Number(capped.headers()['retry-after'])).toBeGreaterThan(0);
     });
 
-    test('flag off → every endpoint answers 404 api_disabled', async () => {
-        flagOff();
-        const res = await api.get('/api/v1/me', { headers: auth() });
-        expect(res.status()).toBe(404);
-        expect((await res.json()).error.code).toBe('api_disabled');
-        flagOn();
-    });
 });

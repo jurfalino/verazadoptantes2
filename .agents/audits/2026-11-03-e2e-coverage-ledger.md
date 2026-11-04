@@ -181,3 +181,22 @@ Kept (not an exact duplicate, or no UI result, or in doubt):
 ### §4.5 public-api
 
 No change (audit).
+
+
+### Follow-up round (Jon, 2026-11-03)
+
+Count: **364 -> 361** (partition check, 17 legs). The three removals below are the whole difference.
+
+| Removed id | Coverage |
+|---|---|
+| `[authed] public-api.authed.spec.ts › flag off → every endpoint answers 404 api_disabled` (:546) | Jon 2026-11-03: flag permanently ON — OFF path deliberately not covered |
+| `[authed] public-api-docs.authed.spec.ts › flag off → every endpoint answers 404 api_disabled` (:133) | Jon 2026-11-03: flag permanently ON — OFF path deliberately not covered |
+| `[user] adoption-docs.spec.ts › custom forms off → formConfig null (production: today's form)` (:130) | Jon 2026-11-03: flag permanently ON — OFF path deliberately not covered |
+
+Kept: `flagOff()` in afterAll/afterEach (restores the seed; `flagOn`/`flagOff` helpers are still used there) and the gating-OFF step in `form-results-masking.authed.spec.ts` (setup, not an OFF-path test). No helper became unused.
+
+Silent skips made hard failures (no id change):
+- `adoption-docs.spec.ts` (two tests, formerly `:186`/`:218`): `test.skip(!flagOn, ...)` -> `expect(flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS must be on in tests/seed.sql').toBe(true)`.
+- `resilience.spec.ts` "Search button text changes with language": the language selector's visibility is now `expect(...).toBeVisible({ timeout: 15000 })` (was a 3 s probe that skipped); dead else/`test.skip()` removed; every other assertion unchanged.
+
+Local (Node 20): adoption-docs + resilience 15/15 twice; public-api-docs 5/5. vitest 3332 green, tsc clean, lint 115.

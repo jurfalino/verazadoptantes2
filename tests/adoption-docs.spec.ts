@@ -127,15 +127,6 @@ test.describe('Custom adoption form + contract — API-level', () => {
         expect(json.formConfig).toEqual({ hiddenSteps: [] });
     });
 
-    test('custom forms off → formConfig null (production: today\'s form)', async ({ request }) => {
-        execD1(`UPDATE app_config SET value = 'false' WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`);
-        try {
-            const json = await (await request.get(`/api/form/${NO_SETTINGS_USER_ID}`)).json();
-            expect(json.formConfig).toBeNull();
-        } finally {
-            execD1(`UPDATE app_config SET value = 'true' WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`);
-        }
-    });
 
     test('contract signing records the signed version (standardVersion + via=open)', async ({ request }) => {
         const animalId = `test-animal-docs-e2e-contract-${Date.now()}`;
@@ -177,13 +168,13 @@ test.describe('Custom adoption form + contract — API-level', () => {
         // Guard: getFeatureFlag checks process.env first, then app_config
         // (tests/seed.sql seeds ENABLE_CUSTOM_ADOPTION_DOCS='true'). Confirm the
         // flag is actually reachable in THIS DB before asserting resolution
-        // behaviour that depends on it — skip with a clear reason instead of
-        // failing on an environment gap unrelated to the feature.
+        // behaviour that depends on it. The flag is permanently ON (Jon, 2026-11-03):
+        // a miss means a broken seed, so it fails instead of skipping.
         const flagRows = parseD1Rows(execD1(
             `SELECT value FROM app_config WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`,
         ));
         const flagOn = flagRows.length > 0 && (flagRows[0].value === 'true' || flagRows[0].value === '1');
-        test.skip(!flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS not reachable via app_config in this local E2E DB — skipping resolution test.');
+        expect(flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS must be on in tests/seed.sql').toBe(true);
 
         const rescuerEmail = 'test-adoption-docs-fixture@example.com';
         const animalId = `test-animal-docs-e2e-resolve-${Date.now()}`;
@@ -215,7 +206,7 @@ test.describe('Custom adoption form + contract — API-level', () => {
             `SELECT value FROM app_config WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`,
         ));
         const flagOn = flagRows.length > 0 && (flagRows[0].value === 'true' || flagRows[0].value === '1');
-        test.skip(!flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS not reachable via app_config in this local E2E DB — skipping resolution test.');
+        expect(flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS must be on in tests/seed.sql').toBe(true);
 
         const run = Date.now();
         const userId = `test-docs-org-user-${run}`;

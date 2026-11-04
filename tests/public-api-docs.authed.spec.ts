@@ -130,11 +130,4 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
         expect((await api.get('/api/v1/me', { headers: auth() })).status()).toBe(401);
     });
 
-    test('flag off → every endpoint answers 404 api_disabled', async () => {
-        flagOff();
-        const res = await api.get('/api/v1/me', { headers: auth() });
-        expect(res.status()).toBe(404);
-        expect((await res.json()).error.code).toBe('api_disabled');
-        flagOn();
-    });
 });
