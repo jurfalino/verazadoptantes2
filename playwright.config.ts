@@ -54,7 +54,9 @@ export default defineConfig({
     // Regular (non-admin) user tests — authenticated with non-admin JWT session
     {
       name: 'user',
-      testIgnore: /auth\.setup\.ts|authed\.spec\.ts/,
+      // mobile.spec.ts only asserts mobile-size behaviour and runs in the `mobile` project
+      // (iPhone 14); at desktop size it would just repeat itself.
+      testIgnore: /auth\.setup\.ts|authed\.spec\.ts|mobile\.spec\.ts/,
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Chrome'],
