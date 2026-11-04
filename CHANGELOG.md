@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.24] - 2026-11-04
+
+### Fixed — every «Conocido/a como» in one place
+A previous name kept by a rename or a merge sat alone under the profile's name, while aliases
+typed by hand were in the contact details — the same thing shown two ways, and the header one
+could not be edited. All aliases are now listed in the contact details, where they are added
+and edited. A kept previous name can still only be edited or removed by the profile's team
+(or an admin). The header line is gone. Tests: `src/components/ContactEntriesAliases.test.tsx`.
+
 ## [2.58.23] - 2026-11-04
 
 ### Fixed — a contact you already have no longer shows hidden on the other profile

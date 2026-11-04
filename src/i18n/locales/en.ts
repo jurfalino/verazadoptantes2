@@ -785,7 +785,6 @@ export const en = {
         api_tool: 'API · {tool}',
     },
     adopter: {
-        known_as: 'Also known as:',
         minor_tag: 'Minor',
         rename_hint: 'If you change the name, the previous one is kept as “Also known as” and whoever added the profile is told.',
         rename_failed: 'Could not change the name.',
@@ -1157,10 +1156,6 @@ export const en = {
         hh_err_failed: 'Couldn\'t save. Please try again.',
         hh_err_partial: 'It was saved, but the history or the notices weren\'t fully recorded.',
         hh_err_gift_conflict: 'Someone is creating that profile right now. Wait a few seconds and refresh.',
-        known_as_remove: 'Remove «{name}» from «Also known as»',
-        known_as_remove_title: 'Remove «{name}» from «Also known as»?',
-        known_as_remove_body: 'Searching «{name}» will no longer find this profile. Only use this if that name is wrong.',
-        known_as_remove_failed: 'Couldn\'t remove the name.',
         notes: 'Notes',
         placeholder_notes: 'Additional observations, age, behavior, etc.',
         no_notes: 'No notes.',

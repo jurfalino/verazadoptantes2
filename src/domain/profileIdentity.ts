@@ -2,11 +2,12 @@
  * A profile's name and age, open to anyone signed in (households as profiles,
  * Task 3 — Jon, 2026-10-27). Pure rules: no DB, no server imports.
  *
- * - A rename keeps the previous name as a hidden alias (`fromRename`, credited
+ * - A rename keeps the previous name as an alias (`fromRename`, credited
  *   to `RENAME_ALIAS_AUTHOR` — never the renamer, so even an old build that
  *   drops the flag can't let the renamer delete it): still a name token, so
- *   search and duplicate detection find the old name, shown in the header as
- *   «Conocido/a como». Rename aliases are stored FIRST and are exempt from the
+ *   search and duplicate detection find the old name. It is listed with the
+ *   other «Conocido/a como» in the contact details — one place for aliases
+ *   (Jon, 2026-11-04). Rename aliases are stored FIRST and are exempt from the
  *   contact cap (no junk can push them out of a read). Renaming back to a kept
  *   name drops that alias (it is the name again).
  * - The history row of a rename is `{ name: {from,to}, name_changed: {from,to,…} }`:
@@ -195,29 +196,19 @@ export function renameUndoPath(metadata: unknown): string | null {
 
 /** What the profile header shows about a person's identity (computed on the server: one clock, no hydration drift). */
 export type ProfileIdentityView = {
-    /** «Conocido/a como»: names a rename kept. */
-    knownAs: string[];
     /** The age today (counted up from when it was told), or null. */
     age: number | null;
     /** «Menor de edad» (a known age decides; the box only with no age). */
     isMinor: boolean;
     /** The stored «Es menor de edad» box (what the editor starts from when there's no age). */
     minorBox: boolean;
-    /** Each «Conocido/a como» name with the ids of the rename aliases behind it (the team removes a junk one). */
-    knownAsEntries: Array<{ name: string; ids: string[] }>;
 };
 
 export function profileIdentityView(
-    p: { name?: string | null; age?: number | null; ageAsOf?: string | null; isMinor?: number | boolean | null },
-    entries: readonly ContactEntry[],
+    p: { age?: number | null; ageAsOf?: string | null; isMinor?: number | boolean | null },
     today: Date = new Date(),
 ): ProfileIdentityView {
-    const knownAs = knownAsNames(entries, p.name);
-    const knownAsEntries = knownAs.map(name => ({
-        name,
-        ids: entries.filter(e => isRenameAlias(e) && aliasKey(e.value) === aliasKey(name) && typeof e.id === 'string').map(e => e.id as string),
-    }));
-    return { knownAs, age: currentAge(p, today), isMinor: isMinor(p, today), minorBox: !!p.isMinor, knownAsEntries };
+    return { age: currentAge(p, today), isMinor: isMinor(p, today), minorBox: !!p.isMinor };
 }
 
 /**

@@ -6,7 +6,7 @@ import { Pencil, Trash2, Check, X, Plus } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { CONTACT_ENTRIES_FULL, isRenameAlias, deriveStreet, deriveLocality, detectSocialPlatform, retypeDraft, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
+import { CONTACT_ENTRIES_FULL, deriveStreet, deriveLocality, detectSocialPlatform, retypeDraft, type ContactEntry, type ContactEntryType, type ContactDraft, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
 import { ContactTypePicker, CONTACT_TYPE_ICON } from '@/components/ContactTypePicker';
 import { ContactLead, ContactValueCell } from '@/components/ContactRow';
 import { INLINE_CANCEL_BTN, INLINE_FIELD, INLINE_SAVE_BTN } from '@/components/ui/inlineFormButtons';
@@ -239,8 +239,9 @@ export default function ContactEntriesSection({ entries, adopterId, onChange, ca
         wasComposerOpenRef.current = isOpenNow;
     }, [composerStage]);
 
-    // A previous name kept by a rename is a name token, not a contact: the header shows it («Conocido/a como»).
-    const visibleEntries = entries.filter(e => e.id !== deletingId && !isRenameAlias(e));
+    // A kept previous name is listed with the other «Conocido/a como» (Jon, 2026-11-04: one place for aliases);
+    // canEditEntry leaves its edit/remove to the profile's team — its author is the rename sentinel, never a viewer.
+    const visibleEntries = entries.filter(e => e.id !== deletingId);
     const sorted = [...visibleEntries].sort(
         (a, b) => DISPLAY_ORDER.indexOf(a.type) - DISPLAY_ORDER.indexOf(b.type),
     );

@@ -27,7 +27,6 @@ import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
-import { KnownAsLine } from "@/components/household/KnownAsLine";
 import { EMPTY_PROFILE_HOUSEHOLDS, HOUSEHOLD_SECTION_HEADING_ID, HOUSEHOLD_SECTION_ID, type ProfileHouseholds } from "@/domain/profileHouseholds";
 import { followHouseholdSectionHash, goToHouseholdSection } from "@/lib/householdSectionNav";
 import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, newContactsForProfile, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
@@ -1360,11 +1359,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                       {/* Anyone signed in can rename: say what happens to the old name (not to the owner's team — it's theirs). */}
                                       {nameEditing && !isPrivileged && (
                                           <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }} data-testid="rename-hint">{t('adopter.rename_hint')}</p>
-                                      )}
-                                      {/* Previous names a rename kept: still found by search, never listed with the contacts. */}
-                                      {/* The team (and admins/moderators) may take out a junk one. */}
-                                      {!isNew && !!identity?.knownAsEntries.length && initialData?.id && (
-                                          <KnownAsLine adopterId={initialData.id} entries={identity.knownAsEntries} canRemove={canEditAllHousehold} />
                                       )}
                                       {/* Sub-identifier for a nameless adopter — only when the
                                           contact reaching this form is unmasked for the viewer
