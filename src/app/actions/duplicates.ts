@@ -8,6 +8,7 @@ import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_D
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
+import type { Visibility } from '@/lib/piiAccess';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
 import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
@@ -383,9 +384,11 @@ function redactInexactValue(type: string, value: string): string {
  * raw, which — with PII gating enabled in production — made the dedup card the
  * one place another rescuer's adopter contact was fully exposed.
  *
- * The MATCHED values stay visible (see EXACT_MATCH_TYPES): those are already in
- * the viewer's own record, so showing them discloses nothing. It is the rest of
- * the blob that gets masked.
+ * A value equal to one the viewer sees in full on the OTHER side of the pair
+ * (`known`) stays visible: they already have it, so the card shows the shared
+ * phone instead of «1144••••••» beside their own (submissionUnlockHashes, the
+ * form-results rule). It is the rest of the blob that gets masked. Until
+ * 2026-11-04 nothing was unlocked, so the matched phone or email was hidden too.
  */
 /** The adopter columns the pair builder needs before visibility is applied. */
 type PairRow = {
@@ -397,20 +400,24 @@ async function buildPairSide(
     viewerEmail: string | null | undefined,
     row: PairRow,
     names: ReadonlyMap<string, string>,
+    /** This viewer's visibility of `row`, resolved once by the caller; null = it failed. */
+    visibility: Visibility | null,
+    /** Contact values the viewer sees in full on the other side of the pair. */
+    known: readonly string[] = [],
 ): Promise<Omit<PendingDedupSide, 'teamOwned'>> {
     let contactInfo = row.contactInfo;
     let contactEntries: string | null = null;
     let canSeeContact = true;
     try {
-        const { resolveAdopterVisibility } = await import('@/lib/piiAccessServer');
-        const { maskAdopterContact } = await import('@/lib/piiAccess');
-        const visibility = await resolveAdopterVisibility(viewerEmail, { id: row.id, addedBy: row.addedBy });
+        if (!visibility) throw new Error('visibility unresolved');
+        const { maskAdopterContact, submissionUnlockHashes } = await import('@/lib/piiAccess');
         if (!visibility.nothingMasked) {
             // Typed entries from the blob, so the masked result carries a typed list
             // the comparison table can read (re-parsing masked text mislabels it).
             const { parseBlobToContactEntries } = await import('@/lib/contactEntries');
             const typed = parseBlobToContactEntries(row.contactInfo);
-            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: typed.length ? JSON.stringify(typed) : null, addressInfo: null }, visibility);
+            const unlockedEntryHashes = new Set([...visibility.unlockedEntryHashes, ...submissionUnlockHashes(typed, [...known])]);
+            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: typed.length ? JSON.stringify(typed) : null, addressInfo: null }, { ...visibility, unlockedEntryHashes });
             contactInfo = masked.contactInfo;
             contactEntries = masked.contactEntries;
             canSeeContact = masked.maskedFieldCount === 0;
@@ -1355,16 +1362,31 @@ export async function getPendingDuplicatesForUser(
         const names = await resolvePeopleNames([...people], viewer);
 
         // Visibility is resolved once per adopter, not once per appearance.
-        const sideCache = new Map<string, PendingDedupSide>();
-        const side = async (row: PairRow) => {
-            const hit = sideCache.get(row.id);
-            if (hit) return hit;
-            const built: PendingDedupSide = {
-                ...await buildPairSide(viewer, row, names),
-                teamOwned: !!realOwner(row.addedBy) && teamKeys.has(normEmail(row.addedBy!)),
-            };
-            sideCache.set(row.id, built);
-            return built;
+        const visCache = new Map<string, Promise<Visibility | null>>();
+        const visibilityOf = (row: PairRow) => {
+            let hit = visCache.get(row.id);
+            if (!hit) {
+                hit = import('@/lib/piiAccessServer')
+                    .then(({ resolveAdopterVisibility }) => resolveAdopterVisibility(viewer, { id: row.id, addedBy: row.addedBy }))
+                    .catch((e: unknown) => {
+                        // buildPairSide masks the whole side for a null (fail closed) and logs it.
+                        logger.warn('getPendingDuplicatesForUser: visibility resolve failed', {
+                            actorEmail: viewer, adopterId: row.id, error: e instanceof Error ? e.message : String(e),
+                        });
+                        return null;
+                    });
+                visCache.set(row.id, hit);
+            }
+            return hit;
+        };
+        const side = async (row: PairRow, known: readonly string[] = []): Promise<PendingDedupSide> => ({
+            ...await buildPairSide(viewer, row, names, await visibilityOf(row), known),
+            teamOwned: !!realOwner(row.addedBy) && teamKeys.has(normEmail(row.addedBy!)),
+        });
+        // A side's contact values this viewer sees in full (its masked entries excluded).
+        const fullyShown = (s: PendingDedupSide): string[] => {
+            const typed = s.contactEntries ? deserializeContactEntries(s.contactEntries) : parseBlobToContactEntries(s.contactInfo);
+            return typed.filter(e => !e.masked && e.type !== 'address' && e.type !== 'other' && e.type !== 'alias').map(e => e.value);
         };
 
         // The same verdict the click reads (PairVerdict): did an owner decline a
@@ -1412,7 +1434,10 @@ export async function getPendingDuplicatesForUser(
             const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
                 isAdmin, declinedByViewer: verdict?.declinedForTeam ?? false, adminRuledSeparate: verdict?.adminRuledSeparate ?? false, rebuilt: !!c.rebuilt,
             });
-            const [newSide, existingSide] = [await side(newOne), await side(oldOne)];
+            // Each side first as masked on its own; then each again with what the
+            // viewer sees in full on the other, so a shared value shows on both.
+            const [newOwn, oldOwn] = await Promise.all([side(newOne), side(oldOne)]);
+            const [newSide, existingSide] = await Promise.all([side(newOne, fullyShown(oldOwn)), side(oldOne, fullyShown(newOwn))]);
             const { same, diff } = summarizeBreakdown(matchBreakdown({
                 matchTypes,
                 source: { name: newSide.name, entries: entriesAsShown(newSide) },
@@ -1461,11 +1486,13 @@ export async function getPendingDuplicatesForUser(
                 householdLinesFor(db, viewer, sidesShown, { listCards: HOUSEHOLD_LINE_CARDS }),
                 Promise.all(capped.map(id => countsFor(db, id, { actorEmail, adopterId: id, op: 'getPendingDuplicatesForUser' }, { activity: false }))),
             ]);
-            for (const built of sideCache.values()) {
+            // A profile in several pairs is a separate side object in each (its unlocks depend on the pair).
+            const ratingOf = new Map(capped.map((id, i) => [id, counts[i].rating]));
+            for (const built of pairs.flatMap(p => [p.newAdopter, p.existingAdopter])) {
                 const home = homes[built.id];
                 if (home && (home.lines.length > 0 || raisesHousemateAlert(home.alert))) built.households = home;
+                if (ratingOf.has(built.id)) built.rating = ratingOf.get(built.id);
             }
-            capped.forEach((id, i) => { const built = sideCache.get(id); if (built) built.rating = counts[i].rating; });
         }
 
         return { pairs, total, lowHidden, page, focusCandidateId };

@@ -24,7 +24,8 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { enrichAdopters } from './enrichAdopters';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
 import { toGuestMatch } from '@/lib/guestMatch';
-import { NO_ACCESS_VISIBILITY } from '@/lib/piiAccess';
+import { NO_ACCESS_VISIBILITY, submissionUnlockHashes, type Visibility } from '@/lib/piiAccess';
+import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
 import { withHouseholdLines } from '@/lib/households';
@@ -49,6 +50,22 @@ interface HydrateOpts {
      * each result goes through `toGuestMatch` (masked name, card fields only).
      */
     guestMaskQuery?: string;
+    /**
+     * The contact values the viewer typed (phones, emails, socials, document
+     * ids). A protected entry EQUAL to one is shown in full — the viewer
+     * already has it, so the card can show the match instead of «1144••••••»
+     * beside their own number (submissionUnlockHashes, as form results do).
+     */
+    revealValues?: Array<string | null | undefined>;
+}
+
+/** `vis` plus the row's entries equal to a value the viewer typed. */
+function withTypedValues(vis: Visibility, row: { contactEntries: string | null; contactInfo: string | null; country: string | null }, typed: Array<string | null | undefined>): Visibility {
+    if (vis.nothingMasked || typed.length === 0) return vis;
+    const parsed = deserializeContactEntries(row.contactEntries);
+    const entries = parsed.length > 0 ? parsed : parseBlobToContactEntries(row.contactInfo);
+    const extra = submissionUnlockHashes(entries, typed, row.country);
+    return extra.size === 0 ? vis : { ...vis, unlockedEntryHashes: new Set([...vis.unlockedEntryHashes, ...extra]) };
 }
 
 export async function hydrateDuplicateMatches(
@@ -113,7 +130,9 @@ export async function hydrateDuplicateMatches(
             source: m.source,
             matchSnippet: null,
         };
-        const vis = opts.isUnauthenticated ? NO_ACCESS_VISIBILITY : visibilityMap?.get(row.id);
+        const resolved = opts.isUnauthenticated ? NO_ACCESS_VISIBILITY : visibilityMap?.get(row.id);
+        // Never for a logged-out viewer: what they type reveals nothing.
+        const vis = resolved && !opts.isUnauthenticated && opts.revealValues ? withTypedValues(resolved, row, opts.revealValues) : resolved;
         const maskOpts = maskOptionsFor(publicProfilesFlag, row);
         const match = assembleDiscoveryMatch({ ...row }, enrichmentVals, meta, vis, undefined, maskOpts);
         results.push(opts.guestMaskQuery !== undefined ? toGuestMatch(match, row, opts.guestMaskQuery) : match);

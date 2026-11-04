@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.23] - 2026-11-04
+
+### Fixed — a contact you already have no longer shows hidden on the other profile
+On every "same person?" comparison, the other rescuer's profile hid the very phone or
+email that matched yours (Jon's «Mili» +54 9 11 4438-7944 read «1144••••••» on the
+Catpuccino profile it matched). Now a protected contact EQUAL to one you already have is
+shown in full; everything else on that profile stays hidden, as before:
+- «Pendientes de revisar» pairs: values you see in full on the other side of the pair;
+- the create/edit form's «¿Es este perfil?» check and combine comparison, «Agregar
+  conviviente», the import relatives check, and the hint while typing a contact: what you typed.
+Same rule as form and contract results (`submissionUnlockHashes`). Never for a logged-out
+viewer. Tests: `src/app/actions/matchedContactVisible.test.ts`.
+
 ## [2.58.22] - 2026-11-04
 
 ### Fixed — a release more than 14 days after the last one could not deploy
