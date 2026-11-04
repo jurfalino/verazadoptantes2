@@ -669,6 +669,14 @@ jobs:
           SKIP_ENV_VALIDATION: 'true'
           AUTH_SECRET: ${{ secrets.AUTH_SECRET != '' && secrets.AUTH_SECRET || 'fallback_test_secret_for_ci_environments_only_32_chars' }}
           E2E_CF_PORT: 3000
+          # Logs each readiness probe of the server (and why it failed): the
+          # first run of this job timed out at startup with nothing on stderr.
+          DEBUG: pw:webserver
+
+      # wrangler's stdout goes to e2e-cf-server.log (playwright.cf.config.ts).
+      - name: Show the server log
+        if: failure()
+        run: tail -n 150 e2e-cf-server.log 2>/dev/null || echo "no e2e-cf-server.log"
 
       - name: Upload test report
         uses: actions/upload-artifact@v4
@@ -678,6 +686,7 @@ jobs:
           path: |
             playwright-report/
             e2e-attempt-1.log
+            e2e-cf-server.log
           retention-days: 14
 
   deploy-staging:
