@@ -262,6 +262,17 @@ export function samePhoneAsEvidence(a: string, aCountry: string | null | undefin
         .some(ra => readPhones(b, bCountry).filter(strongEnough).some(rb => sameReadPhone(ra, rb)));
 }
 
+/**
+ * Every number in `value` is one of `held` — for revealing a stored entry that
+ * holds several («1144102609 / 1144387944»): matching one of them must not
+ * show the other. False when `value` reads as no number at all.
+ */
+export function everyPhoneHeld(value: string, held: readonly string[], country?: string | null): boolean {
+    const mine = readPhones(value, country);
+    const theirs = held.flatMap(h => readPhones(h, country));
+    return mine.length > 0 && mine.every(ra => theirs.some(rb => sameReadPhone(ra, rb)));
+}
+
 /** samePhone when each value belongs to a record of its own country. */
 export function samePhoneAcross(a: string, aCountry: string | null | undefined, b: string, bCountry: string | null | undefined): boolean {
     return readPhones(a, aCountry).some(ra => readPhones(b, bCountry).some(rb => sameReadPhone(ra, rb)));

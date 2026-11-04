@@ -59,6 +59,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { getDuplicateHintMatches } from './households';
+import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { continueWithMatchedProfile, askAdminsToReviewPair } from './dupHintActions';
 import { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
 import { flagAdopter } from './flags';
@@ -178,6 +179,12 @@ describe('getDuplicateHintMatches — what the window offers, per match', () => 
     it('without a saved profile being edited: no answer', async () => {
         const { results } = await getDuplicateHintMatches({ type: 'phone', value: TYPED });
         expect(results.find(r => r.adopter.id === 'jonatan')).toMatchObject({ action: null });
+    });
+
+    it('the typed value is handed to the hydrator, so the matching contact shows in full (2026-11-04)', async () => {
+        vi.mocked(hydrateDuplicateMatches).mockClear();
+        await getDuplicateHintMatches({ type: 'phone', value: TYPED });
+        expect(vi.mocked(hydrateDuplicateMatches).mock.calls[0][2]).toMatchObject({ revealValues: [TYPED] });
     });
 });
 

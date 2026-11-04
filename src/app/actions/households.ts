@@ -859,7 +859,7 @@ export async function getDuplicateHintMatches(
         );
         const dup = ((found.results ?? []) as DuplicateMatch[]).filter(m => m.adopterId !== excludeAdopterId);
         if (dup.length === 0) return { results: [] };
-        const hydrated = await hydrateDuplicateMatches(db, dup, { viewer: actor, isUnauthenticated: false });
+        const hydrated = await hydrateDuplicateMatches(db, dup, { viewer: actor, isUnauthenticated: false, revealValues: [typed] });
         if (hydrated.length === 0) return { results: [] };
         type RawRow = { contactEntries: string | null; contactInfo: string | null; addedBy: string | null; country: string | null };
         const [candidates, raw, viewer] = await Promise.all([

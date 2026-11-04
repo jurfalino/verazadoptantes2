@@ -12,6 +12,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { findPersonMatches } from '@/lib/identityMatch';
+import { hydrateDuplicateMatches } from '@/app/actions/hydrateDuplicateMatches';
 import { logger } from '@/lib/logger';
 import { searchFormDuplicates } from './formDuplicates';
 
@@ -34,6 +35,16 @@ describe('searchFormDuplicates: who it looks for', () => {
     it('the browser form (no contact-only) still needs a name, even with a DNI', async () => {
         await searchFormDuplicates({ name: '', documentIds: ['30123456'] }, {}, viewer);
         expect(findPersonMatches).not.toHaveBeenCalled();
+    });
+});
+
+describe('searchFormDuplicates: what the rescuer typed shows in full on a match (2026-11-04)', () => {
+    it('every typed contact is handed to the hydrator as revealValues', async () => {
+        vi.mocked(findPersonMatches).mockResolvedValueOnce([{ adopterId: 'a1' }] as never);
+        await searchFormDuplicates({ name: 'Ana Pérez', phones: ['1144387944'], emails: ['ana@example.com'], socials: ['@ana'], documentIds: ['30123456'] }, {}, viewer);
+        expect(vi.mocked(hydrateDuplicateMatches).mock.calls[0][2]).toMatchObject({
+            revealValues: ['1144387944', 'ana@example.com', '@ana', '30123456'],
+        });
     });
 });
 

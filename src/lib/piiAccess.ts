@@ -16,7 +16,7 @@ import {
     buildContactEntries,
     looksLikeStreetAddress,
 } from './contactEntries';
-import { phoneMatchesQuery, samePhone } from '@/domain/phoneNumber';
+import { phoneMatchesQuery, samePhone, everyPhoneHeld } from '@/domain/phoneNumber';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, type HouseholdMember } from './householdMembers';
 import { PHONE_SEARCH_MIN_DIGITS } from '@/config/constants';
 import { normalizeText, extractAddressWords } from './tokenizer';
@@ -906,6 +906,9 @@ export function submissionUnlockHashes(
     country?: string | null,
 ): Set<string> {
     const out = new Set<string>();
+    // Phones held with enough digits to count — an entry holding several numbers
+    // is revealed only when the viewer has every one of them (review 2026-11-04).
+    const heldPhones = submitted.map(v => (v ?? '').trim()).filter(v => v.replace(/\D/g, '').length >= MATCH_CARD_PHONE_MIN_DIGITS);
     for (const raw of submitted) {
         const q = (raw ?? '').trim();
         if (!q) continue;
@@ -913,7 +916,7 @@ export function submissionUnlockHashes(
             const e = m.entry;
             if (e.type === 'address') continue;
             const same = e.type === 'phone'
-                ? samePhoneNumber(e.value, q, country)
+                ? samePhoneNumber(e.value, q, country) && everyPhoneHeld(e.value, heldPhones, country)
                 : hashEntryValue(e.type, q) === m.hash;
             if (same) out.add(m.hash);
         }

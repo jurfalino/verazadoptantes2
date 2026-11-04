@@ -64,6 +64,8 @@ export async function searchFormDuplicates(
         const hydrated = await hydrateDuplicateMatches(db, matches, {
             viewer: user,
             isUnauthenticated: false,
+            // What the rescuer typed shows in full where a match carries it.
+            revealValues: [...(input.phones ?? []), ...(input.emails ?? []), ...(input.socials ?? []), ...(input.documentIds ?? [])],
         });
         const verdictOf = new Map(matches.map(m => [m.adopterId, m.verdict]));
         // hydrate re-sorts by relevance; same-person first is the contract (stable: relevance order within each group).
