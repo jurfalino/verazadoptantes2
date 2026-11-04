@@ -8,6 +8,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '.env.local') });
 
+// Extra `next dev` flags from the workflow_dispatch input; it reaches a shell
+// command, so only plain flags (letters, digits, -, =, ., space) are accepted.
+const nextDevArgs = process.env.E2E_NEXT_DEV_ARGS ?? '';
+if (!/^[-\w=. ]*$/.test(nextDevArgs)) throw new Error(`E2E_NEXT_DEV_ARGS: only plain flags allowed, got ${JSON.stringify(nextDevArgs)}`);
+
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -103,7 +108,7 @@ export default defineConfig({
   webServer: {
     // E2E_NEXT_DEV_ARGS: extra `next dev` flags, set only by the
     // workflow_dispatch experiment input (ci.yml); empty by default.
-    command: `node scripts/setup-test-db.js && npx next dev${process.env.E2E_NEXT_DEV_ARGS ? ` ${process.env.E2E_NEXT_DEV_ARGS}` : ''}`,
+    command: `node scripts/setup-test-db.js && npx next dev${nextDevArgs.trim() ? ` ${nextDevArgs.trim()}` : ''}`,
     url: 'http://localhost:3000/api/ready',
     reuseExistingServer: !process.env.CI,
     // CI: 4 minutes. A cold `next dev` after a dependency-cache miss on a slow
