@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.14] - 2026-11-03
+
+### Changed — CI: faster, steadier e2e tests (audit 2026-11-03, phase B)
+- Test data is prepared and cleaned in one database call per step instead of one per statement (`tests/db.ts`,
+  replacing 34 private copies). Locally the households tests take 2.6 min instead of 6.1. A failed test-data step
+  now fails loudly instead of returning nothing, and shared settings are always reset after a test group.
+- Two chronic flakes fixed: the page smoke tests no longer wait for the network to go quiet (avatar images never
+  finish), and the API-keys check reads the page's own response instead of a second request that was cut off.
+- Tests that never ran now run (the /funcionalidades logged-out tests); silent skips in the custom-form and
+  language tests now fail loudly; the mobile test runs once instead of twice.
+- Removed by Jon's decision (flags stay ON for good): the "Public API off" tests (2) and the "custom forms off"
+  test (1). An old duplicate-banner test points at today's «Posible duplicado» line; its dismiss test is gone (no
+  such button exists). Five database checks moved into unit tests; each click's on-screen result is still checked.
+- Count: 361 tests in 17 legs; every difference from 367 is mapped in `.agents/audits/2026-11-03-e2e-coverage-ledger.md`.
+
 ## [2.58.13] - 2026-11-03
 
 ### Changed — CI: releases stop getting stuck in the e2e tests (audit 2026-11-03)
