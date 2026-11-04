@@ -59,16 +59,24 @@ function trackConsoleErrors(page: Page): () => string[] {
  *                    don't fail the build. When the noise floor is at zero
  *                    we'll flip this back to a hard assertion.
  *
+ * Navigation waits for `load`, NOT `networkidle` (Task 8, 2026-11-03).
+ * `networkidle` needs 500 ms with zero requests, but these pages keep issuing
+ * requests after paint (config/notification polls, server actions, and avatar
+ * images from api.dicebear.com that hang or fail in the CI container), so the
+ * quiet window sometimes never opens and `page.goto` times out (6 of 11 recent
+ * authed-5 jobs, `/my-animals`). The HARD anchor assertion below is what
+ * proves the route rendered; it auto-waits up to `timeout`, so nothing the old
+ * wait guarded is lost.
+ *
  * Timeout is generous (30 s default) — miniflare cold-start in CI takes
- * 5-10 s before the first request lands, and `networkidle` waits for the
- * 500 ms-quiet window which compounds.
+ * 5-10 s before the first request lands.
  */
 export async function runSmokeRoute(page: Page, route: SmokeRoute): Promise<void> {
     const collectErrors = trackConsoleErrors(page);
     const timeout = route.timeout ?? 30000;
 
     const response = await page.goto(route.path, {
-        waitUntil: 'networkidle',
+        waitUntil: 'load',
         timeout,
     });
     await dismissCountryBanner(page);

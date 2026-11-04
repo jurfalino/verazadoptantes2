@@ -387,10 +387,14 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(rows.some(r => r.outcome === 'ambiguous')).toBe(true);
         expect(rows.some(r => r.dryRun && r.recordId === null)).toBe(true);
 
+        // Read the keys list from the page's OWN fetch of /api/admin/api-keys (the one that fills the
+        // list below) instead of a second `page.request.get` on a pooled socket: that extra request failed
+        // with `read ECONNRESET` in CI (3 of 11 apicore jobs) while the page's own fetch had just succeeded.
+        const keysResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/admin/api-keys' && r.request().method() === 'GET');
         await page.goto('/admin/api?tab=keys');
         await expect(page.getByTestId('api-keys')).toContainText(`E2E ${TAG}`, { timeout: 30000 });
         // Each key shows what it saved and voided in the last 30 days (search-then-void is visible).
-        const keys = (await (await page.request.get('/api/admin/api-keys')).json()).keys as Array<{ id: string; last30: { activities: number; voided: number } }>;
+        const keys = (await (await keysResponse).json()).keys as Array<{ id: string; last30: { activities: number; voided: number } }>;
         const mine = keys.find(k => k.id === keyId)!;
         expect(mine.last30.activities).toBeGreaterThan(3);
         expect(mine.last30.voided).toBeGreaterThanOrEqual(2); // the two follow-ups voided earlier

@@ -90,3 +90,28 @@ Every failure passed on re-run or is a known local-only flake; none involves the
 - `merge-requests.authed` "#pendientes opens the section", `public-api-developers.authed` "/developers ...": pass on re-run.
 - `merge-undo.authed` "admin merge: the panel shows who registered each profile" and `record-edit-collab.authed` "two teammates on the same animal", "adopter profile in two tabs": pass when the two files run together (10/10), but fail after `merge-requests` in the same run. The same 4-file sequence on origin/staging code (verazadoptantes2-identity, 928ab215) fails the same `merge-undo` "admin merge" test (14/15), so that one is a local ordering flake that predates this task; the two `record-edit-collab` failures in the 4-file sequence did not reproduce on staging code or in isolation here and look like dev-server timing (one took 3.8 min).
 
+
+## Task 8: the four chronic flakes (N3)
+
+No test was removed, skipped or loosened. Test count unchanged (`node scripts/e2e-partition-check.mjs`: 367 tests in 17 legs).
+Evidence: CI run 41632012614 (job logs, retry traces of authed-5), jobs from runs 41527928305, 41465548207 and 41256714800, plus local reproduction.
+None of the four coincides with a dev-server memory restart (no "approaching the used memory threshold" line in any of those jobs).
+
+| Test | Root cause | Fix | Coverage |
+|---|---|---|---|
+| `landing-pages-smoke-shared.ts:71` (`/my-animals` in `landing-pages-authed.spec.ts:51` and `landing-pages-smoke.spec.ts`) | `waitUntil: 'networkidle'` needs 500 ms with no request. The retry trace of the authed-5 job shows the page still issuing requests after paint: `/api/config` x3, `/api/notifications` poll, a `POST /my-animals` server action, `/api/my-animals` x2, and four `api.dicebear.com` avatar images that never complete (status -1 in the CI container). The quiet window sometimes never opens, so `page.goto` hits its 30 s timeout. The failing log is a goto timeout, not a 4xx/5xx. | `waitUntil: 'load'`. Nothing else changed. | Unchanged: HTTP status `< 400` (hard) and the per-route `anchor` visible (hard, auto-waits up to `timeout`) still run for every route in both smoke specs. `SmokeRoute.anchor` already existed, so no new field. The old wait guarded no content. |
+| `public-api.authed.spec.ts:386` "both review surfaces list the calls" | `apiRequestContext.get: read ECONNRESET` on the test's own second request, `GET /api/admin/api-keys`, right after the page's own fetch of the same URL had succeeded (the list text was already on screen). Seen in 3 jobs (apicore), 0 restarts. A stale keep-alive socket was tested and ruled out: 26 gaps of 4.96-5.06 s against both a plain Node server and `next dev` gave 0 resets. What does reproduce locally: the same `read ECONNRESET` on a different test of the same file (`:63`, first request to the cold `/api/v1/me` route), 3 of 3 runs when the file runs right after `landing-pages-authed`, with `[Error: aborted]` in the dev-server output. So the dev server drops a request that arrives while it is compiling a cold edge route (shared cause, see below). One local pass also hung the same way on a test this task does not touch (`public-api:344`, `page.goto` ERR_ABORTED after the 120 s timeout). | The test no longer makes its own second request: it registers `page.waitForResponse` for the page's own `GET /api/admin/api-keys` before `goto` and reads the keys from that response. | Unchanged: all three `mine.last30` assertions (`activities > 3`, `voided >= 2`, the stats text equals `activities`), the list text, the calls tab and the settings assertions. The same endpoint and the same JSON are checked. |
+| `wizards.spec.ts:28` "Observation card" | `page.goto('/')` in `beforeEach` never gets a response: the call log shows `navigating ... waiting until "load"` and no `navigated to` line, then the 120 s test timeout. It is always the second wizards test (never `:16`/`:43`; 7 of 11 user-3 jobs). The dev server prints `[Error: aborted]` when the previous test's page is torn down, and the next document request is lost. 0 memory restarts. | **None in the spec** (see "Shared cause"). | Unchanged (spec untouched). |
+| `sheet-import-form-export.authed.spec.ts:96` ("es: «Nombre del adoptante»") | Same signature as wizards: `page.goto('/import/sheet')` with no `navigated to` line, 120 s timeout, `[Error: aborted]` in the dev-server output just before. It is always the first of the three locale tests, which follows the heavy "importing them makes ONE profile" test (3 of 3 occurrences, 0 restarts). | **None in the spec** (see "Shared cause"). | Unchanged (spec untouched). |
+
+### Shared cause (outside these specs)
+
+`next dev` with the edge runtime loses or resets requests that arrive while it compiles a cold route or just after a previous
+request was aborted (`[Error: aborted]`). It explains `public-api:386`/`:63` (ECONNRESET), `wizards:28` and `sheet-import:96`
+(document request never answered). A fix that lives in the spec (a capped `goto`, a retry loop) would only hide it, and the brief
+forbids both. The shared fix belongs in the dev-server/harness tasks of this plan (for example a warm-up of the routes the suite hits
+before the first test, or running the e2e against a build instead of `next dev`, which the memory notes mark as a dead end for edge
+routes). Until then Playwright's own CI retry absorbs these (each costs the test timeout: 120 s for the two hangs).
+
+Local results for the spec fixes (Node 20, both DBs restored and recovered before every run): see
+`.superpowers/sdd/2026-11-03-e2e-ci-reliability/task-8-report.md`.
