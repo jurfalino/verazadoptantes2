@@ -202,3 +202,11 @@ Silent skips made hard failures (no id change):
 - `resilience.spec.ts` "Search button text changes with language": the language selector's visibility is now `expect(...).toBeVisible({ timeout: 15000 })` (was a 3 s probe that skipped); dead else/`test.skip()` removed; every other assertion unchanged.
 
 Local (Node 20): adoption-docs + resilience 15/15 twice; public-api-docs 5/5. vitest 3332 green, tsc clean, lint 115.
+
+## Task 10 — N2 decision and Phase B on staging (2026-11-03)
+
+v2.58.14 (run 41753573000): green on the first attempt; push → deployed 16.6 min. 361 tests in 17 legs (partition
+step OK in CI). user-2's 5 skipped = `scraper.spec.ts` (no `SCRAPER_URL`; kept by ruling).
+
+N2 not needed: the households leg had 0 failures outside a memory restart in both runs since it got its own leg
+(41723334745: 10 min; 41753573000: 4.4 min, no restart). The `describe.serial` stays.
