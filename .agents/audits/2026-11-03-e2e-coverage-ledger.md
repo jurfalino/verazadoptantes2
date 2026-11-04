@@ -210,3 +210,38 @@ step OK in CI). user-2's 5 skipped = `scraper.spec.ts` (no `SCRAPER_URL`; kept b
 
 N2 not needed: the households leg had 0 failures outside a memory restart in both runs since it got its own leg
 (41723334745: 10 min; 41753573000: 4.4 min, no restart). The `describe.serial` stays.
+
+
+## Task 11 (C1): heap sampler and source-map experiment
+
+Branch `ci/e2e-reliability` (pushed to origin; its `on.push` is master/staging only, so the push triggered nothing). Both runs were `workflow_dispatch` on that branch. Jobs that ran: Version Guard, Build & Lint, 17 e2e legs. Migrate (both), Deploy (both) were `skipped`: they require `github.event_name == 'push'` plus a branch check; ready-to-merge/version-guard/build-and-lint have no `if`.
+
+- Run 1, default: 41753949710 (success, all 17 legs green)
+- Run 2, `next_dev_args=--disable-source-maps`: 41755446953 (success, all 17 legs green; the step env showed `E2E_NEXT_DEV_ARGS: --disable-source-maps`)
+- `next dev --disable-source-maps` exists in Next 15.1.6 (it drops `--enable-source-maps` from the server's NODE_OPTIONS, `next-dev.js:224`).
+- Runner: 15983 MB RAM, server heap limit 7991 MB, so Next restarts at ~6393 MB.
+- heap_used = peak of 1 s samples in each 10 s window, from an in-process probe (`scripts/e2e-heap-probe.cjs`, loaded via NODE_OPTIONS `--require` only when `E2E_HEAP_PROBE` is set). Restarts counted in `e2e-attempt-1.log` (attempt 1 only). Job s = whole job including setup.
+
+| Leg | Default: peak heap MB | restarts | job s | result | No source maps: peak heap MB | restarts | job s | result |
+|---|---|---|---|---|---|---|---|---|
+| authed-1 | 3331 | 0 | 230 | success | 3106 | 0 | 254 | success |
+| authed-2 | 4879 | 0 | 416 | success | 5566 | 0 | 378 | success |
+| authed-3 | 3775 | 0 | 358 | success | 4524 | 0 | 257 | success |
+| authed-4 | 4419 | 0 | 345 | success | 2254 | 0 | 329 | success |
+| authed-5 | 4882 | 0 | 259 | success | 5406 | 0 | 209 | success |
+| authed-6 | 5399 | 1 | 639 | success | 6356 | 1 | 652 | success |
+| authed-7 | 2604 | 0 | 231 | success | 1335 | 0 | 313 | success |
+| authed-8 | 1590 | 0 | 260 | success | 2172 | 0 | 213 | success |
+| authed-apicore | 1996 | 0 | 214 | success | 2358 | 0 | 198 | success |
+| authed-apidev | 4236 | 0 | 183 | success | 2822 | 0 | 182 | success |
+| authed-apidocs | 1623 | 0 | 137 | success | 1579 | 0 | 135 | success |
+| authed-viewas | 4654 | 0 | 298 | success | 4587 | 0 | 262 | success |
+| rest | 1741 | 0 | 182 | success | 2258 | 0 | 159 | success |
+| user-1 | 6803 | 1 | 417 | success | 6521 | 1 | 570 | success |
+| user-2 | 4913 | 0 | 304 | success | 5315 | 0 | 316 | success |
+| user-3 | 3578 | 0 | 175 | success | 3924 | 0 | 165 | success |
+| user-households | 1802 | 0 | 268 | success | 1857 | 0 | 191 | success |
+
+Totals (17 legs): mean of per-leg peak heap 3660 MB default vs 3644 MB without source maps; restarts 2 vs 2 (authed-6 and user-1 in both); sum of job seconds 4916 vs 4783.
+
+Verdict: do NOT keep. Peak heap does not drop (authed-6 5399 -> 6356, authed-2/5 up, authed-4/7 down: noise at 1 run each), restarts are identical and in the same two legs, and user-1/authed-6 still sit near the 6393 MB restart line either way. Default unchanged. The `next_dev_args` input and the sampler stay for further experiments. Takeaway: the two restarting legs (user-1 6803/6521 MB, authed-6 5399/6356 MB) are the ones to split or slim; source maps are not the lever.
