@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.19] - 2026-11-04
+
+### Changed — CI: the e2e tests that gate a release now run on the real Cloudflare build
+- Both deploys now wait for `e2e-cf` (the same 17 legs on the production bundle) instead of the `next dev` legs.
+  Switched after 3 green runs in a row with identical test counts (41766750080, 41771292017, 41773157707): no
+  memory restarts and no flaky tests on the Cloudflare build, against 2 restarts and 3–4 flaky tests per run on
+  `next dev`.
+- The `next dev` legs keep running for one week as a fallback (no longer a gate, still red when they fail), then
+  are removed in their own version.
+
 ## [2.58.18] - 2026-11-04
 
 ### Changed — CI: e2e also runs on the real Cloudflare build (audit 2026-11-03, phases C + D)

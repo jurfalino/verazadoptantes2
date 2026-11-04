@@ -217,7 +217,7 @@ jobs:
 
   # Deploy to Staging (Direct Upload)
   e2e:
-    name: 🎭 E2E Tests
+    name: 🎭 E2E Tests (next dev, fallback)
     runs-on: ubuntu-latest
     # Playwright's own CI image: browsers AND their system packages preinstalled.
     # Installing them per run went through the Ubuntu apt mirror, which crawled
@@ -363,12 +363,14 @@ jobs:
     # v2.56.131: deliberately NOT `needs: [build-and-lint]`. e2e installs its
     # own dependencies and runs its own server; it consumes nothing the build
     # produces, so waiting for it only added ~2 minutes to the critical path.
-    # Both deploys still list build-and-lint AND e2e in `needs`, so nothing
-    # ships without both. The cost is runner minutes spent on a run whose
-    # build was going to fail anyway, which is the cheaper of the two.
+    # The cost is runner minutes spent on a run whose build was going to fail
+    # anyway, which is the cheaper of the two.
     #
-    # Deliberately a deploy gate: `continue-on-error` was removed to stop failures
-    # being masked. With a matrix, `needs: [e2e]` requires EVERY group to pass.
+    # FALLBACK since v2.58.19 (2026-11-04): the deploy gate is e2e-cf (the same
+    # legs on the Cloudflare build, 3 green runs in a row with equal counts:
+    # 41766750080, 41771292017, 41773157707). This job stays one week as a
+    # non-gating comparison, then is removed in its own version. Still never
+    # continue-on-error: a red leg turns the run red, it just no longer blocks.
 
     steps:
       - name: Checkout code
@@ -506,9 +508,9 @@ jobs:
   # job, not a build-and-lint step: the Cloudflare build takes ~5 min in CI and
   # build-and-lint already uses ~4 of its 10.
   #
-  # Non-gating while its CF-only failures are worked through (Task 13): neither
-  # job is in any deploy job's `needs`, and neither is continue-on-error (that
-  # masks failures). A red e2e-cf leg turns the RUN red without blocking a deploy.
+  # THE DEPLOY GATE since v2.58.19: both deploys list e2e-cf in `needs`, and
+  # with a matrix every leg must pass. Never continue-on-error (that masks
+  # failures). The next-dev e2e job above is the one-week fallback.
   #
   # The artifact is never deployed: deploy-staging / deploy-production run
   # their own next-on-pages build with the real APP_BUILD_ID and download no
@@ -551,7 +553,7 @@ jobs:
           retention-days: 3
 
   e2e-cf:
-    name: 🎭 E2E on the Cloudflare build (not a gate)
+    name: 🎭 E2E on the Cloudflare build
     runs-on: ubuntu-latest
     needs: [build-cf]
     container:
@@ -564,9 +566,8 @@ jobs:
         shell: bash
     strategy:
       fail-fast: false
-      # Room for the gating e2e legs and the deploy job: 17 more runners at once
-      # would queue them behind this one on the account's concurrency limit.
-      max-parallel: 8
+      # No max-parallel: this is the gate now. The fallback e2e legs start at
+      # push time, ~5 min before these, so most have finished by then.
       matrix:
         # The SAME legs as e2e (copy them when that matrix changes; Task 14
         # extends scripts/e2e-partition-check.mjs to this matrix).
@@ -694,7 +695,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
-    needs: [build-and-lint, migrate-staging, e2e]
+    needs: [build-and-lint, migrate-staging, e2e-cf]
     # No job-level group: the workflow-level one above already guarantees a
     # single run per branch, and this one reached across branches.
     steps:
@@ -862,7 +863,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-    needs: [build-and-lint, migrate-production, e2e]
+    needs: [build-and-lint, migrate-production, e2e-cf]
     # No job-level group — see the workflow-level concurrency block.
     steps:
       - name: Checkout code
