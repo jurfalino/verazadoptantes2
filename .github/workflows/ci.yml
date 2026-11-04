@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [master, staging]
   # Experiments on a non-deploy branch (e.g. ci/e2e-reliability): runs
-  # version-guard, build-and-lint and e2e ONLY. Every migrate-* and deploy-*
+  # version-guard, build-and-lint, e2e, build-cf and e2e-cf ONLY. Every migrate-* and deploy-*
   # job is `github.event_name == 'push'` AND a branch check, so a dispatch —
   # whatever --ref it targets — can never migrate or deploy.
   workflow_dispatch:
@@ -492,6 +492,192 @@ jobs:
             playwright-report-attempt-1/
             e2e-attempt-1.log
             e2e-heap.log
+          retention-days: 14
+
+  # ── e2e on the Cloudflare build (Phase D, 2026-11-03) — NOT A GATE YET ──
+  #
+  # The structural fix for the `next dev` memory restarts above (audit
+  # .agents/audits/2026-11-03-e2e-ci-reliability.md, S1): the same suite against
+  # the next-on-pages output served by `wrangler pages dev` (workerd + local D1),
+  # i.e. what production runs, with no compiler and no heap growth.
+  #
+  # build-cf builds ONCE with APP_BUILD_ID=e2e-build (tests/deploy-skew.authed.spec.ts
+  # needs that id) and uploads the output; each e2e-cf leg downloads it. Its own
+  # job, not a build-and-lint step: the Cloudflare build takes ~5 min in CI and
+  # build-and-lint already uses ~4 of its 10.
+  #
+  # Non-gating while its CF-only failures are worked through (Task 13): neither
+  # job is in any deploy job's `needs`, and neither is continue-on-error (that
+  # masks failures). A red e2e-cf leg turns the RUN red without blocking a deploy.
+  #
+  # The artifact is never deployed: deploy-staging / deploy-production run
+  # their own next-on-pages build with the real APP_BUILD_ID and download no
+  # artifact. APP_ENVIRONMENT and APP_DEPLOY_MAP stay unset here, as on the
+  # dev path (a "local run": notification emails skip, the public API is test).
+  build-cf:
+    name: 🧱 Cloudflare build for e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for Cloudflare Pages (e2e build id)
+        run: npx @cloudflare/next-on-pages
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+          APP_BUILD_ID: e2e-build
+
+      # Only static/ (~32 MB): it is all `wrangler pages dev` reads. The rest of
+      # .vercel/output is ~560 MB of Vercel function bundles, downloaded 17 times.
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-build-e2e
+          path: .vercel/output/static/
+          # The path is under .vercel/; v4 drops hidden paths unless told not to.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
+  e2e-cf:
+    name: 🎭 E2E on the Cloudflare build (not a gate)
+    runs-on: ubuntu-latest
+    needs: [build-cf]
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.0-noble
+      options: --init --ipc=host
+    env:
+      PLAYWRIGHT_IMAGE_VERSION: '1.58.0'
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      # Room for the gating e2e legs and the deploy job: 17 more runners at once
+      # would queue them behind this one on the account's concurrency limit.
+      max-parallel: 8
+      matrix:
+        # The SAME legs as e2e (copy them when that matrix changes; Task 14
+        # extends scripts/e2e-partition-check.mjs to this matrix).
+        include:
+          - group: user-1
+            projects: --project=user --shard=1/3 --grep-invert @leg-
+          - group: user-2
+            projects: --project=user --shard=2/3 --grep-invert @leg-
+          - group: user-3
+            projects: --project=user --shard=3/3 --grep-invert @leg-
+          - group: user-households
+            projects: --project=user --grep @leg-households
+          - group: authed-1
+            projects: --project=authed --shard=1/8 --grep-invert @leg-
+          - group: authed-2
+            projects: --project=authed --shard=2/8 --grep-invert @leg-
+          - group: authed-3
+            projects: --project=authed --shard=3/8 --grep-invert @leg-
+          - group: authed-4
+            projects: --project=authed --shard=4/8 --grep-invert @leg-
+          - group: authed-5
+            projects: --project=authed --shard=5/8 --grep-invert @leg-
+          - group: authed-6
+            projects: --project=authed --shard=6/8 --grep-invert @leg-
+          - group: authed-7
+            projects: --project=authed --shard=7/8 --grep-invert @leg-
+          - group: authed-8
+            projects: --project=authed --shard=8/8 --grep-invert @leg-
+          - group: authed-viewas
+            projects: --project=authed --grep @leg-viewas
+          - group: authed-apicore
+            projects: --project=authed --grep @leg-apicore
+          - group: authed-apidocs
+            projects: --project=authed --grep @leg-apidocs
+          - group: authed-apidev
+            projects: --project=authed --grep @leg-apidev
+          - group: rest
+            projects: --project=unauthed --project=mobile
+    timeout-minutes: 30
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18'
+
+      - name: Playwright image matches the lockfile
+        run: |
+          locked=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          if [ "$locked" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::package-lock.json has @playwright/test $locked but the e2e container is v$PLAYWRIGHT_IMAGE_VERSION — update the container image tag in ci.yml"
+            exit 1
+          fi
+
+      # Same fingerprint and cache key as e2e (same image, Node and deps).
+      - name: Dependency fingerprint
+        id: deps
+        run: |
+          set -euo pipefail
+          lock=$(node -e "
+            const l = require('./package-lock.json');
+            delete l.version;
+            if (l.packages && l.packages['']) delete l.packages[''].version;
+            const s = JSON.stringify(l);
+            if (s.length < 1000) { console.error('lockfile looks empty'); process.exit(1); }
+            process.stdout.write(require('crypto').createHash('sha256').update(s).digest('hex').slice(0, 16));
+          ")
+          echo "lock=$lock" >> "$GITHUB_OUTPUT"
+
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-playwright-${{ env.PLAYWRIGHT_IMAGE_VERSION }}-noble-node20.18-${{ steps.deps.outputs.lock }}-${{ hashFiles('.npmrc') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download the Cloudflare build
+        uses: actions/download-artifact@v4
+        with:
+          name: cf-build-e2e
+          path: .vercel/output/static/
+
+      # scripts/ci-e2e.sh as on the dev path: its re-run only triggers on a
+      # `next dev` memory restart, which cannot happen here, so this is one
+      # attempt plus the leg-budget warning.
+      - name: Run Playwright tests (Cloudflare build)
+        timeout-minutes: 25
+        run: bash scripts/ci-e2e.sh --config=playwright.cf.config.ts ${{ matrix.projects }}
+        env:
+          E2E_STEP_BUDGET_SEC: 1500
+          E2E_WARN_AT_SEC: 900
+          CI: true
+          SKIP_ENV_VALIDATION: 'true'
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET != '' && secrets.AUTH_SECRET || 'fallback_test_secret_for_ci_environments_only_32_chars' }}
+          E2E_CF_PORT: 3000
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-cf-${{ matrix.group }}
+          path: |
+            playwright-report/
+            e2e-attempt-1.log
           retention-days: 14
 
   deploy-staging:
