@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.20] - 2026-11-04
+
+### Changed — CI: final-review fixes for the Cloudflare-build gate
+- Each e2e run signs its test sessions with a fresh random AUTH_SECRET (masked) instead of the repository secret:
+  the test servers are localhost-only, and Playwright traces uploaded to this public repo's artifacts carry
+  session cookies signed with it.
+- The `next dev` fallback legs run on staging pushes and dispatches only, not on master: there they could hold a
+  finished release run open and queue the next one behind tests that no longer gate anything.
+- CLAUDE.md, `.agents/workflows/deploy.md` and ci.yml comments describe the new gate (`e2e-cf`), the ~16-min
+  pipeline, "read the deploy job's result during the fallback week", and the service-worker trap for `page.route`
+  stubs of `/api/` reads.
+
 ## [2.58.19] - 2026-11-04
 
 ### Changed — CI: the e2e tests that gate a release now run on the real Cloudflare build

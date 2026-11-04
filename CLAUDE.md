@@ -172,10 +172,14 @@ Lint warnings must not exceed the current ratchet threshold (currently **125**).
 **Cloudflare auto-deploy is OFF.** All deploys run through the GitHub Actions pipeline (`.github/workflows/ci.yml`). On push to `staging` or `master` the pipeline runs:
 
 ```
-build-and-lint  →  migrate-{staging|production}  →  e2e (Playwright, blocking)  →  deploy-{staging|production}
+build-and-lint  →  migrate-{staging|production}  ─┐
+build-cf  →  e2e-cf (Playwright on the Cloudflare build, blocking)  ─┴→  deploy-{staging|production}
+e2e (Playwright on next dev) — one-week fallback, not a gate, staging only (until ~2026-11-11)
 ```
 
-The `deploy-*` job runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy`. End-to-end takes **17–34 min**. **Pushing to a branch alone does not deploy** — if any prior job fails (build, lint, migration, e2e), the deploy job is skipped and the branch URL keeps serving the previous build. Track with `gh run list --branch <branch> --limit 3` and `gh run watch <run-id>`.
+The gate is `e2e-cf`: the same 17 legs as `e2e`, against the next-on-pages bundle served by `wrangler pages dev` (`playwright.cf.config.ts`). While the fallback runs, a red fallback leg turns the RUN red even when the deploy succeeded — the deploy job's own result is the signal. A `page.route` stub of an `/api/` GET needs `test.use({ serviceWorkers: 'block' })`: the production build's `sw.js` answers those reads itself.
+
+The `deploy-*` job runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy`. End-to-end takes **~16 min**. **Pushing to a branch alone does not deploy** — if any prior job fails (build, lint, migration, e2e-cf), the deploy job is skipped and the branch URL keeps serving the previous build. Track with `gh run list --branch <branch> --limit 3` and `gh run watch <run-id>`.
 
 D1 migrations are applied by the `migrate-*` jobs before deploy — no manual step needed. `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` GitHub secrets are required.
 

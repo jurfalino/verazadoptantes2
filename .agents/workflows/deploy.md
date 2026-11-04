@@ -31,15 +31,18 @@ description: How to commit, tag, and deploy changes. MUST be followed for ANY gi
 Pipeline jobs on push to `staging` or `master`:
 
 ```
-build-and-lint  →  migrate-{staging|production}  →  e2e (Playwright)  →  deploy-{staging|production}
+build-and-lint  →  migrate-{staging|production}  ─┐
+build-cf  →  e2e-cf (Playwright on the Cloudflare build, blocking)  ─┴→  deploy-{staging|production}
+e2e (Playwright on next dev) — one-week fallback, not a gate, staging only (until ~2026-11-11)
 ```
 
 - **`build-and-lint`** must pass (tsc, lint, `npm run build`).
 - **`migrate-*`** applies D1 migrations via wrangler.
-- **`e2e`** runs the full Playwright suite. **It is a blocking dependency for the deploy job** — failing tests will prevent the deploy. (The comment in the YAML claims tests are "non-blocking", but `deploy-staging`/`deploy-production` both list `e2e` in `needs:`, so it gates the deploy.)
+- **`e2e-cf`** runs the full Playwright suite against the Cloudflare build (`playwright.cf.config.ts`). **It is the blocking dependency for the deploy job** — `deploy-staging`/`deploy-production` list `e2e-cf` in `needs:`, so any red leg prevents the deploy.
+- **`e2e`** (next dev) is a one-week fallback since v2.58.19: not a gate, staging only. A red fallback leg turns the run red after a successful deploy — read the deploy job's result, not the run's.
 - **`deploy-*`** runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy ... --branch="<staging|master>"`.
 
-End-to-end pipeline takes **17–34 minutes**. Watch progress at:
+End-to-end pipeline takes **~16 minutes**. Watch progress at:
 - `gh run list --branch <staging|master> --limit 3`
 - `gh run watch <run-id>`
 - Or the GitHub Actions tab on the repo.
@@ -142,7 +145,7 @@ git push origin HEAD:staging
 Staging URL: https://staging.verazadoptantes2.pages.dev
 GitHub Actions run: https://github.com/jurfalino/verazadoptantes2/actions
 ```
-The full pipeline (build-and-lint → migrate-staging → e2e → deploy-staging) takes **17–34 min**. The new build only goes live after `deploy-staging` finishes — not when the push lands on the branch. Check progress with:
+The full pipeline (build-and-lint → migrate-staging, build-cf → e2e-cf → deploy-staging) takes **~16 min**. The new build only goes live after `deploy-staging` finishes — not when the push lands on the branch. Check progress with:
 ```
 gh run list --branch staging --limit 3
 gh run watch <run-id>   # to follow live
