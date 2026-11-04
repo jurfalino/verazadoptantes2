@@ -311,3 +311,14 @@ Email OTP on the CF build, with no product-code change:
 - Notification emails still skip, because `isLocalRun()` holds: `APP_ENVIRONMENT` is unset at build.
 
 No test was added, removed, skipped or retried. Partition check: `partition OK: 361 tests in 17 legs`. `--list` with the CF config gives 363, the same as the base config.
+
+## Task 13 (D2): the CF-only failures — root causes and fixes
+
+No test was removed, skipped, retried or loosened. Every assertion is unchanged. Run of record: **41766750080** (35f3f096): dev 17/17 and CF 17/17 green, conclusion success; migrate and deploy skipped.
+
+| Test | Root cause | Evidence | Fix |
+|---|---|---|---|
+| `import-wizard.authed.spec.ts:247`, `:288`, `:316` ("duplicates") | The production build registers `/sw.js` (`layout.tsx`: `next dev` unregisters it, every other build registers it, and the worker calls `clients.claim()`). From then on the worker answers `/api/` GETs itself (`networkFirst`), and Playwright's `page.route` does not see requests a service worker issues. The wizard's `GET /api/adopters?sourceUrl=...` therefore reached the real server, found no match, and the wizard saved as new. The URL shape was never the problem (`ImportWizard.tsx:986`, `encodeURIComponent`). | CF server log of the failed run: `Adopter create: start { sourceUrl: 'https://www.facebook.com/groups/1/posts/2/' }` and a profile redirect, with no stub involved; retry showed `lookedUp === ''`. Reproduced locally on the CF build (3 failed / 5 passed) before the fix. | `test.use({ serviceWorkers: 'block' })` in the "duplicates" describe. Local, 3x each: dev 66/66, CF 66/66 (whole file). |
+| `merge-undo.authed.spec.ts:52` (flaky, passed on retry) | **Not found.** | Artifact `playwright-report-cf-authed-6`: the failed attempt's double-undo `POST /api/admin/duplicates/unmerge` has **no line in the wrangler log**, so the request never reached the worker handler; the retry's identical call logs `500 (8ms)` as the test expects. So the 500 path itself is fine and the app did not crash. Not reproducible locally on CF: 6/6 runs of the spec, and a run with a 7 s idle gap before the call (testing a stale keep-alive socket theory) also passed without any change. | None. Left as is; a stale-socket theory is unproven, so no speculative change was made. Watch it: if it recurs, capture `DEBUG=pw:api` and the connection state. |
+
+Other specs that stub an `/api/` GET with `page.route` are not affected today (they passed on CF in 41762495313), but the same trap applies to any new one: on the CF build use `serviceWorkers: 'block'`.
