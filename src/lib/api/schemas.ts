@@ -120,7 +120,7 @@ export const searchRequestSchema = z.object({
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
 
 export type ApiErrorCode =
-    | 'invalid_json' | 'invalid_request' | 'unauthorized' | 'forbidden' | 'not_found'
+    | 'invalid_json' | 'body_unreadable' | 'invalid_request' | 'unauthorized' | 'forbidden' | 'not_found'
     | 'full_name_required' | 'exact_requires_name_and_identifier' | 'invalid_phone'
     | 'invalid_document_id' | 'invalid_email' | 'fuzzy_requires_a_field'
     | 'activity_requires_exact' | 'activity_required' | 'external_id_required' | 'form_content_requires_adoption_request'
@@ -133,7 +133,7 @@ export type ApiErrorCode =
 /** Every error code a partner can get, published in the docs so clients can switch on them. */
 export type PublicApiErrorCode = ApiErrorCode;
 export const API_ERROR_CODES: PublicApiErrorCode[] = [
-    'invalid_json', 'invalid_request', 'unauthorized', 'forbidden', 'not_found',
+    'invalid_json', 'body_unreadable', 'invalid_request', 'unauthorized', 'forbidden', 'not_found',
     'full_name_required', 'exact_requires_name_and_identifier', 'invalid_phone',
     'invalid_document_id', 'invalid_email', 'fuzzy_requires_a_field',
     'activity_requires_exact', 'activity_required', 'external_id_required', 'form_content_requires_adoption_request',

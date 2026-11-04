@@ -456,6 +456,34 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         await api.post(`/api/v1/activities/${a.saved.activityId}/void`, { headers: auth() });
     });
 
+    test('troubleshooting: a retry never erases the failed call; each row says which client sent it and how it was decided', async () => {
+        // A call that crashed before saving anything (500, no record) — then the partner retries.
+        const ext = `logaudit-${STAMP}`;
+        const body = { mode: 'exact', person: { fullName: NAME, email: EMAIL }, activity: { activityType: 'observation', externalId: ext } };
+        const first = await (await search(body)).json();
+        expect(first.saved.activityId).toBeTruthy();
+        await api.post(`/api/v1/activities/${first.saved.activityId}/void`, { headers: auth() });
+        // The void frees the externalId; fake a crashed claim for it instead: status 500, nothing saved.
+        execD1(`INSERT INTO api_requests (id, key_id, owner_email, endpoint, mode, http_status, error_id, idempotency_key, profile_created, dry_run, degraded, created_at) VALUES ('crashed-${STAMP}', '${keyId}', '${ADMIN_EMAIL}', 'search', 'exact', 500, 'deadbeef', 'ext:${ext}-b', 0, 0, 0, strftime('%s','now') - 30)`);
+        const retry = await search({ ...body, activity: { ...body.activity, externalId: `${ext}-b` } });
+        expect(retry.status()).toBe(200);
+        const r = await retry.json();
+        // The failed call is still there (released, not deleted), with its errorId.
+        const crashed = JSON.parse(execD1(`SELECT http_status, error_id, (idempotency_key IS NULL) AS released FROM api_requests WHERE id = 'crashed-${STAMP}'`))[0].results;
+        expect(crashed).toEqual([{ http_status: 500, error_id: 'deadbeef', released: 1 }]);
+        // The retry's own row: the client that sent it, and how the match was decided (ids and verdicts, no values).
+        const row = JSON.parse(execD1(`SELECT user_agent, decision FROM api_requests WHERE id = '${r.requestId}'`))[0].results[0];
+        expect(row.user_agent).toBeTruthy();
+        const decision = JSON.parse(row.decision);
+        expect(decision.result).toBe(r.match);
+        expect(decision.saved.profileId).toBe(r.saved.profileId);
+        expect(Array.isArray(decision.candidates)).toBe(true);
+        expect(row.decision).not.toContain(EMAIL);
+        expect(row.decision).not.toContain(NAME);
+        await api.post(`/api/v1/activities/${r.saved.activityId}/void`, { headers: auth() });
+        execD1(`DELETE FROM api_requests WHERE id = 'crashed-${STAMP}'`);
+    });
+
     test('void: only once; the API-created profile goes only when nothing is left on it', async () => {
         const first = await api.post(`/api/v1/activities/${secondRecordId}/void`, { headers: auth() });
         expect(first.status()).toBe(200);

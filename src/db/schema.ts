@@ -1164,6 +1164,11 @@ export const apiRequests = sqliteTable("api_requests", {
     voidedBy: text("voided_by"),
     durationMs: integer("duration_ms"),
     errorCode: text("error_code"),             // a refused call's error.code (kept after the body purge)
+    userAgent: text("user_agent"),             // which client / tool sent the call (≤200 chars; never the IP)
+    cfRay: text("cf_ray"),                     // Cloudflare's id of the edge request
+    clientCountry: text("client_country"),     // CF-IPCountry
+    decision: text("decision"),                // JSON: how an exact match was decided (ids, field names, verdicts — no values)
+    degraded: integer("degraded").notNull().default(0), // 1 = a D1 fallback shrank this call's search results
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
     keyTimeIdx: index("idx_api_requests_key_time").on(table.keyId, table.createdAt),

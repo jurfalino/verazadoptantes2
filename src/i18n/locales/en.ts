@@ -3428,6 +3428,12 @@ export const en = {
         },
     },
     apiReview: {
+        unfinished: 'Unfinished',
+        unfinished_hint: 'The call started but never finished (the server cut it off or crashed): look up its requestId in the log.',
+        degraded: 'Partial answer',
+        degraded_hint: 'A momentary database problem made the search skip a step: results may be missing.',
+        client: 'Sent by',
+        decision: 'How it was decided',
         search_placeholder: 'Search by requestId, externalId or searched name / email / phone',
         search: 'Search',
         filter_mode: 'Search type',

@@ -984,7 +984,8 @@ async function runDiscoveryMode(
             else onBehalfByAdopter.set(r.adopterId, [r.onBehalfOf]);
         }
     } catch (e) {
-        logger.warn('findAdopters: onBehalfOf fetch fallback hit', { error: e instanceof Error ? e.message : String(e) });
+        options.trace?.degraded.push('relatives');
+        logger.warn('findAdopters: onBehalfOf fetch fallback hit', { requestId: options.trace?.requestId, error: e instanceof Error ? e.message : String(e) });
     }
 
     const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...weakPhoneIds, ...nameTokenIds]);
@@ -1012,7 +1013,9 @@ async function runDiscoveryMode(
                     );
                 }
                 return db.select().from(adopters).where(and(...conds)).catch((e: unknown) => {
+                    options.trace?.degraded.push('profile_lookup');
                     logger.warn('findAdopters: D1 fallback hit (extra adopter profile lookup)', {
+                        requestId: options.trace?.requestId,
                         adopterId: id,
                         userCountry,
                         error: e instanceof Error ? e.message : String(e),
@@ -1415,7 +1418,8 @@ async function runDiscoveryMode(
                 .filter(m => m.verdict === 'same').map(m => m.adopterId);
             if (same.length > 0) ({ main: mainResults, low: lowRelevanceResults } = promoteSame(mainResults, lowRelevanceResults, same));
         } catch (e) {
-            logger.warn('findAdopters: identity verdict failed, ranking as today', { origin: caller.origin, ...redactedErrorFields(e) });
+            options.trace?.degraded.push('identity_ranking');
+            logger.warn('findAdopters: identity verdict failed, ranking as today', { requestId: options.trace?.requestId, origin: caller.origin, ...redactedErrorFields(e) });
         }
     }
 

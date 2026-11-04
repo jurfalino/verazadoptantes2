@@ -11,6 +11,7 @@ import type { DiscoveryMatch } from '@/app/actions/types';
 import { ApiError, claimIdempotencyKey, enforceDailyCap, replayIdempotent, requireScope, type ApiCallContext, type ApiResult } from './handler';
 import { buildProfileSummaries, exactOutcomeOf, findIdentifierHits, ownerCountry, profileUrl, ratingFields } from './profiles';
 import { bestMatchFor, saveApiActivity } from './records';
+import { judgeHits } from './exactVerdict';
 import { environmentForHost, importModeOn } from './keys';
 import { isExampleData } from './docScenarios';
 import { apiSocialHandles, checkSearchRules, searchRequestSchema, type ApiRisk, type ExactResponse, type FuzzyResponse, orderCandidates, saveActionOf, type ProfileSummary, type SearchRequest, type ApiWarning } from './schemas';
@@ -65,6 +66,9 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
         ...cleanup.cleaned.map(c => ({ field: c.field, code: 'value_cleaned' as const, reason: c.reason, message: `${c.field}: ${c.reason === 'first_valid_email' ? 'only the first valid email was kept' : 'only the phone number(s) were kept'}` })),
     ];
 
+    // What the cleanup changed, by field and reason only (no values): part of "why did it do that?".
+    if (warnings.length) ctx.log.decision = { cleanup: warnings.map(w => ({ field: w.field, code: w.code, reason: w.reason })) };
+
     const problems = checkSearchRules(req);
     if (problems.length) {
         const [first] = problems;
@@ -106,20 +110,37 @@ export async function runSearch(ctx: ApiCallContext): Promise<ApiResult> {
 
 async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {
     let hits: Awaited<ReturnType<typeof findIdentifierHits>>;
+    let country: string | null = null;
     try {
         // The rescuer's country decides how a phone is read: a failed read must not guess.
-        const country = req.person.phone ? await ownerCountry(ctx.db, ctx.key.ownerEmail, ctx.requestId) : null;
+        country = req.person.phone ? await ownerCountry(ctx.db, ctx.key.ownerEmail, ctx.requestId) : null;
         hits = await findIdentifierHits(ctx.db, req.person, ctx.requestId, country);
     } catch (e) {
         if (e instanceof ApiError) throw e;
-        logger.error('api: identifier lookup failed', e, { requestId: ctx.requestId, keyId: ctx.key.id });
-        throw new ApiError(503, 'temporarily_unavailable', 'could not search for the person right now; nothing was saved — retry in a moment', { 'Retry-After': '5' });
+        const errorId = logger.error('api: identifier lookup failed', e, { requestId: ctx.requestId, keyId: ctx.key.id });
+        throw new ApiError(503, 'temporarily_unavailable', 'could not search for the person right now; nothing was saved — retry in a moment', { 'Retry-After': '5' }).withErrorId(errorId);
     }
     // The identity verdict decides (spec 2026-11-02): a shared DNI, phone, email or social account
     // is the same person only with a compatible name; junk identifiers link nobody.
     const outcome = exactOutcomeOf(req.person, hits);
     const ids = outcome.result === 'found' ? [outcome.profileId, ...outcome.otherProfileIds] : outcome.result === 'ambiguous' ? outcome.profileIds : [];
     ctx.log.outcome = outcome.result;
+    // How it was decided, kept on the row past the 90-day body purge: profile ids, which
+    // identifier kinds they shared and with how many names, the verdict — never a value.
+    const verdicts = judgeHits(req.person, hits);
+    ctx.log.decision = {
+        ...ctx.log.decision,
+        phoneCountry: country,
+        candidates: hits.candidates.map(c => ({
+            profileId: c.profileId,
+            matchedOn: hits.matchedOn.get(c.profileId) ?? [],
+            shared: (hits.shared.get(c.profileId) ?? []).map(s => ({ kind: s.kind, namesHolding: s.namesHolding })),
+            verdict: verdicts.get(c.profileId) ?? null,
+        })),
+        result: outcome.result,
+        ...(outcome.result === 'found' ? { profileId: outcome.profileId, nameMatchedAs: outcome.nameMatchedAs, otherProfileIds: outcome.otherProfileIds } : {}),
+        ...(outcome.result === 'ambiguous' ? { reason: outcome.reason, profileIds: outcome.profileIds } : {}),
+    };
 
     // Describe the person as they stood BEFORE this call: a rescue's own
     // just-saved request must not flag the person as "asking too often".
@@ -156,6 +177,7 @@ async function runExact(ctx: ApiCallContext, req: SearchRequest): Promise<ApiRes
         return { status: 200, body };
     }
     const s = await saveApiActivity(ctx, req, outcome, hits.matchedOn, summaries);
+    ctx.log.decision = { ...ctx.log.decision, saved: { action: saveActionOf(outcome.result, s.profileCreated), profileId: s.profileId, profileCreated: s.profileCreated } };
     body.saved = {
         action: saveActionOf(outcome.result, s.profileCreated),
         activityId: s.activityId, activityUrl: s.activityUrl, profileId: s.profileId, profileUrl: s.profileUrl, contactsAdded: s.contactsAdded,
@@ -187,7 +209,14 @@ export function fuzzyIdentityOf(person: SearchRequest['person']): PersonInput {
 
 async function runFuzzy(ctx: ApiCallContext, req: SearchRequest): Promise<ApiResult> {
     const { findAdoptersAsViewer } = await import('@/app/actions/findAdopters');
-    const res = await findAdoptersAsViewer({ raw: fuzzyQueryOf(req.person) }, { enrich: true, identity: fuzzyIdentityOf(req.person) }, ctx.key.ownerEmail);
+    const trace = { requestId: ctx.requestId, degraded: [] as string[] };
+    const res = await findAdoptersAsViewer({ raw: fuzzyQueryOf(req.person) }, { enrich: true, identity: fuzzyIdentityOf(req.person), trace }, ctx.key.ownerEmail);
+    // A D1 blip inside the search shrinks or reorders results without failing: the row and the log say so.
+    if (trace.degraded.length) {
+        ctx.log.degraded = trace.degraded.length;
+        ctx.log.decision = { ...ctx.log.decision, degradedSteps: [...new Set(trace.degraded)] };
+        logger.warn('api: fuzzy answer degraded by a D1 fallback', { requestId: ctx.requestId, keyId: ctx.key.id, steps: [...new Set(trace.degraded)] });
+    }
     if (res.validationError) {
         logger.info('api: fuzzy query refused by the search engine', { requestId: ctx.requestId, validationError: res.validationError });
         throw new ApiError(422, 'invalid_request', `the search engine refused this query (${res.validationError})`);
