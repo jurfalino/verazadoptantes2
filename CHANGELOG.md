@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.22] - 2026-11-04
+
+### Fixed — a release more than 14 days after the last one could not deploy
+The deploy map (which build an open tab is forwarded to) only looked at the last 14 days,
+so the 2.58.21 production release, 16 days after 2.56.207, found nothing and stopped before
+deploying. The build that is live right now is now always mapped, however old: its tabs are
+the ones open and it already runs on the migrated schema. Older builds still need to be
+inside the window. Rules: `src/lib/buildDeployMap.test.ts`.
+
 ## [2.58.21] - 2026-11-04
 
 ### Fixed — profile notes from a form showed free-text answers as code
