@@ -13,7 +13,6 @@ import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { readProfileHouseholds, EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/lib/profileHouseholds';
 import { profileIdentityView, undoableRenameId, type ProfileIdentityView } from '@/domain/profileIdentity';
-import { deserializeContactEntries } from '@/lib/contactEntries';
 import { profileReturnPath } from '@/domain/profileReturnPath';
 
 export default async function AdopterPage({
@@ -228,7 +227,7 @@ export default async function AdopterPage({
     // Name / age / «Menor de edad» for the header, and the one rename «Deshacer» is offered on
     // (owner team, admin or moderator — the server checks again).
     const identity: ProfileIdentityView | null = !isNew && adopter
-        ? profileIdentityView(adopter, deserializeContactEntries(adopter.contactEntries))
+        ? profileIdentityView(adopter)
         : null;
     const renameUndoId = !isNew && adopter && (isOwnerViewer || isOrgMateOfOwner || isModeratorOrAdmin)
         ? undoableRenameId(history, adopter.name)

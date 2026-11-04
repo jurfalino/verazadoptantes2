@@ -784,7 +784,6 @@ export const pt = {
         api_tool: 'API · {tool}',
     },
     adopter: {
-        known_as: 'Também conhecido/a como:',
         minor_tag: 'Menor de idade',
         rename_hint: 'Se você mudar o nome, o anterior fica como «Também conhecido/a como» e avisamos quem cadastrou o perfil.',
         rename_failed: 'Não foi possível mudar o nome.',
@@ -1164,10 +1163,6 @@ export const pt = {
         hh_err_failed: 'Não foi possível salvar. Tente de novo.',
         hh_err_partial: 'Ficou salvo, mas o histórico ou os avisos não terminaram de ser registrados.',
         hh_err_gift_conflict: 'Alguém está criando esse perfil agora. Espere alguns segundos e atualize.',
-        known_as_remove: 'Tirar «{name}» de «Também conhecido/a como»',
-        known_as_remove_title: 'Tirar «{name}» de «Também conhecido/a como»?',
-        known_as_remove_body: 'Buscar «{name}» deixa de encontrar este perfil. Use só se esse nome estiver errado.',
-        known_as_remove_failed: 'Não foi possível tirar o nome.',
         notes: 'Notas',
         placeholder_notes: 'Observações adicionais, idade, comportamento, etc.',
         no_notes: 'Sem notas.',
