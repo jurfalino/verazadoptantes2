@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.21] - 2026-11-04
+
+### Fixed — profile notes from a form showed free-text answers as code
+
+Opening a profile from an application pre-fills its notes with the applicant's
+answers. Free-text answers came out as `rental: {"open":"…"}`; they now read as
+the applicant wrote them (`rental: Alquilo, el dueño acepta gatos`). Other answers
+are listed as before. Rules: `src/domain/formNotes.test.ts`.
+
 ## [2.58.20] - 2026-11-04
 
 ### Changed — CI: final-review fixes for the Cloudflare-build gate

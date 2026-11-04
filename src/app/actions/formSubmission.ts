@@ -12,6 +12,7 @@ import { createNotification, resolveDisplayName } from './notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdmin } from '@/config/admins';
 import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';
+import { answerNoteLines } from '@/domain/formNotes';
 import { logger, generateErrorId } from '@/lib/logger';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 
@@ -82,17 +83,8 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
 
         if (row.answersJson) {
             try {
-                const answers = JSON.parse(row.answersJson) as Record<string, unknown>;
-                const keys = Object.keys(answers).filter(k => !['selfie', 'name', 'email', 'phone', 'address', 'latitude', 'longitude'].includes(k));
-                if (keys.length > 0) {
-                    const extra: string[] = [];
-                    for (const k of keys.slice(0, 15)) {
-                        const v = answers[k];
-                        if (v != null && v !== '' && typeof v !== 'object') extra.push(`${k}: ${String(v)}`);
-                        else if (typeof v === 'object' && v !== null && !Array.isArray(v)) extra.push(`${k}: ${JSON.stringify(v)}`);
-                    }
-                    if (extra.length > 0) notes += '\n\n' + extra.join('\n');
-                }
+                const extra = answerNoteLines(JSON.parse(row.answersJson) as Record<string, unknown>);
+                if (extra.length > 0) notes += '\n\n' + extra.join('\n');
             } catch (e) {
                 logger.warn('getFormSubmissionPrefill: answersJson parse failed', {
                     submissionId,
