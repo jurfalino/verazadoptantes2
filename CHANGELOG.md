@@ -2,7 +2,7 @@
 
 All notable changes to BuenAdoptante are documented here.
 
-## [2.58.16] - 2026-11-04
+## [2.58.17] - 2026-11-04
 
 ### Changed — CI: e2e also runs on the real Cloudflare build (audit 2026-11-03, phases C + D)
 - New jobs `build-cf` + `e2e-cf`: the same 17 legs run against the production bundle served by
@@ -17,6 +17,22 @@ All notable changes to BuenAdoptante are documented here.
 - Manual experiment runs (`workflow_dispatch`) run build and tests only — never migrations or deploys.
 - The partition check also fails the build if the Cloudflare matrix drifts from the e2e one or its config selects
   different tests. Today: 362 tests, both paths identical.
+
+## [2.58.16] - 2026-11-04
+
+### Fixed — independent review of 2.58.15 (before production)
+
+- A call that crashed right after creating a profile, once released for a retry, no longer
+  holds its externalId: the retry adds the activity to that profile instead of being refused
+  forever as `external_id_reused` (blocker, with an e2e test).
+- Error scrubbing cuts everything after `params:`, not just its first line: a pretty-printed
+  request body or a multi-line note no longer leaks its later lines; an Error placed in log
+  data is reduced to its scrubbed message; Dates and URLs keep their value.
+- A released abandoned call becomes `504 abandoned` instead of counting as a call that ran
+  (daily limits, usage), and shows as such in Admin → API.
+- The partner's externalId (free text that could be a document or an email) stays out of
+  Axiom; «api: call started» is logged after the key check, so keyless scanners don't double
+  the log.
 
 ## [2.58.15] - 2026-11-04
 

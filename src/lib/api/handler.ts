@@ -328,7 +328,9 @@ export async function replayIdempotent(ctx: ApiCallContext, opts: { readOnly?: b
         if (!opts.readOnly) {
             await ctx.db.update(apiRequests).set({
                 idempotencyKey: null,
-                ...(abandoned && prior.httpStatus === 0 ? { errorCode: 'abandoned', outcome: 'error' } : {}),
+                // An abandoned claim (status 0) would still count as a call that ran (daily caps,
+                // usage): it becomes the timeout it was.
+                ...(abandoned && prior.httpStatus === 0 ? { httpStatus: 504, errorCode: 'abandoned', outcome: 'error' } : {}),
             }).where(eq(apiRequests.id, prior.id));
             logger.info('api: failed call released for a retry', { requestId: ctx.requestId, originalRequestId: prior.id, keyId: ctx.key.id, originalStatus: prior.httpStatus, originalErrorId: prior.errorId });
         }
@@ -439,9 +441,6 @@ export async function handleApiCall(
 ): Promise<Response> {
     const requestId = crypto.randomUUID();
     const client = clientInfoOf(request);
-    // First line of every call: one the worker never finishes (time / CPU limit, a crash
-    // outside every catch) still leaves this trace with its requestId (2026-11-04 audit).
-    logger.info('api: call started', { requestId, endpoint, method: request.method, ...client });
     let response: Response;
     try {
         response = await answerApiCall(request, endpoint, run, opts, requestId, client);
@@ -512,6 +511,10 @@ async function answerApiCall(
         logger.info('api: key refused by access status', { requestId, endpoint, keyId: found.id, refusal: access.refusal });
         return json(403, errorBody(requestId, origin, access.refusal, 'this key\'s owner is blocked from the API; write to us if you think this is a mistake'), requestId);
     }
+    // First line of every authenticated call: one the worker never finishes (time / CPU limit,
+    // a crash) still leaves this trace (2026-11-04 audit). After the key check, so scanners
+    // without a key don't double the log — their refusals are logged already.
+    logger.info('api: call started', { requestId, endpoint, method: request.method, keyId: found.id, ...client });
     // Before approval a self-created key works with the pending limits: every cap below
     // (key, person, call ceiling, /me, RateLimit headers) reads the lowered values.
     const key = access.limited ? withPendingCaps(found) : found;
@@ -574,7 +577,7 @@ async function answerApiCall(
             body = errorBody(requestId, origin, e.code, e.message, e.errorId, e.extra);
             headers = { ...headers, ...e.headers };
         } else {
-            errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context, externalId: ctx.log.externalId, recordId: ctx.log.recordId, profileCreated: ctx.log.profileCreated });
+            errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context, recordId: ctx.log.recordId, profileCreated: ctx.log.profileCreated });
             status = 500;
             body = errorBody(requestId, origin, 'server_error', 'unexpected error', errorId);
         }
@@ -598,7 +601,8 @@ async function answerApiCall(
     logger.info('api: call', {
         requestId, keyId: key.id, endpoint, mode: ctx.log.mode, outcome: ctx.log.outcome, status, errorId,
         errorCode: status >= 400 ? ((body.error as { code?: string } | undefined)?.code ?? null) : null,
-        dryRun: ctx.dryRun, externalId: ctx.log.externalId ?? null, recordId: ctx.log.recordId ?? null,
+        // Not the externalId: partner-chosen free text (it could be a DNI or an email) — it stays in D1.
+        dryRun: ctx.dryRun, recordId: ctx.log.recordId ?? null,
         profileCreated: !!ctx.log.profileCreated, degraded: ctx.log.degraded ?? 0,
         durationMs: Date.now() - startedAt, ...client,
     });

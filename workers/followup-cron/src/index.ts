@@ -80,9 +80,11 @@ async function purgeApiLog(env: Env, ctx: ExecutionContext): Promise<void> {
                AND (request_body IS NOT NULL OR response_body IS NOT NULL)`
         ).run();
         const rows = await env.DB.prepare(
-            // A call that SAVED something (a record, or a profile whose record then failed) keeps its slim row as long as the record: it is the record's
-            // provenance, what refuses a reused externalId and what lets the partner void it. The
-            // record itself already says who registered whom, so this keeps nothing new.
+            // A call that SAVED something (a record, or a profile whose record then failed) keeps its
+            // slim row as long as the record: it is the record's provenance and what lets the
+            // partner void it (and, while not released for a retry, what refuses a reused
+            // externalId). The record itself already says who registered whom, so this keeps
+            // nothing new; its client and decision columns hold no contact values.
             `DELETE FROM api_requests WHERE created_at < strftime('%s','now') - ${API_LOG_RETENTION_DAYS} * 86400 AND record_id IS NULL AND profile_created = 0`
         ).run();
         log(env, 'info', { message: 'api log retention', bodiesCleared: bodies.meta?.changes ?? 0, rowsDeleted: rows.meta?.changes ?? 0 }, ctx);
