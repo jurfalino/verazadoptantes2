@@ -12,42 +12,6 @@ test.describe('Duplicate Detection UX', () => {
 
     // ── #1 Profile Banner ─────────────────────────────────────────
 
-    // SKIPPED — system-detected duplicate banner regressed in v2.12.1-19 (deleted with AdopterProfile.tsx).
-    // Re-enable once the banner is restored on /adopter/[id]. See CHANGELOG v2.12.1-24.
-    test.skip('System duplicate banner appears on profile with candidates', async ({ page }) => {
-        // María (test-adopter-1) has a medium-confidence candidate pair with Ana
-        await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);
-        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 30000 });
-
-        // Amber banner should show "Possible duplicate of" / "Posible duplicado de" with Ana's name
-        const banner = page.getByText(/Possible duplicate of|Posible duplicado de/i).first();
-        await expect(banner).toBeVisible({ timeout: 30000 });
-
-        // Ana's name should be a clickable link inside the banner
-        const anaLink = page.locator(`a[href="/adopter/${TEST_ADOPTERS.ANA}"]`).first();
-        await expect(anaLink).toBeVisible({ timeout: 30000 });
-
-        // Match type badges should be visible (phone, name_word from seed)
-        await expect(page.getByText('phone').first()).toBeVisible({ timeout: 30000 });
-    });
-
-    // SKIPPED — same regression as above. Re-enable when the banner is restored.
-    test.skip('System duplicate banner can be dismissed', async ({ page }) => {
-        await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);
-        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 30000 });
-
-        // Banner should be visible initially
-        const banner = page.getByText(/Possible duplicate of|Posible duplicado de/i).first();
-        await expect(banner).toBeVisible({ timeout: 30000 });
-
-        // Dismiss icon (✕ button) — click it
-        const dismissBtn = page.locator('button').filter({ hasText: '✕' }).first();
-        await dismissBtn.click();
-
-        // Banner should disappear
-        await expect(banner).not.toBeVisible({ timeout: 30000 });
-    });
-
     test('No duplicate banner on profile without candidates', async ({ page }) => {
         // Nueva Persona (test-adopter-5) has no duplicate candidates
         await page.goto(`/adopter/${TEST_ADOPTERS.NUEVA}`);
@@ -106,5 +70,22 @@ test.describe('Duplicate Detection UX', () => {
         // The flagging dialog should now open — verify it has relevant content
         // The dialog shows a search input and system-suggested duplicate matches
         await expect(page.getByText(/duplicate|duplicado/i).first()).toBeVisible({ timeout: 30000 });
+    });
+
+    // Last in the file on purpose: placed first, the dev server dropped the `goto('/')` of the test after the fast
+    // "No duplicate banner" one ([Error: aborted], 3 of 3 local runs): the shared dev-server cause in the e2e audit.
+    // The profile's pending-duplicate line (AdopterProfileV2: «Posible duplicado de <name>»,
+    // testid profile-pending-dup) replaced the v2.12.1-19 banner. The seed has one medium pair,
+    // María <-> Ana; a viewer who owns neither side sees the informational form (no «Revisar»).
+    test('The pending-duplicate line appears on the profile and links to the other profile', async ({ page }) => {
+        await page.goto(`/adopter/${TEST_ADOPTERS.MARIA}`);
+        await expect(page.getByRole('heading', { name: TEST_NAMES.MARIA })).toBeVisible({ timeout: 30000 });
+
+        const banner = page.getByTestId('profile-pending-dup');
+        await expect(banner).toBeVisible({ timeout: 30000 });
+        await expect(banner.getByText(/Possible duplicate of|Posible duplicado de/i)).toBeVisible({ timeout: 30000 });
+
+        // The other profile's name is a link inside the line
+        await expect(banner.getByTestId('profile-pending-dup-link')).toHaveAttribute('href', `/adopter/${TEST_ADOPTERS.ANA}`);
     });
 });

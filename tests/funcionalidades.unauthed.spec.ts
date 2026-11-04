@@ -8,7 +8,9 @@ import { dismissCountryBanner } from './helpers';
  * (plus the brand name "Google"), not translated copy, so they hold in every locale.
  */
 test.describe('features page, logged out', () => {
-    test.skip(({ storageState }) => !!storageState, 'logged-out behaviour only');
+    // `storageState` is `{ cookies: [], origins: [] }` in the unauthed project (truthy),
+    // a file path in the signed-in ones: skip only when there is a session to carry.
+    test.skip(({ storageState }) => typeof storageState === 'string' || (!!storageState && (storageState.cookies?.length ?? 0) > 0), 'logged-out behaviour only');
 
     test('the search feature opens the search without an account', async ({ page }) => {
         await page.goto('/funcionalidades');
