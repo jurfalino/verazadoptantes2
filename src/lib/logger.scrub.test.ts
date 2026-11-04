@@ -22,6 +22,17 @@ describe('scrubDbParams — a failed query keeps its SQL, never its values (2026
         expect(JSON.stringify(out)).not.toContain('ana@x.com');
         expect(out.at).toBe('2026-11-04T00:00:00.000Z');
     });
+    it('a value line that merely starts with "at" is not kept as a stack frame', () => {
+        expect(scrubDbParams('Failed query: x\nparams: a,\n   at casa de Ana Gómez 11 4455-6677')).toBe('Failed query: x\nparams: [redacted]');
+    });
+    it('never throws: circular data, BigInt, self-returning toJSON, class instances', () => {
+        const circ: Record<string, unknown> = {}; circ.self = circ;
+        const deep = { a: { b: { c: { d: { e: { f: circ, n: BigInt(1) } } } } } };
+        const selfJson = { toJSON() { return selfJson; } };
+        expect(() => scrubLogValues({ deep, selfJson, q: new URLSearchParams('q=Ana+Gomez') })).not.toThrow();
+        const out = scrubLogValues({ q: new URLSearchParams('q=Ana+Gomez'), m: new Map([['k', 'Ana']]) }) as Record<string, unknown>;
+        expect(out).toEqual({ q: '[URLSearchParams]', m: '[Map]' });
+    });
     it('walks nested log data (a warn that passes error.message)', () => {
         const out = scrubLogValues({ requestId: 'r1', error: 'Failed query: update x set y = ?\nparams: 11 4455-6677', nested: { list: ['params: Ana'] } });
         expect(out).toEqual({ requestId: 'r1', error: 'Failed query: update x set y = ?\nparams: [redacted]', nested: { list: ['params: [redacted]'] } });
