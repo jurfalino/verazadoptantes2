@@ -73,3 +73,6 @@ docs/code_quality_audit.md
 .dev.vars
 local.db-shm
 local.db-wal
+/e2e-heap.log
+/e2e-heap-probe.txt
+/e2e-heap-sampler.pid

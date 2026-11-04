@@ -5,6 +5,17 @@ on:
     branches: [master, staging]
   pull_request:
     branches: [master, staging]
+  # Experiments on a non-deploy branch (e.g. ci/e2e-reliability): runs
+  # version-guard, build-and-lint and e2e ONLY. Every migrate-* and deploy-*
+  # job is `github.event_name == 'push'` AND a branch check, so a dispatch —
+  # whatever --ref it targets — can never migrate or deploy.
+  workflow_dispatch:
+    inputs:
+      next_dev_args:
+        description: 'Extra flags appended to `next dev` in the e2e legs (e.g. --disable-source-maps)'
+        required: false
+        default: ''
+        type: string
 
 # Serialise per branch, at the WORKFLOW level.
 #
@@ -348,7 +359,7 @@ jobs:
     # in `needs`, that skips the deploy: on 2026-09-04 production merged green
     # and silently stayed on the previous version.
     timeout-minutes: 30
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     # v2.56.131: deliberately NOT `needs: [build-and-lint]`. e2e installs its
     # own dependencies and runs its own server; it consumes nothing the build
     # produces, so waiting for it only added ~2 minutes to the critical path.
@@ -440,16 +451,33 @@ jobs:
       # that cannot finish would be killed and hide the first failure. A leg
       # over E2E_WARN_AT_SEC (15 min) prints a warning, green or not.
       # Root fix (e2e on the Cloudflare build): .agents/plans/e2e-shard-the-suite.md.
+      # Heap log (2026-11-03): scripts/e2e-heap-sampler.sh appends
+      # "<epoch> <rss_kb> <heap_used_mb>" every 10 s to e2e-heap.log, read from
+      # the probe that playwright.config.ts loads into next-server. It cannot
+      # fail the job (always exits 0) and is stopped below even when the tests
+      # fail or time out.
+      - name: Start heap sampler
+        run: |
+          echo "E2E_HEAP_PROBE=$PWD/e2e-heap-probe.txt" >> "$GITHUB_ENV"
+          E2E_HEAP_PROBE="$PWD/e2e-heap-probe.txt" nohup bash scripts/e2e-heap-sampler.sh >/dev/null 2>&1 &
+          echo $! > e2e-heap-sampler.pid
+
       - name: Run Playwright tests
         timeout-minutes: 25
         run: bash scripts/ci-e2e.sh ${{ matrix.projects }}
         env:
+          # Empty on push; set by the workflow_dispatch input.
+          E2E_NEXT_DEV_ARGS: ${{ github.event.inputs.next_dev_args }}
           E2E_STEP_BUDGET_SEC: 1500
           E2E_WARN_AT_SEC: 900
           CI: true
           SKIP_ENV_VALIDATION: 'true'
           AUTH_SECRET: ${{ secrets.AUTH_SECRET != '' && secrets.AUTH_SECRET || 'fallback_test_secret_for_ci_environments_only_32_chars' }}
           AUTH_URL: http://localhost:3000
+
+      - name: Stop heap sampler
+        if: always()
+        run: kill "$(cat e2e-heap-sampler.pid 2>/dev/null)" 2>/dev/null || true
 
       - name: Upload test report
         uses: actions/upload-artifact@v4
@@ -463,6 +491,7 @@ jobs:
             playwright-report/
             playwright-report-attempt-1/
             e2e-attempt-1.log
+            e2e-heap.log
           retention-days: 14
 
   deploy-staging:

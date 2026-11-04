@@ -101,7 +101,9 @@ export default defineConfig({
    * miniflare ECONNRESET race that intermittently wedged the e2e job (see
    * v2.12.1-30 CI failure analysis). */
   webServer: {
-    command: 'node scripts/setup-test-db.js && npx next dev',
+    // E2E_NEXT_DEV_ARGS: extra `next dev` flags, set only by the
+    // workflow_dispatch experiment input (ci.yml); empty by default.
+    command: `node scripts/setup-test-db.js && npx next dev${process.env.E2E_NEXT_DEV_ARGS ? ` ${process.env.E2E_NEXT_DEV_ARGS}` : ''}`,
     url: 'http://localhost:3000/api/ready',
     reuseExistingServer: !process.env.CI,
     // CI: 4 minutes. A cold `next dev` after a dependency-cache miss on a slow
@@ -113,7 +115,8 @@ export default defineConfig({
       // the workflow: half of RAM, capped at 8 GB). `next dev` restarts as it
       // nears the heap limit, and those restarts are what fail tests mid-flight
       // (3 per run in the view-as leg, 2026-10-22). Locally: 4 GB as before.
-      NODE_OPTIONS: `--max-old-space-size=${process.env.E2E_NODE_HEAP_MB || 4096} --expose-gc`,
+      // E2E_HEAP_PROBE (CI only) adds the heap probe that feeds e2e-heap.log.
+      NODE_OPTIONS: `--max-old-space-size=${process.env.E2E_NODE_HEAP_MB || 4096} --expose-gc${process.env.E2E_HEAP_PROBE ? ` --require ${path.resolve(__dirname, 'scripts/e2e-heap-probe.cjs')}` : ''}`,
       // A fixed build id so the deploy-skew guard is active here exactly as in
       // production (and identical locally and in CI, where GITHUB_SHA would
       // otherwise be picked up). tests/deploy-skew.authed.spec.ts relies on it.
