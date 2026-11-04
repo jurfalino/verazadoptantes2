@@ -462,6 +462,15 @@ describe('removeHouseholdMembership — «No vive acá»', () => {
         expect(historyOf(profileId).at(-1)).toMatchObject({ changed_by: STRANGER, kind: 'contribution', changes: { household_removed_by_host: { hostId: 'pedro', hostName: 'Pedro Paez', householdId: 'hh-pedro', reason: 'mistake' } } });
         await expectNotApprover(STRANGER, 'pedro');
     });
+
+    it('«Lo cargué por error» (Q1): the person leaves the household, no correction is remembered, and the profile itself stays', async () => {
+        const { membershipId, profileId } = await strangerAddsLucas();
+        expect(membershipsIn('hh-pedro').map(m => m.adopter_id)).toContain(profileId);
+        await removeHouseholdMembership({ membershipId, reason: 'mistake' });
+        expect(membershipsIn('hh-pedro').map(m => m.adopter_id)).not.toContain(profileId);
+        expect(sqlite.prepare('SELECT id FROM household_corrections WHERE adopter_id = ?').all(profileId)).toHaveLength(0);
+        expect(sqlite.prepare('SELECT id FROM adopters WHERE id = ? AND deleted_at IS NULL').all(profileId)).toHaveLength(1);
+    });
 });
 
 describe('updateHouseholdMembership — the relationship', () => {

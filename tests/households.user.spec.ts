@@ -1,7 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 import {
-    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, execD1Batch, fillAddForm, housemates, insertHousehold, insertProfile, isDbNull, memberMenu, memberMenuPanel, profileNamed, rows, saveAsNew,
+    ADMIN_EMAIL, USER_EMAIL, cleanupProfiles, createProfileViaApi, execD1, execD1Batch, fillAddForm, housemates, householdSql, insertHousehold, insertProfile, isDbNull, memberMenu, memberMenuPanel, profileNamed, profileSql, rows, saveAsNew,
 } from './householdFixtures';
 
 /**
@@ -47,6 +47,9 @@ const MARTA_PHONE = `11 5${s.slice(-3)}-${s.slice(-7, -3)}`;
 const ROSA_PHONE = `11 6${s.slice(-3)}-${s.slice(-7, -3)}`;
 
 const FOSTER_ANIMAL = `test-hh-fixture-an-${stamp}`;
+// Test 10's fixture (own household of two siblings, plus two more homes the owner also lives in), made once in beforeAll.
+const [A1_OWN, A1_M1, A1_M2, A1_A, A1_B] = ['own', 'm1', 'm2', 'a', 'b'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
+const [A1_HH_OWN, A1_HH_A, A1_HH_B] = ['own', 'ha', 'hb'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
 let PEDRO = '';
 let ROSA = '';
 let admin: APIRequestContext;
@@ -67,12 +70,25 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
             // Rosa fosters an animal right now: a transit on her «Actividad», so on her household row too.
             `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${FOSTER_ANIMAL}', 'Michi ${stamp}', 'cat', '${ADMIN_EMAIL}', strftime('%s','now','-3 days'), strftime('%s','now','-3 days'))`,
             `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('test-hh-fixture-pl-${stamp}', '${FOSTER_ANIMAL}', '${ROSA}', 'foster', strftime('%s','now','-2 days'), '${ADMIN_EMAIL}')`,
+            // Test 10 (audit A1): one fixture for both of its viewports, written in this same batch.
+            profileSql({ id: A1_OWN, name: `Dueno Menu ${stamp}`, owner: USER_EMAIL }),
+            profileSql({ id: A1_M1, name: `Primero Menu ${stamp}`, owner: USER_EMAIL }),
+            profileSql({ id: A1_M2, name: `Segundo Menu ${stamp}`, owner: USER_EMAIL }),
+            ...householdSql(A1_HH_OWN, A1_OWN, [
+                { id: `${A1_HH_OWN}-1`, adopterId: A1_M1, relationship: 'sibling', addedBy: USER_EMAIL },
+                { id: `${A1_HH_OWN}-2`, adopterId: A1_M2, relationship: 'sibling', addedBy: USER_EMAIL },
+            ]),
+            // Also in two more homes (so «+ Agregar» asks «¿En qué hogar?»); an adult, so «¿Qué pasó con …?» shows.
+            profileSql({ id: A1_A, name: `Ana Menu ${stamp}`, owner: USER_EMAIL }),
+            profileSql({ id: A1_B, name: `Beto Menu ${stamp}`, owner: USER_EMAIL }),
+            ...householdSql(A1_HH_A, A1_A, [{ id: `${A1_HH_A}-x`, adopterId: A1_OWN, relationship: 'sibling', addedBy: USER_EMAIL }]),
+            ...householdSql(A1_HH_B, A1_B, [{ id: `${A1_HH_B}-x`, adopterId: A1_OWN, relationship: 'sibling', addedBy: USER_EMAIL }]),
         ]);
     });
     test.afterAll(async () => {
         const made = [MARTA_NAME, `Marta P. ${stamp}`, TOMAS_NAME, HUGO_NAME].map(n => profileNamed(n)?.id).filter(Boolean) as string[];
         try {
-            cleanupProfiles([PEDRO, ROSA, ...made]);
+            cleanupProfiles([PEDRO, ROSA, A1_OWN, A1_M1, A1_M2, A1_A, A1_B, ...made]);
         } finally {
             try {
                 execD1Batch([
@@ -353,9 +369,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
                 await saveAsNew(page);
                 await expect(card(page, n)).toHaveCount(1, { timeout: 30_000 });
             }
-            const uno = String(profileNamed(UNO)!.id);
             dos = String(profileNamed(DOS)!.id);
-            const tres = String(profileNamed(TRES)!.id);
 
             // D2 — nobody else contributed to Uno: the owner deletes the profile; it leaves the household.
             await memberMenu(card(page, UNO), 'delete');
@@ -363,8 +377,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
             await expect(del).toBeVisible();
             await del.getByTestId('hh-delete-confirm').click();
             await expect(card(page, UNO)).toHaveCount(0, { timeout: 30_000 });
-            expect(rows(`SELECT id FROM adopters WHERE id = '${uno}'`)).toHaveLength(0);
-            expect(rows(`SELECT id FROM household_memberships WHERE adopter_id = '${uno}'`)).toHaveLength(0);
+            // (row gone + membership gone: src/app/actions/deleteHouseholdCleanup.test.ts, «the owner's delete»)
 
             // D1 — another rescuer edited Dos: the owner may only ask the admins.
             execD1(`INSERT INTO adopter_history (id, adopter_id, changed_by, changes, changed_at) VALUES ('test-hh-fixture-h-${stamp}', '${dos}', 'otra-${stamp}@example.com', '{"notes":{"from":"","to":"x"}}', strftime('%s','now'))`);
@@ -375,7 +388,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
             await expect(req).toContainText('1');
             await req.getByTestId('hh-request-confirm').click();
             await expect(req).toHaveCount(0, { timeout: 30_000 });
-            await expect.poll(() => rows(`SELECT status FROM data_requests WHERE adopter_id = '${dos}' AND request_type = 'deletion'`).map(r => r.status), { timeout: 15_000 }).toEqual(['pending']);
+            // (the pending data request: src/app/actions/requestAdopterDeletion.test.ts; the dialog closes only once it succeeded)
             await expect(card(page, DOS)).toHaveCount(1);
 
             // Q1 «Lo cargué por error»: out of the household, no correction remembered.
@@ -385,9 +398,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
             await expect(dialog.getByTestId('hh-remove-why-mistake').locator('[data-checked="true"]')).toHaveCount(1);
             await dialog.getByTestId('hh-remove-confirm').click();
             await expect(card(page, TRES)).toHaveCount(0, { timeout: 30_000 });
-            expect(housemates(OWN).map(h => h.profileId)).not.toContain(tres);
-            expect(rows(`SELECT id FROM household_corrections WHERE adopter_id = '${tres}'`)).toHaveLength(0);
-            expect(rows(`SELECT id FROM adopters WHERE id = '${tres}' AND deleted_at IS NULL`)).toHaveLength(1); // the profile stays
+            // (out of the household, no correction, profile stays: src/app/actions/households.test.ts, «Lo cargué por error» (Q1))
         } finally {
             if (dos) execD1(`DELETE FROM data_requests WHERE adopter_id = '${dos}'`);
             const made = [UNO, DOS, TRES].map(n => profileNamed(n)?.id).filter(Boolean).map(String);
@@ -449,85 +460,67 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
 
     test('10. the last row\'s «⋯» and «¿En qué hogar?» open above the «¿Qué pasó con …?» card: their last item takes a real tap (audit A1)', async ({ page }) => {
         test.setTimeout(180_000);
-        const [OWN, M1, M2, A, B] = ['own', 'm1', 'm2', 'a', 'b'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
-        const [HH_OWN, HH_A, HH_B] = ['own', 'ha', 'hb'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
-        try {
-            insertProfile({ id: OWN, name: `Dueno Menu ${stamp}`, owner: USER_EMAIL });
-            insertProfile({ id: M1, name: `Primero Menu ${stamp}`, owner: USER_EMAIL });
-            insertProfile({ id: M2, name: `Segundo Menu ${stamp}`, owner: USER_EMAIL });
-            insertHousehold(HH_OWN, OWN, [
-                { id: `${HH_OWN}-1`, adopterId: M1, relationship: 'sibling', addedBy: USER_EMAIL },
-                { id: `${HH_OWN}-2`, adopterId: M2, relationship: 'sibling', addedBy: USER_EMAIL },
-            ]);
-            // Also in two more homes (so «+ Agregar» asks «¿En qué hogar?»); an adult, so «¿Qué pasó con …?» shows.
-            insertProfile({ id: A, name: `Ana Menu ${stamp}`, owner: USER_EMAIL });
-            insertProfile({ id: B, name: `Beto Menu ${stamp}`, owner: USER_EMAIL });
-            insertHousehold(HH_A, A, [{ id: `${HH_A}-x`, adopterId: OWN, relationship: 'sibling', addedBy: USER_EMAIL }]);
-            insertHousehold(HH_B, B, [{ id: `${HH_B}-x`, adopterId: OWN, relationship: 'sibling', addedBy: USER_EMAIL }]);
+        const [OWN, M1, M2, A, B] = [A1_OWN, A1_M1, A1_M2, A1_A, A1_B];
+        for (const size of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
+            await page.setViewportSize(size);
+            await page.goto(`/adopter/${OWN}`);
+            await dismissCountryBanner(page);
+            const memberRows = page.getByTestId('household-member');
+            await expect(memberRows).toHaveCount(4, { timeout: 30_000 });
+            await expect(page.getByTestId('visit-intent-other')).toBeVisible();
 
-            for (const size of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
-                await page.setViewportSize(size);
-                await page.goto(`/adopter/${OWN}`);
-                await dismissCountryBanner(page);
-                const memberRows = page.getByTestId('household-member');
-                await expect(memberRows).toHaveCount(4, { timeout: 30_000 });
-                await expect(page.getByTestId('visit-intent-other')).toBeVisible();
+            // The last row's ⋯ near the bottom of the screen, the «¿Qué pasó?» card right under it.
+            const last = memberRows.last();
+            const button = last.getByTestId('household-member-menu');
+            await button.scrollIntoViewIfNeeded();
+            await page.evaluate((y) => window.scrollBy(0, y), await button.evaluate(el => el.getBoundingClientRect().bottom - window.innerHeight + 80));
+            await button.click();
+            const del = memberMenuPanel(last).getByTestId('household-member-menu-delete');
+            await expect(del).toBeEnabled({ timeout: 15_000 });
+            // A real tap (no force): Playwright refuses it if anything (the «¿Qué pasó?» buttons) covers the item.
+            await del.click();
+            const dialog = page.getByTestId('hh-delete-dialog');
+            await expect(dialog).toBeVisible();
+            await dialog.getByTestId('hh-dialog-cancel').click();
+            await expect(dialog).toHaveCount(0);
 
-                // The last row's ⋯ near the bottom of the screen, the «¿Qué pasó?» card right under it.
-                const last = memberRows.last();
-                const button = last.getByTestId('household-member-menu');
-                await button.scrollIntoViewIfNeeded();
-                await page.evaluate((y) => window.scrollBy(0, y), await button.evaluate(el => el.getBoundingClientRect().bottom - window.innerHeight + 80));
-                await button.click();
-                const del = memberMenuPanel(last).getByTestId('household-member-menu-delete');
-                await expect(del).toBeEnabled({ timeout: 15_000 });
-                // A real tap (no force): Playwright refuses it if anything (the «¿Qué pasó?» buttons) covers the item.
-                await del.click();
-                const dialog = page.getByTestId('hh-delete-dialog');
-                await expect(dialog).toBeVisible();
-                await dialog.getByTestId('hh-dialog-cancel').click();
-                await expect(dialog).toHaveCount(0);
+            // Keyboard: the panel lives on <body>, so it takes the focus itself; Tab leaves it, back on ⋯.
+            await button.focus();
+            await page.keyboard.press('Enter');
+            await expect(memberMenuPanel(last).getByTestId('household-member-menu-edit')).toBeFocused();
+            await page.keyboard.press('Tab');
+            await expect(memberMenuPanel(last)).toHaveCount(0);
+            await expect(button).toBeFocused();
 
-                // Keyboard: the panel lives on <body>, so it takes the focus itself; Tab leaves it, back on ⋯.
-                await button.focus();
-                await page.keyboard.press('Enter');
-                await expect(memberMenuPanel(last).getByTestId('household-member-menu-edit')).toBeFocused();
-                await page.keyboard.press('Tab');
-                await expect(memberMenuPanel(last)).toHaveCount(0);
-                await expect(button).toBeFocused();
+            // Arrow keys reach every item (roving focus): ArrowDown to «Eliminar perfil», Enter opens its dialog.
+            await page.keyboard.press('Enter');
+            const delKey = memberMenuPanel(last).getByTestId('household-member-menu-delete');
+            await expect(delKey).toBeEnabled({ timeout: 15_000 });
+            for (let i = 0; i < 8 && !(await delKey.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('ArrowDown');
+            await expect(delKey).toBeFocused();
+            await page.keyboard.press('Enter');
+            const delDialog = page.getByTestId('hh-delete-dialog');
+            await expect(delDialog).toBeVisible();
+            // The focus moved into the dialog, not stranded on the ⋯ behind it.
+            await expect.poll(() => delDialog.evaluate(el => el.contains(document.activeElement))).toBe(true);
+            await delDialog.getByTestId('hh-dialog-cancel').click();
+            await expect(delDialog).toHaveCount(0);
 
-                // Arrow keys reach every item (roving focus): ArrowDown to «Eliminar perfil», Enter opens its dialog.
-                await page.keyboard.press('Enter');
-                const delKey = memberMenuPanel(last).getByTestId('household-member-menu-delete');
-                await expect(delKey).toBeEnabled({ timeout: 15_000 });
-                for (let i = 0; i < 8 && !(await delKey.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('ArrowDown');
-                await expect(delKey).toBeFocused();
-                await page.keyboard.press('Enter');
-                const delDialog = page.getByTestId('hh-delete-dialog');
-                await expect(delDialog).toBeVisible();
-                // The focus moved into the dialog, not stranded on the ⋯ behind it.
-                await expect.poll(() => delDialog.evaluate(el => el.contains(document.activeElement))).toBe(true);
-                await delDialog.getByTestId('hh-dialog-cancel').click();
-                await expect(delDialog).toHaveCount(0);
+            // «¿En qué hogar?» right above the same card: its last home takes the tap too.
+            const add = page.getByTestId('household-add-member');
+            await add.scrollIntoViewIfNeeded();
+            await page.evaluate((y) => window.scrollBy(0, y), await add.evaluate(el => el.getBoundingClientRect().bottom - window.innerHeight + 80));
+            await add.click();
+            const options = page.getByTestId('household-add-which').getByTestId('household-add-which-option');
+            await expect(options).toHaveCount(3);
+            await options.last().click();
+            await expect(page.getByTestId('hh-add-form')).toBeVisible({ timeout: 15_000 });
+            await page.getByTestId('hh-add-form').getByTestId('hh-form-cancel').click();
 
-                // «¿En qué hogar?» right above the same card: its last home takes the tap too.
-                const add = page.getByTestId('household-add-member');
-                await add.scrollIntoViewIfNeeded();
-                await page.evaluate((y) => window.scrollBy(0, y), await add.evaluate(el => el.getBoundingClientRect().bottom - window.innerHeight + 80));
-                await add.click();
-                const options = page.getByTestId('household-add-which').getByTestId('household-add-which-option');
-                await expect(options).toHaveCount(3);
-                await options.last().click();
-                await expect(page.getByTestId('hh-add-form')).toBeVisible({ timeout: 15_000 });
-                await page.getByTestId('hh-add-form').getByTestId('hh-form-cancel').click();
-
-                const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-                expect(overflow).toBeLessThanOrEqual(0);
-            }
-            for (const id of [M1, M2, A, B]) expect(rows(`SELECT id FROM adopters WHERE id = '${id}'`)).toHaveLength(1); // only ever cancelled
-        } finally {
-            cleanupProfiles([OWN, M1, M2, A, B]);
+            const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+            expect(overflow).toBeLessThanOrEqual(0);
         }
+        for (const id of [M1, M2, A, B]) expect(rows(`SELECT id FROM adopters WHERE id = '${id}'`)).toHaveLength(1); // only ever cancelled
     });
 
     test('7. at 390px the household (with the add form open) never scrolls sideways', async ({ page }) => {
