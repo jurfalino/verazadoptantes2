@@ -3434,6 +3434,12 @@ export const es = {
         },
     },
     apiReview: {
+        unfinished: 'Sin terminar',
+        unfinished_hint: 'La llamada empezó pero nunca terminó (el servidor la cortó o se cayó): mirá el log con su requestId.',
+        degraded: 'Respuesta parcial',
+        degraded_hint: 'Un problema momentáneo de la base hizo que la búsqueda saltara un paso: pueden faltar resultados.',
+        client: 'Quién la envió',
+        decision: 'Cómo se decidió',
         search_placeholder: 'Buscar por requestId, externalId o nombre / email / teléfono buscado',
         search: 'Buscar',
         filter_mode: 'Tipo de búsqueda',

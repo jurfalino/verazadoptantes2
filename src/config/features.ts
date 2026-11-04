@@ -164,6 +164,26 @@ const _flagCache: Map<FeatureFlag, boolean> | null = null;
  * unmasking it for everyone.
  */
 export async function getFeatureFlag(flag: FeatureFlag, opts: { onReadError?: boolean } = {}): Promise<boolean> {
+    const read = await readFlagRaw(flag);
+    if (typeof read === 'boolean') return read;
+    const fallback = opts.onReadError ?? FEATURE_FLAGS[flag];
+    logger.warn('getFeatureFlag: DB read failed, using fallback', { flag, fallback, error: read.error });
+    return fallback;
+}
+
+/**
+ * The flag's value, or 'unreadable' when the DB read THREW (logged) — for a
+ * caller that must not mistake a D1 blip for "off" (the public API answered a
+ * blip with 404 «not enabled», 2026-11-04 audit).
+ */
+export async function readFeatureFlag(flag: FeatureFlag): Promise<boolean | 'unreadable'> {
+    const read = await readFlagRaw(flag);
+    if (typeof read === 'boolean') return read;
+    logger.warn('getFeatureFlag: DB read failed, no fallback', { flag, error: read.error });
+    return 'unreadable';
+}
+
+async function readFlagRaw(flag: FeatureFlag): Promise<boolean | { error: string }> {
     // Try environment variable first (fastest, works everywhere)
     const envValue = process.env[flag];
     if (envValue !== undefined) {
@@ -186,11 +206,7 @@ export async function getFeatureFlag(flag: FeatureFlag, opts: { onReadError?: bo
             }
         }
     } catch (e) {
-        const fallback = opts.onReadError ?? FEATURE_FLAGS[flag];
-        logger.warn('getFeatureFlag: DB read failed, using fallback', {
-            flag, fallback, error: e instanceof Error ? e.message : String(e),
-        });
-        return fallback;
+        return { error: e instanceof Error ? e.message : String(e) };
     }
 
     // Return default

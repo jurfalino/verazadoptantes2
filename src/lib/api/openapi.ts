@@ -159,6 +159,7 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 | \`code\` | Qué pasó | Qué hacer |
 |---|---|---|
 | \`invalid_json\` | El cuerpo no es JSON válido. | Revisá comillas y comas. |
+| \`body_unreadable\` | El cuerpo no llegó completo (por ejemplo, se cortó la conexión). | Volvé a enviar la llamada. |
 | \`invalid_request\` | Un campo no tiene el formato esperado. | Mirá \`error.details\`: cada problema con su campo. |
 | \`unauthorized\` | Falta la clave, está mal escrita, es de otro ambiente, o no existe o fue revocada. | El mensaje dice cuál. |
 | \`access_blocked\` | La persona dueña de la clave fue bloqueada de la API. | Escribinos si creés que es un error. |

@@ -36,3 +36,14 @@ describe('withPendingCaps — a key before approval', () => {
         expect(withPendingCaps({ dailyCapExact: 5, dailyCapFuzzy: 0 })).toEqual({ dailyCapExact: 5, dailyCapFuzzy: 0 });
     });
 });
+
+describe('clientInfoOf — who sent a call (never the IP)', () => {
+    it('reads user agent (capped), ray and country', async () => {
+        const { clientInfoOf } = await import('./handler');
+        const req = new Request('https://x.test/api/v1/me', { headers: { 'user-agent': 'a'.repeat(300), 'cf-ray': 'abc-EZE', 'cf-ipcountry': 'AR', 'cf-connecting-ip': '1.2.3.4' } });
+        const c = clientInfoOf(req);
+        expect(c.userAgent).toHaveLength(200);
+        expect(c).toMatchObject({ cfRay: 'abc-EZE', country: 'AR' });
+        expect(JSON.stringify(c)).not.toContain('1.2.3.4');
+    });
+});

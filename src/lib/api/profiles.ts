@@ -271,8 +271,8 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             for (const r of c) createdAt.set(r.id, r.createdAt);
         }
     } catch (e) {
-        logger.error('api: profile summaries unreadable, refusing to answer without the risk', e, { requestId, profiles: ids.length });
-        throw new ApiError(503, 'temporarily_unavailable', 'could not read the ratings and alerts of the matching profiles; nothing was saved — retry in a moment', { 'Retry-After': '5' });
+        const errorId = logger.error('api: profile summaries unreadable, refusing to answer without the risk', e, { requestId, profiles: ids.length });
+        throw new ApiError(503, 'temporarily_unavailable', 'could not read the ratings and alerts of the matching profiles; nothing was saved — retry in a moment', { 'Retry-After': '5' }).withErrorId(errorId);
     }
     const byProfile = new Map<string, typeof groups>();
     for (const g of groups) {

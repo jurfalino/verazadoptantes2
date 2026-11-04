@@ -185,6 +185,12 @@ export interface FindAdoptersOptions {
      * run the admin duplicate scan afterwards instead (2026-10-18).
      */
     skipLikeFallback?: boolean;
+    /**
+     * Discovery mode: collects the steps a D1 blip skipped (results may be
+     * missing or ranked differently) and tags their log lines with the caller's
+     * requestId — so an API answer can say it was degraded (2026-11-04 audit).
+     */
+    trace?: { requestId?: string; degraded: string[] };
     /** Duplicate mode: keep name-only candidates even when the input carried an identifier none of them share (identity verdict, rule 4). */
     keepNameOnly?: boolean;
     /** Max results returned. Default: SEARCH_RESULT_LIMIT. */

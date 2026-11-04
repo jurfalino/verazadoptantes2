@@ -3433,6 +3433,12 @@ export const pt = {
         },
     },
     apiReview: {
+        unfinished: 'Não terminou',
+        unfinished_hint: 'A chamada começou mas nunca terminou (o servidor a cortou ou caiu): procure o requestId no log.',
+        degraded: 'Resposta parcial',
+        degraded_hint: 'Um problema momentâneo do banco fez a busca pular uma etapa: podem faltar resultados.',
+        client: 'Quem enviou',
+        decision: 'Como foi decidido',
         search_placeholder: 'Buscar por requestId, externalId ou nome / e-mail / telefone buscado',
         search: 'Buscar',
         filter_mode: 'Tipo de busca',

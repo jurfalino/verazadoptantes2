@@ -12,7 +12,7 @@ import { apiKeys, apiRequests } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
-import { getFeatureFlag } from '@/config/features';
+import { readFeatureFlag } from '@/config/features';
 import { bearerSecret, environmentForHost, findActiveKey, importModeOn, IMPORT_CALL_CEILING, scopesOf, type ApiKeyRow } from './keys';
 import { keyAccess, PENDING_APPROVAL_CAPS, withPendingCaps, type KeyAccess } from './access';
 import { withCors } from './cors';
@@ -62,9 +62,24 @@ export interface ApiErrorExtra {
 }
 
 export class ApiError extends Error {
+    /** Set when the failure was logged as an error: the partner gets it, and the row keeps it (2026-11-04 audit). */
+    public errorId?: string;
     constructor(public status: number, public code: ApiErrorCode, message: string, public headers: Record<string, string> = {}, public extra: ApiErrorExtra = {}) {
         super(message);
     }
+    withErrorId(errorId: string): this { this.errorId = errorId; return this; }
+}
+
+/** Who sent a call, as far as the edge tells (never the IP in the row: it would outlive the log's 30 days). */
+export interface ClientInfo { userAgent: string | null; cfRay: string | null; country: string | null; colo: string | null }
+export function clientInfoOf(request: Request): ClientInfo {
+    const cf = (request as unknown as { cf?: { colo?: string } }).cf;
+    return {
+        userAgent: request.headers.get('user-agent')?.slice(0, 200) ?? null,
+        cfRay: request.headers.get('cf-ray'),
+        country: request.headers.get('cf-ipcountry'),
+        colo: cf?.colo ?? null,
+    };
 }
 
 /** Where the docs explain errors (the guide's «Errores» section). */
@@ -83,9 +98,15 @@ export interface LogFields {
     externalId?: string | null;
     /** Contacts this call added to a known profile (void takes them back). */
     contactsAdded?: Array<{ entryId: string; field: string }>;
+    /** How an exact match was decided: ids, field names, verdicts — never values (kept after the body purge). */
+    decision?: Record<string, unknown>;
+    /** D1 fallbacks that shrank this call's search results (0 = complete). */
+    degraded?: number;
 }
 
 export interface ApiCallContext {
+    /** Who sent the call (user agent, ray, country) — on its row and its log lines. */
+    client: ClientInfo;
     db: Db;
     key: ApiKeyRow;
     scopes: ApiScope[];
@@ -302,7 +323,15 @@ export async function replayIdempotent(ctx: ApiCallContext, opts: { readOnly?: b
     // A claim nobody finished (the worker died mid-call) counts as a crash.
     const abandoned = prior.httpStatus === 0 && Date.now() - new Date(prior.createdAt).getTime() > ABANDONED_CLAIM_MS;
     if ((prior.httpStatus >= 500 || abandoned) && !partial) {
-        if (!opts.readOnly) await ctx.db.delete(apiRequests).where(eq(apiRequests.id, prior.id));
+        // Released, never deleted (2026-11-04 audit: a retry erased the failed call — its errorId,
+        // bodies and any profile it created — and the row was the only lasting trace).
+        if (!opts.readOnly) {
+            await ctx.db.update(apiRequests).set({
+                idempotencyKey: null,
+                ...(abandoned && prior.httpStatus === 0 ? { errorCode: 'abandoned', outcome: 'error' } : {}),
+            }).where(eq(apiRequests.id, prior.id));
+            logger.info('api: failed call released for a retry', { requestId: ctx.requestId, originalRequestId: prior.id, keyId: ctx.key.id, originalStatus: prior.httpStatus, originalErrorId: prior.errorId });
+        }
         return null;
     }
     if (prior.httpStatus >= 500 || abandoned) {
@@ -383,6 +412,11 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
         dryRun: ctx.dryRun ? 1 : 0,
         contactsAdded: ctx.log.contactsAdded?.length ? JSON.stringify(ctx.log.contactsAdded) : null,
         durationMs: Date.now() - startedAt,
+        userAgent: ctx.client.userAgent,
+        cfRay: ctx.client.cfRay,
+        clientCountry: ctx.client.country,
+        decision: ctx.log.decision ? JSON.stringify(ctx.log.decision).slice(0, 8000) : null,
+        degraded: ctx.log.degraded ? 1 : 0,
     };
     try {
         if (ctx.rowClaimed) {
@@ -393,7 +427,7 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
     } catch (e) {
         // The client still gets its answer; the missing row is an alert, since
         // a record without its row can't be voided by its key.
-        logger.error('api: transaction log write failed', e, { requestId: ctx.requestId, keyId: ctx.key.id, endpoint, status, recordId: values.recordId });
+        logger.error('api: transaction log write failed', e, { requestId: ctx.requestId, keyId: ctx.key.id, endpoint, status, recordId: values.recordId, errorCode: values.errorCode, errorId });
     }
 }
 
@@ -403,8 +437,21 @@ export async function handleApiCall(
     run: (ctx: ApiCallContext) => Promise<ApiResult>,
     opts: { binaryBodyMax?: number } = {},
 ): Promise<Response> {
+    const requestId = crypto.randomUUID();
+    const client = clientInfoOf(request);
+    // First line of every call: one the worker never finishes (time / CPU limit, a crash
+    // outside every catch) still leaves this trace with its requestId (2026-11-04 audit).
+    logger.info('api: call started', { requestId, endpoint, method: request.method, ...client });
+    let response: Response;
+    try {
+        response = await answerApiCall(request, endpoint, run, opts, requestId, client);
+    } catch (e) {
+        // Nothing may escape as a bare 500 without a trace: logged, and the usual JSON error.
+        const errorId = logger.error('api: unhandled failure', e, { requestId, endpoint, ...client });
+        response = json(500, errorBody(requestId, new URL(request.url).origin, 'server_error', 'unexpected error', errorId), requestId);
+    }
     // Every answer, errors included: a browser hides a refused call's body otherwise (src/lib/api/cors.ts).
-    return withCors(await answerApiCall(request, endpoint, run, opts), request);
+    return withCors(response, request);
 }
 
 async function answerApiCall(
@@ -412,12 +459,20 @@ async function answerApiCall(
     endpoint: ApiEndpoint,
     run: (ctx: ApiCallContext) => Promise<ApiResult>,
     opts: { binaryBodyMax?: number },
+    requestId: string,
+    client: ClientInfo,
 ): Promise<Response> {
-    const requestId = crypto.randomUUID();
     const startedAt = Date.now();
 
     const origin = new URL(request.url).origin;
-    if (!(await getFeatureFlag('ENABLE_PUBLIC_API'))) {
+    const enabled = await readFeatureFlag('ENABLE_PUBLIC_API');
+    if (enabled === 'unreadable') {
+        // A D1 blip is not "the API is off": say so, and leave a trace.
+        const errorId = logger.error('api: could not read the API switch', null, { requestId, endpoint });
+        return json(503, errorBody(requestId, origin, 'temporarily_unavailable', 'the API could not start this call right now; retry in a minute', errorId), requestId, { 'Retry-After': '60' });
+    }
+    if (!enabled) {
+        logger.info('api: disabled', { requestId, endpoint });
         return json(404, errorBody(requestId, origin, 'api_disabled', 'the BuenAdoptante API is not enabled'), requestId);
     }
     const db = await getDb();
@@ -427,9 +482,21 @@ async function answerApiCall(
     }
     const header = request.headers.get('authorization');
     const secret = bearerSecret(header);
-    const found = secret ? await findActiveKey(db, secret) : null;
+    let found: ApiKeyRow | null;
+    try {
+        found = secret ? await findActiveKey(db, secret) : null;
+    } catch (e) {
+        // Was a bare 500 with no trace at all (2026-11-04 audit).
+        const errorId = logger.error('api: key lookup failed', e, { requestId, endpoint });
+        return json(503, errorBody(requestId, origin, 'temporarily_unavailable', 'we could not check this key right now; retry in a minute', errorId), requestId, { 'Retry-After': '60' });
+    }
     if (!found) {
-        logger.info('api: unauthorized', { requestId, endpoint, hadHeader: !!header });
+        // Why, and which key (its 12-character prefix is not secret, src/lib/api/keys.ts) — never the key.
+        logger.info('api: unauthorized', {
+            requestId, endpoint, hadHeader: !!header,
+            reason: !header ? 'no_key' : !secret ? 'malformed' : unauthorizedMessage(header, secret, new URL(request.url).host).startsWith('this is a') ? 'wrong_environment' : 'unknown_or_revoked',
+            keyPrefix: secret ? secret.slice(0, 12) : null,
+        });
         return json(401, errorBody(requestId, origin, 'unauthorized', unauthorizedMessage(header, secret, new URL(request.url).host)), requestId,
             { 'WWW-Authenticate': 'Bearer' });
     }
@@ -453,6 +520,7 @@ async function answerApiCall(
     let bodyBytes: ArrayBuffer | null = null;
     const maxBody = opts.binaryBodyMax ?? MAX_REQUEST_BODY;
     let tooLarge = Number(request.headers.get('content-length') || 0) > maxBody;
+    let bodyUnreadable = false;
     if (request.method !== 'GET' && !tooLarge) {
         try {
             const read = await readBodyLimited(request, maxBody);
@@ -460,10 +528,12 @@ async function answerApiCall(
             else if (opts.binaryBodyMax) { bodyBytes = read.buffer as ArrayBuffer; bodyText = ''; }
             else bodyText = new TextDecoder().decode(read);
         } catch (e) {
+            bodyUnreadable = true;
             logger.warn('api: request body unreadable', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });
         }
     }
     const ctx: ApiCallContext = {
+        client,
         db, key, scopes: scopesOf(key), requestId,
         origin,
         bodyText,
@@ -482,6 +552,8 @@ async function answerApiCall(
     let errorId: string | null = null;
     try {
         if (tooLarge) throw new ApiError(413, 'payload_too_large', `request bodies are limited to ${maxBody} bytes`);
+        // Not "invalid JSON": the body never arrived whole (a dropped connection, usually).
+        if (bodyUnreadable) throw new ApiError(400, 'body_unreadable', 'the request body could not be read (the connection may have dropped); send the call again');
         await enforceCallCeiling(db, key);
         if (wantsDryRun(request.headers.get(DRY_RUN_HEADER))) {
             if (endpoint === 'void') throw new ApiError(422, 'dry_run_not_allowed', 'a void cannot be a dry run');
@@ -498,10 +570,11 @@ async function answerApiCall(
     } catch (e) {
         if (e instanceof ApiError) {
             status = e.status;
-            body = errorBody(requestId, origin, e.code, e.message, undefined, e.extra);
+            errorId = e.errorId ?? null;
+            body = errorBody(requestId, origin, e.code, e.message, e.errorId, e.extra);
             headers = { ...headers, ...e.headers };
         } else {
-            errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context });
+            errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context, externalId: ctx.log.externalId, recordId: ctx.log.recordId, profileCreated: ctx.log.profileCreated });
             status = 500;
             body = errorBody(requestId, origin, 'server_error', 'unexpected error', errorId);
         }
@@ -521,7 +594,14 @@ async function answerApiCall(
             logger.warn('api: rate-limit headers skipped', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });
         }
     }
-    logger.info('api: call', { requestId, keyId: key.id, endpoint, mode: ctx.log.mode, outcome: ctx.log.outcome, status, errorId, durationMs: Date.now() - startedAt });
+    // One line per finished call, groupable by what went wrong (2026-11-04 audit: errorCode lived only in D1).
+    logger.info('api: call', {
+        requestId, keyId: key.id, endpoint, mode: ctx.log.mode, outcome: ctx.log.outcome, status, errorId,
+        errorCode: status >= 400 ? ((body.error as { code?: string } | undefined)?.code ?? null) : null,
+        dryRun: ctx.dryRun, externalId: ctx.log.externalId ?? null, recordId: ctx.log.recordId ?? null,
+        profileCreated: !!ctx.log.profileCreated, degraded: ctx.log.degraded ?? 0,
+        durationMs: Date.now() - startedAt, ...client,
+    });
 
     await runAfterResponse('api.touchKey', async () => {
         await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, key.id));

@@ -16,11 +16,29 @@ import { getRequestContext } from '@/lib/requestContext';
  * own reason in `cause` — without it a failed duplicate Scan (2026-10-10,
  * errorId 60d0dc35) was logged with the SQL but not why D1 rejected it.
  */
+/**
+ * Drizzle puts the bound values of a failed query in its error text
+ * ("Failed query: insert into adopters …\nparams: Ana Pérez,11 4455…") — a
+ * person's name and contacts. Log text keeps the query, never the values
+ * (2026-11-04 audit: two production errors had shipped them to Axiom). Pure.
+ */
+export function scrubDbParams(text: string): string {
+    return text.includes('params:') ? text.replace(/(^|\n|\s)params:[^\n]*/g, '$1params: [redacted]') : text;
+}
+
+/** Every string in a log entry, scrubbed (nested objects and arrays, a few levels deep). */
+export function scrubLogValues<T>(value: T, depth = 0): T {
+    if (typeof value === 'string') return scrubDbParams(value) as T;
+    if (depth > 4 || value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(v => scrubLogValues(v, depth + 1)) as T;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, scrubLogValues(v, depth + 1)])) as T;
+}
+
 export function causeChain(error: Error): { cause?: Array<{ name: string; message: string }> } {
     const chain: Array<{ name: string; message: string }> = [];
     let c: unknown = (error as { cause?: unknown }).cause;
     while (c && chain.length < 3) {
-        chain.push(c instanceof Error ? { name: c.name, message: c.message } : { name: 'Unknown', message: String(c) });
+        chain.push(c instanceof Error ? { name: c.name, message: scrubDbParams(c.message) } : { name: 'Unknown', message: scrubDbParams(String(c)) });
         c = c instanceof Error ? (c as { cause?: unknown }).cause : undefined;
     }
     return chain.length ? { cause: chain } : {};
@@ -82,7 +100,7 @@ function getRequestId(): string | undefined {
 }
 
 // Detect environment (staging, production, local) and domain
-function getEnvironmentInfo(): { env: string; domain?: string; branch?: string; requestId?: string } {
+function getEnvironmentInfo(): { env: string; domain?: string; branch?: string; requestId?: string; cfRay?: string } {
     try {
         const { env } = getRequestContext();
         const cfEnv = env as unknown as Record<string, string | undefined>;
@@ -111,7 +129,9 @@ function getEnvironmentInfo(): { env: string; domain?: string; branch?: string; 
             }
         }
 
-        return { env: envName, domain, branch, requestId: getRequestId() };
+        // cfRay too: a caller's own requestId (the API's) replaces requestId, and the ray must survive.
+        const ray = getRequestId();
+        return { env: envName, domain, branch, requestId: ray, cfRay: ray };
     } catch {
         return { env: 'local' };
     }
@@ -239,7 +259,7 @@ export const logger = {
             ...envInfo,
             ...data
         };
-        sendToAxiom([entry]);
+        sendToAxiom([scrubLogValues(entry)]);
     },
 
     warn(message: string, data?: Record<string, unknown>) {
@@ -251,8 +271,8 @@ export const logger = {
             ...envInfo,
             ...data
         };
-        console.warn(`[WARN] ${message}`, data);
-        sendToAxiom([entry]);
+        console.warn(`[WARN] ${message}`, scrubLogValues(data));
+        sendToAxiom([scrubLogValues(entry)]);
     },
 
     error(message: string, error?: Error | unknown, data?: Record<string, unknown>): string {
@@ -275,19 +295,20 @@ export const logger = {
         if (error instanceof Error) {
             entry.error = {
                 name: error.name,
-                message: error.message,
-                stack: error.stack,
+                message: scrubDbParams(error.message),
+                stack: error.stack ? scrubDbParams(error.stack) : error.stack,
                 ...causeChain(error),
             };
         } else if (error) {
             entry.error = {
                 name: 'Unknown',
-                message: String(error)
+                message: scrubDbParams(String(error))
             };
         }
 
-        console.error(`[ERROR] ${message} (ID: ${errorId})`, error, data);
-        sendToAxiom([entry]);
+        // The console gets the scrubbed text too, never the raw error object (it carries the query's values).
+        console.error(`[ERROR] ${message} (ID: ${errorId})`, entry.error ?? '', scrubLogValues(data));
+        sendToAxiom([scrubLogValues(entry)]);
 
         return errorId; // Return ID for display to user
     }

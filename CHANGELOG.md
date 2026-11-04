@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.15] - 2026-11-04
+
+### Fixed — API troubleshooting: every call leaves a trace; no personal data in error logs
+
+From the 2026-11-04 logging audit (Jon: "implement the fixes and the next steps").
+- **A retry no longer erases the failed call**: a crashed or abandoned claim is released
+  (its externalId freed), never deleted — its errorId, bodies and any profile it made stay.
+- **Nothing escapes without a trace**: a failed key lookup is a logged 503 (was a bare 500
+  with no log), an unexpected throw anywhere is logged and answered as JSON with CORS, a D1
+  blip reading the API switch is a logged 503 (was a wrong 404 «not enabled»), and every call
+  logs `api: call started` first — so one the worker never finishes still leaves a line.
+- **Privacy, app-wide**: Drizzle's `params:` (a person's name and contacts) are cut from every
+  logged error message, stack, cause and warn field before Axiom or the console.
+- **Groupable failures in Axiom**: `api: call` carries errorCode, dryRun, externalId,
+  recordId, profileCreated, degraded and the client; a refused key logs why and its 12-char
+  prefix; internal 503s now give the partner their errorId (and keep it on the row);
+  Cloudflare's ray is kept next to the API's requestId.
+- **Each call's row** (migration 0101) records which client sent it (user agent, ray,
+  country — never the IP), how an exact match was decided (candidate ids, identifier kinds,
+  verdicts, phone country — no values; kept past the 90-day body purge), and whether a fuzzy
+  answer was degraded by a D1 fallback.
+- Admin → API → Llamadas: «Sin terminar» and «Respuesta parcial» badges, and the call detail
+  shows who sent it and how it was decided. An unreadable body is `body_unreadable`, not
+  `invalid_json`.
+
 ## [2.58.14] - 2026-11-03
 
 ### Changed — CI: faster, steadier e2e tests (audit 2026-11-03, phase B)
