@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.16] - 2026-11-04
+
+### Changed — CI: e2e also runs on the real Cloudflare build (audit 2026-11-03, phases C + D)
+- New jobs `build-cf` + `e2e-cf`: the same 17 legs run against the production bundle served by
+  `wrangler pages dev`. Not a deploy gate yet: after 3 green runs in a row with equal test counts it replaces the
+  `next dev` legs. First runs: every test passes, no memory restarts, legs 1–6 min instead of 1–13.
+- The CF test copy of the build answers the email service with a stub (dummy key, cannot send); it is never deployed.
+  No app code changed for it.
+- The import-wizard duplicate tests block the service worker (the production build's `sw.js` answers `/api/` reads,
+  so the test's stubs were bypassed). No check removed.
+- Memory log: every e2e leg uploads `e2e-heap.log` (heap peak every 10 s). Measured: the restarts come from the two
+  biggest legs crossing ~6.4 GB; `--disable-source-maps` did not help and is not used.
+- Manual experiment runs (`workflow_dispatch`) run build and tests only — never migrations or deploys.
+
 ## [2.58.15] - 2026-11-04
 
 ### Fixed — API troubleshooting: every call leaves a trace; no personal data in error logs
