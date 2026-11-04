@@ -14,7 +14,7 @@ import * as mocks from '@/test-utils/actionMocks';
 
 const { session, OWNER, STRANGER } = mocks;
 
-const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
+const { state } = vi.hoisted(() => ({ state: { db: null as unknown, failFor: null as string | null } }));
 
 // Owner-aware: a viewer sees their own profiles in full and nothing else.
 const visibilityFor = (viewer: string | null | undefined, addedBy: string | null) => addedBy && addedBy === viewer
@@ -29,7 +29,10 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
     getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor, getTeamEmails: mocks.getOrgMemberEmailsFor,
 }));
 vi.mock('@/lib/piiAccessServer', () => ({
-    resolveAdopterVisibility: async (viewer: string, a: { addedBy: string | null }) => visibilityFor(viewer, a.addedBy),
+    resolveAdopterVisibility: async (viewer: string, a: { id: string; addedBy: string | null }) => {
+        if (a.id === state.failFor) throw new Error('D1 down');
+        return visibilityFor(viewer, a.addedBy);
+    },
     resolveAdoptersVisibility: async (viewer: string, rows: Array<{ id: string; addedBy: string | null }>) =>
         new Map(rows.map(r => [r.id, visibilityFor(viewer, r.addedBy)])),
     isPiiGatingEnabled: async () => true,
@@ -55,15 +58,17 @@ import { deserializeContactEntries } from '@/lib/contactEntries';
 import type { DuplicateMatch } from './types';
 
 type Sqlite = { prepare: (s: string) => { run: (...a: unknown[]) => unknown } };
+let sqlite: Sqlite;
 
 // The production pair: the Catpuccino profile keeps two phones on one line.
 const THEIRS = 'Email: milee@example.com\nTel: 1144102609/ 1144387944';
 const MINE = 'Tel: +5491144387944';
 
 beforeEach(() => {
+    state.failFor = null;
     const m = migratedDb();
     state.db = m.db;
-    const sqlite = m.sqlite as unknown as Sqlite;
+    sqlite = m.sqlite as unknown as Sqlite;
     sqlite.prepare(`INSERT INTO adopters (id, name, status, contact_info, added_by, created_at, updated_at) VALUES
         ('mine', 'Mili', '5', ?, ?, 1000, 1000), ('theirs', 'Barbara Milagros Bruscella', '5', ?, ?, 2000, 2000)`)
         .run(MINE, OWNER, THEIRS, STRANGER);
@@ -97,6 +102,13 @@ describe('«Pendientes de revisar» — the matched contact shows on the other p
         expect(shown(p.existingAdopter)).toEqual([['phone', '+5491144387944']]);
         expect(p.existingAdopter.canSeeContact).toBe(true);
     });
+
+    it('a side whose own visibility cannot be read reveals nothing, and lends nothing to the other side', async () => {
+        state.failFor = 'mine';
+        const p = await pairAs(OWNER);
+        expect(p.existingAdopter).toMatchObject({ id: 'mine', contactInfo: null, canSeeContact: false });
+        expect(shown(p.newAdopter).every(([, v]) => v === 'masked')).toBe(true);
+    });
 });
 
 describe('hydrateDuplicateMatches — revealValues (what the rescuer typed)', () => {
@@ -117,6 +129,17 @@ describe('hydrateDuplicateMatches — revealValues (what the rescuer typed)', ()
             expect(text).not.toContain('1144387944');
             expect(text).not.toContain('1144102609');
         }
+    });
+
+    it('one stored entry holding two numbers is revealed only when the rescuer typed both (review 2026-11-04)', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ? WHERE id = 'theirs'`).run(JSON.stringify([
+            { id: 'p1', type: 'phone', value: '1144102609 / 1144387944', addedBy: STRANGER },
+        ]));
+        const one = await contactOf({ viewer: OWNER, isUnauthenticated: false, revealValues: ['1144387944'] });
+        expect(one).not.toContain('1144102609');
+        const both = await contactOf({ viewer: OWNER, isUnauthenticated: false, revealValues: ['1144387944', '1144102609'] });
+        expect(both).toContain('1144102609');
+        expect(both).toContain('1144387944');
     });
 
     it('a logged-out viewer never gets a reveal', async () => {

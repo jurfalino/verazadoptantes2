@@ -393,6 +393,7 @@ function redactInexactValue(type: string, value: string): string {
 /** The adopter columns the pair builder needs before visibility is applied. */
 type PairRow = {
     id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null;
+    country?: string | null;
     age?: number | null; ageAsOf?: string | null; isMinor?: number | null;
 };
 
@@ -416,7 +417,7 @@ async function buildPairSide(
             // the comparison table can read (re-parsing masked text mislabels it).
             const { parseBlobToContactEntries } = await import('@/lib/contactEntries');
             const typed = parseBlobToContactEntries(row.contactInfo);
-            const unlockedEntryHashes = new Set([...visibility.unlockedEntryHashes, ...submissionUnlockHashes(typed, [...known])]);
+            const unlockedEntryHashes = new Set([...visibility.unlockedEntryHashes, ...submissionUnlockHashes(typed, [...known], row.country)]);
             const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: typed.length ? JSON.stringify(typed) : null, addressInfo: null }, { ...visibility, unlockedEntryHashes });
             contactInfo = masked.contactInfo;
             contactEntries = masked.contactEntries;
@@ -1341,6 +1342,7 @@ export async function getPendingDuplicatesForUser(
             addedBy: adopters.addedBy,
             createdAt: adopters.createdAt,
             deletedAt: adopters.deletedAt,
+            country: adopters.country,
             age: adopters.age,
             ageAsOf: adopters.ageAsOf,
             isMinor: adopters.isMinor,
@@ -1363,10 +1365,11 @@ export async function getPendingDuplicatesForUser(
 
         // Visibility is resolved once per adopter, not once per appearance.
         const visCache = new Map<string, Promise<Visibility | null>>();
+        const piiServer = import('@/lib/piiAccessServer'); // once, not one import per side
         const visibilityOf = (row: PairRow) => {
             let hit = visCache.get(row.id);
             if (!hit) {
-                hit = import('@/lib/piiAccessServer')
+                hit = piiServer
                     .then(({ resolveAdopterVisibility }) => resolveAdopterVisibility(viewer, { id: row.id, addedBy: row.addedBy }))
                     .catch((e: unknown) => {
                         // buildPairSide masks the whole side for a null (fail closed) and logs it.

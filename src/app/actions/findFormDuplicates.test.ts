@@ -27,6 +27,15 @@ describe('findFormDuplicates limit', () => {
         expect(limitPassed()).toBeUndefined();
     });
 
+    it('each contact list is cut to 20 strings: no guessing many values in one call (review 2026-11-04)', async () => {
+        const many = Array.from({ length: 25 }, (_, i) => `11443879${String(i).padStart(2, '0')}`);
+        await findFormDuplicates({ name: 'Ana Pérez', phones: [...many, 7 as never], emails: many }, {});
+        const passed = vi.mocked(searchFormDuplicates).mock.calls[0][0];
+        expect(passed.phones).toHaveLength(20);
+        expect(passed.emails).toHaveLength(20);
+        expect(passed.socials).toBeUndefined();
+    });
+
     it('never passes allowContactOnly, whatever the browser sends', async () => {
         await findFormDuplicates({ name: '' }, { limit: 3, allowContactOnly: true } as never);
         expect(vi.mocked(searchFormDuplicates).mock.calls[0][1]).not.toHaveProperty('allowContactOnly');
