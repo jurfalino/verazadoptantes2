@@ -3,7 +3,7 @@
 import { Phone, Mail, AtSign, IdCard, MapPin, StickyNote, Lock, UserRound, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { renderTextWithLinks } from '@/lib/textUtils';
-import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
+import { isRenameAlias, type ContactEntry, type ContactEntryType } from '@/lib/contactEntries';
 
 const TYPE_ICON: Record<ContactEntryType, LucideIcon> = {
     phone: Phone,
@@ -53,9 +53,11 @@ interface Props {
 
 export default function ContactEntriesDisplay({ entries, onMaskedClick }: Props) {
     const { t } = useLanguage();
-    if (entries.length === 0) return null;
+    // A previous name kept by a rename is shown in the header («Conocido/a como»), never as a contact.
+    const listed = entries.filter(e => !isRenameAlias(e));
+    if (listed.length === 0) return null;
 
-    const sorted = [...entries].sort(
+    const sorted = [...listed].sort(
         (a, b) => DISPLAY_ORDER.indexOf(a.type) - DISPLAY_ORDER.indexOf(b.type),
     );
     const methods = sorted.filter(e => e.type !== 'other');

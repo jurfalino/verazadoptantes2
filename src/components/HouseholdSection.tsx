@@ -1,375 +1,264 @@
 'use client';
 
 /**
- * Structured household / family section — replaces the free-text field. Each
- * person: name + relationship + their own contact entries (same composer as the
- * titular: network-first social, WhatsApp/Telegram). Gated behind
- * ENABLE_HOUSEHOLD_MEMBERS. Calls the member CRUD server actions; contacts are
- * masked/partial-revealed upstream (maskHouseholdMembers) so a non-privileged
- * viewer (canEdit=false) sees a read-only, masked list.
+ * «Familiares / Convivientes» on a profile — households as profiles (spec
+ * 2026-10-26), compact rows (addendum 2026-10-27, variant A).
+ *
+ * Every person here is a profile; a household is a group of profiles. One
+ * compact row per person (MemberCard: name = link to the profile, rating /
+ * alerts / activity, one attribution, contacts behind «N datos ▾», «⋯» menu,
+ * live summary masked exactly as that profile is for this viewer). No
+ * «Hogar con …» titles: only when the person lives in 2+ homes does each home
+ * get a small divider («Lucas figura como hijo/a de Pedro»), and then
+ * «+ Agregar» first asks «¿En qué hogar?» (each choice labelled by the home's
+ * people). Anyone signed in adds someone, with «¿Es este perfil?» before saving.
+ *
+ * Gift recipients are never «Convive con»: a gift household shows as
+ * «Destinatario del regalo» with the recipient's row (P5); a gift form whose
+ * recipient has no profile yet shows what the form said, read-only, with
+ * «Crear perfil de {nombre}» for the giver's team and admins (P4).
+ *
+ * Nothing here reads or writes the old `household_members` JSON: the data is
+ * `getHouseholdsFor` (src/lib/households.ts) via the page.
  */
-
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { AnchoredMenu } from '@/components/ui/AnchoredMenu';
 import { useRouter } from 'next/navigation';
-import { Phone, Mail, AtSign, IdCard, MapPin, UserRound, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
+import { ChevronDown, Gift, Plus, User, UserPlus } from 'lucide-react';
+import { ContactRow } from '@/components/ContactRow';
+import { Button } from '@/components/ui/Button';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
-import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { SocialPlatformPicker } from '@/components/SocialPlatformPicker';
-import { SocialLogo } from '@/components/SocialLogo';
-import { PhoneAppsToggle } from '@/components/PhoneAppsToggle';
-import { MessagingLogo } from '@/components/MessagingLogo';
-import { detectSocialPlatform, type ContactEntry, type ContactEntryType, type SocialPlatform, type MessagingApp } from '@/lib/contactEntries';
-import { RELATIONSHIPS, currentAge, type HouseholdMember, type Relationship } from '@/lib/householdMembers';
-import { handledAsStale } from '@/lib/errorMessage';
-import { entryConflictMessage } from '@/lib/collabCopy';
-import {
-    addHouseholdMember, updateHouseholdMember, removeHouseholdMember,
-    addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry,
-} from '@/app/actions';
+import { MemberCard, useMemberLabel } from '@/components/household/MemberCard';
+import { AddPersonForm, useHouseholdFailure } from '@/components/household/PersonForms';
+import { createGiftRecipientProfile } from '@/app/actions';
+import type { HouseholdView } from '@/lib/households';
+import type { ProfileHouseholds } from '@/domain/profileHouseholds';
+import { fill, firstName, joinNames } from '@/lib/householdCopy';
+import { householdForAdd, separateHomes } from '@/domain/households';
 
-const COMPOSABLE: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias'];
-const TYPE_ICON: Record<ContactEntryType, typeof Phone> = {
-    phone: Phone, email: Mail, social: AtSign, id: IdCard, address: MapPin, alias: UserRound, other: UserRound,
-};
-
-interface Draft { type: ContactEntryType; value: string; platform: SocialPlatform | null; apps: MessagingApp[] }
-interface MemberUI extends HouseholdMember {
-    editing?: boolean; draftName?: string; draftRel?: Relationship | null; draftAge?: string;
-    /** The age as shown when the edit opened — sent as `expected.age`, and to tell whether the rescuer changed it. */
-    openAge?: string;
-    composer?: { stage: 'pick' } | ({ stage: 'edit' } & Draft) | null;
+/** «+ Agregar alguien al hogar» — a slim text button; with 2+ homes it opens «¿En qué hogar?» (the ▾). */
+function AddMemberButton({ onClick, expanded, buttonRef }: { onClick: () => void; expanded?: boolean; buttonRef?: Ref<HTMLButtonElement> }) {
+    const { t } = useLanguage();
+    return (
+        // The label says what it adds (Jon, 2026-10-29): «Agregar» alone sat a few lines under «Agregar dato de contacto».
+        <button ref={buttonRef} type="button" data-testid="household-add-member" onClick={onClick}
+            aria-expanded={expanded} aria-haspopup={expanded === undefined ? undefined : 'menu'}
+            className="inline-flex min-h-[44px] items-center gap-1 text-sm font-semibold text-teal-700 hover:underline">
+            <Plus className="w-4 h-4" aria-hidden="true" />{t('adopter.hh_cta_add')}
+            {expanded !== undefined && <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />}
+        </button>
+    );
 }
-interface CEditing extends ContactEntry { editing?: boolean; draft?: Draft }
 
-export default function HouseholdSection({ adopterId, initialMembers, canEdit, hasLegacyText = false }: {
-    adopterId: string; initialMembers: HouseholdMember[]; canEdit: boolean;
-    /** Legacy free-text family notes are shown beneath; don't also say "no family". */
+/** The small divider above each home, only when the profile lives in 2+. */
+function HomeDivider({ text }: { text: string }) {
+    return (
+        <div className="flex items-center gap-2 pt-2" data-testid="household-home-divider">
+            <span className="text-[11px] font-semibold text-stone-500 break-words min-w-0">{text}</span>
+            <span className="flex-1 border-t border-stone-200" aria-hidden="true" />
+        </div>
+    );
+}
+
+function GiftShell({ title, body, children, testId }: { title: string; body: string; children: ReactNode; testId: string }) {
+    return (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-3" data-testid={testId}>
+            <div className="flex items-start gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0"><Gift className="w-4 h-4" aria-hidden="true" /></div>
+                <div className="min-w-0 flex-1">
+                    <h4 className="font-semibold text-[15px] text-amber-900 break-words">{title}</h4>
+                    <p className="text-xs text-amber-800 break-words">{body}</p>
+                </div>
+            </div>
+            {children}
+        </section>
+    );
+}
+
+export default function HouseholdSection({ adopterId, hostName, data, signedIn, currentUser, isAdmin, preview = false, hasLegacyText = false }: {
+    adopterId: string;
+    /** This profile's name. */
+    hostName: string;
+    data: ProfileHouseholds;
+    signedIn: boolean;
+    /** The viewer's email: the contacts they added to a member stay editable there, as on the profile. */
+    currentUser?: string;
+    /** Admin (false in «Ver como desconocido»): deletes any member's profile. */
+    isAdmin: boolean;
+    /** «Ver como desconocido»: what a stranger sees — no menus, no own markers, no «Crear perfil». */
+    preview?: boolean;
+    /** Legacy free-text family notes are shown beneath: don't also say «Sin familiares». */
     hasLegacyText?: boolean;
 }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const router = useRouter();
-    const [members, setMembers] = useState<MemberUI[]>(() => initialMembers.map(m => ({ ...m })));
-    const [busy, setBusy] = useState(false);
-    // One dialog serves both delete paths; `kind` picks the copy.
-    const [confirmTarget, setConfirmTarget] = useState<
-        | { kind: 'member'; member: MemberUI }
-        | { kind: 'contact'; member: MemberUI; entry: CEditing }
-        | null
-    >(null);
-
-    // Fresh server data (after any refresh) replaces what's shown — while
-    // keeping open editors and their drafts — so a teammate's change is
-    // visible, and becomes what the next save is compared against.
-    const serverKey = useMemo(() => JSON.stringify(initialMembers), [initialMembers]);
+    const fail = useHouseholdFailure('HouseholdSection.gift');
+    const labelOf = useMemberLabel();
+    /** Which add form is open: a household id, or '' for the profile's own (or new) household. */
+    const [adding, setAdding] = useState<string | null>(null);
+    /** «¿En qué hogar?» is open (2+ homes). */
+    const [choosing, setChoosing] = useState(false);
+    const closeChooser = useCallback(() => setChoosing(false), []);
+    const [creating, setCreating] = useState<string | null>(null);
+    /** Focus goes back to «+ Agregar» when the form closes (cancelled or saved), as the contact list does. */
+    const addButtonRef = useRef<HTMLButtonElement>(null);
+    const wasAdding = useRef(false);
     useEffect(() => {
-        setMembers(prev => {
-            const merged: MemberUI[] = initialMembers.map(sm => {
-                const lm = prev.find(x => x.id === sm.id);
-                if (!lm) return { ...sm };
-                return {
-                    ...sm,
-                    editing: lm.editing, draftName: lm.draftName, draftRel: lm.draftRel, draftAge: lm.draftAge, openAge: lm.openAge, composer: lm.composer,
-                    contactEntries: sm.contactEntries.map(se => {
-                        const le = lm.contactEntries.find(e => e.id === se.id) as CEditing | undefined;
-                        return le?.editing ? { ...se, editing: true, draft: le.draft } as CEditing : se;
-                    }),
-                };
-            });
-            // Members being added here and not yet saved stay (a saved one is
-            // already in the server list — never show it twice).
-            return [...merged, ...prev.filter(x => (x as MemberUI & { isNew?: boolean }).isNew && !initialMembers.some(sm => sm.id === x.id))];
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [serverKey]);
+        if (wasAdding.current && adding === null) addButtonRef.current?.focus();
+        wasAdding.current = adding !== null;
+    }, [adding]);
 
-    const relLabel = (r: Relationship | null | undefined) => r ? t(`adopter.hh_rel_${r}`) : '';
-    const patch = (id: string, up: Partial<MemberUI>) => setMembers(prev => prev.map(m => m.id === id ? { ...m, ...up } : m));
-    /** `onConflict` runs when a teammate changed/removed the item meanwhile (after the warning). */
-    async function run<T extends { ok: boolean; error?: string }>(fn: () => Promise<T>, onConflict?: (kind: 'changed' | 'deleted') => void): Promise<Extract<T, { ok: true }> | null> {
-        setBusy(true);
-        try {
-            const res = await fn();
-            if (!res.ok) {
-                const r = res as { error?: string; conflict?: { kind: 'changed' | 'deleted'; by: string }; errorId?: string };
-                if (r.error === 'conflict' && r.conflict) {
-                    toast.warning(entryConflictMessage(t, r.conflict.kind, r.conflict.by));
-                    onConflict?.(r.conflict.kind);
-                    router.refresh();
-                } else if (r.error === 'busy') {
-                    toast.error(t('errors.generic') || 'Error', t('collab.busy'), r.errorId);
-                } else {
-                    toast.error(t('errors.generic') || 'Error', t('errors.save_household_failed') || 'No se pudo guardar el grupo familiar. Volvé a intentar.');
-                }
-                return null;
-            }
-            return res as Extract<T, { ok: true }>;
-        } catch (e) {
-            if (!handledAsStale(e)) toast.error('Error', e instanceof Error ? e.message : 'Error inesperado'); return null;
-        } finally { setBusy(false); }
-    }
+    const homes = data.views.filter(v => !v.isGift);
+    const gifts = data.views.filter(v => v.isGift);
+    const hostFirst = firstName(hostName) || hostName;
+    const canAdd = signedIn;
+    const separate = separateHomes(homes);
 
-    // ── member ops ──
-    function startAdd() {
-        setMembers(prev => [...prev, { id: `tmp-${Math.random().toString(36).slice(2)}`, name: '', relationship: null, contactEntries: [], editing: true, draftName: '', draftRel: null, isNew: true } as MemberUI & { isNew: boolean }]);
-    }
-    async function saveMember(m: MemberUI) {
-        const name = (m.draftName ?? '').trim();
-        const relationship = m.draftRel ?? null;
-        // Sent only when the rescuer changed it, so saving a name fix can never
-        // write back a stale age over a teammate's newer one. '' clears it.
-        const ageChanged = m.draftAge !== undefined && m.draftAge.trim() !== (m.openAge ?? '');
-        const age = !ageChanged ? undefined : m.draftAge!.trim() === '' ? null : Number(m.draftAge);
-        const isNew = (m as MemberUI & { isNew?: boolean }).isNew;
-        if (isNew) {
-            const res = await run(() => addHouseholdMember({ adopterId, name, relationship, age: age ?? undefined }));
-            if (!res) return;
-            setMembers(prev => prev.map(x => x.id === m.id
-                ? { ...x, id: res.memberId, name, relationship, ...(typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}), editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, isNew: false } as MemberUI
-                : x));
-        } else {
-            const res = await run(
-                () => updateHouseholdMember({ adopterId, memberId: m.id, name, relationship, age, expected: { name: m.name, relationship: m.relationship ?? null, age: m.openAge ? Number(m.openAge) : null } }),
-                (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== m.id)); },
-            );
-            if (!res) return;
-            patch(m.id, {
-                name, relationship,
-                ...(age === null ? { age: undefined, ageAsOf: undefined } : typeof age === 'number' ? { age, ageAsOf: new Date().toISOString().slice(0, 10) } : {}),
-                editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, openAge: undefined,
-            });
-        }
-        router.refresh();
-    }
-    function cancelMember(m: MemberUI) {
-        if ((m as MemberUI & { isNew?: boolean }).isNew) setMembers(prev => prev.filter(x => x.id !== m.id));
-        else patch(m.id, { editing: false, draftName: undefined, draftRel: undefined, draftAge: undefined, openAge: undefined });
-    }
-    function deleteMember(m: MemberUI) {
-        setConfirmTarget({ kind: 'member', member: m });
-    }
-
-    // ── contact ops ──
-    function openComposer(m: MemberUI) { patch(m.id, { composer: { stage: 'pick' } }); }
-    function pickType(m: MemberUI, type: ContactEntryType) { patch(m.id, { composer: { stage: 'edit', type, value: '', platform: null, apps: [] } }); }
-    async function saveNewContact(m: MemberUI) {
-        const c = m.composer; if (!c || c.stage !== 'edit') return;
-        const platform = c.type === 'social' ? (detectSocialPlatform(c.value) ?? c.platform ?? undefined) : undefined;
-        const res = await run(() => addMemberContactEntry({ adopterId, memberId: m.id, type: c.type, value: c.value.trim(), platform, apps: c.apps }));
-        if (!res) return;
-        const entry: ContactEntry = { id: res.entryId, type: c.type, value: c.value.trim(), ...(platform ? { platform } : {}), ...(c.apps.length ? { apps: c.apps } : {}) };
-        patch(m.id, { contactEntries: [...m.contactEntries, entry], composer: null });
-        router.refresh();
-    }
-    function startEditContact(m: MemberUI, ce: CEditing) {
-        patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, editing: true, draft: { type: e.type, value: e.value, platform: e.platform ?? null, apps: e.apps ?? [] } } as CEditing : e) });
-    }
-    async function saveEditContact(m: MemberUI, ce: CEditing) {
-        const d = ce.draft; if (!d) return;
-        const platform = ce.type === 'social' ? (detectSocialPlatform(d.value) ?? d.platform ?? ce.platform ?? undefined) : ce.platform;
-        const res = await run(
-            () => updateMemberContactEntry({ adopterId, memberId: m.id, entryId: ce.id!, value: d.value.trim(), platform: platform ?? undefined, apps: d.apps, expectedValue: ce.value }),
-            (kind) => { if (kind === 'deleted') patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== ce.id) }); },
-        );
-        if (!res) return;
-        patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, value: d.value.trim(), platform, apps: d.apps, editing: false, draft: undefined } as CEditing : e) });
-        router.refresh();
-    }
-    function deleteContact(m: MemberUI, ce: CEditing) {
-        if (!ce.id) return;
-        setConfirmTarget({ kind: 'contact', member: m, entry: ce });
-    }
-
-    /**
-     * Runs the confirmed deletion. Local `members` state is the source of truth
-     * for this list, so the row is removed from it in the same commit that
-     * closes the dialog — there is no window where the row can flash back while
-     * `router.refresh()` is still in flight.
-     */
-    async function runConfirmedDelete() {
-        const target = confirmTarget;
-        if (!target) return;
-
-        if (target.kind === 'member') {
-            const res = await run(
-                () => removeHouseholdMember({ adopterId, memberId: target.member.id, expected: { name: target.member.name, relationship: target.member.relationship ?? null } }),
-                (kind) => { if (kind === 'deleted') setMembers(prev => prev.filter(x => x.id !== target.member.id)); },
-            );
-            if (!res) { setConfirmTarget(null); return; }
-            setMembers(prev => prev.filter(x => x.id !== target.member.id));
-        } else {
-            const m = target.member;
-            const res = await run(
-                () => removeMemberContactEntry({ adopterId, memberId: m.id, entryId: target.entry.id!, expectedValue: target.entry.value }),
-                (kind) => { if (kind === 'deleted') patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== target.entry.id) }); },
-            );
-            if (!res) { setConfirmTarget(null); return; }
-            patch(m.id, { contactEntries: m.contactEntries.filter(e => e.id !== target.entry.id) });
-        }
-        setConfirmTarget(null);
-        router.refresh();
-    }
-
-    const contactPlaceholder = (d: Draft) => {
-        if (d.type !== 'social') return t(`adopter.ce_input_ph_${d.type}`) || '';
-        const eff = detectSocialPlatform(d.value) ?? d.platform;
-        return eff ? (t(`adopter.ce_input_ph_social_${eff}`) || t('adopter.ce_input_ph_social')) : t('adopter.ce_input_ph_social');
+    /** «Parentesco de Pedro»: who a member's relationship points at. */
+    const relativeNameOf = (view: HouseholdView, relativeTo: string | null) => {
+        if (!relativeTo) return '';
+        if (relativeTo === adopterId) return hostFirst;
+        const r = view.members.find(m => m.profileId === relativeTo);
+        return r ? firstName(r.name) || r.name : '';
     };
 
-    // ── contact editor (shared by add + edit) ──
-    const editor = (m: MemberUI, d: Draft, onChange: (up: Partial<Draft>) => void, onSave: () => void, onCancel: () => void) => {
-        const det = d.type === 'social' ? detectSocialPlatform(d.value) : null;
-        const eff = det ?? d.platform;
-        const canSave = d.value.trim().length > 0 && (d.type !== 'social' || !!eff);
-        return (
-            <div className="rounded-lg border border-stone-200 bg-white p-2.5 mt-1.5 space-y-2">
-                {d.type === 'social' && (
-                    <div>
-                        {!det && <div className="text-[11px] font-semibold text-stone-700 mb-1.5">{t('adopter.ce_social_which')} <span className="text-red-600">*</span></div>}
-                        <SocialPlatformPicker value={eff} locked={!!det} onChange={pl => onChange({ platform: pl })} size={18} />
-                    </div>
-                )}
-                <input autoFocus type="text" value={d.value} onChange={e => onChange({ value: e.target.value })}
-                    placeholder={contactPlaceholder(d)}
-                    className="w-full px-2 py-1.5 border border-stone-300 rounded text-sm outline-none focus:border-teal-500" />
-                {d.type === 'phone' && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-semibold text-stone-500">{t('adopter.ce_phone_apps')}</span>
-                        <PhoneAppsToggle value={d.apps} onChange={apps => onChange({ apps })} />
-                    </div>
-                )}
-                <div className="flex items-center gap-2 justify-end">
-                    <button type="button" onClick={onCancel} disabled={busy} className="text-xs font-medium px-3 py-1.5 rounded text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50">{t('adopter.ce_edit_cancel')}</button>
-                    <button type="button" onClick={onSave} disabled={busy || !canSave} className="text-xs font-medium px-3 py-1.5 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40">{t('adopter.ce_edit_save')}</button>
+    /** A home by its people, the anchor (the person relationships point at) first: «Pedro y Marta». */
+    const peopleOf = (view: HouseholdView) => joinNames(t, [...view.members]
+        .sort((a, b) => Number(b.isAnchor) - Number(a.isAnchor))
+        .map(m => firstName(m.name) || m.name).filter(Boolean));
+
+    /** The divider's words: the profile's own place there («Lucas figura como hijo/a de Pedro»), else whose home it is. */
+    const dividerOf = (view: HouseholdView) => {
+        const self = labelOf(view.self.label, true);
+        return self
+            ? fill(t('adopter.hh_self_as'), { name: hostFirst, rel: self })
+            : fill(t('adopter.hh_with_names'), { names: peopleOf(view) });
+    };
+
+    const memberRows = (view: HouseholdView, gift = false) => (
+        <ul className="divide-y divide-stone-100">
+            {view.members
+                .filter(m => !gift || m.giftRecipient)
+                .map(m => (
+                    <MemberCard key={m.membershipId} member={m} hostName={hostName} relativeName={relativeNameOf(view, m.relativeToAdopterId)}
+                        signedIn={signedIn} currentUser={currentUser} isAdmin={isAdmin} preview={preview} gift={gift} testId={gift ? 'household-gift-recipient' : 'household-member'} />
+                ))}
+        </ul>
+    );
+
+    /** «+ Agregar»: into the one home (or a new one when there is none); with 2+, into the one picked. */
+    const addArea = () => {
+        if (!canAdd) return null;
+        if (adding !== null) {
+            const view = homes.find(h => h.id === adding) ?? null;
+            // Always an explicit household when the profile has one; only a profile-level add names none.
+            const target = householdForAdd(view);
+            return (
+                <div className="pt-1">
+                    <AddPersonForm
+                        anchorAdopterId={adopterId}
+                        householdId={target}
+                        hostName={hostName}
+                        relativeName={hostFirst}
+                        othersInHome={view?.members.map(m => m.name).filter(Boolean) ?? []}
+                        excludeIds={homes.flatMap(h => h.members.map(m => m.profileId))}
+                        onDone={() => setAdding(null)}
+                    />
                 </div>
-            </div>
+            );
+        }
+        if (!separate) return <AddMemberButton buttonRef={addButtonRef} onClick={() => setAdding(homes[0]?.id ?? '')} />;
+        return (
+            <span className="relative inline-flex">
+                <AddMemberButton buttonRef={addButtonRef} onClick={() => setChoosing(c => !c)} expanded={choosing} />
+                {/* On <body>, next to the button (AnchoredMenu): a later card can't cover it (audit A1). */}
+                <AnchoredMenu open={choosing} anchorRef={addButtonRef} onClose={closeChooser} align="left" testId="household-add-which">
+                    <span className="px-4 pt-3 pb-1 text-xs font-semibold text-stone-500">{t('adopter.hh_add_which')}</span>
+                    {homes.map(v => (
+                        <button key={v.id} type="button" role="menuitem" data-testid="household-add-which-option" data-household-id={v.id}
+                            className="px-4 py-3 min-h-[44px] text-left text-sm font-semibold text-stone-900 hover:bg-stone-50 transition-colors break-words"
+                            onClick={() => { setChoosing(false); setAdding(v.id); }}>
+                            {/* The divider's own words for this home (audit B16): one phrasing in both places. */}
+                            {dividerOf(v)}
+                        </button>
+                    ))}
+                </AnchoredMenu>
+            </span>
         );
     };
+
+    async function createGift(submissionId: string, name: string) {
+        setCreating(submissionId);
+        try {
+            const res = await createGiftRecipientProfile({ giverAdopterId: adopterId, submissionId });
+            if (!res.ok) {
+                if (res.error === 'conflict') { toast.warning(t('adopter.hh_err_gift_conflict')); return; }
+                fail.refused(res);
+                return;
+            }
+            toast.success('✓', fill(t('adopter.hh_gift_created'), { name }));
+            router.refresh();
+        } catch (e) {
+            fail.thrown(e);
+        } finally {
+            setCreating(null);
+        }
+    }
+
+    const giverFirst = hostFirst || t('adopter.nameless');
+    const nothing = homes.length === 0 && gifts.length === 0 && data.giftForms.length === 0;
 
     return (
-        <div className="space-y-3">
-            {members.length === 0 && !canEdit && !hasLegacyText && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
-            {members.map(m => (
-                <div key={m.id} className="border border-stone-200 rounded-xl p-3.5 bg-stone-50" data-testid="household-member">
-                    {m.editing ? (
-                        <div className="space-y-2">
-                            <div className="flex gap-2 flex-wrap">
-                                <div className="flex-1 min-w-[140px]">
-                                    <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_name')}</label>
-                                    <input autoFocus type="text" data-testid="household-member-name-input" value={m.draftName ?? ''} onChange={e => patch(m.id, { draftName: e.target.value })} placeholder={t('adopter.hh_name_ph')} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-sm outline-none focus:border-teal-500" />
-                                </div>
-                                <div className="flex-1 min-w-[140px]">
-                                    <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_rel')}</label>
-                                    <select value={m.draftRel ?? ''} onChange={e => patch(m.id, { draftRel: (e.target.value || null) as Relationship | null })} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-sm bg-white outline-none focus:border-teal-500">
-                                        <option value="">{t('adopter.hh_rel_choose')}</option>
-                                        {RELATIONSHIPS.map(r => <option key={r} value={r}>{t(`adopter.hh_rel_${r}`)}</option>)}
-                                    </select>
-                                </div>
-                                <div className="w-24">
-                                    <label className="block text-[11px] font-semibold text-stone-500 mb-1">{t('adopter.hh_age')}</label>
-                                    <input type="number" inputMode="numeric" min={0} max={120} step={1} data-testid="household-member-age-input" value={m.draftAge ?? ''} onChange={e => patch(m.id, { draftAge: e.target.value })} className="w-full px-2.5 py-1.5 border border-stone-300 rounded text-base outline-none focus:border-teal-500" />
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 justify-end">
-                                <button type="button" onClick={() => cancelMember(m)} disabled={busy} className="text-xs font-medium px-3 py-1.5 rounded text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50"><X className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_cancel')}</button>
-                                <button type="button" data-testid="household-member-save" onClick={() => saveMember(m)} disabled={busy || !((m.draftName ?? '').trim() || m.draftRel)} className="text-xs font-semibold px-3.5 py-1.5 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"><Check className="w-3.5 h-3.5 inline" /> {t('adopter.ce_edit_save')}</button>
-                            </div>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="flex items-start gap-2.5">
-                                <div className="w-9 h-9 rounded-lg bg-teal-600 text-white font-bold text-sm flex items-center justify-center shrink-0">{(m.name.trim()[0] || '?').toUpperCase()}</div>
-                                <div className="min-w-0 flex-1">
-                                    <div className="font-semibold text-[15px] text-stone-900 break-words">
-                                        {m.name || <span className="italic text-stone-400">{t('adopter.hh_name')}</span>}
-                                        {m.giftRecipient && <span className="ml-1.5 inline-block whitespace-nowrap align-middle text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700">{t('adopter.hh_gift_recipient')}</span>}
-                                    </div>
-                                    <div className={`text-xs ${m.relationship ? 'text-stone-500' : 'text-stone-400 italic'}`}>
-                                        {m.relationship === 'unknown' ? t('adopter.hh_rel_unknown_display') : m.relationship ? relLabel(m.relationship) : t('adopter.hh_rel_none')}
-                                        {currentAge(m) !== null && <> · {t('adopter.hh_years').replace('{n}', String(currentAge(m)))}</>}
-                                    </div>
-                                </div>
-                                {canEdit && (
-                                    <div className="flex gap-0.5 shrink-0">
-                                        <button type="button" data-testid="household-member-edit" onClick={() => { const shown = m.age !== undefined ? String(currentAge(m)) : ''; patch(m.id, { editing: true, draftName: m.name, draftRel: m.relationship, draftAge: shown, openAge: shown }); }} title={t('adopter.ce_edit_label')} className="p-1.5 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded"><Pencil className="w-3.5 h-3.5" /></button>
-                                        <button type="button" onClick={() => deleteMember(m)} title="Quitar" className="p-1.5 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
-                                    </div>
-                                )}
-                            </div>
-                            {/* contacts — no heading: "Agregar dato de contacto" says it. A
-                                viewer who can't edit a member with no contacts gets no
-                                block at all rather than an empty divider. */}
-                            {(m.contactEntries.length > 0 || canEdit) && (
-                            <div className="mt-3 pt-3 border-t border-dashed border-stone-200">
-                                {m.contactEntries.length > 0 && (
-                                    <ul className="space-y-1.5 mb-2">
-                                        {(m.contactEntries as CEditing[]).map((ce, ci) => ce.editing ? (
-                                            <li key={`${ce.id}-${ci}`}>{editor(m, ce.draft!, up => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, draft: { ...(e as CEditing).draft!, ...up } } as CEditing : e) }), () => saveEditContact(m, ce), () => patch(m.id, { contactEntries: m.contactEntries.map(e => e.id === ce.id ? { ...e, editing: false, draft: undefined } as CEditing : e) }))}</li>
-                                        ) : (() => {
-                                            const branded = ce.type === 'social' && ce.platform && ce.platform !== 'other' && !ce.masked;
-                                            const Icon = TYPE_ICON[ce.type];
-                                            return (
-                                                <li key={`${ce.id}-${ci}`} className="group flex items-center gap-2 text-sm">
-                                                    {branded ? <SocialLogo platform={ce.platform!} size={16} className="shrink-0" /> : <Icon className="w-4 h-4 shrink-0 text-teal-600" />}
-                                                    <span className="w-20 shrink-0 text-stone-500 text-xs">{branded ? '' : t(`adopter.ce_type_${ce.type}`)}</span>
-                                                    <span className={`flex-1 min-w-0 truncate ${ce.masked ? 'text-stone-400 select-none' : 'text-stone-800'}`}>{ce.value}</span>
-                                                    {(ce.apps ?? []).map(a => <MessagingLogo key={a} app={a} size={14} />)}
-                                                    {canEdit && !ce.masked && (
-                                                        <span className="hidden group-hover:flex gap-0.5 shrink-0">
-                                                            <button type="button" onClick={() => startEditContact(m, ce)} className="p-1 text-stone-500 hover:text-teal-700 rounded"><Pencil className="w-3.5 h-3.5" /></button>
-                                                            <button type="button" onClick={() => deleteContact(m, ce)} className="p-1 text-stone-500 hover:text-red-600 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
-                                                        </span>
-                                                    )}
-                                                </li>
-                                            );
-                                        })())}
-                                    </ul>
-                                )}
-                                {canEdit && (m.composer?.stage === 'pick' ? (
-                                    <div className="rounded-lg border border-stone-200 bg-white p-2.5">
-                                        <div className="flex flex-wrap gap-1.5 mb-2">
-                                            {COMPOSABLE.map(ty => { const I = TYPE_ICON[ty]; return (
-                                                <button key={ty} type="button" onClick={() => pickType(m, ty)} className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-white border border-stone-300 text-stone-700 hover:bg-teal-50 hover:border-teal-300"><I className="w-3 h-3" />{t(`adopter.ce_type_${ty}`)}</button>
-                                            ); })}
-                                        </div>
-                                        <div className="flex justify-end"><button type="button" onClick={() => patch(m.id, { composer: null })} className="text-xs px-3 py-1 rounded text-stone-500 hover:text-stone-700">{t('adopter.ce_edit_cancel')}</button></div>
-                                    </div>
-                                ) : m.composer?.stage === 'edit' ? (
-                                    editor(m, m.composer, up => patch(m.id, { composer: { ...(m.composer as { stage: 'edit' } & Draft), ...up } }), () => saveNewContact(m), () => patch(m.id, { composer: null }))
-                                ) : (
-                                    <button type="button" onClick={() => openComposer(m)} className="inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-900"><Plus className="w-4 h-4" />{t('adopter.hh_add_contact')}</button>
-                                ))}
-                            </div>
-                            )}
-                        </>
-                    )}
+        <div data-testid="household-section">
+            {nothing && !canAdd && !hasLegacyText && <p className="text-sm text-stone-500 italic">{t('adopter.no_family')}</p>}
+
+            {homes.map(view => (
+                <div key={view.id} data-household-id={view.id}>
+                    {separate && <HomeDivider text={dividerOf(view)} />}
+                    {memberRows(view)}
                 </div>
             ))}
-            {canEdit && (
-                <button type="button" data-testid="household-add-member" onClick={startAdd} disabled={busy} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md disabled:opacity-50">
-                    <Plus className="w-4 h-4" />{t('adopter.hh_cta_add')}
-                </button>
-            )}
 
-            <ConfirmDialog
-                open={!!confirmTarget}
-                busy={busy}
-                title={
-                    confirmTarget?.kind === 'contact'
-                        ? t('dialogs.confirm_delete_contact').replace('{value}', confirmTarget.entry.value)
-                        : confirmTarget?.member.name?.trim()
-                            ? t('dialogs.confirm_delete_member').replace('{name}', confirmTarget.member.name.trim())
-                            : t('dialogs.confirm_delete_member_unnamed')
-                }
-                message={
-                    confirmTarget?.kind === 'contact'
-                        ? t('dialogs.confirm_delete_contact_note')
-                        : t('dialogs.confirm_delete_member_note')
-                }
-                onConfirm={runConfirmedDelete}
-                onCancel={() => setConfirmTarget(null)}
-            />
+            {/* The gift (audit B14): with the household rows, before «+ Agregar». */}
+            {(gifts.length > 0 || data.giftForms.length > 0) && <div className="mt-2 mb-2 space-y-3">
+            {gifts.map(view => {
+                const recipient = view.members.find(m => m.giftRecipient);
+                if (!recipient) return null;
+                const recipientFirst = firstName(recipient.name) || recipient.name;
+                return (
+                    <GiftShell key={view.id} testId="household-gift" title={t('adopter.hh_gift_title')}
+                        body={fill(t('adopter.hh_gift_body'), { giver: giverFirst, recipient: recipientFirst })}>
+                        {memberRows(view, true)}
+                    </GiftShell>
+                );
+            })}
+
+            {data.giftForms.map(g => (
+                <GiftShell key={g.submissionId} testId="household-gift-form" title={t('adopter.hh_gift_form_title')}
+                    body={fill(t('adopter.hh_gift_form_body'), { giver: giverFirst })}>
+                    {/* Read-only, as the form gave it — the same rows as «Respuestas del formulario». */}
+                    {/* Read-only, as the form gave it — in the profile's contact-row look (ContactRow, audit B14). */}
+                    <ul className="space-y-1.5" data-testid="household-gift-form-data">
+                        <li className="flex items-start gap-2 text-sm">
+                            <User className="w-4 h-4 mt-0.5 shrink-0 text-teal-600" aria-hidden="true" />
+                            <span className="sr-only sm:not-sr-only sm:w-24 sm:shrink-0 text-stone-500">{t('adopter.hh_name')}</span>
+                            <span className="min-w-0 flex-1 font-medium text-stone-800 break-words">{g.name || <span className="italic text-stone-500 font-normal">{t('adopter.hh_gift_masked_name')}</span>}</span>
+                        </li>
+                        {g.phone && <ContactRow entry={{ id: `gift-${g.submissionId}-phone`, type: 'phone', value: g.phone }} testId="household-gift-phone" />}
+                    </ul>
+                    {!preview && data.canCreateGift && !g.masked && g.name && (
+                        <Button type="button" variant="secondary" size="compact" data-testid="household-gift-create" disabled={creating !== null} loading={creating === g.submissionId}
+                            onClick={() => { void createGift(g.submissionId, g.name); }} icon={<UserPlus className="w-4 h-4" aria-hidden="true" />}>
+                            {fill(t('adopter.hh_gift_create'), { name: g.name })}
+                        </Button>
+                    )}
+                </GiftShell>
+            ))}
+            </div>}
+
+            {addArea()}
         </div>
     );
 }

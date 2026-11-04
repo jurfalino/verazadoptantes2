@@ -1,6 +1,7 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { execSync } from 'child_process';
 import { writeFileSync } from 'fs';
+import { execD1, rows } from './db';
 
 /**
  * Signed contracts go to PRIVATE storage with a random file name per signing
@@ -9,10 +10,6 @@ import { writeFileSync } from 'fs';
  * overwrites the first. They open only through /api/files/contract/[animalId],
  * for the animal's rescue and admins.
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
-const rows = (sql: string) => JSON.parse(execD1(sql))[0].results as Array<Record<string, unknown>>;
 const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 test.describe('signed contracts: private storage', () => {

@@ -57,6 +57,10 @@ const nextConfig: NextConfig = {
     // deployment it was loaded from, so a deploy is invisible to people mid-task.
     APP_DEPLOY_MAP: process.env.APP_DEPLOY_MAP || '',
     APP_DEPLOY_MAP_ALLOW_LOCAL: process.env.APP_DEPLOY_MAP_ALLOW_LOCAL || '',
+    // 'production' | 'staging', set by CI's build step. Decides whether the public
+    // API is live or test on this deployment, whatever hostname it is reached on
+    // (src/lib/api/keys.ts environmentForHost). Empty locally.
+    APP_ENVIRONMENT: process.env.APP_ENVIRONMENT || '',
   },
   serverExternalPackages: ["better-sqlite3"],
   // Mitigate Next.js 15.1 dev server memory leak (known regression)

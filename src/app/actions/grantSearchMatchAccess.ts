@@ -5,7 +5,8 @@ import { replaySearchMatchGrants } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
 
 /**
- * Public server action invoked from <DuplicateHint>'s "View match" button.
+ * Public server action invoked from <DuplicateHint>'s «Abrir perfil completo
+ * en otra pestaña» link.
  * Inserts the same search-match grants that discovery-mode `findAdopters`
  * writes when a user searches and the query matches the adopter — but
  * triggered explicitly from a duplicate-detection UI rather than implicitly

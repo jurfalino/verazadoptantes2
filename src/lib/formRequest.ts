@@ -19,7 +19,8 @@ export const LIFE_STAGE_LABELS: Record<string, string> = {
     puppy: 'Cachorro', young: 'Joven', senior: 'Senior',
 };
 export const INTENT_LABELS: Record<string, string> = {
-    self: 'Para sí mismx', gift: 'Regalo para otra persona',
+    // One label pair everywhere (form results, applicants list, record details): «Para sí» / «Es un regalo».
+    self: 'Para sí', gift: 'Es un regalo',
 };
 const HOUSEHOLD_LABELS: Record<string, string> = {
     children: 'Niños en el hogar', pets: 'Otras mascotas', outdoor: 'Espacio exterior seguro', presence: 'Presencia frecuente en casa',

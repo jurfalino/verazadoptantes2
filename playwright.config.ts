@@ -8,6 +8,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '.env.local') });
 
+// Extra `next dev` flags from the workflow_dispatch input; it reaches a shell
+// command, so only plain flags (letters, digits, -, =, ., space) are accepted.
+const nextDevArgs = process.env.E2E_NEXT_DEV_ARGS ?? '';
+if (!/^[-\w=. ]*$/.test(nextDevArgs)) throw new Error(`E2E_NEXT_DEV_ARGS: only plain flags allowed, got ${JSON.stringify(nextDevArgs)}`);
+
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -54,7 +59,9 @@ export default defineConfig({
     // Regular (non-admin) user tests — authenticated with non-admin JWT session
     {
       name: 'user',
-      testIgnore: /auth\.setup\.ts|authed\.spec\.ts/,
+      // mobile.spec.ts only asserts mobile-size behaviour and runs in the `mobile` project
+      // (iPhone 14); at desktop size it would just repeat itself.
+      testIgnore: /auth\.setup\.ts|authed\.spec\.ts|mobile\.spec\.ts/,
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Chrome'],
@@ -99,12 +106,22 @@ export default defineConfig({
    * miniflare ECONNRESET race that intermittently wedged the e2e job (see
    * v2.12.1-30 CI failure analysis). */
   webServer: {
-    command: 'node scripts/setup-test-db.js && npx next dev',
+    // E2E_NEXT_DEV_ARGS: extra `next dev` flags, set only by the
+    // workflow_dispatch experiment input (ci.yml); empty by default.
+    command: `node scripts/setup-test-db.js && npx next dev${nextDevArgs.trim() ? ` ${nextDevArgs.trim()}` : ''}`,
     url: 'http://localhost:3000/api/ready',
     reuseExistingServer: !process.env.CI,
-    timeout: 120000,
+    // CI: 4 minutes. A cold `next dev` after a dependency-cache miss on a slow
+    // runner overran 2 minutes twice (2026-10-21/22) and failed the deploy
+    // before any test ran. Local stays at 2.
+    timeout: process.env.CI ? 240000 : 120000,
     env: {
-      NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc',
+      // CI sizes the heap from the runner's memory (E2E_NODE_HEAP_MB, set by
+      // the workflow: half of RAM, capped at 8 GB). `next dev` restarts as it
+      // nears the heap limit, and those restarts are what fail tests mid-flight
+      // (3 per run in the view-as leg, 2026-10-22). Locally: 4 GB as before.
+      // E2E_HEAP_PROBE (CI only) adds the heap probe that feeds e2e-heap.log.
+      NODE_OPTIONS: `--max-old-space-size=${process.env.E2E_NODE_HEAP_MB || 4096} --expose-gc${process.env.E2E_HEAP_PROBE ? ` --require ${path.resolve(__dirname, 'scripts/e2e-heap-probe.cjs')}` : ''}`,
       // A fixed build id so the deploy-skew guard is active here exactly as in
       // production (and identical locally and in CI, where GITHUB_SHA would
       // otherwise be picked up). tests/deploy-skew.authed.spec.ts relies on it.

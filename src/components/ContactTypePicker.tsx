@@ -72,7 +72,8 @@ export function ContactTypePicker({ value, onChange, disabled, compact, types }:
         };
     }, [open]);
 
-    const size = compact ? 'w-9 h-9' : 'w-11 h-11';
+    // 44px on a phone (tap-target floor); the compact 36px from `sm:` up.
+    const size = compact ? 'w-11 h-11 sm:w-9 sm:h-9' : 'w-11 h-11';
 
     return (
         <div ref={wrapRef} className="relative shrink-0">
@@ -119,7 +120,7 @@ export function ContactTypePicker({ value, onChange, disabled, compact, types }:
                                 aria-checked={active}
                                 data-testid={`ce-type-option-${type}`}
                                 onClick={() => { onChange(type); setOpen(false); }}
-                                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${active
+                                className={`flex w-full min-h-[44px] sm:min-h-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${active
                                     ? 'bg-teal-50 font-semibold text-teal-900'
                                     : 'text-stone-700 hover:bg-teal-50 hover:text-teal-900'}`}
                             >

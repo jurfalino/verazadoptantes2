@@ -1,0 +1,1045 @@
+'use server';
+
+/**
+ * Households as profiles (spec 2026-10-26-households-as-profiles-design) —
+ * the actions people use. Every person in a household is an adopter profile;
+ * a household is a group of profiles (src/lib/households.ts). Rules live in
+ * src/domain/households.ts, notices in src/lib/householdNotices.ts.
+ *
+ * - `addHouseholdPerson`: anyone signed in (D54). An existing profile
+ *   («¿Es este perfil?» → sí) joins the household, and the contacts typed go
+ *   on it through `addContactEntry` (credited, grants, no double copies).
+ *   Otherwise a new profile is made — owned by the ANCHOR's owner (spec «Who
+ *   owns the profile a household add creates»), contacts credited to the
+ *   typist with entry grants when they have no standing (D54). A name or one
+ *   contact is required (`hasMinimumIdentifier`). Re-adding a person someone
+ *   said doesn't live there adds anyway and tells the admins (D48).
+ * - `updateHouseholdMembership`: the relationship only (name and age are the
+ *   profile's, Task 3). Anyone signed in; credited, history on the person,
+ *   the household's teams told.
+ * - `removeHouseholdMembership`: «Quitar del hogar» — `canRemoveMembership`
+ *   (the adder, any household profile's team, admins/moderators).
+ *   'mistake' («Lo cargué por error») leaves no correction; 'not_living'
+ *   («No vive acá») records one, so a re-add is a dispute. History on the
+ *   person and every remaining housemate, the other teams told.
+ * - `getHouseholdMatchCandidates`: the «Nuevo adoptante» duplicate check
+ *   (findFormDuplicates) plus each candidate's household line.
+ * - `getDuplicateHintMatches`: the composer's «Ya está en otro perfil» — the
+ *   same card data for one typed phone / email / social / id.
+ *
+ * Browser-callable: the session is the only source of the actor; every id is
+ * checked against what is stored. History kinds follow profilePrivilege
+ * ('contribution' for anyone without standing on that profile). Errors are
+ * codes (the UI translates them); a failure carries an errorId.
+ */
+import { eq } from 'drizzle-orm';
+import type { OpenAlertKind } from '@/domain/flags';
+import { getDb, getUser } from './_db';
+import { adopterHistory, adopters } from '@/db/schema';
+import { logger } from '@/lib/logger';
+import { logAudit } from '@/lib/audit';
+import { runBatch } from '@/lib/dbBatch';
+import { runAfterResponse } from '@/lib/background';
+import { isRealActorEmail } from '@/lib/piiAccess';
+import { isPrivilegedOnProfile, historyKind, historyKindForOwner } from '@/lib/profilePrivilege';
+import { CONTACT_ENTRIES_FULL, contactEntryFromInput, deserializeContactEntries, newContactsForProfile, parseBlobToContactEntries, type ContactEntry, type SocialPlatform } from '@/lib/contactEntries';
+import { countsFor } from '@/lib/profileSummary';
+import type { ActivityCounts } from '@/domain/activityCounts';
+import { RELATIONSHIPS, type Relationship } from '@/lib/householdMembers';
+import { insertContributionGrant, fileContributionAccessRequest, revokeContributionGrants } from '@/lib/contributionSideEffects';
+import { extractErrorId } from '@/lib/errorUtils';
+import {
+    addMembership, claimMembershipRecord, ensureHousehold, hasCorrection, householdExists, ordinaryHouseholdCount,
+    householdLinesFor, isMemberOf, membershipById, membershipBySourceKey, membershipsOf, ownTeamOf, releaseMembershipRecord, removeMembership, setMembershipRelationship,
+    type CardHousehold,
+} from '@/lib/households';
+import {
+    notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed, notifyHouseholdRelationshipChanged,
+} from '@/lib/householdNotices';
+import { canRemoveMembership, currentAge, householdNameKey, isGiftHousehold, isMinor, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
+import { sameName } from '@/domain/profileIdentity';
+import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
+import { householdContactSchema } from './validation';
+import { addContactEntry } from './addContactEntry';
+import { createHouseholdProfile } from './_adopterFactory';
+import { searchFormDuplicates } from '@/lib/formDuplicates';
+import { findAdopters } from './findAdopters';
+import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
+import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintPairMatches, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
+import { ratingAfterMerge } from '@/domain/ratings';
+import { realOwner } from '@/domain/dedupPair';
+import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
+import type { DiscoveryMatch, DuplicateMatch } from './types';
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+/** One contact typed with the person (addContactEntry's fields). */
+export type HouseholdContactInput = {
+    type: ContactEntry['type'];
+    value: string;
+    streetAndNumber?: string;
+    locality?: string;
+    platform?: ContactEntry['platform'];
+    apps?: ContactEntry['apps'];
+};
+
+export type HouseholdActionError =
+    | 'not_authenticated' | 'not_found' | 'invalid' | 'identifier_required'
+    | 'household_full' | 'too_many_households' | 'not_authorized' | 'conflict' | 'failed'
+    /**
+     * An imported relative (`fromImport`) of that name already lives in that household and the
+     * caller has no standing on that person: nothing is added, and who it is stays unsaid. Not a
+     * failure for the importer — the relative is there.
+     */
+    | 'already_there'
+    /** The existing profile already holds the maximum contact entries (S1): the link stands, the contact didn't land. */
+    | typeof CONTACT_ENTRIES_FULL;
+type Fail = { ok: false; error: HouseholdActionError; errorId?: string };
+
+export type AddHouseholdPersonInput = {
+    /** The profile the person is added next to («pareja de Pedro»). */
+    anchorAdopterId: string;
+    /** One of the anchor's households; omitted = the anchor's household (made when it has none). */
+    householdId?: string;
+    /** «¿Es este perfil?» → sí: link this live profile instead of making one. */
+    existingProfileId?: string;
+    name?: string;
+    relationship?: Relationship;
+    contactEntries?: HouseholdContactInput[];
+    /**
+     * A relative an import names (ImportWizard, Task 4 fix round 1). Re-merging the same post
+     * must not add them twice: someone of the same name already in that household is that
+     * person (the interview's rule), and with the post's URL the membership gets a source key
+     * built HERE from (typist, anchor, URL) + `slot` — a client can never pick another source's
+     * key. `slot`: the person's place in the post ('s' = the post's person, 'r0', 'r1'…).
+     */
+    fromImport?: { sourceUrl?: string | null; slot: string };
+};
+
+export type AddHouseholdPersonResult =
+    | {
+        ok: true; profileId: string; membershipId: string; createdProfile: boolean; autoRequestFiled: boolean;
+        /** The person is placed, but a later step (history, notices…) failed: logged under this id. */
+        warningErrorId?: string;
+    }
+    | Fail;
+
+export type HouseholdMatchCandidate = DiscoveryMatch & {
+    /** The card's home. UNSET = not read (households off, or the query budget cut this card): the card says nothing about a home, never «nobody lives there». */
+    household?: CardHousehold;
+    /** Open alerts, counted exactly as the household line counts them (ProfileCounts / openAlertKinds — final fix P6). */
+    openAlerts: OpenAlertKind[];
+    /** Activity by record type, counted as the candidate's own «Actividad» header and a household row count it (countsFor). */
+    activity: ActivityCounts;
+    /** The rating as a household row reads it (countsFor); null = not rated. */
+    rating: number | null;
+};
+
+const REL_SET: ReadonlySet<string> = new Set(RELATIONSHIPS);
+const MAX_CONTACTS = 20;
+const id64 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 64) : '');
+const id200 = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 200) : '');
+
+const sameEmail = (a: string | null | undefined, b: string | null | undefined) =>
+    !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+async function sessionActor(): Promise<string | null> {
+    let actor = '';
+    try { actor = await getUser(); } catch { /* anonymous: refused by the caller */ }
+    return isRealActorEmail(actor) ? actor : null;
+}
+
+type ProfileRow = { id: string; name: string; addedBy: string | null; deletedAt: Date | null };
+
+async function liveProfile(db: Db, id: string): Promise<ProfileRow | null> {
+    if (!id) return null;
+    const row = await db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy, deletedAt: adopters.deletedAt })
+        .from(adopters).where(eq(adopters.id, id)).get() as ProfileRow | undefined;
+    return row && !row.deletedAt ? row : null;
+}
+
+/** The typed contacts, validated as addContactEntry validates one; null = something malformed. */
+function parseContacts(raw: unknown): HouseholdContactInput[] | null {
+    if (raw === undefined || raw === null) return [];
+    if (!Array.isArray(raw) || raw.length > MAX_CONTACTS) return null;
+    const out: HouseholdContactInput[] = [];
+    for (const item of raw) {
+        const parsed = householdContactSchema.safeParse(item);
+        if (!parsed.success) return null;
+        out.push(parsed.data);
+    }
+    return out;
+}
+
+// ─────────────────────────── Placing the membership ───────────────────────────
+
+/**
+ * The household to add into: a chosen one must exist and hold the anchor (a
+ * guessed id is `not_found`); otherwise the anchor's own (ensureHousehold).
+ * ensureHousehold can, in a 3+-way race, return a household a racing caller
+ * then dropped (Task 1): the row is checked and ensureHousehold retried once.
+ */
+async function resolveHousehold(db: Db, anchorId: string, chosen: string, actor: string, ctx: Record<string, unknown>): Promise<string | 'not_found'> {
+    if (chosen) {
+        if (!(await householdExists(db, chosen)) || !(await isMemberOf(db, chosen, anchorId))) return 'not_found';
+        // A gift household is never a home to add people to (Task 8 fix A1): only «Crear perfil» fills it.
+        if (isGiftHousehold(await membershipsOf(db, chosen, MAX_HOUSEHOLD_MEMBERS + 1))) {
+            logger.warn('addHouseholdPerson: a gift household was chosen as the target, refused', { ...ctx, householdId: chosen });
+            return 'not_found';
+        }
+        return chosen;
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const householdId = await ensureHousehold(db, anchorId, actor);
+        if (await householdExists(db, householdId)) return householdId;
+        logger.warn('addHouseholdPerson: household gone after ensureHousehold (lost race), retrying', { ...ctx, householdId, attempt });
+    }
+    throw new Error('addHouseholdPerson: the anchor household kept disappearing');
+}
+
+/** Room for one more person, and the person may join one more household. */
+async function capacityError(db: Db, householdId: string, adopterId: string | null): Promise<'household_full' | 'too_many_households' | null> {
+    if (adopterId && await isMemberOf(db, householdId, adopterId)) return null;
+    if ((await membershipsOf(db, householdId, MAX_HOUSEHOLD_MEMBERS + 1)).length >= MAX_HOUSEHOLD_MEMBERS) return 'household_full';
+    // Gift households don't count (final fix S4): only homes.
+    if (adopterId && (await ordinaryHouseholdCount(db, adopterId)) >= MAX_HOUSEHOLDS_PER_PROFILE) return 'too_many_households';
+    return null;
+}
+
+/**
+ * A profile made for a household add that ended up in no household: undo it
+ * — soft-deleted, its tokens removed (never a search or duplicate match), any
+ * contribution grant on it revoked — so a retry makes one live profile, never
+ * two. Logged; a failure here is logged too (the caller already answers with
+ * an error).
+ */
+async function undoCreatedProfile(db: Db, profileId: string, actor: string, entries: ContactEntry[], ctx: Record<string, unknown>): Promise<void> {
+    const c = { ...ctx, profileId };
+    try {
+        const { duplicateTokens } = await import('@/db/schema');
+        await runBatch(db, [
+            db.update(adopters).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(adopters.id, profileId)),
+            db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, profileId)),
+        ]);
+        await revokeContributionGrants(db, { op: 'addHouseholdPerson.undo', adopterId: profileId, actor, removed: entries, stillOnProfile: new Set() });
+        logger.warn('addHouseholdPerson: membership not placed, new profile undone', c);
+    } catch (e) {
+        logger.error('addHouseholdPerson: membership not placed and the new profile could not be undone', e, c);
+    }
+}
+
+/**
+ * addMembership, then make sure the household still exists: a racing
+ * ensureHousehold may drop an anchor-only household between our check and
+ * our insert. Then our row is taken back (never a dangling membership) and
+ * the person is placed once more in the anchor's household — never in a
+ * chosen one, which is simply gone (`not_found`).
+ */
+async function joinHousehold(
+    db: Db,
+    p: { householdId: string; chosen: boolean; anchorId: string; adopterId: string; relationship: Relationship; actor: string; sourceKey?: string | null },
+    ctx: Record<string, unknown>,
+): Promise<{ householdId: string; membershipId: string; created: boolean } | 'not_found'> {
+    let householdId = p.householdId;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const out = await addMembership(db, {
+            householdId, adopterId: p.adopterId, relationship: p.relationship, relativeToAdopterId: p.anchorId, addedBy: p.actor, sourceKey: p.sourceKey ?? null,
+            // S3: only pairs the adder is privileged on BOTH sides of leave «Pendientes».
+            clearPairs: { actor: p.actor },
+        });
+        if (await householdExists(db, householdId)) return { householdId, ...out };
+        logger.warn('addHouseholdPerson: household gone after the membership landed (lost race), membership taken back', { ...ctx, householdId, membershipId: out.membershipId, attempt });
+        if (out.created) {
+            await removeMembership(db, out.membershipId, p.actor, { correction: false }).catch((e: unknown) => {
+                logger.error('addHouseholdPerson: dangling membership not removed', e, { ...ctx, householdId, membershipId: out.membershipId });
+            });
+        }
+        if (p.chosen) return 'not_found';
+        const again = await resolveHousehold(db, p.anchorId, '', p.actor, ctx);
+        if (again === 'not_found') return 'not_found';
+        householdId = again;
+    }
+    throw new Error('addHouseholdPerson: the household kept disappearing');
+}
+
+/** The source key of an imported relative: never chosen by the client (typist + anchor + post URL, hashed) + its slot. */
+async function importSourceKey(actor: string, anchorId: string, from: { sourceUrl?: string | null; slot: string }): Promise<string | null> {
+    const url = typeof from.sourceUrl === 'string' ? from.sourceUrl.trim().slice(0, 2000) : '';
+    if (!url) return null;
+    const bytes = new TextEncoder().encode(`${actor.trim().toLowerCase()}|${anchorId}|${url}`);
+    const hex = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+    return `import-post:${hex.slice(0, 16)}-${from.slot}`;
+}
+
+type ImportedAlready =
+    /** This post's re-merge placed them in THIS household before (its source key: the caller added it). */
+    | { kind: 'here'; profileId: string; membershipId: string }
+    /** Placed by this post before, but in another household (the anchor moved): the same person joins this one. */
+    | { kind: 'elsewhere'; profileId: string }
+    /** Someone of the same name lives in this household (the interview's rule). */
+    | { kind: 'same_name'; profileId: string; membershipId: string; addedBy: string | null; ownerEmail: string | null };
+
+/**
+ * An imported relative who may already be there: the membership this post's
+ * re-merge wrote before (its source key — in this household, or elsewhere
+ * when the anchor moved), or someone of the same name (householdNameKey:
+ * case, accents, spacing) living in this household. Null = add them. Called
+ * only once the caller's add is allowed (anchor live, household theirs).
+ */
+async function importedAlready(
+    db: Db,
+    p: { householdId: string; anchorId: string; importKey: string | null; name: string; ctx: Record<string, unknown> },
+): Promise<ImportedAlready | null> {
+    if (p.importKey) {
+        const m = await membershipBySourceKey(db, p.importKey);
+        if (m && await liveProfile(db, m.adopterId)) {
+            if (m.householdId === p.householdId) {
+                logger.info('addHouseholdPerson: this post\'s relative is already there, reused', { ...p.ctx, membershipId: m.id });
+                return { kind: 'here', profileId: m.adopterId, membershipId: m.id };
+            }
+            logger.info('addHouseholdPerson: this post\'s relative lives in another household of the anchor\'s past, linked here', { ...p.ctx, membershipId: m.id });
+            return { kind: 'elsewhere', profileId: m.adopterId };
+        }
+    }
+    const key = householdNameKey(p.name);
+    if (!key) return null;
+    for (const m of await membershipsOf(db, p.householdId)) {
+        if (m.adopterId === p.anchorId) continue;
+        const prof = await liveProfile(db, m.adopterId);
+        if (prof?.name && householdNameKey(prof.name) === key) {
+            logger.info('addHouseholdPerson: someone of that name already lives there, not added again (import)', { ...p.ctx, membershipId: m.id });
+            return { kind: 'same_name', profileId: prof.id, membershipId: m.id, addedBy: m.addedBy, ownerEmail: prof.addedBy };
+        }
+    }
+    return null;
+}
+
+// ─────────────────────────── Add ───────────────────────────
+
+/** The lazy conversion of a profile's old inline household before a write reads it. Never fails the add (logged). */
+async function convertFirst(db: Db, adopterId: string, ctx: Record<string, unknown>): Promise<void> {
+    try {
+        const { ensureProfileConverted } = await import('@/lib/householdConversion');
+        const { failed } = await ensureProfileConverted(db, adopterId);
+        if (failed) logger.warn('addHouseholdPerson: some of the anchor\'s old household was not converted yet', { ...ctx, failed });
+    } catch (e) {
+        logger.warn('addHouseholdPerson: old household conversion failed, the add goes on', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
+export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promise<AddHouseholdPersonResult> {
+    const actor = await sessionActor();
+    if (!actor) return { ok: false, error: 'not_authenticated' };
+    const anchorId = id64(input?.anchorAdopterId);
+    const chosen = id200(input?.householdId);
+    const existingId = id64(input?.existingProfileId);
+    const name = typeof input?.name === 'string' ? input.name.trim().slice(0, 200) : '';
+    const ctx: Record<string, unknown> = { anchorId, actor, householdId: chosen || null, existingProfileId: existingId || null };
+
+    if (!anchorId) return { ok: false, error: 'invalid' };
+    // Final fix S4: no gift household from here — only «Crear perfil de {nombre}»
+    // (createGiftRecipientProfile, gated on the giver's team) makes one.
+    if ((input as { giftRecipient?: unknown })?.giftRecipient === true) {
+        logger.warn('addHouseholdPerson: refused, a gift recipient is not added here', ctx);
+        return { ok: false, error: 'invalid' };
+    }
+    const fromImport = input?.fromImport ?? null;
+    if (fromImport && (typeof fromImport.slot !== 'string' || !/^[a-z0-9]{1,8}$/.test(fromImport.slot))) return { ok: false, error: 'invalid' };
+    let importKey = fromImport ? await importSourceKey(actor, anchorId, fromImport) : null;
+    if (input.relationship !== undefined && input.relationship !== null && !REL_SET.has(input.relationship)) return { ok: false, error: 'invalid' };
+    const relationship: Relationship = input.relationship && REL_SET.has(input.relationship) ? input.relationship : 'unknown';
+    const contacts = parseContacts(input.contactEntries);
+    if (!contacts) return { ok: false, error: 'invalid' };
+    const entries = contacts.map(c => contactEntryFromInput(c, actor));
+    if (!existingId && !hasMinimumIdentifier({ name, contactEntries: entries.length ? JSON.stringify(entries) : null })) {
+        return { ok: false, error: 'identifier_required' };
+    }
+
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const anchor = await liveProfile(db, anchorId);
+        if (!anchor) return { ok: false, error: 'not_found' };
+        let existing = existingId ? await liveProfile(db, existingId) : null;
+        if (existingId && (!existing || existing.id === anchor.id)) {
+            logger.info('addHouseholdPerson: existing profile missing, deleted or the anchor itself', ctx);
+            return { ok: false, error: 'not_found' };
+        }
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        const [privilegedOnAnchor, onAnchorTeam] = await Promise.all([
+            isPrivilegedOnProfile(actor, anchor.addedBy),
+            isOwnerOrOrgMate(actor, anchor.addedBy),
+        ]);
+
+        // Where they go — checked BEFORE a profile is made, so a refusal leaves nothing behind.
+        let householdId = '';
+        {
+            // Today's inline household first (Task 7): the anchor's home and the same-name rule must see it.
+            await convertFirst(db, anchor.id, ctx);
+            const resolved = await resolveHousehold(db, anchor.id, chosen, actor, ctx);
+            if (resolved === 'not_found') {
+                logger.warn('addHouseholdPerson: chosen household missing or not the anchor\'s', ctx);
+                return { ok: false, error: 'not_found' };
+            }
+            householdId = resolved;
+            // An imported relative already there (same post re-merged, or the same name in that household).
+            // Checked only now: the add itself is allowed (anchor live, the household is the anchor's).
+            if (fromImport && !existing) {
+                const there = await importedAlready(db, { householdId, anchorId: anchor.id, importKey, name, ctx });
+                if (there?.kind === 'here') {
+                    return { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false };
+                }
+                if (there?.kind === 'elsewhere') {
+                    // The same person joins this household (their key stays on the first membership).
+                    existing = await liveProfile(db, there.profileId);
+                    importKey = null;
+                } else if (there?.kind === 'same_name') {
+                    // Who it is is said only to someone with standing on that person or this household,
+                    // or who added them — anyone else learns nothing beyond «already there».
+                    const standing = sameEmail(there.addedBy, actor)
+                        || privilegedOnAnchor
+                        || await isPrivilegedOnProfile(actor, there.ownerEmail);
+                    return standing
+                        ? { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false }
+                        : { ok: false, error: 'already_there' };
+                }
+            }
+            const full = await capacityError(db, householdId, existing?.id ?? null);
+            if (full) {
+                logger.info('addHouseholdPerson: refused, cap reached', { ...ctx, householdId, cap: full });
+                return { ok: false, error: full };
+            }
+        }
+
+        // Who they are.
+        let person: ProfileRow;
+        let createdProfile = false;
+        let autoRequestFiled = false;
+        const contactTypes = entries.map(e => e.type);
+        if (existing) {
+            person = existing;
+        } else {
+            const newId = await createHouseholdProfile(db, {
+                ownerEmail: anchor.addedBy ?? 'anonymous',
+                actor,
+                name,
+                contactEntries: entries,
+                // Age and «Es menor de edad» are not set from here until a new design (Jon 2026-10-29;
+                // EM review I2). No caller sends them — the household forms, the post import's relatives
+                // (fromImport) and «alguien de su hogar» never did — so a browser's value is ignored.
+                age: null,
+                isMinor: false,
+                // Same owner as the anchor, so the same standing.
+                historyKind: historyKind(privilegedOnAnchor),
+                history: { created_in_household: { anchorId: anchor.id, anchorName: anchor.name, householdId: householdId || null, gift: false, ...(contactTypes.length ? { contactTypes } : {}) } },
+            });
+            logAudit({ userEmail: actor, action: 'adopter_created', target: newId, details: { name, via: 'household' } });
+            person = { id: newId, name, addedBy: anchor.addedBy, deletedAt: null };
+            createdProfile = true;
+        }
+
+        // The membership. A new profile that ends up in no household is undone.
+        let placed: { householdId: string; membershipId: string; created: boolean };
+        try {
+            const joined = await joinHousehold(db, { householdId, chosen: !!chosen, anchorId: anchor.id, adopterId: person.id, relationship, actor, sourceKey: importKey }, ctx);
+            if (joined === 'not_found') {
+                if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
+                return { ok: false, error: 'not_found' };
+            }
+            placed = joined;
+        } catch (e) {
+            // The import key is unique (0098): a racing re-merge placed this person first. Theirs stands.
+            const winner = importKey ? await membershipBySourceKey(db, importKey) : null;
+            if (winner) {
+                if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, { ...ctx, lostRace: true });
+                return { ok: true, profileId: winner.adopterId, membershipId: winner.id, createdProfile: false, autoRequestFiled: false };
+            }
+            if (createdProfile) await undoCreatedProfile(db, person.id, actor, entries, ctx);
+            throw e;
+        }
+        const out = { ...ctx, householdId: placed.householdId, membershipId: placed.membershipId, profileId: person.id };
+
+        // Everything after the placement is the add's side effects. The person IS placed: a
+        // failure here is logged with an errorId and answered ok — never `failed`, which
+        // would make a retry create the profile a second time.
+        let warningErrorId: string | undefined;
+        try {
+            // D54 for a new profile, once it is placed: the typist sees what they typed.
+            if (createdProfile && !privilegedOnAnchor) {
+                for (const e of entries) {
+                    if (e.type === 'alias') continue; // never masked: a grant would be inert
+                    await insertContributionGrant(db, person.id, actor, e).catch((err: unknown) => {
+                        logger.error('addHouseholdPerson: contribution grant not written', err, { ...out, type: e.type });
+                    });
+                }
+                if (entries.length > 0) {
+                    await runAfterResponse('addHouseholdPerson.autoAccessRequest',
+                        () => fileContributionAccessRequest('addHouseholdPerson', actor, person.id), out);
+                    autoRequestFiled = true;
+                }
+            }
+
+            // The link's own record — history, audit, notices, dispute — right after it is
+            // placed, independent of the contacts below. Recorded once (a compare-and-set claim
+            // on the membership), and only by the one who added it: a retry by them completes a
+            // record a failure left missing; someone else repeating the add is not credited and
+            // fires nothing.
+            const mayRecord = placed.created || sameEmail((await membershipById(db, placed.membershipId))?.addedBy, actor);
+            if (mayRecord && await claimMembershipRecord(db, placed.membershipId)) {
+                const anchorKind = historyKind(privilegedOnAnchor);
+                const personKind = existing ? await historyKindForOwner(actor, existing.addedBy, out) : null;
+                const now = new Date();
+                try {
+                    await runBatch(db, [
+                        db.insert(adopterHistory).values({
+                            id: crypto.randomUUID(), adopterId: anchor.id, changedBy: actor, kind: anchorKind, changedAt: now,
+                            changes: JSON.stringify({ household_member_added: { id: placed.membershipId, householdId: placed.householdId, profileId: person.id, relationship, ...(contactTypes.length ? { contactTypes } : {}) } }),
+                        }),
+                        ...(existing && personKind ? [db.insert(adopterHistory).values({
+                            id: crypto.randomUUID(), adopterId: existing.id, changedBy: actor, kind: personKind, changedAt: now,
+                            changes: JSON.stringify({ household_joined: { hostId: anchor.id, hostName: anchor.name, householdId: placed.householdId, relationship } }),
+                        })] : []),
+                    ]);
+                } catch (e) {
+                    // Released, so the same person's next add completes the record.
+                    await releaseMembershipRecord(db, placed.membershipId).catch((re: unknown) => {
+                        logger.error('addHouseholdPerson: record claim not released', re, out);
+                    });
+                    throw e;
+                }
+                logAudit({ userEmail: actor, action: 'household_person_added', target: anchor.id, details: { membershipId: placed.membershipId, householdId: placed.householdId, profileId: person.id, createdProfile, relationship, contactTypes, ...(privilegedOnAnchor ? {} : { contribution: true }) } });
+                logger.info('addHouseholdPerson: added', { ...out, createdProfile, completedLater: !placed.created });
+                await notifyHouseholdPersonAdded({
+                    householdId: placed.householdId, membershipId: placed.membershipId,
+                    anchor: { id: anchor.id, name: anchor.name, addedBy: anchor.addedBy },
+                    person: { id: person.id, name: person.name },
+                    actor, onAnchorTeam, existingProfile: !!existing,
+                });
+                if (await hasCorrection(db, placed.householdId, person.id)) {
+                    logger.info('addHouseholdPerson: re-added after «No vive acá», dispute', out);
+                    await notifyHouseholdReaddDisputed({ householdId: placed.householdId, membershipId: placed.membershipId, person: { id: person.id, name: person.name }, hostName: anchor.name, actor });
+                }
+            } else {
+                logger.info('addHouseholdPerson: already in that household and recorded, nothing added', { ...out, mayRecord });
+            }
+        } catch (e) {
+            warningErrorId = logger.error('addHouseholdPerson: a step after the person was placed failed (the add stands)', e, out);
+        }
+
+        // Contacts typed for an existing profile: addContactEntry's semantics exactly. A failure
+        // keeps the link (and its record) and answers with addContactEntry's own errorId; a retry
+        // finds the link and adds the contacts (deduped).
+        if (existing) {
+            for (const c of contacts) {
+                const res = await addContactEntry({ adopterId: existing.id, ...c, platform: c.platform ?? undefined });
+                if (!res.ok && res.error === CONTACT_ENTRIES_FULL) {
+                    logger.info('addHouseholdPerson: linked, but the profile holds the maximum contact entries', { ...out, type: c.type });
+                    return { ok: false, error: CONTACT_ENTRIES_FULL };
+                }
+                if (!res.ok) {
+                    const errorId = ('errorId' in res ? res.errorId : extractErrorId(res.error))
+                        ?? logger.error('addHouseholdPerson: contact refused by addContactEntry', new Error(res.error), { ...out, type: c.type });
+                    return { ok: false, error: 'failed', errorId };
+                }
+                if (res.autoRequestFiled) autoRequestFiled = true;
+            }
+        }
+        return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled, ...(warningErrorId ? { warningErrorId } : {}) };
+    } catch (e) {
+        const errorId = logger.error('addHouseholdPerson failed', e, ctx);
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+// ─────────────────────────── Relationship ───────────────────────────
+
+export async function updateHouseholdMembership(
+    input: { membershipId: string; relationship: Relationship; /** What the editor saw; a different stored value is a conflict. */ expected?: Relationship | null },
+): Promise<{ ok: true } | Fail> {
+    const actor = await sessionActor();
+    if (!actor) return { ok: false, error: 'not_authenticated' };
+    const membershipId = id200(input?.membershipId);
+    const ctx: Record<string, unknown> = { membershipId, actor };
+    if (!membershipId || !REL_SET.has(input.relationship)) return { ok: false, error: 'invalid' };
+    const to = input.relationship;
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const m = await membershipById(db, membershipId);
+        const person = m ? await liveProfile(db, m.adopterId) : null;
+        if (!m || !person) return { ok: false, error: 'not_found' };
+        Object.assign(ctx, { householdId: m.householdId, profileId: m.adopterId });
+        if (input.expected !== undefined && input.expected !== null && input.expected !== m.relationship) {
+            logger.info('updateHouseholdMembership: refused, changed since the form opened', ctx);
+            return { ok: false, error: 'conflict' };
+        }
+        if (m.relationship === to) return { ok: true };
+        if (!(await setMembershipRelationship(db, membershipId, m.relationship, to))) {
+            logger.info('updateHouseholdMembership: refused, changed meanwhile', ctx);
+            return { ok: false, error: 'conflict' };
+        }
+        const kind = await historyKindForOwner(actor, person.addedBy, ctx);
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(), adopterId: person.id, changedBy: actor, kind, changedAt: new Date(),
+            changes: JSON.stringify({ household_relationship_changed: { membershipId, householdId: m.householdId, from: m.relationship, to } }),
+        }).catch((e: unknown) => {
+            logger.error('updateHouseholdMembership: relationship saved, history not written', e, ctx);
+        });
+        logAudit({ userEmail: actor, action: 'household_relationship_changed', target: person.id, details: { membershipId, householdId: m.householdId, from: m.relationship, to } });
+        const relative = m.relativeToAdopterId ? await liveProfile(db, m.relativeToAdopterId) : null;
+        await notifyHouseholdRelationshipChanged({
+            householdId: m.householdId, membershipId, person: { id: person.id, name: person.name }, relationship: to,
+            relativeName: relative && relative.id !== person.id ? relative.name : null, actor,
+        });
+        return { ok: true };
+    } catch (e) {
+        const errorId = logger.error('updateHouseholdMembership failed', e, ctx);
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * «⋯ → Editar» checks every field BEFORE saving any (final fix P1: no partial
+ * save): which of name, relationship and age/«menor» changed since the form
+ * opened. Read-only; answers field names only — never the stored values (the
+ * form then refreshes to show them, as the per-field conflicts do). Anyone
+ * signed in (they can see these on the profile anyway).
+ */
+export async function checkHouseholdPersonEdit(input: {
+    profileId: string; membershipId?: string;
+    expected: { name?: string; relationship?: Relationship; age?: number | null; isMinor?: boolean };
+}): Promise<{ ok: true; conflicts: Array<'name' | 'relationship' | 'age'> } | Fail> {
+    const actor = await sessionActor();
+    if (!actor) return { ok: false, error: 'not_authenticated' };
+    const profileId = id64(input?.profileId);
+    const membershipId = id200(input?.membershipId);
+    const exp = input?.expected;
+    if (!profileId || !exp || typeof exp !== 'object') return { ok: false, error: 'invalid' };
+    const ctx: Record<string, unknown> = { profileId, membershipId: membershipId || null, actor };
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const row = await db.select({ name: adopters.name, age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor, deletedAt: adopters.deletedAt })
+            .from(adopters).where(eq(adopters.id, profileId)).get() as { name: string | null; age: number | null; ageAsOf: string | null; isMinor: number | null; deletedAt: Date | null } | undefined;
+        if (!row || row.deletedAt) return { ok: false, error: 'not_found' };
+        const conflicts: Array<'name' | 'relationship' | 'age'> = [];
+        if (typeof exp.name === 'string' && !sameName(row.name, exp.name)) conflicts.push('name');
+        if (membershipId && exp.relationship !== undefined) {
+            const m = await membershipById(db, membershipId);
+            if (!m || m.adopterId !== profileId) return { ok: false, error: 'not_found' };
+            if (m.relationship !== exp.relationship) conflicts.push('relationship');
+        }
+        if (exp.age !== undefined || exp.isMinor !== undefined) {
+            const today = new Date();
+            if ((exp.age !== undefined && (exp.age ?? null) !== currentAge(row, today)) || (exp.isMinor !== undefined && exp.isMinor !== isMinor(row, today))) conflicts.push('age');
+        }
+        if (conflicts.length) logger.info('checkHouseholdPersonEdit: changed since the form opened', { ...ctx, conflicts });
+        return { ok: true, conflicts };
+    } catch (e) {
+        const errorId = logger.error('checkHouseholdPersonEdit failed', e, ctx);
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+// ─────────────────────────── Remove ───────────────────────────
+
+export async function removeHouseholdMembership(
+    input: { membershipId: string; reason: 'mistake' | 'not_living' },
+): Promise<{ ok: true; correctionId: string | null } | Fail> {
+    const actor = await sessionActor();
+    if (!actor) return { ok: false, error: 'not_authenticated' };
+    const membershipId = id200(input?.membershipId);
+    const reason = input?.reason;
+    const ctx: Record<string, unknown> = { membershipId, actor, reason };
+    if (!membershipId || (reason !== 'mistake' && reason !== 'not_living')) return { ok: false, error: 'invalid' };
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const m = await membershipById(db, membershipId);
+        if (!m) return { ok: false, error: 'not_found' };
+        Object.assign(ctx, { householdId: m.householdId, profileId: m.adopterId });
+
+        // Who may: the adder, the team of any profile in the household, admins/moderators.
+        const group = await membershipsOf(db, m.householdId);
+        const profiles = new Map<string, ProfileRow>();
+        for (const p of await Promise.all(group.map(g => liveProfile(db, g.adopterId)))) if (p) profiles.set(p.id, p);
+        const { isModeratorOrAdminAsync } = await import('@/config/admins');
+        const [isStaff, privileged, isOwnTeam] = await Promise.all([
+            isModeratorOrAdminAsync(actor),
+            Promise.all([...profiles.values()].map(async p => [p.id, await isPrivilegedOnProfile(actor, p.addedBy)] as const)).then(e => new Map(e)),
+            ownTeamOf(actor, group.map(g => g.addedBy), ctx),
+        ]);
+        // Standing comes from each live profile's own membership — never one the actor's team added.
+        const standing = group.filter(g => profiles.has(g.adopterId));
+        if (!canRemoveMembership({ email: actor, isAdmin: !!isStaff, privilegedOn: id => !!privileged.get(id), isOwnTeam }, m, standing)) {
+            logger.warn('removeHouseholdMembership: refused — not the adder, a household team or staff', ctx);
+            return { ok: false, error: 'not_authorized' };
+        }
+
+        const { removed, correctionId } = await removeMembership(db, membershipId, actor, { correction: reason === 'not_living' });
+        if (!removed) return { ok: false, error: 'not_found' };
+
+        const person = profiles.get(m.adopterId) ?? null;
+        const remaining = [...profiles.values()].filter(p => p.id !== m.adopterId);
+        // «el hogar de Pedro»: the person they were added next to, else the oldest housemate.
+        const host = remaining.find(p => p.id === m.relativeToAdopterId) ?? remaining[0] ?? null;
+        const kinds = await Promise.all([person, ...remaining].map(p => (p ? historyKindForOwner(actor, p.addedBy, ctx) : Promise.resolve(null))));
+        const now = new Date();
+        const rows = [
+            ...(person ? [db.insert(adopterHistory).values({
+                id: crypto.randomUUID(), adopterId: person.id, changedBy: actor, kind: kinds[0]!, changedAt: now,
+                changes: JSON.stringify(reason === 'not_living'
+                    ? { household_not_living_together: { hostId: host?.id ?? null, hostName: host?.name ?? null, householdId: m.householdId } }
+                    : { household_removed_by_host: { hostId: host?.id ?? null, hostName: host?.name ?? null, householdId: m.householdId, reason } }),
+            })] : []),
+            ...remaining.map((p, i) => db.insert(adopterHistory).values({
+                id: crypto.randomUUID(), adopterId: p.id, changedBy: actor, kind: kinds[i + 1]!, changedAt: now,
+                changes: JSON.stringify({ household_member_removed: { id: membershipId, householdId: m.householdId, reason: reason === 'not_living' ? 'not_living_together' : 'mistake', linkedId: m.adopterId } }),
+            })),
+        ];
+        if (rows.length) {
+            await runBatch(db, rows as [typeof rows[number], ...typeof rows]).catch((e: unknown) => {
+                // The removal (and correction) already landed; a retry would find nothing to remove.
+                logger.error('removeHouseholdMembership: removed, history not written', e, ctx);
+            });
+        }
+        logAudit({ userEmail: actor, action: reason === 'not_living' ? 'household_not_living_together' : 'household_member_removed', target: m.adopterId, details: { membershipId, householdId: m.householdId, reason, correctionId } });
+        logger.info('removeHouseholdMembership: removed', { ...ctx, correctionId });
+        if (person) {
+            await notifyHouseholdMemberRemoved({
+                householdId: m.householdId, membershipId, person: { id: person.id, name: person.name }, hostName: host?.name ?? null,
+                reason, remainingIds: remaining.map(p => p.id), actor,
+            });
+        }
+        return { ok: true, correctionId };
+    } catch (e) {
+        const errorId = logger.error('removeHouseholdMembership failed', e, ctx);
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+// ─────────────────────────── «¿Es este perfil?» ───────────────────────────
+
+/**
+ * Card-ready candidates: each match's household line (it already rides on a
+ * hydrated match — read here only for one that came without it), and its
+ * rating, open alerts and activity counted as a household row counts them.
+ */
+async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ctx: Record<string, unknown>): Promise<HouseholdMatchCandidate[]> {
+    const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
+    const [lines, counts] = await Promise.all([
+        missing.length > 0 ? householdLinesFor(db, actor, missing) : Promise.resolve({} as Record<string, CardHousehold>),
+        Promise.all(matches.map(r => countsFor(db, r.adopter.id, { ...ctx, profileId: r.adopter.id }))),
+    ]);
+    return matches.map((r, i) => ({
+        ...r, household: r.households ?? lines[r.adopter.id],
+        openAlerts: counts[i].openAlerts, activity: counts[i].activity, rating: counts[i].rating,
+    }));
+}
+
+/**
+ * The candidates for the add form: «Nuevo adoptante»'s own duplicate check
+ * (findFormDuplicates — fuzzy name, phone-suffix, masked exactly as there),
+ * each with its household line («Convive con Pedro ★1») so a relative of a
+ * flagged person is recognised before saving. The anchor is never its own
+ * candidate. Never throws: a failure means no suggestions (logged).
+ */
+export async function getHouseholdMatchCandidates(
+    input: { name?: string; contactEntries?: HouseholdContactInput[]; anchorAdopterId?: string },
+): Promise<{ results: HouseholdMatchCandidate[]; failed?: true; errorId?: string }> {
+    const actor = await sessionActor();
+    if (!actor) return { results: [] };
+    const anchorId = id64(input?.anchorAdopterId);
+    const ctx = { actor, anchorId: anchorId || null };
+    try {
+        const name = typeof input?.name === 'string' ? input.name.trim().slice(0, 200) : '';
+        const typed = Array.isArray(input?.contactEntries) ? input.contactEntries.slice(0, MAX_CONTACTS) : [];
+        const pick = (t: ContactEntry['type']) => typed
+            .filter(e => e && e.type === t && typeof e.value === 'string')
+            .map(e => e.value.trim().slice(0, 500))
+            .filter(Boolean);
+        const { results, failed } = await searchFormDuplicates(
+            { name, phones: pick('phone'), emails: pick('email'), socials: pick('social'), documentIds: pick('id'), ...(anchorId ? { excludeAdopterId: anchorId } : {}) },
+            { minRelevance: 15, allowContactOnly: true },
+            async () => actor,
+        );
+        if (failed) throw new Error('duplicate check failed');
+        const matches = results.filter(r => r.adopter.id !== anchorId);
+        if (matches.length === 0) return { results: [] };
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        return { results: await asCandidates(db, actor, matches, ctx) };
+    } catch (e) {
+        // The form says the check failed (with this id) and lets the rescuer decide — never a silent «new».
+        const errorId = logger.error('getHouseholdMatchCandidates failed — the form shows no suggestions', e, ctx);
+        return { results: [], failed: true, errorId };
+    }
+}
+
+// ─────────────────────────── «Ya está en otro perfil» ───────────────────────────
+
+export type DupHintMatch = HouseholdMatchCandidate & {
+    /**
+     * Positions, in `adopter.contactEntries`, of the contacts that are the
+     * identifier typed — read before masking (masking keeps the order and drops
+     * entry ids), so the window marks it «coincide» even when the viewer sees it
+     * only partially. Nothing beyond what was typed.
+     */
+    matchedEntryIndexes: number[];
+    /**
+     * What the window offers (decideDupHintAction, decided here — every
+     * action re-decides it): null without a saved profile being edited.
+     */
+    action: DupHintAction | null;
+    /** An open duplicate flag or a pending request already covers the pair («Ya está marcado para revisar.»). */
+    alreadyPending: boolean;
+    /**
+     * Why the 'flag' window can't offer «Continuar» for the profile being
+     * edited: 'other_owner' «El perfil de {name} lo cargó otra persona…»,
+     * 'no_owner' «El perfil de {name} no tiene un responsable…»; absent when the flag is only because the match
+     * has no owner (case 3).
+     */
+    cantJoin?: 'other_owner' | 'no_owner';
+    /**
+     * With `cantJoin`: the name of the profile being edited, so the sentence
+     * says which profile it is about («El perfil de Lucía lo cargó otra
+     * persona…», UX I5) — it sat under the match and read as being about it.
+     * The viewer's own edited profile: it tells them nothing new.
+     */
+    cantJoinName?: string;
+    /**
+     * Someone already said they are two people, and this viewer can't ask the
+     * admins (no profile of theirs): the 'flag' window says «Ya dijeron que
+     * no…» instead of offering a flag the server refuses.
+     */
+    saidNo?: boolean;
+    /**
+     * Only for 'continue': who «Sí, continuar» tells (display names, never
+     * emails) — the confirmation's «Le avisamos a …» line.
+     */
+    toldNames?: string[];
+    /**
+     * Only for 'continue': what the profile being edited adds to this one —
+     * its contacts this one doesn't have yet (the value being typed included),
+     * its records — and the rating this one will have after the merge
+     * (ratingAfterMerge: both profiles' records together).
+     */
+    preview?: { newContacts: ContactEntry[]; records: number; ratingAfter: number | null; /** The profile being edited, «El perfil de {name} deja de existir por separado.» */ currentName: string };
+};
+
+/**
+ * The composer's inline hint (DuplicateHint, option B): the profiles that
+ * already carry the phone / email / social / id just typed — the same
+ * detection the hint always ran (findAdopters 'duplicate', phone-suffix
+ * included, the floor and cap fixed here, never by the browser) — each as the
+ * «¿Es este perfil?» card shows it: masked for this viewer exactly as there,
+ * with its household line, rating, alerts and activity. Detection re-runs from
+ * the typed value, so a caller only ever sees profiles matching what they
+ * typed (never a list of ids they choose). Session required. Never throws: a
+ * failure is logged and comes back as `failed` + errorId.
+ */
+export async function getDuplicateHintMatches(
+    input: { type: string; value: string; excludeAdopterId?: string; platform?: string },
+): Promise<{ results: DupHintMatch[]; failed?: true; errorId?: string }> {
+    const actor = await sessionActor();
+    if (!actor) return { results: [] };
+    const type = input?.type;
+    const excludeAdopterId = id64(input?.excludeAdopterId);
+    // The typed value is a contact: never logged.
+    const ctx: Record<string, unknown> = { actor, type: typeof type === 'string' ? type.slice(0, 16) : null, excludeAdopterId: excludeAdopterId || null };
+    const search = dupHintSearchInput(type, input?.value);
+    if (!search || !isDupHintType(type)) return { results: [] };
+    const typed = String(input.value).trim().slice(0, DUP_HINT_MAX_VALUE);
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const found = await findAdopters(
+            { ...search, ...(excludeAdopterId ? { excludeAdopterId } : {}) },
+            { mode: 'duplicate', limit: DUP_HINT_MAX_RESULTS, minRelevance: DUP_HINT_MIN_RELEVANCE },
+        );
+        const dup = ((found.results ?? []) as DuplicateMatch[]).filter(m => m.adopterId !== excludeAdopterId);
+        if (dup.length === 0) return { results: [] };
+        const hydrated = await hydrateDuplicateMatches(db, dup, { viewer: actor, isUnauthenticated: false });
+        if (hydrated.length === 0) return { results: [] };
+        type RawRow = { contactEntries: string | null; contactInfo: string | null; addedBy: string | null; country: string | null };
+        const [candidates, raw, viewer] = await Promise.all([
+            asCandidates(db, actor, hydrated, ctx),
+            Promise.all(hydrated.map(m => (async () => db.select({ contactEntries: adopters.contactEntries, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, country: adopters.country })
+                .from(adopters).where(eq(adopters.id, m.adopter.id)).get() as Promise<RawRow | undefined>)()
+                .catch((e: unknown) => {
+                    logger.warn('getDuplicateHintMatches: raw contacts D1 fallback hit, no «coincide» mark', { ...ctx, profileId: m.adopter.id, error: e instanceof Error ? e.message : String(e) });
+                    return undefined;
+                }))),
+            // Who is asking and the profile being edited: read once, not per match.
+            excludeAdopterId ? loadDupHintViewer(db, actor, excludeAdopterId) : Promise.resolve(null),
+        ]);
+        const typedEntry = contactEntryFromInput({ type, value: typed, platform: socialPlatformOf(input?.platform) }, actor);
+        const windows = await Promise.all(candidates.map((c, i) =>
+            dupHintWindow(db, viewer, { id: c.adopter.id, row: raw[i] }, typedEntry, ctx)));
+        return {
+            results: candidates.map((c, i) => {
+                const row = raw[i];
+                const parsed = deserializeContactEntries(row?.contactEntries ?? null);
+                const source = parsed.length > 0 ? parsed : parseBlobToContactEntries(row?.contactInfo ?? null);
+                const matchedEntryIndexes = source.flatMap((e, idx) => (entryMatchesTyped(e, type, typed) ? [idx] : []));
+                return { ...c, matchedEntryIndexes, ...windows[i] };
+            }),
+        };
+    } catch (e) {
+        const errorId = logger.error('getDuplicateHintMatches failed — the hint shows nothing', e, ctx);
+        return { results: [], failed: true, errorId };
+    }
+}
+
+const SOCIAL_PLATFORMS: readonly SocialPlatform[] = ['facebook', 'instagram', 'tiktok', 'x', 'threads', 'other'];
+const socialPlatformOf = (v: unknown): SocialPlatform | undefined =>
+    typeof v === 'string' && (SOCIAL_PLATFORMS as readonly string[]).includes(v) ? v as SocialPlatform : undefined;
+
+/**
+ * One match's window (getDuplicateHintMatches): what it offers, and — only
+ * for 'continue' — the confirmation's preview and who would be told. Never
+ * throws: a decision that can't be read falls back to «Marcar como posible
+ * duplicado» (logged) — the flag itself refuses a second flag on the pair.
+ */
+async function dupHintWindow(
+    db: Db,
+    viewer: DupHintViewer | null,
+    match: { id: string; row: { contactEntries: string | null; contactInfo: string | null; addedBy: string | null; country: string | null } | undefined },
+    typedEntry: ContactEntry,
+    ctx: Record<string, unknown>,
+): Promise<Pick<DupHintMatch, 'action' | 'alreadyPending' | 'cantJoin' | 'cantJoinName' | 'saidNo' | 'toldNames' | 'preview'>> {
+    if (!viewer?.current) return { action: null, alreadyPending: false };
+    const current = viewer.current;
+    const mctx = { ...ctx, profileId: match.id };
+    if (!match.row) {
+        logger.warn('getDuplicateHintMatches: match owner unreadable, offering the flag', mctx);
+        return { action: 'flag', alreadyPending: false, ...cantJoinOf(viewer, current) };
+    }
+    const row = match.row;
+    const cantJoin = cantJoinOf(viewer, current);
+    try {
+        const decision = await decideDupHintMatch(db, { ...viewer, current }, { id: match.id, addedBy: row.addedBy });
+        if (decision.action !== 'continue') {
+            return {
+                action: decision.action, alreadyPending: decision.alreadyPending, ...cantJoin,
+                ...(decision.action === 'flag' && decision.saidNo ? { saidNo: true } : {}),
+            };
+        }
+        // A loose hit (phone ending, contact LIKE) that isn't the same contact: «Continuar»
+        // would be refused (continueWithMatchedProfile's not_a_match), so offer the flag.
+        const entriesOf = (r: { contactEntries: string | null; contactInfo: string | null }) => {
+            const parsed = deserializeContactEntries(r.contactEntries);
+            return parsed.length > 0 ? parsed : parseBlobToContactEntries(r.contactInfo);
+        };
+        if (!dupHintPairMatches({ entries: entriesOf(current), country: current.country }, { entries: entriesOf(row), country: row.country }, typedEntry)) {
+            return { action: 'flag', alreadyPending: decision.alreadyPending };
+        }
+        const plan = dupHintMergePlan({
+            actor: viewer.actor, isAdmin: viewer.isAdmin,
+            currentTeamOwned: viewer.currentTeamOwned, matchTeamOwned: decision.matchTeamOwned,
+            currentAddedBy: current.addedBy, matchAddedBy: row.addedBy,
+        });
+        const [preview, toldNames] = await Promise.all([
+            continuePreview(db, current, { id: match.id, row }, typedEntry),
+            toldDisplayNames(plan.told, mctx),
+        ]);
+        return { action: 'continue', alreadyPending: decision.alreadyPending, toldNames, preview };
+    } catch (e) {
+        logger.warn('getDuplicateHintMatches: window decision D1 fallback hit, offering the flag', { ...mctx, error: e instanceof Error ? e.message : String(e) });
+        return { action: 'flag', alreadyPending: false, ...cantJoin };
+    }
+}
+
+/** Why the profile being edited can't be joined by this viewer (the 'flag' window's first line). */
+function cantJoinOf(viewer: DupHintViewer, current: DupHintProfileRow): Pick<DupHintMatch, 'cantJoin' | 'cantJoinName'> {
+    if (viewer.isAdmin || viewer.currentTeamOwned) return {};
+    return { cantJoin: realOwner(current.addedBy) ? 'other_owner' : 'no_owner', cantJoinName: current.name?.trim() ?? '' };
+}
+
+/**
+ * What «Sí, continuar» adds to the match: the edited profile's contacts (and
+ * the value being typed) that the match doesn't have yet — compared with the
+ * match's stored contacts (newContactsForProfile, the merge's own dedupe
+ * rule), so the list is what the merge will really add. Only the edited
+ * profile's own values (which this viewer's team loaded, or an admin sees)
+ * and the typed one ever come back — never one of the match's: at most it
+ * tells that the match already has one of them, which the merge shows anyway.
+ * Plus its record count, and the match's rating after both profiles' records join.
+ */
+async function continuePreview(
+    db: Db,
+    current: DupHintProfileRow,
+    match: { id: string; row: { contactEntries: string | null; contactInfo: string | null } },
+    typedEntry: ContactEntry,
+): Promise<NonNullable<DupHintMatch['preview']>> {
+    const parsed = deserializeContactEntries(current.contactEntries);
+    const own = (parsed.length > 0 ? parsed : parseBlobToContactEntries(current.contactInfo))
+        .filter(e => !e.masked && e.type !== 'alias' && e.value?.trim());
+    const [currentRatings, matchRatings] = await Promise.all([ratingsOf(db, current.id), ratingsOf(db, match.id)]);
+    // The typed value only when the match doesn't already have it as the matcher
+    // compares phones (country / area prefixes) — exactly when «Sí, continuar» saves it.
+    const matchParsed = deserializeContactEntries(match.row.contactEntries);
+    const matchEntries = matchParsed.length > 0 ? matchParsed : parseBlobToContactEntries(match.row.contactInfo);
+    const typed = isDupHintType(typedEntry.type) && typedIsNewFor(matchEntries, typedEntry.type, typedEntry.value, typedEntry.platform) ? [typedEntry] : [];
+    return {
+        // Only what the preview shows: never who added each one.
+        newContacts: newContactsForProfile([...own, ...typed], match.row)
+            .map(e => ({ id: e.id, type: e.type, value: e.value, ...(e.platform ? { platform: e.platform } : {}) })),
+        records: currentRatings.length,
+        ratingAfter: ratingAfterMerge(matchRatings, currentRatings),
+        currentName: current.name ?? '',
+    };
+}
+
+/** Display names (never emails) of the people a merge would tell. */
+async function toldDisplayNames(emails: readonly string[], ctx: Record<string, unknown>): Promise<string[]> {
+    if (emails.length === 0) return [];
+    const { resolveDisplayNames } = await import('./notifications');
+    const names = await resolveDisplayNames([...emails]).catch((e: unknown) => {
+        logger.warn('getDuplicateHintMatches: told names lookup failed, naming the handles', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+        return new Map<string, string>();
+    });
+    return emails.map(e => names.get(e.trim().toLowerCase()) ?? e.split('@')[0]);
+}
+
+// ─────────────────────────── Gift recipient ───────────────────────────
+
+export type CreateGiftRecipientProfileResult =
+    | { ok: true; profileId: string; householdId: string; membershipId: string; created: boolean }
+    | Fail;
+
+/**
+ * «Crear perfil de {nombre}» on the giver's «Destinatario del regalo (según el
+ * formulario)» (spec «Gift recipient»): a rescuer who confirmed who the
+ * recipient is makes the profile from that gift form's answers — owner = the
+ * giver's owner, the phone credited to the form — in a gift household with the
+ * giver, never «Convive con». Open to the giver's team (owner, org-mates) and
+ * admins. Once per form: a repeat answers the same profile (`created: false`);
+ * two at once → one profile, the other `conflict`.
+ */
+export async function createGiftRecipientProfile(
+    input: { giverAdopterId: string; submissionId: string },
+): Promise<CreateGiftRecipientProfileResult> {
+    const actor = await sessionActor();
+    if (!actor) return { ok: false, error: 'not_authenticated' };
+    const giverId = id64(input?.giverAdopterId);
+    const submissionId = id64(input?.submissionId);
+    const ctx = { actor, giverAdopterId: giverId, submissionId };
+    if (!giverId || !submissionId) return { ok: false, error: 'invalid' };
+    try {
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        const giver = await liveProfile(db, giverId);
+        if (!giver) return { ok: false, error: 'not_found' };
+        const { mayCreateGiftRecipient, createGiftRecipientFromForm } = await import('@/lib/householdPeople');
+        if (!(await mayCreateGiftRecipient(actor, giver.addedBy))) {
+            logger.info('createGiftRecipientProfile: refused, not the giver\'s team or an admin', ctx);
+            return { ok: false, error: 'not_authorized' };
+        }
+        const res = await createGiftRecipientFromForm(db, { giverAdopterId: giver.id, submissionId, actor });
+        return res;
+    } catch (e) {
+        const errorId = logger.error('createGiftRecipientProfile failed', e, ctx);
+        return { ok: false, error: 'failed', errorId };
+    }
+}

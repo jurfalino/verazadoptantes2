@@ -1,6 +1,9 @@
 import type { adopters } from '@/db/schema';
+import type { ActivityCounts } from '@/domain/activityCounts';
 import type { AdopterFlags } from '@/types/adopter';
 import type { VisibilityBadge } from '@/domain/visibilityBadge';
+import type { CardHousehold } from '@/domain/households';
+import type { PersonInput } from '@/lib/identityMatch';
 
 export type SnippetField = 'name' | 'contact' | 'address' | 'family' | 'adoption' | 'history';
 
@@ -29,6 +32,8 @@ export interface SearchResult {
         profileViews: number;
         requests: number;
         adoptions: number;
+        /** Records by type, counted as the «Actividad» header counts them (domain/activityCounts) — the card's line (audit B12). */
+        activity?: ActivityCounts;
     };
     flags: AdopterFlags;
 }
@@ -68,6 +73,8 @@ export interface DuplicateMatch {
     matchValues: Array<{ type: string; value: string }>;
     /** How the adopter was found — diagnostic only, not shown in UI. */
     source: 'token' | 'like' | 'both';
+    /** Identity verdict, when the surface judged this match (src/lib/identityMatch.ts). */
+    verdict?: 'same' | 'possible';
 }
 
 /**
@@ -86,6 +93,8 @@ export interface DiscoveryMatch {
     matchTypes: string[];
     matchValues: Array<{ type: string; value: string }>;
     source: 'token' | 'like' | 'both';
+    /** Identity verdict, when the surface judged this match. */
+    verdict?: 'same' | 'possible';
     /** Full adopter row — always populated in discovery mode. */
     adopter: typeof adopters.$inferSelect;
     /** Who vouched for this record, from the VIEWER's position. Computed
@@ -105,9 +114,18 @@ export interface DiscoveryMatch {
     avgRating: number | null;
     thumbnail: string | null;
     /** Always populated. Defaults to all-zero when enrich=false. */
-    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number };
+    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number; activity?: ActivityCounts };
     /** Always populated. Defaults to all-false when enrich=false. */
     flags: AdopterFlags;
+    /** «Menor de edad» (domain `isMinor`: current age under 18, or the box with no age). */
+    isMinor?: boolean;
+    /**
+     * The card's homes: the housemate chips' answers (from every housemate) and
+     * the list they open — each housemate's live rating, alerts and minor tag
+     * (households as profiles). Signed-in, in-app viewers only; absent for a
+     * logged-out visitor and the API.
+     */
+    households?: CardHousehold;
 }
 
 /** Discriminated union for generic consumer code. Prefer the concrete type when mode is known at the call site. */
@@ -167,6 +185,14 @@ export interface FindAdoptersOptions {
      * run the admin duplicate scan afterwards instead (2026-10-18).
      */
     skipLikeFallback?: boolean;
+    /**
+     * Discovery mode: collects the steps a D1 blip skipped (results may be
+     * missing or ranked differently) and tags their log lines with the caller's
+     * requestId — so an API answer can say it was degraded (2026-11-04 audit).
+     */
+    trace?: { requestId?: string; degraded: string[] };
+    /** Duplicate mode: keep name-only candidates even when the input carried an identifier none of them share (identity verdict, rule 4). */
+    keepNameOnly?: boolean;
     /** Max results returned. Default: SEARCH_RESULT_LIMIT. */
     limit?: number;
     /**
@@ -176,6 +202,12 @@ export interface FindAdoptersOptions {
      * already an answer, so asking about it later would be noise.
      */
     trackPending?: boolean;
+    /**
+     * Discovery mode: structured identifiers from a caller that has them (API fuzzy). Without it the
+     * query text is parsed for an email, DNI or @handle. When any identifier exists, a profile the
+     * identity verdict calls «same» that the search already returned goes to the top of the main list.
+     */
+    identity?: PersonInput;
 }
 
 export interface FindAdoptersResponse {

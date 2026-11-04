@@ -42,6 +42,9 @@ export const addContactEntrySchema = z.object({
     apps: z.array(z.enum(['whatsapp', 'telegram'])).optional(),
 });
 
+/** One contact typed with a household add (households as profiles): addContactEntry's fields, no adopterId. */
+export const householdContactSchema = addContactEntrySchema.omit({ adopterId: true });
+
 // updateContactEntry — owner+admin only. Mutates an existing entry identified
 // by its stable id. Type is not editable (change-of-type is a delete + add).
 export const updateContactEntrySchema = z.object({
@@ -108,7 +111,8 @@ export const saveAdoptionSchema = z.object({
     species: z.string().max(100).optional().nullable(),
     details: optionalText,
     status: z.string().max(100).optional().nullable(),
-    rating: z.number().int().min(1).max(5).optional().nullable(),
+    // 0 = not rated: stored as NULL, never 0.
+    rating: z.preprocess(v => (v === 0 ? null : v), z.number().int().min(1).max(5).optional().nullable()),
     comments: optionalText,
     date: z.union([z.coerce.date(), z.string().max(50)]).optional().nullable(),
     onBehalfOf: z.string().max(500).optional().nullable(),
@@ -205,6 +209,9 @@ export const createAdopterApiSchema = z.object({
     // skips the `stampPublic` block entirely so entries land non-public.
     // Omitted by callers other than the social-URL path → existing behaviour.
     isPublic: z.boolean().optional(),
+    // JSON HouseholdMember[] — the other people a post names, saved as relatives
+    // in the same write (Jon, 2026-10-22). Sanitized by deserializeHouseholdMembers.
+    householdMembers: z.string().max(50_000).optional().nullable(),
     flags: z.array(z.string().max(200)).max(20).optional(),
     images: z.array(z.object({
         data: z.string().max(10_000_000), // ~7.5MB base64

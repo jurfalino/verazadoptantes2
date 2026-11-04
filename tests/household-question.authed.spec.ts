@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * "¿Hay niños?" vs "Personas del hogar" (spec 2026-10-04 §2): the choice is a
@@ -11,11 +11,6 @@ import { dismissCountryBanner } from './helpers';
  */
 
 const OWNER = "owner_type = 'user' AND owner_id = 'gatitosolivos@gmail.com'";
-
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-}
 
 /** The stored hidden_steps value, raw (null when the row has none). Throws on a failed query. */
 function storedRaw(): string | null {

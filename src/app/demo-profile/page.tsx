@@ -2,10 +2,13 @@
 
 export const runtime = 'edge';
 
+import { AlertSummary } from '@/components/AlertPill';
+import { openAlertKinds } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useRouter } from 'next/navigation';
 import { useDateFormat } from '@/context/TimezoneContext';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 export default function DemoProfilePage() {
     const { formatShortDate } = useDateFormat();
@@ -73,7 +76,7 @@ export default function DemoProfilePage() {
                                 📅 Registered: {formatShortDate(adopter.createdAt)}
                             </p>
                         </div>
-                        <RatingBadge rating={4} size="lg" />
+                        <RatingBadge rating={4} />
                     </div>
 
                     {/* Flags */}
@@ -81,9 +84,8 @@ export default function DemoProfilePage() {
                         {flags.verified_identity && (
                             <span className="text-xs px-2 py-1 rounded-full font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity')}</span>
                         )}
-                        {flags.inaccurate && (
-                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate')}</span>
-                        )}
+                        {/* Flags as every rescuer surface draws them: never «Inexacto» (rescuerFlagKinds). */}
+                        <AlertSummary kinds={openAlertKinds(flags)} />
                     </div>
 
                     {/* Contact Info */}
@@ -91,7 +93,7 @@ export default function DemoProfilePage() {
                         <div>
                             <h3 className="text-xs font-medium text-stone-500 uppercase tracking-wider mb-1">{t('adopter.contact')}</h3>
                             <pre className="text-sm text-stone-700 whitespace-pre-wrap font-sans bg-stone-50 rounded-lg p-3 border border-stone-100">
-                                {adopter.contactInfo}
+                                {contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias'))}
                             </pre>
                         </div>
                         <div>
@@ -114,7 +116,7 @@ export default function DemoProfilePage() {
                                         <span className="text-lg">{a.species === 'cat' ? '🐱' : '🐶'}</span>
                                         <span className="font-semibold text-stone-800">{a.animalName}</span>
                                     </div>
-                                    <RatingBadge rating={a.rating} variant="inline" size="sm" label="short" />
+                                    {!!a.rating && <RatingBadge rating={a.rating} />}
                                 </div>
                                 <p className="text-xs text-stone-500 mb-2">📅 {a.date}</p>
                                 <p className="text-sm text-stone-600">{a.comments}</p>

@@ -8,12 +8,14 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import {
     deserializeContactEntries,
+    isRenameAlias,
     contactEntriesToBlob,
     type ContactEntry,
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
-import { isAdminAsync } from '@/config/admins';
+import { isModeratorOrAdminAsync } from '@/config/admins';
+import { historyKind } from '@/lib/profilePrivilege';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
 import type { EntryConflict } from './updateContactEntry';
@@ -25,8 +27,10 @@ import type { EntryConflict } from './updateContactEntry';
  *
  * Side effects on success:
  *   1. UPDATE adopters.contactEntries (entry filtered out, list re-serialized).
- *   2. INSERT adopter_history kind='edit' with the removed entry's type + id
- *      (no raw value).
+ *   2. INSERT adopter_history with the removed entry's type + id (no raw
+ *      value): kind='edit' for owner/admin/org-mate, kind='contribution' for a
+ *      contributor removing their own entry (they are not an editor; editors get
+ *      approver rights only while privileged — loadApprovers).
  *   3. Revoke any live pii_access_grant rows whose entryRef hashes the removed
  *      value — explicit revoke for audit clarity (they'd go inert on their own
  *      because nothing in contactEntries still hashes to that ref).
@@ -62,8 +66,9 @@ export async function removeContactEntry(
         // of this entry (matching updateContactEntry's relaxation). Entries
         // with no `addedBy` (legacy / blob-migrated) stay owner+admin-only.
         const isOwner = target.addedBy === actor;
+        // Moderators count, as in the visibility resolver and loadHousehold.
         const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
-            isAdminAsync(actor),
+            isModeratorOrAdminAsync(actor),
             (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
         ]);
 
@@ -84,7 +89,9 @@ export async function removeContactEntry(
                 return { result: expectedValue !== undefined ? { kind: 'deleted' } : { kind: 'not_found' } };
             }
             const removed = entries[idx];
-            const isOwnContribution = !!removed.addedBy && removed.addedBy === actor;
+            // A previous name kept by a rename is never «their own contribution»: only the
+            // profile's team (or an admin) may drop it, or a renamer could erase the old name.
+            const isOwnContribution = !!removed.addedBy && removed.addedBy === actor && !isRenameAlias(removed);
             if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) return { result: { kind: 'forbidden' } };
             // A teammate changed it since this was shown: don't delete what the
             // person hasn't seen.
@@ -118,7 +125,8 @@ export async function removeContactEntry(
             id: crypto.randomUUID(),
             adopterId,
             changedBy: actor,
-            kind: 'edit',
+            // A contributor removing their own entry is not an editor (see header).
+            kind: historyKind(isOwner || actorIsAdmin || actorIsOrgMate),
             changes: JSON.stringify({ removed_entry: { type: removed.type, id: entryId } }),
             changedAt: new Date(),
         });

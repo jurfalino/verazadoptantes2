@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, type MouseEvent } from 'react';
 import { flagAdopter, findAdopters, getDuplicateCandidates } from '@/app/actions';
 import type { DuplicateCandidate, DiscoveryMatch } from '@/app/actions';
 import { useRouter } from 'next/navigation';
@@ -8,10 +8,24 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
+import MatchCompare, { type MatchSourceKind } from '@/components/MatchCompare';
 import { zarazTrack } from '@/lib/zaraz';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
+import { isOpenDuplicateFlag } from '@/domain/dedupPair';
+import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
+import { CheckCircle2 } from 'lucide-react';
+import { AlertPill } from '@/components/AlertPill';
+import { HOUSEHOLD_SECTION_HREF, type HousemateAlertSummary } from '@/domain/profileHouseholds';
+import { formatRating } from '@/domain/ratings';
+import { Modal, ModalActions } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
+
+/** Where the header's housemate chips lead: «Familiares / Convivientes» (AdopterForm's section; one constant, re-review M-d/M-g). */
+export { HOUSEHOLD_SECTION_HREF };
 
 export interface AdopterFlaggingHandle {
     openAction: (action: string) => void;
@@ -50,7 +64,6 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
                         >
                             <div className="flex items-center justify-between">
                                 <span className="font-semibold text-stone-700">{sug.otherAdopterName}</span>
-                                <span className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 font-medium">{sug.confidencePercent}% match</span>
                             </div>
                             <div className="flex flex-wrap gap-1 mt-1">
                                 {sug.matchTypes.map(type => (
@@ -65,7 +78,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     );
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -82,28 +95,32 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const [hasSearched, setHasSearched] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [systemSuggestions, setSystemSuggestions] = useState<DuplicateCandidate[]>([]);
-    // Data-request form fields (for inaccuracy/deletion — open to anyone)
-    const [requesterName, setRequesterName] = useState('');
-    const [requesterEmail, setRequesterEmail] = useState('');
+    // Inaccuracy / deletion: who is asking comes from the session (the API reads it).
     const [dataRequestSubmitted, setDataRequestSubmitted] = useState(false);
     
     // Tap-to-expand context hints for flags
     const [showAdoptionsHint, setShowAdoptionsHint] = useState(false);
     const [showRequestsHint, setShowRequestsHint] = useState(false);
-    const [showInaccurateHint, setShowInaccurateHint] = useState(false);
     const [showIdentityHint, setShowIdentityHint] = useState(false);
     const [_showAddressHint, _setShowAddressHint] = useState(false);
 
     // Fetch system-detected duplicate candidates on mount
     useEffect(() => {
-        getDuplicateCandidates(adopterId).then(setSystemSuggestions).catch(() => { });
+        getDuplicateCandidates(adopterId).then(setSystemSuggestions).catch(e => {
+            // Degraded: the search box still works. Logged, not swallowed.
+            void reportClientError({ message: 'flagging: system duplicate suggestions could not load', source: 'AdopterFlagging', level: 'warn', extra: { adopterId, error: e instanceof Error ? e.message : String(e) } });
+        });
     }, [adopterId]);
 
-    const duplicateFlags = existingFlags.filter(f => f.reason === 'duplicate');
-    const isFlaggedAsDuplicate = duplicateFlags.length > 0;
-
-    const inaccurateFlags = existingFlags.filter(f => f.reason === 'inaccurate_information' || f.reason === 'inaccurate');
-    const isFlaggedAsInaccurate = inaccurateFlags.length > 0;
+    // The open flags, by the one rule every surface draws them with
+    // (openAlertKindsOfRows, then rescuerFlagKinds): «Duplicado» only for an
+    // OPEN duplicate question — a merged flag ("Merged into … by …") or a
+    // declined merge request ("Kept separate: …") is settled, and its details
+    // are bookkeeping. «Inexacto» is never drawn here, for any viewer (Jon,
+    // 2026-11-01: only admins care about it, in the admin UI).
+    const flagKinds = rescuerFlagKinds(openAlertKindsOfRows(existingFlags.map(f => ({ adopterId, ...f }))));
+    const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
+    const isFlaggedAsDuplicate = flagKinds.includes('duplicate');
 
     // Verification flags - include adoption-based verification
     const identityVerifiedFlag = existingFlags.find(f => f.reason === 'verified_identity');
@@ -117,46 +134,37 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
 
 
+    // «Buscar perfil original»: never the profile you are on (Jon 2026-10-31: picking
+    // it was refused with an error), and a failed search says so — it used to look
+    // like «no results».
+    const runSearch = async (term: string) => {
+        setIsSearching(true);
+        try {
+            const response = await findAdopters({ raw: term }, { mode: 'discovery', enrich: false });
+            setSearchResults((response.results as DiscoveryMatch[]).filter(r => r.adopter.id !== adopterId));
+            setHasSearched(true);
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.search_failed'), resolveErrorId(e, 'AdopterFlagging.search'));
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
     // Debounce search
     useEffect(() => {
-        const delayDebounceFn = setTimeout(async () => {
-            if (searchTerm && reason === 'duplicate') {
-                setIsSearching(true);
-                try {
-                    const response = await findAdopters(
-                        { raw: searchTerm },
-                        { mode: 'discovery', enrich: false },
-                    );
-                    setSearchResults(response.results as DiscoveryMatch[]);
-                    setHasSearched(true);
-                } catch (error) {
-                    console.error("Search failed", error);
-                } finally {
-                    setIsSearching(false);
-                }
-            } else {
-                setSearchResults([]);
-            }
+        const delayDebounceFn = setTimeout(() => {
+            if (searchTerm && reason === 'duplicate') void runSearch(searchTerm);
+            else setSearchResults([]);
         }, 500);
 
         return () => clearTimeout(delayDebounceFn);
+        // runSearch is recreated each render; the search reruns only when the term or reason changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchTerm, reason]);
 
     const handleManualSearch = async () => {
         if (!searchTerm) return;
-        setIsSearching(true);
-        try {
-            const response = await findAdopters(
-                { raw: searchTerm },
-                { mode: 'discovery', enrich: false },
-            );
-            setSearchResults(response.results as DiscoveryMatch[]);
-            setHasSearched(true);
-        } catch (error) {
-            console.error("Search failed", error);
-        } finally {
-            setIsSearching(false);
-        }
+        await runSearch(searchTerm);
     };
 
     const handleSubmit = async () => {
@@ -168,13 +176,20 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             setSubmitLoading(true);
             try {
                 const res = await flagAdopter(adopterId, reason, details, targetAdopter.id);
-                if (res.success) {
+                if (res.success && res.already) {
+                    // An open duplicate flag already covers this pair: nothing new was written or sent.
+                    toast.info(t('adopter.dup_hint_pending'));
+                    resetAndClose();
+                } else if (res.success) {
                     toast.success(t('flagging.submit_success') || 'Report submitted successfully');
                     zarazTrack('flag_submitted', { flagType: 'duplicate' });
                     resetAndClose();
                     router.refresh();
+                } else if (res.error === 'said_no' || res.error === 'settled_separate') {
+                    // Someone already said they are two people / they're recorded as such — the reason «Ya está en otro perfil» gives.
+                    toast.info(t(res.error === 'said_no' ? 'adopter.dup_hint_said_no' : 'adopter.dup_hint_settled'));
                 } else {
-                    toast.error(t('errors.generic'), t('errors.submit_report_failed'));
+                    toast.error(t('errors.generic'), t('errors.submit_report_failed'), res.errorId);
                 }
             } catch (e) {
                 console.error(e);
@@ -185,9 +200,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
             return;
         }
 
-        // Inaccuracy / Deletion flow — uses data-request API (no auth needed)
+        // Inaccuracy / Deletion flow — the data-request API (signed in; it knows who is asking)
         if (reason === 'inaccuracy' || reason === 'deletion') {
-            if (!requesterName.trim() || !details.trim()) return;
+            if (!details.trim()) return;
             setSubmitLoading(true);
             try {
                 const res = await fetch('/api/data-request', {
@@ -195,8 +210,6 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         adopterId,
-                        requesterName: requesterName.trim(),
-                        requesterEmail: requesterEmail.trim() || null,
                         requestType: reason,
                         details: details.trim(),
                     }),
@@ -242,8 +255,6 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
         setReason('duplicate');
         setTargetAdopter(null);
         setSearchTerm('');
-        setRequesterName('');
-        setRequesterEmail('');
         setDataRequestSubmitted(false);
     };
 
@@ -261,115 +272,68 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
 
     const [showDuplicateHint, setShowDuplicateHint] = useState(false);
+    // Someone in their home (Jon 2026-11-01): the same two alerts the cards carry, decided on the
+    // server by the same rules (housemateLowRating / housemateHasAlerts — readProfileHouseholds).
+    const housemateLow = housemateAlert?.lowRating ?? null;
+    const housemateAlerts = !!housemateAlert?.hasAlerts;
+    const hasHousemateAlert = housemateLow != null || housemateAlerts;
 
     return (
         <>
             {/* Flag Pills — split into warnings and verifications */}
             <div className="space-y-2 mb-4">
                 {/* ⚠ Warnings: things that need attention */}
-                {(isFlaggedAsInaccurate || isFlaggedAsDuplicate || tooManyAdoptions || tooManyRequests) && (
-                    <div className="flex flex-wrap items-center gap-2">
-                        {/* Inaccurate Information Flag */}
-                        {isFlaggedAsInaccurate && (
-                            <button
-                                type="button"
-                                onClick={() => setShowInaccurateHint(!showInaccurateHint)}
-                                aria-pressed={showInaccurateHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showInaccurateHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-error-bg)',
-                                    color: 'var(--status-error-text)',
-                                    borderColor: 'var(--status-error-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showInaccurateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                                {t('flags.inaccurate') || 'Inaccurate'}
-                            </button>
-                        )}
-
-                        {/* Duplicate - click to expand hint */}
-                        {isFlaggedAsDuplicate && !hasDuplicateBanner && (
-                            <button
-                                type="button"
-                                onClick={() => setShowDuplicateHint(!showDuplicateHint)}
-                                aria-pressed={showDuplicateHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showDuplicateHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-warning-bg)',
-                                    color: 'var(--status-warning-text)',
-                                    borderColor: 'var(--status-warning-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showDuplicateHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z" />
-                                    <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                                </svg>
-                                {t('flags.duplicate') || 'Duplicate'}
-                            </button>
-                        )}
-
+                {((isFlaggedAsDuplicate && !hasDuplicateBanner) || tooManyAdoptions || tooManyRequests || hasHousemateAlert) && (
+                    // gap-y-3: wrapped rows of 32px pills keep their 44px tap targets apart.
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+                        {/* Alerts first (computed from the records)… */}
                         {/* Too Many Adoptions Warning */}
                         {tooManyAdoptions && (
-                            <button
-                                type="button"
-                                onClick={() => setShowAdoptionsHint(!showAdoptionsHint)}
-                                aria-pressed={showAdoptionsHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showAdoptionsHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-warning-bg)',
-                                    color: 'var(--status-warning-text)',
-                                    borderColor: 'var(--status-warning-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showAdoptionsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                                {tooManyAdoptions.count} {t('stats.adoptions') || 'adopciones'} {t('common.in') || 'en'} {Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))} {t('common.days') || 'días'}
-                            </button>
+                            <AlertPill kind="too_many_adoptions" size="md" onClick={() => setShowAdoptionsHint(!showAdoptionsHint)} pressed={showAdoptionsHint}>
+                                {t('flags.too_many_adoptions').replace('{count}', String(tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))))}
+                            </AlertPill>
                         )}
 
                         {/* Too Many Requests Warning */}
                         {tooManyRequests && (
-                            <button
-                                type="button"
-                                onClick={() => setShowRequestsHint(!showRequestsHint)}
-                                aria-pressed={showRequestsHint}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all hover:opacity-90 ${showRequestsHint ? 'shadow-inner' : ''} animate-in fade-in`}
-                                style={{
-                                    background: 'var(--status-purple-bg)',
-                                    color: 'var(--status-purple-text)',
-                                    borderColor: 'var(--status-purple-border)',
-                                }}
-                            >
-                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showRequestsHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
+                            <AlertPill kind="too_many_requests" size="md" onClick={() => setShowRequestsHint(!showRequestsHint)} pressed={showRequestsHint}>
                                 {t('flags.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
-                            </button>
+                            </AlertPill>
                         )}
-                        
+
+                        {/* …the housemate alerts: links to «Familiares / Convivientes», where everyone is listed (review fix 7:
+                            a real link, so focus moves there too — onHousemateAlert smooths the scroll)… */}
+                        {housemateLow != null && (
+                            <AlertPill kind="housemate_low_rating" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-rating">
+                                {t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateLow))}
+                            </AlertPill>
+                        )}
+                        {housemateAlerts && (
+                            <AlertPill kind="housemate_alerts" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-alerts">
+                                {t('flags.housemate_alerts')}
+                            </AlertPill>
+                        )}
+
+                        {/* …then the flags (a rescuer's report): the neutral chip, by name. Tap for the hint. */}
+                        {isFlaggedAsDuplicate && !hasDuplicateBanner && (
+                            <AlertPill kind="duplicate" size="md" onClick={() => setShowDuplicateHint(!showDuplicateHint)} pressed={showDuplicateHint}>
+                                {t('flags.duplicate') || 'Duplicate'}
+                            </AlertPill>
+                        )}
+
                         {/* Context hints revealed on tap */}
-                        {showInaccurateHint && isFlaggedAsInaccurate && (
-                            <div className="w-full mt-1 p-3 bg-rose-50 dark:bg-stone-800/80 border border-rose-100 dark:border-rose-900/50 rounded-lg text-xs leading-relaxed text-rose-800 dark:text-rose-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-rose-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-rose-900 dark:text-rose-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
-                                {inaccurateFlags[0]?.details || t('flags.inaccurate_desc') || 'Este perfil fue reportado como inexacto.'}
-                            </div>
-                        )}
                         {showDuplicateHint && isFlaggedAsDuplicate && !hasDuplicateBanner && (
-                            <div className="w-full mt-1 p-3 bg-amber-50 dark:bg-stone-800/80 border border-amber-100 dark:border-amber-900/50 rounded-lg text-xs leading-relaxed text-amber-800 dark:text-amber-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-amber-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-amber-900 dark:text-amber-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                            <div className="w-full mt-1 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs leading-relaxed text-amber-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-amber-100"></div>
+                                <span className="font-semibold text-amber-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
                                 {t('flags.duplicate_desc') || 'Este perfil podría ser un duplicado de otro adoptante.'}
                                 {duplicateFlags[0]?.details && (
-                                    <span className="block mt-1 font-medium italic text-amber-700 dark:text-amber-400">"{duplicateFlags[0].details}"</span>
+                                    <span className="block mt-1 font-medium italic text-amber-700">"{duplicateFlags[0].details}"</span>
                                 )}
                                 {duplicateFlags[0]?.targetAdopterId && (
                                     <a
                                         href={`/adopter/${duplicateFlags[0].targetAdopterId}`}
-                                        className="inline-flex items-center gap-1 mt-2 text-amber-700 dark:text-amber-300 font-semibold hover:text-amber-900 dark:hover:text-amber-100 hover:underline transition-colors"
+                                        className="inline-flex items-center gap-1 mt-2 text-amber-700 font-semibold hover:text-amber-900 hover:underline transition-colors"
                                     >
                                         {t('flags.view_original') || 'View Original'}
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -380,9 +344,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             </div>
                         )}
                         {showAdoptionsHint && tooManyAdoptions && (
-                            <div className="w-full mt-1 p-3 bg-orange-50 dark:bg-stone-800/80 border border-orange-100 dark:border-orange-900/50 rounded-lg text-xs leading-relaxed text-orange-800 dark:text-orange-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-orange-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-orange-900 dark:text-orange-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                            <div className="w-full mt-1 p-3 bg-orange-50 border border-orange-100 rounded-lg text-xs leading-relaxed text-orange-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-orange-100"></div>
+                                <span className="font-semibold text-orange-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
                                 {t('flags.adoptions_warning_p1') || 'Registró '}{tooManyAdoptions.count}{t('flags.adoptions_warning_p2') || ' adopciones en '}{Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || 0))}{t('flags.adoptions_warning_p3') || ' días'}
                                 {tooManyAdoptions.startDate && tooManyAdoptions.endDate && (
                                     <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyAdoptions.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyAdoptions.endDate)})</>
@@ -390,9 +354,9 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             </div>
                         )}
                         {showRequestsHint && tooManyRequests && (
-                            <div className="w-full mt-1 p-3 bg-purple-50 dark:bg-stone-800/80 border border-purple-100 dark:border-purple-900/50 rounded-lg text-xs leading-relaxed text-purple-800 dark:text-purple-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
-                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-purple-100 dark:border-b-stone-700"></div>
-                                <span className="font-semibold text-purple-900 dark:text-purple-300 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
+                            <div className="w-full mt-1 p-3 bg-purple-50 border border-purple-100 rounded-lg text-xs leading-relaxed text-purple-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                                <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-purple-100"></div>
+                                <span className="font-semibold text-purple-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
                                 {t('flags.requests_warning_p1') || 'Registró '}{tooManyRequests.count}{t('flags.requests_warning_p2') || ' solicitudes en '}{Math.max(1, Math.round(tooManyRequests.actualSpanDays || 0))}{t('flags.requests_warning_p3') || ' días'}
                                 {tooManyRequests.startDate && tooManyRequests.endDate && (
                                     <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyRequests.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyRequests.endDate)})</>
@@ -437,35 +401,24 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
 
             {/* Modal */}
             {isOpen && (
-                <div className="fixed inset-0 bg-teal-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 max-h-[90svh] overflow-y-auto transform transition-all scale-100 border border-teal-100">
-                        <div className="flex justify-between items-start mb-6">
-                            <h3 className="text-2xl font-semibold text-teal-900 tracking-tight">
-                                {reason === 'duplicate' && (t('flagging.title_duplicate') || 'Report Duplicate')}
-                                {reason === 'inaccuracy' && (t('flagging.title_inaccuracy') || 'Report Inaccuracy')}
-                                {reason === 'deletion' && (t('flagging.title_deletion') || 'Request Removal')}
-                            </h3>
-                            <button onClick={resetAndClose} className="text-stone-500 hover:text-teal-700 transition-colors">
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-
+                // The shared dialog shell (audit B8): 16px title, ×, matrix buttons.
+                <Modal size="lg" testId="flag-dialog" onClose={resetAndClose} busy={submitLoading}
+                    title={reason === 'duplicate' ? (t('flagging.title_duplicate') || 'Report duplicate')
+                        : reason === 'inaccuracy' ? (t('flagging.title_inaccuracy') || 'Report inaccuracy')
+                        : (t('flagging.title_deletion') || 'Request removal')}>
                         {/* Success state for data requests */}
                         {dataRequestSubmitted ? (
                             <div className="text-center py-6">
-                                <div className="text-4xl mb-3">✅</div>
+                                <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-teal-600" aria-hidden="true" />
                                 <p className="text-lg font-semibold text-teal-800 mb-2">
                                     {t('flagging.request_received') || 'Request received'}
                                 </p>
                                 <p className="text-sm text-stone-500 mb-6">
-                                    {t('flagging.request_review_time') || 'We will review your request within 10 business days.'}
+                                    {reason === 'inaccuracy'
+                                        ? t('flagging.inaccuracy_sent')
+                                        : (t('flagging.request_review_time') || 'We will review your request within 10 business days.')}
                                 </p>
-                                <button
-                                    onClick={resetAndClose}
-                                    className="px-6 py-2.5 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors"
-                                >
-                                    {t('common.close') || 'Close'}
-                                </button>
+                                <Button type="button" onClick={resetAndClose}>{t('common.close') || 'Close'}</Button>
                             </div>
                         ) : (
                             <div className="space-y-6">
@@ -516,17 +469,25 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                             >
                                                                 <div className="flex items-center justify-between">
                                                                     <span className="font-semibold text-stone-900">{sug.otherAdopterName}</span>
-                                                                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                                                                        sug.confidencePercent >= 75 ? 'bg-red-100 text-red-700' :
-                                                                        sug.confidencePercent >= 40 ? 'bg-amber-100 text-amber-700' :
-                                                                        'bg-blue-100 text-blue-600'
-                                                                    }`}>{sug.confidencePercent}% match</span>
                                                                 </div>
-                                                                <div className="flex flex-wrap gap-1 mt-1">
-                                                                    {sug.matchTypes.map(type => (
-                                                                        <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{matchTypeLabel(type, t)}</span>
-                                                                    ))}
-                                                                </div>
+                                                                {compareSource ? (
+                                                                    <MatchCompare
+                                                                        adopterId={sug.otherAdopterId}
+                                                                        matchTypes={sug.matchTypes}
+                                                                        profileName={sug.otherAdopterName}
+                                                                        source={compareSource}
+                                                                        target="other"
+                                                                        score={sug.confidencePercent}
+                                                                        defaultOpen={visible.length === 1}
+                                                                        t={t}
+                                                                    />
+                                                                ) : (
+                                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                                        {sug.matchTypes.map(type => (
+                                                                            <span key={type} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600">{matchTypeLabel(type, t)}</span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         ))}
                                                         {suppressed.length > 0 && (
@@ -554,7 +515,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                                         onClick={() => setTargetAdopter(res.adopter)}
                                                     >
                                                         <div className="font-semibold text-teal-900 truncate" title={res.adopter.name}>{res.adopter.name}</div>
-                                                        <div className="text-teal-700 truncate" title={res.adopter.contactInfo || undefined}>{res.adopter.contactInfo}</div>
+                                                        <div className="text-teal-700 truncate" title={contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias')) || undefined}>{contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias'))}</div>
                                                     </div>
                                                 ))}
                                             </div>
@@ -569,31 +530,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                     </div>
                                 )}
 
-                                {/* Inaccuracy / Deletion — contact info form */}
+                                {/* Inaccuracy / Deletion — what happens next; no name or email to type, we know who is asking */}
                                 {(reason === 'inaccuracy' || reason === 'deletion') && (
-                                    <div className="space-y-4">
-                                        <p className="text-sm text-stone-600">
-                                            {reason === 'inaccuracy'
-                                                ? (t('flagging.inaccuracy_desc') || 'If this profile contains incorrect information about you, let us know:')
-                                                : (t('flagging.deletion_desc') || 'To request removal of your data from this platform, please provide your details:')}
-                                        </p>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <input
-                                                type="text"
-                                                placeholder={t('flagging.your_name') || 'Your name *'}
-                                                value={requesterName}
-                                                onChange={e => setRequesterName(e.target.value)}
-                                                className="px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
-                                            />
-                                            <input
-                                                type="email"
-                                                placeholder={t('flagging.your_email') || 'Your email (optional)'}
-                                                value={requesterEmail}
-                                                onChange={e => setRequesterEmail(e.target.value)}
-                                                className="px-3 py-2.5 text-sm border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 outline-none"
-                                            />
-                                        </div>
-                                    </div>
+                                    <p className="text-sm text-stone-600">
+                                        {reason === 'inaccuracy'
+                                            ? (t('flagging.inaccuracy_desc') || 'Tell us what information on this profile is wrong.')
+                                            : (t('flagging.deletion_desc') || 'Tell us why this data should be removed.')}
+                                    </p>
                                 )}
 
                                 {/* Details field — shown for all reason types */}
@@ -618,32 +561,16 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                     />
                                 </div>
 
-                                <div className="flex justify-end gap-3 pt-4 border-t border-teal-100">
-                                    <button
-                                        onClick={resetAndClose}
-                                        className="px-5 py-2.5 text-teal-700 font-semibold hover:bg-teal-50 rounded-xl transition-colors"
-                                    >
-                                        {t('common.cancel')}
-                                    </button>
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={submitLoading || (reason === 'duplicate' && !targetAdopter) || ((reason === 'inaccuracy' || reason === 'deletion') && (!requesterName.trim() || !details.trim()))}
-                                        className={`px-6 py-2.5 font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none transition-all ${reason === 'deletion'
-                                            ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
-                                            : 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/30'
-                                            }`}
-                                    >
-                                        {submitLoading
-                                            ? (t('flagging.submitting') || 'Submitting...')
-                                            : reason === 'deletion'
-                                                ? (t('flagging.submit_deletion') || 'Submit Removal Request')
-                                                : (t('flagging.submit') || 'Submit Report')}
-                                    </button>
-                                </div>
+                                <ModalActions onCancel={resetAndClose} busy={submitLoading}
+                                    confirm={{
+                                        label: reason === 'deletion' ? (t('flagging.submit_deletion') || 'Submit Removal Request') : (t('flagging.submit') || 'Submit Report'),
+                                        onClick: () => { void handleSubmit(); },
+                                        disabled: (reason === 'duplicate' && !targetAdopter) || ((reason === 'inaccuracy' || reason === 'deletion') && !details.trim()),
+                                        testId: 'flag-submit',
+                                    }} />
                             </div>
                         )}
-                    </div>
-                </div>
+                </Modal>
             )}
         </>
     );

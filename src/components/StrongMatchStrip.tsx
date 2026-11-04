@@ -6,17 +6,24 @@
  * the user MUST see — identity collisions are the highest-cost dup vector and
  * must not be missable.
  *
- * Each row is dismissible (×). Dismissed adopter ids are tracked by the parent
+ * Each row is the shared match card; «No es esta persona» dismisses it. Dismissed adopter ids are tracked by the parent
  * and feed the save-time modal gate: the modal only fires for strong matches
  * that are still on the strip when the user clicks save.
  */
 
 import type { DiscoveryMatch } from '@/app/actions';
-import { buildMatchChips, hasStrongMatch } from '@/lib/matchChips';
+import { isSamePerson } from '@/lib/matchChips';
 import { useLanguage } from '@/context/LanguageContext';
+import { AlertTriangle } from 'lucide-react';
 import { AdopterName } from '@/components/AdopterName';
+import { isNamelessAdopter } from '@/lib/adopterDisplay';
+import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
+import { MatchCard } from '@/components/MatchCardParts';
+import { openAlertKinds } from '@/domain/flags';
 
 interface Props {
+    /** What the rescuer has typed — their side of «Qué coincide y qué no». */
+    compareSource: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> };
     results: DiscoveryMatch[] | null;
     dismissedIds: Set<string>;
     onDismiss: (adopterId: string) => void;
@@ -24,86 +31,55 @@ interface Props {
     busyAdopterId?: string | null;
 }
 
-export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onContinueWith, busyAdopterId }: Props) {
+export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onContinueWith, busyAdopterId, compareSource }: Props) {
     const { t } = useLanguage();
 
     const strong = (results ?? [])
-        .filter(r => hasStrongMatch(r.matchValues))
+        .filter(r => isSamePerson(r))
         .filter(r => !dismissedIds.has(r.adopter.id))
         .slice(0, 2);
 
     if (strong.length === 0) return null;
 
     return (
-        <div className="md:col-span-2 rounded-xl border-2 border-amber-300 bg-amber-50 overflow-hidden">
+        <div className="md:col-span-2 rounded-xl border-2 border-amber-300 bg-amber-50 overflow-hidden" data-testid="strong-match-strip">
             <div className="px-4 py-2.5 bg-amber-100 border-b border-amber-300 flex items-center gap-2">
-                <span aria-hidden>⚠️</span>
+                <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                 <h3 className="text-sm font-bold text-amber-900">
                     {t('adopter.dup_strong_strip_title') || 'Likely exact match'}
                 </h3>
             </div>
             <ul className="divide-y divide-amber-200">
-                {strong.map(result => {
-                    const chips = buildMatchChips(result.matchValues, t).filter(c => c.isStrong).slice(0, 2);
-                    return (
-                        <li key={result.adopter.id} className="px-4 py-3 flex items-start gap-3 bg-white/60">
-                            {result.thumbnail ? (
-                                <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                            ) : (
-                                <div className="w-10 h-10 rounded-full bg-amber-200 flex items-center justify-center text-amber-900 font-semibold text-sm flex-shrink-0">
-                                    {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                </div>
+                {strong.map(result => (
+                    <li key={result.adopter.id} className="px-4 py-3 bg-white">
+                        {/* The shared match card (audit B6): the same header, order and actions as the
+                            «Posibles coincidencias» panel; «No es esta persona» takes it off the strip
+                            (and out of the save check), where a small × used to. */}
+                        <MatchCard newTab thumbnail={result.thumbnail} headTestId="strong-match-head"
+                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
+                            nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
+                            compare={(
+                                <MatchCompare
+                                    adopterId={result.adopter.id}
+                                    matchTypes={result.matchTypes}
+                                    profileName={result.adopter.name ?? ''}
+                                    source={compareSource}
+                                    profileEntries={entriesAsShown(result.adopter)}
+                                    score={result.relevancePercent}
+                                    defaultOpen={strong.length === 1}
+                                    t={t}
+                                />
                             )}
-                            <div className="min-w-0 flex-1">
-                                <AdopterName adopter={result.adopter} className="font-semibold text-stone-900 text-sm truncate block" title />
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                    {chips.map(c => (
-                                        <span
-                                            key={c.key}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200"
-                                            title={c.label}
-                                        >
-                                            <span aria-hidden>{c.icon}</span>
-                                            <span className="truncate max-w-[180px]">{c.label}</span>
-                                        </span>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2 mt-2.5">
-                                    <a
-                                        href={`/adopter/${result.adopter.id}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-2.5 py-1 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors"
-                                    >
-                                        {t('adopter.dup_action_view') || 'View profile'}
-                                    </a>
-                                    {onContinueWith && (
-                                        <button
-                                            type="button"
-                                            onClick={() => onContinueWith(result.adopter.id)}
-                                            disabled={busyAdopterId === result.adopter.id}
-                                            className="px-2.5 py-1 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-lg transition-colors"
-                                        >
-                                            {busyAdopterId === result.adopter.id
-                                                ? (t('common.processing') || '...')
-                                                : (t('adopter.dup_action_continue_with_existing') || 'Continue with this profile')}
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => onDismiss(result.adopter.id)}
-                                aria-label={t('adopter.dup_action_dismiss') || 'Dismiss'}
-                                className="w-7 h-7 rounded-full flex items-center justify-center text-amber-800 hover:bg-amber-200 flex-shrink-0"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </li>
-                    );
-                })}
+                            actions={{
+                                busy: busyAdopterId === result.adopter.id,
+                                onSame: onContinueWith ? () => onContinueWith(result.adopter.id) : undefined,
+                                sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
+                                onNotThis: () => onDismiss(result.adopter.id),
+                                notThisTestId: 'strong-match-not-this',
+                                sameTestId: 'strong-match-continue',
+                            }} />
+                    </li>
+                ))}
             </ul>
         </div>
     );

@@ -5,6 +5,17 @@ on:
     branches: [master, staging]
   pull_request:
     branches: [master, staging]
+  # Experiments on a non-deploy branch (e.g. ci/e2e-reliability): runs
+  # version-guard, build-and-lint, ready-to-merge, e2e, build-cf and e2e-cf ONLY. Every migrate-* and deploy-*
+  # job is `github.event_name == 'push'` AND a branch check, so a dispatch —
+  # whatever --ref it targets — can never migrate or deploy.
+  workflow_dispatch:
+    inputs:
+      next_dev_args:
+        description: 'Extra flags appended to `next dev` in the e2e legs (e.g. --disable-source-maps)'
+        required: false
+        default: ''
+        type: string
 
 # Serialise per branch, at the WORKFLOW level.
 #
@@ -57,9 +68,9 @@ jobs:
     name: Build & Lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Every other job descends from this one, so gating it here stops a
-    # regressed version reaching migrations or a deploy — and fails in ~30s
-    # rather than after a full build.
+    # Migrations and deploys descend from this one (via build-and-lint), so
+    # gating it here stops a regressed version reaching them — and fails in
+    # ~30s rather than after a full build. (e2e and build-cf start at push time.)
     needs: [version-guard]
     steps:
       - name: Checkout code
@@ -99,6 +110,11 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      # A test that no leg runs passes by not running; one that two legs run
+      # wastes a slot. Lists the matrix above with Playwright's own --list.
+      - name: "E2E partition: every test runs in exactly one leg"
+        run: node scripts/e2e-partition-check.mjs
 
       - name: Build
         run: npm run build
@@ -201,8 +217,25 @@ jobs:
 
   # Deploy to Staging (Direct Upload)
   e2e:
-    name: 🎭 E2E Tests
+    name: 🎭 E2E Tests (next dev, fallback)
     runs-on: ubuntu-latest
+    # Playwright's own CI image: browsers AND their system packages preinstalled.
+    # Installing them per run went through the Ubuntu apt mirror, which crawled
+    # (~50 KB/s) on 2026-10-21/22 — hung legs at the 30-minute cap, then cost
+    # 10 minutes of a 19-minute run even with retries. No download at setup now.
+    # Keep the tag equal to @playwright/test (guarded by a step below).
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.0-noble
+      # --init reaps exited browser / next dev processes (the job's main process
+      # doesn't), as Playwright's docs recommend; --ipc=host for Chromium.
+      options: --init --ipc=host
+    env:
+      PLAYWRIGHT_IMAGE_VERSION: '1.58.0'
+    # In a container job GitHub's default shell is `sh`, not bash (2.56.227 failed
+    # every leg on `set -o pipefail`). The steps are written for bash.
+    defaults:
+      run:
+        shell: bash
     # ── Split by project, one server each (v2.56.129) ──────────────────────
     #
     # This ran as ONE `next dev` process for the whole suite, ~149 tests over
@@ -234,6 +267,10 @@ jobs:
     # .agents/plans/e2e-shard-the-suite.md before reaching for either:
     #   · raising --max-old-space-size (moves the wall, and trades Next's
     #     graceful restart for the kernel's OOM killer on a 7 GB runner)
+    #     — REVISITED 2026-10-22: this repo is public, so its runners have 16 GB,
+    #     not 7. The heap is now half of the runner's RAM, capped at 8 GB (step
+    #     "Size the test server heap"), leaving ~8 GB for Chromium/WebKit and the
+    #     OS. Fewer restarts; the graceful restart still exists at the new wall.
     #   · `next build && next start` (src/lib/db.ts only falls back to the
     #     local SQLite DB when NODE_ENV !== 'production', so a built server has
     #     no database and /api/ready never returns 200)
@@ -271,11 +308,17 @@ jobs:
           # forgets to add runs NOWHERE, and silently passing by not running
           # is the worst failure this pipeline could have.
           - group: user-1
-            projects: --project=user --shard=1/3
+            projects: --project=user --shard=1/3 --grep-invert @leg-
           - group: user-2
-            projects: --project=user --shard=2/3
+            projects: --project=user --shard=2/3 --grep-invert @leg-
           - group: user-3
-            projects: --project=user --shard=3/3
+            projects: --project=user --shard=3/3 --grep-invert @leg-
+          # households.user.spec.ts runs alone (@leg-households): 13 serial tests,
+          # ~7-9 min. File-order sharding put it in user-1, which then used 95% of
+          # its 30-min job limit (audit 2026-11-03). The user-N legs exclude every
+          # @leg- tag, so each test still runs exactly once (scripts/e2e-partition-check.mjs).
+          - group: user-households
+            projects: --project=user --grep @leg-households
           - group: authed-1
             projects: --project=authed --shard=1/8 --grep-invert @leg-
           - group: authed-2
@@ -312,20 +355,25 @@ jobs:
     # Each group is now ~5-12 minutes, but the headroom stays: a timeout
     # surfaces as "##[error]The operation was canceled" with conclusion
     # `cancelled` — indistinguishable at a glance from a concurrency
-    # cancellation, and NOT a test failure. Because both deploy jobs list e2e
-    # in `needs`, that skips the deploy: on 2026-09-04 production merged green
-    # and silently stayed on the previous version.
+    # cancellation, and NOT a test failure. (When this was the gate, a timeout
+    # skipped the deploy: on 2026-09-04 production merged green and silently
+    # stayed on the previous version. The gate is e2e-cf now.)
     timeout-minutes: 30
-    if: github.event_name == 'push'
+    # Fallback week: staging pushes and dispatches only. On master
+    # (cancel-in-progress false) a fallback leg re-running after a deploy would
+    # hold the run open and queue the next release behind tests that gate nothing.
+    if: (github.event_name == 'push' && github.ref != 'refs/heads/master') || github.event_name == 'workflow_dispatch'
     # v2.56.131: deliberately NOT `needs: [build-and-lint]`. e2e installs its
     # own dependencies and runs its own server; it consumes nothing the build
     # produces, so waiting for it only added ~2 minutes to the critical path.
-    # Both deploys still list build-and-lint AND e2e in `needs`, so nothing
-    # ships without both. The cost is runner minutes spent on a run whose
-    # build was going to fail anyway, which is the cheaper of the two.
+    # The cost is runner minutes spent on a run whose build was going to fail
+    # anyway, which is the cheaper of the two.
     #
-    # Deliberately a deploy gate: `continue-on-error` was removed to stop failures
-    # being masked. With a matrix, `needs: [e2e]` requires EVERY group to pass.
+    # FALLBACK since v2.58.19 (2026-11-04): the deploy gate is e2e-cf (the same
+    # legs on the Cloudflare build, 3 green runs in a row with equal counts:
+    # 41766750080, 41771292017, 41773157707). This job stays one week as a
+    # non-gating comparison, then is removed in its own version. Still never
+    # continue-on-error: a red leg turns the run red, it just no longer blocks.
 
     steps:
       - name: Checkout code
@@ -335,37 +383,65 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.18'
-          cache: 'npm'
+          # No `cache: 'npm'` here: node_modules is cached below, and the npm
+          # cache keyed on the whole lockfile added ~316 MB per version bump
+          # to the 10 GB quota, evicting the caches that matter.
 
-      # ~1 minute per leg, and with seven legs that is a minute off the
-      # critical path as well as six off the bill. Keyed on the lockfile and
-      # the Node version because node_modules carries compiled native modules
-      # (better-sqlite3) that are not portable across either.
+      # The Playwright image above ships the browsers and their system packages,
+      # so nothing is downloaded at setup. Its tag must match the Playwright the
+      # lockfile installs, or tests would look for browsers the image lacks —
+      # fail loudly here when someone upgrades Playwright without the image.
+      - name: Playwright image matches the lockfile
+        run: |
+          locked=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          if [ "$locked" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::package-lock.json has @playwright/test $locked but the e2e container is v$PLAYWRIGHT_IMAGE_VERSION — update the container image tag in ci.yml"
+            exit 1
+          fi
+
+      # Cache key that survives a version bump. Every deploy bumps the version,
+      # which rewrites package-lock.json, so hashing the whole lockfile missed
+      # the cache on nearly every run. The fingerprint drops only the root
+      # version fields (every package's version/resolved/integrity stays in),
+      # and fails loudly rather than collapse to a constant key.
+      - name: Dependency fingerprint
+        id: deps
+        run: |
+          set -euo pipefail
+          lock=$(node -e "
+            const l = require('./package-lock.json');
+            delete l.version;
+            if (l.packages && l.packages['']) delete l.packages[''].version;
+            const s = JSON.stringify(l);
+            if (s.length < 1000) { console.error('lockfile looks empty'); process.exit(1); }
+            process.stdout.write(require('crypto').createHash('sha256').update(s).digest('hex').slice(0, 16));
+          ")
+          echo "lock=$lock" >> "$GITHUB_OUTPUT"
+
+      # ~1 minute per leg. Keyed on the container image, Node, .npmrc and the
+      # dependency set: node_modules carries compiled native modules
+      # (better-sqlite3) that are not portable across them.
       - name: Cache node_modules
         id: node-modules-cache
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-node20.18-${{ hashFiles('package-lock.json') }}
+          key: node-modules-playwright-${{ env.PLAYWRIGHT_IMAGE_VERSION }}-noble-node20.18-${{ steps.deps.outputs.lock }}-${{ hashFiles('.npmrc') }}
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium webkit --with-deps
-
-      - name: Install Playwright system deps
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium webkit
+      # Half of the runner's RAM, capped at 8 GB, for `next dev` (see the
+      # REVISITED note above). Printed so a smaller runner shows up in the log.
+      - name: Size the test server heap
+        run: |
+          total_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+          heap=$(( total_mb / 2 ))
+          if [ "$heap" -gt 8192 ]; then heap=8192; fi
+          if [ "$heap" -lt 2048 ]; then heap=2048; fi
+          echo "Runner memory: ${total_mb} MB → test server heap: ${heap} MB"
+          echo "E2E_NODE_HEAP_MB=$heap" >> "$GITHUB_ENV"
 
       # One automatic re-run of the WHOLE shard, on a fresh server, and only
       # when the log shows a `next dev` memory restart AND a dropped connection
@@ -373,14 +449,48 @@ jobs:
       # Playwright's own retries land on the same dying server. Never
       # --last-failed: it skips tests that never ran and can go green without
       # them. Logic + tests: scripts/ci-e2e.sh, src/lib/ciE2eRetry.test.ts.
+      #
+      # Budget (2026-11-03): the step times out at 25 min (the job's 30 leaves
+      # room for setup and the report upload), and the re-run happens only if
+      # attempt 1 took at most (E2E_STEP_BUDGET_SEC - 60) / 2 = 720 s — a re-run
+      # that cannot finish would be killed and hide the first failure. A leg
+      # over E2E_WARN_AT_SEC (15 min) prints a warning, green or not.
       # Root fix (e2e on the Cloudflare build): .agents/plans/e2e-shard-the-suite.md.
+      # Heap log (2026-11-03): scripts/e2e-heap-sampler.sh appends
+      # "<epoch> <rss_kb> <heap_used_mb>" every 10 s to e2e-heap.log, read from
+      # the probe that playwright.config.ts loads into next-server. It cannot
+      # fail the job (always exits 0) and is stopped below even when the tests
+      # fail or time out.
+      - name: Start heap sampler
+        run: |
+          echo "E2E_HEAP_PROBE=$PWD/e2e-heap-probe.txt" >> "$GITHUB_ENV"
+          E2E_HEAP_PROBE="$PWD/e2e-heap-probe.txt" nohup bash scripts/e2e-heap-sampler.sh >/dev/null 2>&1 &
+          echo $! > e2e-heap-sampler.pid
+
+      # A fresh random AUTH_SECRET per run: the e2e servers are localhost-only, and
+      # Playwright traces (uploaded to this PUBLIC repo's artifacts) carry session
+      # cookies signed with it, so it must never be a real secret.
+      - name: Per-run AUTH_SECRET
+        run: |
+          s=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
+          echo "::add-mask::$s"
+          echo "AUTH_SECRET=$s" >> "$GITHUB_ENV"
+
       - name: Run Playwright tests
+        timeout-minutes: 25
         run: bash scripts/ci-e2e.sh ${{ matrix.projects }}
         env:
+          # Empty on push; set by the workflow_dispatch input.
+          E2E_NEXT_DEV_ARGS: ${{ github.event.inputs.next_dev_args }}
+          E2E_STEP_BUDGET_SEC: 1500
+          E2E_WARN_AT_SEC: 900
           CI: true
           SKIP_ENV_VALIDATION: 'true'
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET != '' && secrets.AUTH_SECRET || 'fallback_test_secret_for_ci_environments_only_32_chars' }}
           AUTH_URL: http://localhost:3000
+
+      - name: Stop heap sampler
+        if: always()
+        run: kill "$(cat e2e-heap-sampler.pid 2>/dev/null)" 2>/dev/null || true
 
       - name: Upload test report
         uses: actions/upload-artifact@v4
@@ -394,6 +504,209 @@ jobs:
             playwright-report/
             playwright-report-attempt-1/
             e2e-attempt-1.log
+            e2e-heap.log
+          retention-days: 14
+
+  # ── e2e on the Cloudflare build (Phase D, 2026-11-03) — THE DEPLOY GATE ──
+  #
+  # The structural fix for the `next dev` memory restarts above (audit
+  # .agents/audits/2026-11-03-e2e-ci-reliability.md, S1): the same suite against
+  # the next-on-pages output served by `wrangler pages dev` (workerd + local D1),
+  # i.e. what production runs, with no compiler and no heap growth.
+  #
+  # build-cf builds ONCE with APP_BUILD_ID=e2e-build (tests/deploy-skew.authed.spec.ts
+  # needs that id) and uploads the output; each e2e-cf leg downloads it. Its own
+  # job, not a build-and-lint step: the Cloudflare build takes ~5 min in CI and
+  # build-and-lint already uses ~4 of its 10.
+  #
+  # THE DEPLOY GATE since v2.58.19: both deploys list e2e-cf in `needs`, and
+  # with a matrix every leg must pass. Never continue-on-error (that masks
+  # failures). The next-dev e2e job above is the one-week fallback.
+  #
+  # The artifact is never deployed: deploy-staging / deploy-production run
+  # their own next-on-pages build with the real APP_BUILD_ID and download no
+  # artifact. APP_ENVIRONMENT and APP_DEPLOY_MAP stay unset here, as on the
+  # dev path (a "local run": notification emails skip, the public API is test).
+  build-cf:
+    name: 🧱 Cloudflare build for e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for Cloudflare Pages (e2e build id)
+        run: npx @cloudflare/next-on-pages
+        env:
+          SKIP_ENV_VALIDATION: 'true'
+          APP_BUILD_ID: e2e-build
+
+      # Only static/ (~32 MB): it is all `wrangler pages dev` reads. The rest of
+      # .vercel/output is ~560 MB of Vercel function bundles, downloaded 17 times.
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-build-e2e
+          path: .vercel/output/static/
+          # The path is under .vercel/; v4 drops hidden paths unless told not to.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
+  e2e-cf:
+    name: 🎭 E2E on the Cloudflare build
+    runs-on: ubuntu-latest
+    needs: [build-cf]
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.0-noble
+      options: --init --ipc=host
+    env:
+      PLAYWRIGHT_IMAGE_VERSION: '1.58.0'
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      # No max-parallel: this is the gate now. The fallback e2e legs start at
+      # push time, ~5 min before these, so most have finished by then.
+      matrix:
+        # The SAME legs as e2e: scripts/e2e-partition-check.mjs fails the build
+        # if the two matrices (or the tests their configs select) drift.
+        include:
+          - group: user-1
+            projects: --project=user --shard=1/3 --grep-invert @leg-
+          - group: user-2
+            projects: --project=user --shard=2/3 --grep-invert @leg-
+          - group: user-3
+            projects: --project=user --shard=3/3 --grep-invert @leg-
+          - group: user-households
+            projects: --project=user --grep @leg-households
+          - group: authed-1
+            projects: --project=authed --shard=1/8 --grep-invert @leg-
+          - group: authed-2
+            projects: --project=authed --shard=2/8 --grep-invert @leg-
+          - group: authed-3
+            projects: --project=authed --shard=3/8 --grep-invert @leg-
+          - group: authed-4
+            projects: --project=authed --shard=4/8 --grep-invert @leg-
+          - group: authed-5
+            projects: --project=authed --shard=5/8 --grep-invert @leg-
+          - group: authed-6
+            projects: --project=authed --shard=6/8 --grep-invert @leg-
+          - group: authed-7
+            projects: --project=authed --shard=7/8 --grep-invert @leg-
+          - group: authed-8
+            projects: --project=authed --shard=8/8 --grep-invert @leg-
+          - group: authed-viewas
+            projects: --project=authed --grep @leg-viewas
+          - group: authed-apicore
+            projects: --project=authed --grep @leg-apicore
+          - group: authed-apidocs
+            projects: --project=authed --grep @leg-apidocs
+          - group: authed-apidev
+            projects: --project=authed --grep @leg-apidev
+          - group: rest
+            projects: --project=unauthed --project=mobile
+    timeout-minutes: 30
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18'
+
+      - name: Playwright image matches the lockfile
+        run: |
+          locked=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          if [ "$locked" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "::error::package-lock.json has @playwright/test $locked but the e2e container is v$PLAYWRIGHT_IMAGE_VERSION — update the container image tag in ci.yml"
+            exit 1
+          fi
+
+      # Same fingerprint and cache key as e2e (same image, Node and deps).
+      - name: Dependency fingerprint
+        id: deps
+        run: |
+          set -euo pipefail
+          lock=$(node -e "
+            const l = require('./package-lock.json');
+            delete l.version;
+            if (l.packages && l.packages['']) delete l.packages[''].version;
+            const s = JSON.stringify(l);
+            if (s.length < 1000) { console.error('lockfile looks empty'); process.exit(1); }
+            process.stdout.write(require('crypto').createHash('sha256').update(s).digest('hex').slice(0, 16));
+          ")
+          echo "lock=$lock" >> "$GITHUB_OUTPUT"
+
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-playwright-${{ env.PLAYWRIGHT_IMAGE_VERSION }}-noble-node20.18-${{ steps.deps.outputs.lock }}-${{ hashFiles('.npmrc') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download the Cloudflare build
+        uses: actions/download-artifact@v4
+        with:
+          name: cf-build-e2e
+          path: .vercel/output/static/
+
+      # scripts/ci-e2e.sh as on the dev path: its re-run only triggers on a
+      # `next dev` memory restart, which cannot happen here, so this is one
+      # attempt plus the leg-budget warning.
+      # A fresh random AUTH_SECRET per run: the e2e servers are localhost-only, and
+      # Playwright traces (uploaded to this PUBLIC repo's artifacts) carry session
+      # cookies signed with it, so it must never be a real secret.
+      - name: Per-run AUTH_SECRET
+        run: |
+          s=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")
+          echo "::add-mask::$s"
+          echo "AUTH_SECRET=$s" >> "$GITHUB_ENV"
+
+      - name: Run Playwright tests (Cloudflare build)
+        timeout-minutes: 25
+        run: bash scripts/ci-e2e.sh --config=playwright.cf.config.ts ${{ matrix.projects }}
+        env:
+          E2E_STEP_BUDGET_SEC: 1500
+          E2E_WARN_AT_SEC: 900
+          CI: true
+          SKIP_ENV_VALIDATION: 'true'
+          E2E_CF_PORT: 3000
+          # Logs each readiness probe of the server (and why it failed): the
+          # first run of this job timed out at startup with nothing on stderr.
+          DEBUG: pw:webserver
+
+      # wrangler's stdout goes to e2e-cf-server.log (playwright.cf.config.ts).
+      - name: Show the server log
+        if: failure()
+        run: tail -n 150 e2e-cf-server.log 2>/dev/null || echo "no e2e-cf-server.log"
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-cf-${{ matrix.group }}
+          path: |
+            playwright-report/
+            e2e-attempt-1.log
+            e2e-cf-server.log
           retention-days: 14
 
   deploy-staging:
@@ -401,7 +714,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
-    needs: [build-and-lint, migrate-staging, e2e]
+    needs: [build-and-lint, migrate-staging, e2e-cf]
     # No job-level group: the workflow-level one above already guarantees a
     # single run per branch, and this one reached across branches.
     steps:
@@ -459,6 +772,10 @@ jobs:
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
           if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
+          # The public API decides live vs test from this stamp, not the hostname
+          # (src/lib/api/keys.ts). A production build without it would treat
+          # production reached on another name as staging. Refuse.
+          if [ "$APP_ENVIRONMENT" != "staging" ]; then echo "::error::APP_ENVIRONMENT is '$APP_ENVIRONMENT', expected staging"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -467,6 +784,8 @@ jobs:
           # (compared against it). If this is ever empty the guard goes inert
           # and stale tabs silently fail again — see src/middleware.ts.
           APP_BUILD_ID: ${{ github.sha }}
+          # Which environment this build is: the public API's live/test switch.
+          APP_ENVIRONMENT: staging
 
       - name: Deploy to Cloudflare Pages (Preview)
         shell: bash
@@ -475,11 +794,34 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # The public API must know which environment it is on EVERY name, not just
+      # the canonical one: the deployment's own pages.dev URL is another name. A
+      # made-up ba_live_ key gets "unknown or revoked" from a live API and "this is
+      # a production key… staging needs a ba_test_ key" from a test one.
+      - name: Verify the API environment on the new deployment
+        shell: bash
+        run: |
+          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)
+          if [ -z "$URL" ]; then echo "::error::could not find the deployment URL in the wrangler output"; exit 1; fi
+          CODE=""
+          for i in $(seq 1 10); do
+            curl -s --max-time 20 "$URL/api/v1/me" -H 'Authorization: Bearer ba_live_CiProbeNotARealKey0000000000000000' > apienv.json || true
+            CODE=$(jq -r '.error.code // empty' apienv.json 2>/dev/null || true)
+            [ -n "$CODE" ] && break
+            sleep 6
+          done
+          MSG=$(jq -r '.error.message // empty' apienv.json 2>/dev/null || true)
+          echo "$URL/api/v1/me with a made-up ba_live_ key -> $CODE: $MSG (staging must answer as staging)"
+          if [ "$CODE" = "api_disabled" ]; then echo "::warning::the public API is off here; nothing to check"; exit 0; fi
+          case "$MSG" in *"production key"*) ;; *) echo "::error::staging did not answer as staging on $URL: $MSG"; exit 1;; esac
+
       # Prove the deploy-skew guard is live on what we just deployed, not just
       # that the code exists (audit 2026-09-19, P1-1 / PR-2). A request claiming
       # an old build must get 409 + the marker header + this commit's id; a
       # normal request must still succeed. Fails the run if the guard went dead.
       - name: Verify deploy-skew guard on the new deployment
+        # Runs even if the API environment check above failed: one red check must not hide the other.
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)
@@ -540,7 +882,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-    needs: [build-and-lint, migrate-production, e2e]
+    needs: [build-and-lint, migrate-production, e2e-cf]
     # No job-level group — see the workflow-level concurrency block.
     steps:
       - name: Checkout code
@@ -587,6 +929,10 @@ jobs:
           # is sent and nothing is compared (audit 2026-09-19, P1-1). Refuse.
           if [ -z "$APP_BUILD_ID" ]; then echo "::error::APP_BUILD_ID is empty; the deploy-skew guard would be disabled"; exit 1; fi
           if [ -z "$APP_DEPLOY_MAP" ]; then echo "::error::APP_DEPLOY_MAP is unset; the 'Build deploy map' step did not run"; exit 1; fi
+          # The public API decides live vs test from this stamp, not the hostname
+          # (src/lib/api/keys.ts). A production build without it would treat
+          # production reached on another name as staging. Refuse.
+          if [ "$APP_ENVIRONMENT" != "production" ]; then echo "::error::APP_ENVIRONMENT is '$APP_ENVIRONMENT', expected production"; exit 1; fi
           npx @cloudflare/next-on-pages
         env:
           SKIP_ENV_VALIDATION: 'true'
@@ -595,6 +941,8 @@ jobs:
           # (compared against it). If this is ever empty the guard goes inert
           # and stale tabs silently fail again — see src/middleware.ts.
           APP_BUILD_ID: ${{ github.sha }}
+          # Which environment this build is: the public API's live/test switch.
+          APP_ENVIRONMENT: production
 
       - name: Deploy to Cloudflare Pages (Production)
         shell: bash
@@ -603,11 +951,35 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # The public API must know which environment it is on EVERY name, not just
+      # the canonical one: the deployment's own pages.dev URL is another name. A
+      # made-up ba_live_ key gets "unknown or revoked" from a live API and "this is
+      # a production key… staging needs a ba_test_ key" from a test one.
+      - name: Verify the API environment on the new deployment
+        shell: bash
+        run: |
+          URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)
+          if [ -z "$URL" ]; then echo "::error::could not find the deployment URL in the wrangler output"; exit 1; fi
+          CODE=""
+          for i in $(seq 1 10); do
+            curl -s --max-time 20 "$URL/api/v1/me" -H 'Authorization: Bearer ba_live_CiProbeNotARealKey0000000000000000' > apienv.json || true
+            CODE=$(jq -r '.error.code // empty' apienv.json 2>/dev/null || true)
+            [ -n "$CODE" ] && break
+            sleep 6
+          done
+          MSG=$(jq -r '.error.message // empty' apienv.json 2>/dev/null || true)
+          echo "$URL/api/v1/me with a made-up ba_live_ key -> $CODE: $MSG (production must be LIVE on this name too)"
+          # The API is ON in production: "api_disabled" here means the flag could not be read, not a pass.
+          if [ "$CODE" = "api_disabled" ]; then echo "::error::the API answered api_disabled on $URL; the environment could not be checked"; exit 1; fi
+          case "$MSG" in "unknown or revoked"*) ;; *) echo "::error::production answered a ba_live_ key on $URL as if it were staging: $MSG"; exit 1;; esac
+
       # Prove the deploy-skew guard is live on what we just deployed, not just
       # that the code exists (audit 2026-09-19, P1-1 / PR-2). A request claiming
       # an old build must get 409 + the marker header + this commit's id; a
       # normal request must still succeed. Fails the run if the guard went dead.
       - name: Verify deploy-skew guard on the new deployment
+        # Runs even if the API environment check above failed: one red check must not hide the other.
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           URL=$(grep -oE 'https://[a-z0-9]+\.verazadoptantes2\.pages\.dev' deploy.log | head -1 || true)

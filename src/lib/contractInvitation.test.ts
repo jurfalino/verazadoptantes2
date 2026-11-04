@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { decideInvitationAccess, buildContractPrefill, contactUpdateOnSign, splitName, tokenRef } from './contractInvitation';
 import { hashEntryValue, type Visibility } from './piiAccess';
-import { buildContactEntries, deserializeContactEntries } from './contactEntries';
+import { buildContactEntries, deserializeContactEntries, RENAME_ALIAS_AUTHOR } from './contactEntries';
 
 function vis(partial: Partial<Visibility> = {}): Visibility {
     return {
@@ -117,6 +117,32 @@ describe('contactUpdateOnSign', () => {
         expect(values).not.toContain(A_EMAIL);
         expect(u.addressInfo).toBe('Otra Calle 9, Caballito');
         expect(u.replaceName).toBe(true);
+    });
+});
+
+describe('contactUpdateOnSign keeps old names findable (households as profiles, Task 3)', () => {
+    const signed = {
+        entries: buildContactEntries({ emails: ['nueva@example.com'], phones: [PHONE], ids: [], socials: [], addresses: [] }),
+        address: null,
+    };
+    const renamed = {
+        ...carla,
+        name: 'C. Gómez',
+        contactEntries: JSON.stringify([...JSON.parse(carla.contactEntries), { id: 'ra', type: 'alias', value: 'Carla Gómez', addedBy: 'x@y.com', fromRename: true }]),
+    };
+    it('overwrite: the rename aliases survive the replaced list', () => {
+        const u = contactUpdateOnSign(renamed, { ...signed, name: 'C. Gómez' }, true, 'contract-signed-via-invitation');
+        const aliases = deserializeContactEntries(u.contactEntries).filter(e => e.type === 'alias');
+        expect(aliases).toEqual([expect.objectContaining({ value: 'Carla Gómez', fromRename: true })]);
+        expect(u.nameChange).toBeUndefined();
+    });
+    it("overwrite with the signer's name: a rename — the old name kept as a rename alias, the change reported for the history", () => {
+        const u = contactUpdateOnSign(carla, { ...signed, name: 'Carla Beatriz Gómez' }, true, 'contract-signed-via-invitation');
+        expect(u.name).toBe('Carla Beatriz Gómez');
+        expect(u.nameChange).toEqual({ from: 'Carla Gómez', to: 'Carla Beatriz Gómez', aliasKept: true });
+        expect(deserializeContactEntries(u.contactEntries).filter(e => e.type === 'alias'))
+            .toEqual([expect.objectContaining({ value: 'Carla Gómez', fromRename: true, addedBy: RENAME_ALIAS_AUTHOR })]);
+        expect(u.contactInfo).toContain('Carla Gómez');
     });
 });
 

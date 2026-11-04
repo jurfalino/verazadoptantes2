@@ -8,6 +8,8 @@ import type { DiscoveryMatch, SnippetField } from '@/app/actions';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import { AdopterName } from '@/components/AdopterName';
+import { MinorTag } from '@/components/MinorTag';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -17,6 +19,9 @@ const SNIPPET_ICONS: Record<SnippetField, string> = {
 };
 
 type Accent = 'teal' | 'rose';
+
+/** Who was picked: an existing result. */
+export type PickedAdopter = { adopterId: string; name: string };
 
 const ACCENT: Record<Accent, { snippet: string; resultRowSelectedBg: string }> = {
     teal: { snippet: 'text-teal-700', resultRowSelectedBg: 'bg-teal-50 border-l-2 border-l-teal-500' },
@@ -30,6 +35,9 @@ const ACCENT: Record<Accent, { snippet: string; resultRowSelectedBg: string }> =
  * (or hand off to /adopter/create) before transferring control to
  * `AdoptionFormWizard`. Previously the same UI lived duplicated inside
  * `AdoptionWizard` and `ReportWizard`; this is the single source of truth.
+ *
+ * A minor shows «Menor de edad» before the rating, as an informational marker
+ * only (Jon, 2026-10-28): picked like anyone else.
  */
 export default function AdopterPicker({
     onSelect,
@@ -37,7 +45,7 @@ export default function AdopterPicker({
     accent = 'teal',
 }: {
     /** Called when the user picks an existing adopter. */
-    onSelect: (adopter: DiscoveryMatch) => void;
+    onSelect: (picked: PickedAdopter) => void;
     /** Called when the user chooses "+ create new". `searchText` is whatever they typed (may be empty). */
     onCreateNew: (searchText: string) => void;
     accent?: Accent;
@@ -112,10 +120,14 @@ export default function AdopterPicker({
         debounceRef.current = setTimeout(() => runSearch(term), SEARCH_DEBOUNCE_MS);
     };
 
+    const pick = (res: DiscoveryMatch) => {
+        onSelect({ adopterId: res.adopter.id, name: res.adopter.name ?? '' });
+    };
+
     if (preview) {
         return (
             <div className="animate-in slide-in-from-right duration-200">
-                <div className="border border-teal-200 rounded-xl overflow-hidden bg-teal-50">
+                <div className="border border-teal-200 rounded-xl overflow-hidden bg-teal-50" data-testid="picker-preview-panel">
                     <div className="p-4 border-b border-teal-100 flex items-center gap-3">
                         {preview.thumbnail ? (
                             <img src={preview.thumbnail} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
@@ -133,18 +145,20 @@ export default function AdopterPicker({
                     </div>
 
                     <div className="p-4 space-y-3">
-                        {preview.adopter.contactInfo && (
+                        {/* No «--- Merged from X ---» line of an old merge (audit C1). */}
+                        {contactBlobForDisplay(preview.adopter.contactInfo, t('adopter.ce_type_alias')) && (
                             <div>
                                 <div className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1">{t('adopter.contact') || 'Contact'}</div>
-                                <div className="text-sm text-stone-700 whitespace-pre-line line-clamp-3">{preview.adopter.contactInfo}</div>
+                                <div className="text-sm text-stone-700 whitespace-pre-line line-clamp-3">{contactBlobForDisplay(preview.adopter.contactInfo, t('adopter.ce_type_alias'))}</div>
                             </div>
                         )}
-                        <div className="flex gap-4 text-sm">
-                            {preview.avgRating != null && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                            {preview.isMinor && <MinorTag testId="picker-minor-tag" />}
+                            {preview.avgRating != null ? (
                                 <RatingExplainer rating={preview.avgRating}>
-                                    <RatingBadge rating={preview.avgRating} variant="inline" size="sm" label="search" />
+                                    <RatingBadge rating={preview.avgRating} />
                                 </RatingExplainer>
-                            )}
+                            ) : <RatingBadge rating={null} />}
                             {preview.stats?.adoptions != null && (
                                 <div className="text-stone-500">
                                     {preview.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}
@@ -167,7 +181,7 @@ export default function AdopterPicker({
                             {t('wizard.back_to_results') || '← Back to results'}
                         </button>
                         <button
-                            onClick={() => onSelect(preview)}
+                            onClick={() => pick(preview)}
                             className="px-5 py-2 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors text-sm"
                         >
                             ✓ {t('wizard.select_this') || 'Select this person'}
@@ -186,6 +200,7 @@ export default function AdopterPicker({
                 </div>
                 <input
                     autoFocus
+                    data-testid="picker-search"
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-stone-300 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition-all text-stone-800"
                     placeholder={t('wizard.search_name_placeholder') || "Type adopter's name..."}
                     value={search}
@@ -215,9 +230,9 @@ export default function AdopterPicker({
                         const isMine = res.ownership === 'mine' || (!!viewerEmail && res.adopter.addedBy === viewerEmail);
                         const isTeam = !isMine && res.ownership === 'team';
                         return (
+                        <div key={res.adopter.id} data-testid="picker-result">
                         <div
-                            key={res.adopter.id}
-                            className={`flex items-center gap-3 p-3 hover:bg-teal-50 transition-colors ${isMine ? 'bg-teal-50/50' : isTeam ? 'bg-indigo-50/40' : ''}`}
+                            className={`flex items-center gap-3 p-3 transition-colors hover:bg-teal-50 ${isMine ? 'bg-teal-50/50' : isTeam ? 'bg-indigo-50/40' : ''}`}
                         >
                             {res.thumbnail ? (
                                 <img src={res.thumbnail} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
@@ -228,7 +243,8 @@ export default function AdopterPicker({
                             )}
 
                             <button
-                                onClick={() => onSelect(res)}
+                                data-testid="picker-pick"
+                                onClick={() => pick(res)}
                                 className="flex-1 text-left min-w-0"
                             >
                                 <div className="flex items-center gap-2">
@@ -249,24 +265,27 @@ export default function AdopterPicker({
                                         </span>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2 text-xs text-stone-500">
-                                    {res.avgRating != null && (
-                                        <RatingBadge rating={res.avgRating} variant="inline" size="sm" label="short" />
-                                    )}
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500">
+                                    {/* A minor: «Menor de edad» before the rating (as on every card). */}
+                                    {res.isMinor && <MinorTag testId="picker-minor-tag" />}
+                                    <RatingBadge rating={res.avgRating} />
                                     {res.stats?.adoptions > 0 && (
                                         <span>{res.stats.adoptions} {t('wizard.adoptions_label') || 'adoptions'}</span>
                                     )}
-                                    {res.matchSnippet && <span className={accentClasses.snippet}>· {SNIPPET_ICONS[res.matchSnippet.field as SnippetField]} {t(`search.snippet_${res.matchSnippet.field}`)}</span>}
+                                    {/* No leading «·»: the line wraps at 390 (tag, rating, snippet) and a line never starts with one (audit B10). */}
+                                    {res.matchSnippet && <span className={accentClasses.snippet}>{SNIPPET_ICONS[res.matchSnippet.field as SnippetField]} {t(`search.snippet_${res.matchSnippet.field}`)}</span>}
                                 </div>
                             </button>
 
                             <button
                                 onClick={() => setPreview(res)}
+                                data-testid="picker-preview"
                                 className="p-2 text-stone-500 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-colors flex-shrink-0"
                                 title={t('wizard.preview') || 'Preview'}
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                             </button>
+                        </div>
                         </div>
                         );
                     })}

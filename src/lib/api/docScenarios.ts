@@ -11,7 +11,9 @@
  * The SAME definitions seed the demo people on staging (src/lib/api/demoSeed.ts),
  * so every documented request really returns the documented answer there.
  */
-import { decideExactOutcome, type NameMatchedAs } from '@/domain/apiExactMatch';
+import type { NameMatchedAs } from '@/domain/apiExactMatch';
+import { foldHolderName } from '@/domain/identityVerdict';
+import { exactOutcomeOf } from './exactVerdict';
 import { orderCandidates, saveActionOf } from './schemas';
 
 type Level = 0 | 1 | 2 | 3 | 4 | 5;
@@ -37,7 +39,13 @@ export interface Registered {
     phone?: string;
     documentId?: string;
     /** Set by people in BuenAdoptante (adopter_flags.reason). */
-    marks?: Array<'inaccurate_information' | 'duplicate' | 'verified_identity'>;
+    marks?: Array<'inaccurate_information' | 'verified_identity'>;
+    /**
+     * A rescuer reported this profile as a duplicate of that one (adopter_flags reason
+     * `duplicate`, target_adopter_id): an OPEN question — what the API reports as
+     * `duplicate`. A report closed by a merge or a «mantener separados» is not reported.
+     */
+    duplicateOf?: string;
     /** BuenAdoptante found another profile that may be the same person (a pending duplicate candidate). */
     possibleDuplicate?: boolean;
     history: PastRecord[];
@@ -183,14 +191,14 @@ const DEFS: ScenarioDef[] = [
         profiles: [{ id: 'demo-api-martin', name: 'Martín Ortiz', phone: '11 5550-3109', history: [{ type: 'adoption_request', rating: 2, daysAgo: 190 }, { type: 'adoption_request', rating: 2, daysAgo: 175 }] }],
         person: { fullName: 'Valeria Castro', phone: '11 5550-3109' },
         activity: { activityType: 'adoption_request' },
-        why: 'El teléfono es de un perfil con otro nombre → `ambiguous` (`name_mismatch`): nunca adivinamos que son la misma persona. `saved.action` es `created_profile_for_review`: la actividad va a un perfil nuevo que un admin revisa como posible duplicado. `risk` igual te muestra el 2★ de ese teléfono.',
+        why: 'El teléfono es de un perfil con otro nombre → `ambiguous` (`name_mismatch`): nunca adivinamos que son la misma persona. `saved.action` es `created_profile_for_review`: la actividad va a un perfil nuevo, y el par queda en «Pendientes de revisar» como posible duplicado. `risk` igual te muestra el 2★ de ese teléfono.',
     },
     {
         key: 'multiple_profiles',
         title: 'Dos perfiles con el mismo nombre y email',
-        registered: 'Dos perfiles «Laura Díaz» con el email laura.diaz.demo@example.com: uno con el teléfono 11 5550-3110, calificado 3 y marcado como duplicado; el otro sin calificar.',
+        registered: 'Dos perfiles «Laura Díaz» con el email laura.diaz.demo@example.com: uno con el teléfono 11 5550-3110, calificado 3 y marcado como duplicado del otro (todavía sin resolver); el otro sin calificar.',
         profiles: [
-            { id: 'demo-api-laura-a', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110', marks: ['duplicate'], history: [{ type: 'adoption', rating: 3, daysAgo: 320 }] },
+            { id: 'demo-api-laura-a', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110', duplicateOf: 'demo-api-laura-b', history: [{ type: 'adoption', rating: 3, daysAgo: 320 }] },
             { id: 'demo-api-laura-b', name: 'Laura Díaz', email: 'laura.diaz.demo@example.com', history: [{ type: 'adoption_request', daysAgo: 240 }] },
         ],
         person: { fullName: 'Laura Díaz', email: 'laura.diaz.demo@example.com', phone: '11 5550-3110' },
@@ -326,7 +334,7 @@ function computed(p: Registered, now: Date, cfg: AlertConfig) {
     if (placed >= cfg.threshold) alerts.push({ type: 'too_many_adoptions', count: placed, periodDays: cfg.periodDays });
     const flags: string[] = [];
     if (p.marks?.includes('inaccurate_information')) flags.push('inaccurate');
-    if (p.marks?.includes('duplicate')) flags.push('duplicate');
+    if (p.duplicateOf) flags.push('duplicate');
     if (p.possibleDuplicate) flags.push('possible_duplicate');
     if (p.marks?.includes('verified_identity')) flags.push('verified_identity');
     return { avg, records, lastRecordAt: isoDay(now, last), alerts, flags };
@@ -343,7 +351,18 @@ function matchedOn(req: ScenarioDef['person'], p: Registered): Identifier[] {
 function answer(def: ScenarioDef, origin: string, n: number, now: Date, cfg: AlertConfig) {
     const url = (id: string) => `${origin}/adopter/${id}`;
     const hits = def.profiles.filter(p => matchedOn(def.person, p).length > 0);
-    const outcome = decideExactOutcome(def.person.fullName, hits.map(p => ({ profileId: p.id, name: p.name, aliases: [], householdNames: [] })));
+    // The same verdict path as the real call (exactOutcomeOf): each hit's shared identifiers,
+    // with how many differently-named hits hold each one.
+    const kindOf = { email: 'email', phone: 'phone', documentId: 'document' } as const;
+    const shared = new Map(hits.map(p => [p.id, matchedOn(def.person, p).map(k => ({
+        kind: kindOf[k], value: keyOf[k](p[k]!),
+        namesHolding: new Set(hits.filter(h => h[k] && keyOf[k](h[k]!) === keyOf[k](p[k]!)).map(h => foldHolderName(h.name))).size,
+    }))]));
+    const outcome = exactOutcomeOf(def.person, {
+        candidates: hits.map(p => ({ profileId: p.id, name: p.name, aliases: [] })),
+        matchedOn: new Map(hits.map(p => [p.id, matchedOn(def.person, p)])),
+        shared,
+    });
     const byId = new Map(hits.map(p => [p.id, p]));
     const summary = (p: Registered) => {
         const c = computed(p, now, cfg);

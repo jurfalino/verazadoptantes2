@@ -22,12 +22,14 @@ export interface SendEmailOptions {
     subject: string;
     html: string;
     text: string;
+    /** Where a reply goes (Resend `reply_to`). */
+    replyTo?: string;
 }
 
 export type SendEmailResult = { ok: true } | { ok: false; errorId: string };
 
 export async function sendEmailViaResend(opts: SendEmailOptions): Promise<SendEmailResult> {
-    const { apiKey, from, to, subject, html, text } = opts;
+    const { apiKey, from, to, subject, html, text, replyTo } = opts;
     try {
         const res = await fetch('https://api.resend.com/emails', {
             method: 'POST',
@@ -35,7 +37,7 @@ export async function sendEmailViaResend(opts: SendEmailOptions): Promise<SendEm
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ from, to, subject, html, text }),
+            body: JSON.stringify({ from, to, subject, html, text, ...(replyTo ? { reply_to: replyTo } : {}) }),
         });
         if (!res.ok) {
             const body = await res.text().catch(() => '');
@@ -117,4 +119,63 @@ export function buildOtpEmail(code: string, locale: EmailLocale, ttlMinutes: num
 </div>`;
     const text = `${copy.greeting}\n\n${code}\n\n${expires}\n${copy.ignore}\n`;
     return { subject: copy.subject, html, text };
+}
+
+function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const NOTIFICATION_CHROME: Record<EmailLocale, { cta: string; undo: string; settings: string; unsubscribe: string; staging: string }> = {
+    es: {
+        cta: 'Ver en BuenAdoptante',
+        undo: 'Deshacer',
+        settings: 'Configurar avisos por email',
+        unsubscribe: 'Dejar de recibir estos avisos',
+        staging: 'Este mensaje viene del entorno de pruebas (staging) de BuenAdoptante, no del sitio real.',
+    },
+    en: {
+        cta: 'View on BuenAdoptante',
+        undo: 'Undo',
+        settings: 'Email notification settings',
+        unsubscribe: 'Stop receiving these notices',
+        staging: 'This message comes from the BuenAdoptante test environment (staging), not the real site.',
+    },
+    pt: {
+        cta: 'Ver no BuenAdoptante',
+        undo: 'Desfazer',
+        settings: 'Configurar avisos por email',
+        unsubscribe: 'Deixar de receber estes avisos',
+        staging: 'Esta mensagem vem do ambiente de testes (staging) do BuenAdoptante, não do site real.',
+    },
+};
+
+/**
+ * Email twin of an in-app (bell) notification. The title/body arrive already
+ * written (Spanish today); the chrome around them (button, settings and
+ * unsubscribe links, staging banner) follows the recipient's language.
+ * Title/body are escaped, links are built by the caller. Outside production the
+ * subject is prefixed «[Staging]» and a banner tops the message (D37).
+ */
+export function buildNotificationEmail(
+    /** `undoUrl`: a second, outlined «Deshacer» button (a path; it opens a confirmation, never acts on the click). */
+    n: { title: string; body: string; url: string | null; undoUrl?: string | null },
+    links: { appBaseUrl: string; unsubscribeUrl: string | null },
+    opts: { locale: EmailLocale; staging: boolean },
+): { subject: string; html: string; text: string } {
+    const c = NOTIFICATION_CHROME[opts.locale] ?? NOTIFICATION_CHROME.es;
+    const target = n.url ? `${links.appBaseUrl}${n.url}` : links.appBaseUrl;
+    const undo = n.undoUrl ? `${links.appBaseUrl}${n.undoUrl}` : null;
+    const settings = `${links.appBaseUrl}/settings`;
+    const unsub = links.unsubscribeUrl;
+    const banner = opts.staging
+        ? `\n  <p style="margin:0 0 16px;padding:8px 12px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:13px;"><strong>Staging</strong> · ${escapeHtml(c.staging)}</p>`
+        : '';
+    const html = `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;">${banner}
+  <h2 style="color:#134e4a;margin:0 0 16px;">${escapeHtml(n.title)}</h2>
+  <p style="margin:0 0 20px;white-space:pre-line;">${escapeHtml(n.body)}</p>
+  <p style="margin:0 0 24px;"><a href="${escapeHtml(target)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">${c.cta}</a>${undo ? `<a href="${escapeHtml(undo)}" style="display:inline-block;margin-left:8px;background:#ffffff;color:#0f766e;text-decoration:none;padding:11px 19px;border-radius:8px;font-weight:600;border:1px solid #0f766e;">${c.undo}</a>` : ''}</p>
+  <p style="margin:0;font-size:12px;color:#78716c;"><a href="${escapeHtml(settings)}" style="color:#78716c;">${c.settings}</a>${unsub ? ` · <a href="${escapeHtml(unsub)}" style="color:#78716c;">${c.unsubscribe}</a>` : ''}</p>
+</div>`;
+    const text = `${opts.staging ? `[Staging] ${c.staging}\n\n` : ''}${n.title}\n\n${n.body}\n\n${c.cta}: ${target}\n${undo ? `${c.undo}: ${undo}\n` : ''}\n${c.settings}: ${settings}\n${unsub ? `${c.unsubscribe}: ${unsub}\n` : ''}`;
+    return { subject: opts.staging ? `[Staging] ${n.title}` : n.title, html, text };
 }

@@ -10,6 +10,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
+import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 import { adopters, interviews } from '@/db/schema';
 import { deriveKnownFacts } from '@/domain/interview/facts';
 import { factMatches, verifyGivenValues } from '@/domain/interview/verify';
@@ -101,11 +102,17 @@ export async function startInterview(input: { prep?: PrepFacts; leadCandidateId?
         let candidates: CandidateSummary[];
 
         if (adopterId) {
+            // Started from a merged-away profile's link: interview the profile it was merged into.
+            const survivorId = await resolveMergedAdopterId(adopterId).catch((e) => {
+                logger.warn('interviews.start: merge lookup failed', { adopterId, actor, error: e instanceof Error ? e.message : String(e) });
+                return null;
+            });
+            const profileId = survivorId ?? adopterId;
             // One open draft per (interviewer, profile), enforced by the partial unique index
             // idx_interviews_one_profile_draft: a re-click or double effect resumes it.
             const openDraft = () => db.select().from(interviews).where(and(
                 eq(interviews.conductedBy, actor!), eq(interviews.status, 'draft'),
-                eq(interviews.sourceKind, 'profile'), eq(interviews.sourceId, adopterId),
+                eq(interviews.sourceKind, 'profile'), eq(interviews.sourceId, profileId),
             )).get();
             const open = await openDraft();
             if (open) {
@@ -113,13 +120,13 @@ export async function startInterview(input: { prep?: PrepFacts; leadCandidateId?
                 const cands = await hydrateCandidates(db, existing.candidateIds, actor, g.actorIsAdmin);
                 return { ok: true, interviewId: existing.id, view: await toView(existing, cands, true) };
             }
-            candidates = await hydrateCandidates(db, [adopterId], actor, g.actorIsAdmin);
+            candidates = await hydrateCandidates(db, [profileId], actor, g.actorIsAdmin);
             if (!candidates.length) throw new Refusal('not_found');
             state = {
-                id, conductedBy: actor, status: 'draft', sourceKind: 'profile', sourceId: adopterId,
+                id, conductedBy: actor, status: 'draft', sourceKind: 'profile', sourceId: profileId,
                 prep: { name: candidates[0].displayName, phones: [], emails: [], socials: [], address: '' },
-                leadCandidateId: adopterId, confirmedAdopterId: adopterId,
-                answers: {}, visited: [], custom: [], candidateIds: [adopterId],
+                leadCandidateId: profileId, confirmedAdopterId: profileId,
+                answers: {}, visited: [], custom: [], candidateIds: [profileId],
                 adopterId: null, eventId: null, updatedAt: null, completedAt: null,
             };
         } else {

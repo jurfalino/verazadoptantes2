@@ -5,6 +5,11 @@ import { createPortal } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
+import { localizedNotification } from '@/domain/notificationTemplates';
+import { renameUndoOf } from '@/domain/profileIdentity';
+import { RenameUndoButton } from '@/components/RenameUndo';
+import { NotificationTypeIcon } from '@/components/NotificationTypeIcon';
+import { useEscapeToClose } from '@/hooks/useEscapeToClose';
 
 interface NotificationItem {
     id: string;
@@ -13,6 +18,8 @@ interface NotificationItem {
     body: string;
     url: string | null;
     icon: string;
+    /** JSON string as stored; may carry `template` (D38). */
+    metadata?: string | null;
     read: number;
     createdAt: number | string | Date;
 }
@@ -62,6 +69,9 @@ export default function NotificationBell() {
     // Portal target — `document.body`. Gated by `mounted` so we don't try
     // to use document during SSR or before the React tree has hydrated.
     useEffect(() => { setMounted(true); }, []);
+    // Escape closes the panel and gives the focus back to the bell — the same as every menu (audit B4).
+    const closePanel = useCallback(() => setOpen(false), []);
+    useEscapeToClose(open, closePanel, buttonRef);
 
     const isAuthenticated = !!session?.user?.email;
 
@@ -332,6 +342,8 @@ export default function NotificationBell() {
                             </div>
                         ) : (
                             items.map((item) => {
+                                // The reader's language when the row carries a template (D38).
+                                const text = localizedNotification(item, locale);
                                 const createdDate = typeof item.createdAt === 'number'
                                     ? new Date(item.createdAt * 1000)
                                     : new Date(item.createdAt);
@@ -358,18 +370,19 @@ export default function NotificationBell() {
                                     >
                                         <button
                                             onClick={() => handleClick(item)}
-                                            className="w-full text-left pl-4 pr-10 py-3 transition-colors"
+                                            className="w-full text-left pl-4 pr-12 py-3 transition-colors"
                                             onMouseEnter={(e) => { e.currentTarget.parentElement!.style.background = 'var(--surface-muted)'; }}
                                             onMouseLeave={(e) => { e.currentTarget.parentElement!.style.background = !item.read ? 'var(--accent-subtle-bg)' : 'transparent'; }}
                                         >
                                             <div className="flex items-start gap-2.5">
-                                                <span className="text-lg flex-shrink-0 mt-0.5">{item.icon}</span>
+                                                {/* One 20px lucide icon per type, as on /notificaciones (audit B4). */}
+                                                <span className="mt-0.5"><NotificationTypeIcon type={item.type} /></span>
                                                 <div className="flex-1 min-w-0">
                                                     <p className={`text-sm leading-snug break-words ${!item.read ? 'font-semibold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
-                                                        {stripLeadingEmoji(item.title)}
+                                                        {stripLeadingEmoji(text.title)}
                                                     </p>
                                                     <p className="text-xs leading-relaxed mt-0.5 line-clamp-2 break-words" style={{ color: 'var(--text-muted)' }}>
-                                                        {item.body}
+                                                        {text.body}
                                                     </p>
                                                     <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
                                                         {timeAgo(createdDate, locale)}
@@ -380,11 +393,20 @@ export default function NotificationBell() {
                                                 )}
                                             </div>
                                         </button>
+                                        {/* A rename's notice carries its own action (households as profiles): «Deshacer». */}
+                                        {item.type === 'profile_renamed' && (() => {
+                                            const undo = renameUndoOf(item.metadata);
+                                            return undo ? (
+                                                <div className="pl-11 pr-4 pb-3 -mt-1">
+                                                    <RenameUndoButton historyId={undo.historyId} source="NotificationBell" />
+                                                </div>
+                                            ) : null;
+                                        })()}
                                         <button
                                             type="button"
                                             onClick={(e) => { e.stopPropagation(); handleDismiss(item); }}
                                             aria-label={isEs ? 'Descartar notificación' : 'Dismiss notification'}
-                                            className="absolute top-2 right-2 w-7 h-7 rounded-md flex items-center justify-center hover:opacity-100 opacity-50 transition-opacity"
+                                            className="absolute top-0 right-0 w-11 h-11 rounded-md flex items-center justify-center hover:opacity-100 opacity-50 transition-opacity"
                                             style={{ color: 'var(--text-muted)' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
                                             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}

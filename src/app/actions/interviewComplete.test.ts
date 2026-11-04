@@ -7,6 +7,7 @@ const { state, calls } = vi.hoisted(() => ({
     calls: { saveAdopter: [] as unknown[], append: [] as unknown[], household: [] as unknown[], saveAdoption: [] as unknown[] },
 }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: isAdmin, isModeratorOrAdminAsync: isAdmin }));
 vi.mock('@/lib/orgMembership', () => ({ isOrgMate, isOwnerOrOrgMate }));
 vi.mock('@/config/features', () => ({ getFeatureFlag: async () => state.flag }));
@@ -14,12 +15,21 @@ vi.mock('./adopters', () => ({
     saveAdopter: vi.fn(async (d: unknown) => { calls.saveAdopter.push(d); return { success: true, id: 'new-1' }; }),
     appendToExistingAdopter: vi.fn(async (id: string, f: unknown) => { calls.append.push([id, f]); return { success: true, adopterId: id }; }),
 }));
-vi.mock('./householdMembers', () => ({
-    addHouseholdMember: vi.fn(async (i: unknown) => {
-        calls.household.push(i);
-        return state.refuseHousehold ? { ok: false, error: 'Cannot edit a deleted adopter' } : { ok: true, memberId: 'm1' };
-    }),
-}));
+// Households as profiles (Task 4): the interview's people go through attachHouseholdPeople
+// (real, against the real tables), recorded here; `refuseHousehold` makes one person fail.
+vi.mock('@/lib/householdPeople', async (orig) => {
+    const real = await orig<typeof import('@/lib/householdPeople')>();
+    return {
+        ...real,
+        attachHouseholdPeople: vi.fn(async (...args: Parameters<typeof real.attachHouseholdPeople>) => {
+            calls.household.push(args[1]);
+            if (state.refuseHousehold) return { householdId: null, created: [], reused: [], skipped: [{ index: 0, reason: 'failed' as const, errorId: 'e1' }] };
+            return real.attachHouseholdPeople(...args);
+        }),
+    };
+});
+vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
+vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async () => undefined) }));
 vi.mock('./adoptions', () => ({
     saveAdoption: vi.fn(async (d: unknown) => {
         if (state.failObservation) throw new Error('D1 down');
@@ -39,7 +49,7 @@ vi.mock('./adoptions', () => ({
 import { completeInterview } from './interviewComplete';
 import { logger } from '@/lib/logger';
 
-type Sqlite = { prepare: (s: string) => { get: (...a: unknown[]) => Record<string, unknown> | undefined; run: (...a: unknown[]) => unknown } };
+type Sqlite = { prepare: (s: string) => { get: (...a: unknown[]) => Record<string, unknown> | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Record<string, unknown>[] } };
 let sqlite: Sqlite;
 
 function seedDraft(over: { candidateIds?: string[]; answers?: unknown; prep?: unknown; conductedBy?: string } = {}) {
@@ -75,7 +85,10 @@ describe('completeInterview', () => {
         const r = await completeInterview('i1', { adopterId: 'new', additions: ADD, rating: 4, summary: 'Buena predisposición' });
         expect(r).toEqual({ ok: true, adopterId: 'new-1' });
         expect(JSON.parse((calls.saveAdopter[0] as { contactEntries: string }).contactEntries).map((e: { type: string }) => e.type).sort()).toEqual(['email', 'phone']);
-        expect(calls.household).toEqual([{ adopterId: 'new-1', name: 'Ana', relationship: 'partner' }]);
+        expect(calls.household).toEqual([expect.objectContaining({
+            anchorAdopterId: 'new-1', actor: OWNER, ownerEmail: OWNER, sourceKey: 'interview:i1',
+            people: [{ name: 'Ana', relationship: 'partner', index: 0 }],
+        })]);
         expect(calls.saveAdoption[0]).toMatchObject({ recordType: 'observation', adopterId: 'new-1', rating: 4, details: 'Buena predisposición' });
         const row = sqlite.prepare(`SELECT status, adopter_id, event_id FROM interviews WHERE id = 'i1'`).get()!;
         expect(row).toEqual({ status: 'completed', adopter_id: 'new-1', event_id: 'i1-obs' });
@@ -151,13 +164,29 @@ describe('completeInterview', () => {
         seedDraft();
         state.failObservation = true;
         await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
-        expect(calls.household).toHaveLength(1);
-        // Simulate the real append the mock skipped.
-        sqlite.prepare(`UPDATE adopters SET household_members = ? WHERE id = 'a-owned'`).run(JSON.stringify([{ id: 'm1', name: 'ANA ', relationship: 'partner', contactEntries: [] }]));
+        const memberships = () => sqlite.prepare(`SELECT adopter_id, source_key FROM household_memberships ORDER BY added_at, id`).all();
+        expect(memberships()).toHaveLength(2); // a-owned + Ana (a profile now)
         state.failObservation = false;
         const r = await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null });
         expect(r.ok).toBe(true);
-        expect(calls.household).toHaveLength(1);
+        expect(memberships()).toHaveLength(2);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Ana' AND deleted_at IS NULL`).get()).toEqual({ n: 1 });
+        expect(sqlite.prepare(`SELECT household_members FROM adopters WHERE id = 'a-owned'`).get()).toEqual({ household_members: null });
+    });
+
+    it('two completions at once add the household person once (source key is unique)', async () => {
+        const answers = {
+            story_household: { status: 'answered', household: [{ name: 'Ana López', relationship: 'partner' }] },
+            details_email: { status: 'answered', contacts: [{ type: 'email', value: 'juan@x.com' }] },
+        };
+        seedDraft({ answers });
+        const add = { ...ADD, household: [{ name: 'Ana López', relationship: 'partner' as const }] };
+        await Promise.all([
+            completeInterview('i1', { adopterId: 'a-owned', additions: add, rating: null, summary: null }),
+            completeInterview('i1', { adopterId: 'a-owned', additions: add, rating: null, summary: null }),
+        ]);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopters WHERE name = 'Ana López' AND deleted_at IS NULL`).get()).toEqual({ n: 1 });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM household_memberships WHERE source_key = 'interview:i1-0'`).get()).toEqual({ n: 1 });
     });
 
     it('a retry that names a different candidate than the one already chosen is refused before any write', async () => {
@@ -185,6 +214,18 @@ describe('completeInterview', () => {
         expect(sqlite.prepare(`SELECT status, adopter_id, event_id FROM interviews WHERE id = 'i1'`).get()).toEqual({ status: 'draft', adopter_id: null, event_id: null });
     });
 
+    it('a candidate merged into another profile mid-interview: saves onto the profile that absorbed it', async () => {
+        seedDraft();
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, deleted_at, is_demo) VALUES ('a-survivor', 'Juan', '5', ?, 1, 1, NULL, 0)`).run(OWNER);
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 2000, token_hash = 'MERGED' WHERE id = 'a-owned'`).run();
+        sqlite.prepare(`INSERT INTO audit_log (id, action, target, details, created_at) VALUES ('m1', 'adopter_merge', 'a-survivor', ?, 2000)`)
+            .run(JSON.stringify({ primaryId: 'a-survivor', secondaryId: 'a-owned' }));
+        const r = await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: 4, summary: 'x' });
+        expect(r).toEqual({ ok: true, adopterId: 'a-survivor' });
+        expect(calls.saveAdoption[0]).toMatchObject({ recordType: 'observation', adopterId: 'a-survivor' });
+        expect(sqlite.prepare(`SELECT status, adopter_id FROM interviews WHERE id = 'i1'`).get()).toEqual({ status: 'completed', adopter_id: 'a-survivor' });
+    });
+
     it('never flips a draft discarded mid-completion to completed', async () => {
         seedDraft();
         state.discardDuringObservation = true;
@@ -199,8 +240,8 @@ describe('completeInterview', () => {
         const warn = vi.spyOn(logger, 'warn');
         try {
             expect((await completeInterview('i1', { adopterId: 'a-owned', additions: ADD, rating: null, summary: null })).ok).toBe(true);
-            expect(warn).toHaveBeenCalledWith('interviews.complete: household add refused',
-                { interviewId: 'i1', adopterId: 'a-owned', error: 'Cannot edit a deleted adopter' });
+            expect(warn).toHaveBeenCalledWith('interviews.complete: household people not all added',
+                { interviewId: 'i1', adopterId: 'a-owned', failed: 1 });
         } finally { warn.mockRestore(); }
     });
 });

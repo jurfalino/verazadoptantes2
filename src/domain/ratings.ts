@@ -1,16 +1,18 @@
 /**
  * Compute average rating from activity records.
  * 
- * Business rule: All non-null ratings count toward the average,
+ * Business rule: every real rating (1-5) counts toward the average,
  * regardless of record type. The rating input is shown for every
  * record type (adoption, request, observation, follow-up, returned).
+ * null and 0 both mean "not rated" and are ignored: [4, 0] averages to 4.
+ * Every SQL average of adopter ratings must apply the same `rating > 0` rule.
  */
 export function computeAvgRating(
-    records: { rating: number | null }[]
+    records: { rating: number | null | undefined }[]
 ): number | null {
-    const rated = records.filter(r => r.rating !== null);
+    const rated = records.filter(r => r.rating != null && Number(r.rating) > 0);
     if (rated.length === 0) return null;
-    return rated.reduce((sum, r) => sum + r.rating!, 0) / rated.length;
+    return rated.reduce((sum, r) => sum + Number(r.rating), 0) / rated.length;
 }
 
 export const RATING_LEVELS = [1, 2, 3, 4, 5] as const;
@@ -27,6 +29,28 @@ export const RATING_LABEL_KEYS: Record<RatingLevel, string> = {
 export function getRatingLabelKey(rating: number): string {
     const r = Math.max(1, Math.min(5, Math.round(Number(rating) || 0))) as RatingLevel;
     return RATING_LABEL_KEYS[r];
+}
+
+/** A rating as every card writes it: one decimal («2.0», «2.3») — RatingBadge and the housemate chip share it. */
+export function formatRating(rating: number): string {
+    return rating % 1 !== 0 ? rating.toFixed(1) : `${rating}.0`;
+}
+
+/**
+ * A low rating: one whose pill (RatingBadge) reads «Peligroso» or «Malo» — the
+ * 1★ and 2★ buckets, by RatingBadge's own rounding of the raw average
+ * (getRatingLabelKey: 2.49 is «Malo», 2.5 is «Regular»). Re-review M-a: the
+ * housemate chip decides on the badge's WORD, so a housemate whose badge reads
+ * «Malo» always raises it — even when the number (formatRating, the badge's own
+ * number) reads «2.5». Unrated (null, 0, outside 1–5) is never low: ratings are
+ * never inferred.
+ */
+export function isLowRating(rating: number | null | undefined): boolean {
+    if (rating == null) return false;
+    const n = Number(rating);
+    if (Number.isNaN(n) || n < 1 || n > 5) return false;
+    const key = getRatingLabelKey(n);
+    return key === RATING_LABEL_KEYS[1] || key === RATING_LABEL_KEYS[2];
 }
 
 /**
@@ -48,4 +72,17 @@ export function getRatingDisplayLevel(rating: number): 0 | RatingLevel {
  */
 export function ratingBansAdopting(avgRating: number | null | undefined): boolean {
     return avgRating != null && getRatingDisplayLevel(avgRating) === 1;
+}
+
+/**
+ * The rating a profile will have once another is merged into it: a merge
+ * moves every record of the absorbed profile onto the survivor, so it is the
+ * same rule (computeAvgRating) over both profiles' records together — never
+ * the average of the two averages.
+ */
+export function ratingAfterMerge(
+    survivor: { rating: number | null | undefined }[],
+    absorbed: { rating: number | null | undefined }[],
+): number | null {
+    return computeAvgRating([...survivor, ...absorbed]);
 }

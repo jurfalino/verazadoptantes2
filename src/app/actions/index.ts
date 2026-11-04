@@ -46,9 +46,12 @@ export { runAdminQuery, deleteAdopter, resolveDataRequest, listDeletedAdopters, 
 
 // Duplicates
 export { getDuplicateCandidates, checkTokenDuplicates, countAdoptersBySocialHandle } from './duplicates';
-export { addHouseholdMember, updateHouseholdMember, removeHouseholdMember, addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry } from './householdMembers';
+export { addHouseholdPerson, updateHouseholdMembership, removeHouseholdMembership, getHouseholdMatchCandidates, getDuplicateHintMatches, createGiftRecipientProfile, checkHouseholdPersonEdit } from './households';
+export { changeProfileName, undoProfileRename, getRenameUndoOption } from './profileIdentity';
+export type { ChangeProfileNameResult, UndoProfileRenameResult, RenameUndoOption, ProfileIdentityError } from './profileIdentity';
 export type { DuplicateCandidate, TokenMatchResult } from './duplicates';
 export { flagAdopterAsDuplicate } from './flagAdopterAsDuplicate';
+export { continueWithMatchedProfile, askAdminsToReviewPair } from './dupHintActions';
 
 // Enrichment
 // enrichAdopters: import from './enrichAdopters' (server-only helper, not an action).
@@ -74,6 +77,9 @@ export type { ImportBatchRow, ImportBatchResult } from './importBatch';
 
 // On-the-fly identical-record detection for import
 export { matchFingerprints } from './importIdentical';
+export { findIdenticalRowsOtherMatches } from './importOtherMatches';
+export { matchImportRow } from './importIdentityMatches';
+export type { ImportRowIdentity, JudgedMatch } from './importIdentityMatches';
 
 // Presence-only match context for the import "por qué" panel (PII-safe)
 export { getMatchContext } from './matchContext';

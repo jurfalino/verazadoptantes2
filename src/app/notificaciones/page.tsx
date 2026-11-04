@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
+import { localizedNotification } from '@/domain/notificationTemplates';
+import { renameUndoOf } from '@/domain/profileIdentity';
+import { RenameUndoButton } from '@/components/RenameUndo';
+import { NotificationTypeIcon, useNotificationTypeLabel } from '@/components/NotificationTypeIcon';
+import { Archive, Bell, Check, CheckCircle2, X } from 'lucide-react';
 
 interface NotificationItem {
     id: string;
@@ -12,6 +17,8 @@ interface NotificationItem {
     body: string;
     url: string | null;
     icon: string;
+    /** JSON string as stored; may carry `template` (D38). */
+    metadata?: string | null;
     read: number;
     dismissed: number;
     createdAt: number | string | Date;
@@ -44,24 +51,12 @@ function timeAgo(date: Date, locale: string): string {
     return date.toLocaleDateString(locale === 'pt' ? 'pt-BR' : locale === 'en' ? 'en-US' : 'es-AR', { month: 'short', day: 'numeric' });
 }
 
-const TYPE_LABELS: Record<string, { es: string; en: string; icon: string }> = {
-    contract_result: { es: 'Contrato', en: 'Contract', icon: '📋' },
-    form_submission: { es: 'Formulario', en: 'Form', icon: '📝' },
-    api_record: { es: 'Herramienta conectada', en: 'Connected tool', icon: '🔌' },
-    system: { es: 'Sistema', en: 'System', icon: '⚙️' },
-    pii_access_request: { es: 'Acceso a contacto', en: 'Contact access', icon: '🔒' },
-    pii_access_approved: { es: 'Acceso aprobado', en: 'Access approved', icon: '✅' },
-    pii_access_denied: { es: 'Acceso no aprobado', en: 'Access denied', icon: '🔒' },
-    pii_access_revoked: { es: 'Acceso removido', en: 'Access removed', icon: '🔒' },
-    contact_entry_added: { es: 'Dato de contacto agregado', en: 'Contact detail added', icon: '+' },
-    // v2.55.17: written by workers/followup-cron for due follow-up slots.
-    follow_up_due: { es: 'Seguimiento pendiente', en: 'Follow-up due', icon: '🔔' },
-};
 
 export default function NotificacionesPage() {
     const { data: session, status: sessionStatus } = useSession();
     const router = useRouter();
     const { t, locale } = useLanguage();
+    const typeLabelOf = useNotificationTypeLabel();
 
     const [items, setItems] = useState<NotificationItem[]>([]);
     const [total, setTotal] = useState(0);
@@ -208,9 +203,9 @@ export default function NotificacionesPage() {
     };
 
     const getEmptyIcon = () => {
-        if (filter === 'unread') return '✅';
-        if (filter === 'archived') return '📦';
-        return '🔔';
+        if (filter === 'unread') return <CheckCircle2 className="w-8 h-8 mx-auto" style={{ color: 'var(--accent)' }} aria-hidden="true" />;
+        if (filter === 'archived') return <Archive className="w-8 h-8 mx-auto" style={{ color: 'var(--text-muted)' }} aria-hidden="true" />;
+        return <Bell className="w-8 h-8 mx-auto" style={{ color: 'var(--text-muted)' }} aria-hidden="true" />;
     };
 
     if (sessionStatus === 'loading') {
@@ -225,7 +220,8 @@ export default function NotificacionesPage() {
     return (
         <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px' }}>
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+            {/* Wraps at 390 instead of pushing «Marcar todo leído» off the screen (audit B4). */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
                 <h1 style={{
                     fontSize: '1.5rem',
                     fontWeight: 700,
@@ -234,7 +230,7 @@ export default function NotificacionesPage() {
                     alignItems: 'center',
                     gap: 8,
                 }}>
-                    🔔 {t('notifications.title')}
+                    <Bell className="w-6 h-6" style={{ color: 'var(--accent)' }} aria-hidden="true" /> {t('notifications.title')}
                     {total > 0 && (
                         <span style={{
                             fontSize: '0.8rem',
@@ -248,10 +244,11 @@ export default function NotificacionesPage() {
                         </span>
                     )}
                 </h1>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {unreadCount > 0 && filter !== 'archived' && (
                         <button
                             onClick={handleMarkAllRead}
+                            className="min-h-[44px] whitespace-nowrap"
                             style={{
                                 fontSize: '0.8rem',
                                 fontWeight: 500,
@@ -272,6 +269,7 @@ export default function NotificacionesPage() {
                     {filter !== 'archived' && items.some(n => n.read) && (
                         <button
                             onClick={handleDismissAll}
+                            className="min-h-[44px] whitespace-nowrap"
                             style={{
                                 fontSize: '0.8rem',
                                 fontWeight: 500,
@@ -305,6 +303,7 @@ export default function NotificacionesPage() {
                     <button
                         key={tab.key}
                         onClick={() => handleFilterChange(tab.key)}
+                        className="min-h-[44px] sm:min-h-0"
                         style={{
                             flex: 1,
                             padding: '8px 16px',
@@ -329,6 +328,7 @@ export default function NotificacionesPage() {
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
                     <button
                         onClick={() => handleTypeChange('')}
+                        className="min-h-[44px] sm:min-h-[32px] inline-flex items-center"
                         style={{
                             padding: '4px 12px',
                             borderRadius: 20,
@@ -344,10 +344,13 @@ export default function NotificacionesPage() {
                         {t('notifications.all_types')}
                     </button>
                     {types.map(type => {
-                        const label = TYPE_LABELS[type];
+                        const label = typeLabelOf(type);
                         return (
                             <button
                                 key={type}
+                                data-testid="notif-type-chip"
+                                data-type={type}
+                                className="min-h-[44px] sm:min-h-[32px] inline-flex items-center gap-1.5"
                                 onClick={() => handleTypeChange(typeFilter === type ? '' : type)}
                                 style={{
                                     padding: '4px 12px',
@@ -361,7 +364,7 @@ export default function NotificacionesPage() {
                                     color: typeFilter === type ? '#fff' : 'var(--text-muted)',
                                 }}
                             >
-                                {label?.icon || '📋'} {isEs ? label?.es : label?.en || type}
+                                <NotificationTypeIcon type={type} className="w-4 h-4" />{label || t('settings.email_cat_other')}
                             </button>
                         );
                     })}
@@ -382,7 +385,7 @@ export default function NotificacionesPage() {
                     borderRadius: 16,
                     border: '1px solid var(--border-default)',
                 }}>
-                    <p style={{ fontSize: '2rem', marginBottom: 8 }}>{getEmptyIcon()}</p>
+                    <div style={{ marginBottom: 8 }}>{getEmptyIcon()}</div>
                     <p style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
                         {getEmptyMessage()}
                     </p>
@@ -402,11 +405,13 @@ export default function NotificacionesPage() {
                     overflow: 'hidden',
                 }}>
                     {items.map((item, idx) => {
+                        // The reader's language when the row carries a template (D38).
+                        const text = localizedNotification(item, locale);
                         const createdDate = typeof item.createdAt === 'number'
                             ? new Date(item.createdAt * 1000)
                             : new Date(item.createdAt);
 
-                        const typeLabel = TYPE_LABELS[item.type];
+                        const typeLabel = typeLabelOf(item.type);
 
                         return (
                             <div
@@ -429,9 +434,8 @@ export default function NotificacionesPage() {
                                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-muted)'; }}
                                 onMouseLeave={e => { e.currentTarget.style.background = !item.read ? 'var(--accent-subtle-bg)' : 'transparent'; }}
                             >
-                                <span style={{ fontSize: '1.3rem', flexShrink: 0, marginTop: 2 }}>
-                                    {item.icon}
-                                </span>
+                                {/* One 20px lucide icon per type, as in the bell (audit B4). */}
+                                <span style={{ marginTop: 1 }}><NotificationTypeIcon type={item.type} /></span>
 
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
@@ -441,7 +445,7 @@ export default function NotificacionesPage() {
                                             color: 'var(--text-primary)',
                                             lineHeight: 1.3,
                                         }}>
-                                            {stripLeadingEmoji(item.title)}
+                                            {stripLeadingEmoji(text.title)}
                                         </p>
                                         {!item.read && (
                                             <span style={{
@@ -462,8 +466,13 @@ export default function NotificacionesPage() {
                                         WebkitBoxOrient: 'vertical',
                                         overflow: 'hidden',
                                     }}>
-                                        {item.body}
+                                        {text.body}
                                     </p>
+                                    {/* A rename's notice carries its own action (households as profiles): «Deshacer». */}
+                                    {item.type === 'profile_renamed' && (() => {
+                                        const undo = renameUndoOf(item.metadata);
+                                        return undo ? <div style={{ marginTop: 6 }}><RenameUndoButton historyId={undo.historyId} source="notificaciones" /></div> : null;
+                                    })()}
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'center',
@@ -482,7 +491,7 @@ export default function NotificacionesPage() {
                                                 background: 'var(--surface-muted)',
                                                 color: 'var(--text-muted)',
                                             }}>
-                                                {isEs ? typeLabel.es : typeLabel.en}
+                                                {typeLabel}
                                             </span>
                                         )}
                                     </div>
@@ -494,6 +503,8 @@ export default function NotificacionesPage() {
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleMarkRead(item); }}
                                             title={t('notifications.mark_read')}
+                                            aria-label={t('notifications.mark_read')}
+                                            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center"
                                             style={{
                                                 background: 'none',
                                                 border: 'none',
@@ -508,13 +519,15 @@ export default function NotificacionesPage() {
                                             onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-muted)'; e.currentTarget.style.color = 'var(--brand)'; }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-muted)'; }}
                                         >
-                                            ✓
+                                            <Check className="w-4 h-4" aria-hidden="true" />
                                         </button>
                                     )}
                                     {filter !== 'archived' && (
                                         <button
                                             onClick={(e) => handleDismiss(e, item)}
                                             title={t('notifications.dismiss')}
+                                            aria-label={t('notifications.dismiss')}
+                                            className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center"
                                             style={{
                                                 background: 'none',
                                                 border: 'none',
@@ -529,7 +542,7 @@ export default function NotificacionesPage() {
                                             onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-muted)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-muted)'; }}
                                         >
-                                            ✕
+                                            <X className="w-4 h-4" aria-hidden="true" />
                                         </button>
                                     )}
                                 </div>

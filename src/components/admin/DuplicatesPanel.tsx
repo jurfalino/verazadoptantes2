@@ -3,7 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import DuplicateMergeModal from '@/components/DuplicateMergeModal';
 import { useLanguage } from '@/context/LanguageContext';
-import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES } from '@/domain/scanResilience';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
+import { scanRetryDelayMs, SCAN_MAX_CONSECUTIVE_FAILURES, SCAN_MAX_BATCHES, SCAN_PAGE_LIMIT } from '@/domain/scanResilience';
 
 /**
  * Duplicate-detection review panel. Moved from the standalone `/admin/duplicates`
@@ -33,6 +36,9 @@ interface DuplicateCandidate {
     /** Email of whoever registered each profile (names in `creatorNames`). */
     adopter1AddedBy?: string | null;
     adopter2AddedBy?: string | null;
+    /** When each profile was loaded (ms): the merge window proposes keeping the older (keepByAge). */
+    adopter1CreatedAt?: number | null;
+    adopter2CreatedAt?: number | null;
 }
 
 interface UserFlagged {
@@ -52,6 +58,9 @@ interface UserFlagged {
     /** Email of whoever registered each profile (names in `creatorNames`). */
     adopter1AddedBy?: string | null;
     adopter2AddedBy?: string | null;
+    /** When each profile was loaded (ms): the merge window proposes keeping the older (keepByAge). */
+    adopter1CreatedAt?: number | null;
+    adopter2CreatedAt?: number | null;
 }
 
 interface Counts {
@@ -123,6 +132,21 @@ function collectRecords(
 
 export default function DuplicatesPanel() {
     const { t } = useLanguage();
+    /** A merge rule's refusal, in words (households as profiles); anything else as the server said it. */
+    const mergeErrorText = (e: string | null | undefined) =>
+        e === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
+            : (e ?? '');
+    /**
+     * A join that failed, said with «unir» (review M1; es/en/pt keys, re-review M-f) and an error id the admin can quote —
+     * reported through resolveErrorId (the endpoint answers no id of its own).
+     */
+    const mergeFailedText = (e: string | null | undefined, source: string) => {
+        const errorId = resolveErrorId(new Error(`admin merge failed: ${e ?? 'unknown'}`), source);
+        const why = mergeErrorText(e);
+        return why
+            ? t('errors.merge_failed_why_id').replace('{why}', why).replace('{id}', errorId)
+            : t('errors.merge_failed_id').replace('{id}', errorId);
+    };
     const [userFlagged, setUserFlagged] = useState<UserFlagged[]>([]);
     const [candidates, setCandidates] = useState<DuplicateCandidate[]>([]);
     const [counts, setCounts] = useState<Counts>({ pending: 0, dismissed: 0, merged: 0, userFlagged: 0 });
@@ -273,7 +297,7 @@ export default function DuplicatesPanel() {
         const survivorIds = new Set<string>();
         try {
             for (let i = 0; i < candidateIds.length; i += MERGE_CHUNK) {
-                setBulkProgress(`Fusionando… ${merged + skipped}/${candidateIds.length}`);
+                setBulkProgress(`Uniendo… ${merged + skipped}/${candidateIds.length}`);
                 const batch = candidateIds.slice(i, i + MERGE_CHUNK);
                 const res = await fetch('/api/admin/duplicates/merge', {
                     method: 'POST',
@@ -299,9 +323,9 @@ export default function DuplicatesPanel() {
             setBulkProgress('');
         }
         if (failures.length > 0) {
-            alert(`Se fusionaron ${merged} pares, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+            alert(`Se unieron ${merged} pares, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
         }
-        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} fusionado${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}`, primaryIds: [...survivorIds] } : null);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${merged} par${merged === 1 ? '' : 'es'} unido${merged === 1 ? '' : 's'}${skipped ? ` (${skipped} ya resueltos)` : ''}`, primaryIds: [...survivorIds] } : null);
         clearSelection();
         fetchData();
     }
@@ -311,17 +335,23 @@ export default function DuplicatesPanel() {
      * can't blow its subrequest ceiling), so one click loops until `done`.
      *
      * This matters on a TOKENIZER_VERSION bump, which marks every record stale
-     * at once — 1,146 in production as of v2.49, i.e. ~12 batches. Doing that by
-     * hand means clicking until the counter stops moving, with no way to tell
-     * "finished" from "silently stopped early".
+     * at once — 1,146 in production as of v2.49, ~6,000 for the households
+     * release. Doing that by hand means clicking until the counter stops moving,
+     * with no way to tell "finished" from "silently stopped early".
      *
-     * `maxBatches` is a safety stop: if `remaining` ever fails to decrease, the
-     * loop would otherwise spin forever against the same records.
+     * Each batch asks for SCAN_PAGE_LIMIT records and carries one scan id, so
+     * the route reads the gift forms once per click, not once per batch.
+     * SCAN_MAX_BATCHES is only a runaway stop (the stall check below is the real
+     * guard); it used to be 200 batches of 25, so the ~239-batch households
+     * scan never finished in one click (audit A5).
      */
     async function handleScan() {
         setScanning(true);
         setScanResult(null);
-        const maxBatches = 200;
+        const maxBatches = SCAN_MAX_BATCHES;
+        const scanId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `scan-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         let totalTokenized = 0;
         let lastRemaining = Infinity;
         // Consecutive failed requests. A dropped connection cancels the batch in
@@ -349,7 +379,7 @@ export default function DuplicatesPanel() {
             for (let batch = 0; batch < maxBatches; batch++) {
                 let res: Response;
                 try {
-                    res = await fetch('/api/admin/duplicates', { method: 'POST' });
+                    res = await fetch(`/api/admin/duplicates?limit=${SCAN_PAGE_LIMIT}&scan=${encodeURIComponent(scanId)}`, { method: 'POST' });
                 } catch {
                     if (await retryAfter('Connection dropped')) continue;
                     return;
@@ -433,12 +463,12 @@ export default function DuplicatesPanel() {
         const data = await res.json() as { error?: string; results?: Array<{ success: boolean; auditId?: string }> };
         if (res.ok) {
             const auditIds = (data.results || []).filter(r => r.success && r.auditId).map(r => r.auditId!);
-            setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil fusionado', primaryIds: [primaryId] } : null);
+            setLastMerge(auditIds.length > 0 ? { auditIds, label: '1 perfil unido', primaryIds: [primaryId] } : null);
             setMergeTarget(null);
             clearSelection();
             fetchData();
         } else {
-            alert(`Merge failed: ${data.error}`);
+            alert(mergeFailedText(data.error ?? `HTTP ${res.status}`, 'DuplicatesPanel.handleMerge'));
         }
     }
 
@@ -470,14 +500,14 @@ export default function DuplicatesPanel() {
         const okResults = allResults.filter(r => r.success);
         const failed = allResults.filter(r => !r.success);
         if (transportError && okResults.length === 0) {
-            alert(`Merge failed: ${transportError}`);
+            alert(mergeFailedText(transportError, 'DuplicatesPanel.handleMassMerge'));
             return;
         }
         if (failed.length > 0 || transportError) {
-            alert(`Se fusionaron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${f.error}`).join('\n')}${transportError ? `\n• ${transportError}` : ''}`);
+            alert(`Se unieron ${okResults.length} perfiles, pero ${failed.length || 'algunos'} fallaron:\n${failed.map(f => `• ${mergeErrorText(f.error)}`).join('\n')}${transportError ? `\n• ${mergeErrorText(transportError)}` : ''}`);
         }
         const auditIds = okResults.filter(r => r.auditId).map(r => r.auditId!);
-        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} fusionado${auditIds.length === 1 ? '' : 's'}`, primaryIds: [primaryId] } : null);
+        setLastMerge(auditIds.length > 0 ? { auditIds, label: `${auditIds.length} perfil${auditIds.length === 1 ? '' : 'es'} unido${auditIds.length === 1 ? '' : 's'}`, primaryIds: [primaryId] } : null);
         setMassMergeCluster(null);
         clearSelection();
         fetchData();
@@ -510,7 +540,7 @@ export default function DuplicatesPanel() {
                 failures.push(...(data.results || []).filter(r => !r.success).map(r => r.error ?? 'unknown'));
             }
             if (failures.length > 0) {
-                alert(`Se deshicieron ${undone} fusiones, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
+                alert(`Se deshicieron ${undone} uniones, pero hubo fallas:\n${failures.map(f => `• ${f}`).join('\n')}`);
             }
             if (undone > 0 || failures.length === 0) {
                 setLastMerge(null);
@@ -530,8 +560,8 @@ export default function DuplicatesPanel() {
                 return;
             }
             setMergeTarget({
-                a1: { id: flag.adopterId, name: flag.adopter1Name ?? '', contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating, createdBy: creatorLabel(flag.adopter1AddedBy) },
-                a2: { id: flag.targetAdopterId, name: flag.adopter2Name ?? '', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating, createdBy: creatorLabel(flag.adopter2AddedBy) },
+                a1: { id: flag.adopterId, name: flag.adopter1Name ?? '', contact: flag.adopter1Contact, avgRating: flag.adopter1AvgRating, createdBy: creatorLabel(flag.adopter1AddedBy), createdAt: flag.adopter1CreatedAt ?? null },
+                a2: { id: flag.targetAdopterId, name: flag.adopter2Name ?? '', contact: flag.adopter2Contact, avgRating: flag.adopter2AvgRating, createdBy: creatorLabel(flag.adopter2AddedBy), createdAt: flag.adopter2CreatedAt ?? null },
                 matchTypes: ['user_flagged'],
                 flagId: flag.flagId,
             });
@@ -539,8 +569,8 @@ export default function DuplicatesPanel() {
             const c = item as DuplicateCandidate;
             const types = JSON.parse(c.matchTypes || '[]');
             setMergeTarget({
-                a1: { id: c.adopter1Id, name: c.adopter1Name ?? '', contact: c.adopter1Contact, avgRating: c.adopter1AvgRating, createdBy: creatorLabel(c.adopter1AddedBy) },
-                a2: { id: c.adopter2Id, name: c.adopter2Name ?? '', contact: c.adopter2Contact, avgRating: c.adopter2AvgRating, createdBy: creatorLabel(c.adopter2AddedBy) },
+                a1: { id: c.adopter1Id, name: c.adopter1Name ?? '', contact: c.adopter1Contact, avgRating: c.adopter1AvgRating, createdBy: creatorLabel(c.adopter1AddedBy), createdAt: c.adopter1CreatedAt ?? null },
+                a2: { id: c.adopter2Id, name: c.adopter2Name ?? '', contact: c.adopter2Contact, avgRating: c.adopter2AvgRating, createdBy: creatorLabel(c.adopter2AddedBy), createdAt: c.adopter2CreatedAt ?? null },
                 matchTypes: types,
                 candidateId: c.id,
             });
@@ -600,13 +630,8 @@ export default function DuplicatesPanel() {
                     <span className="flex items-center gap-3 flex-wrap">
                         ✅ {lastMerge.label}.
                         {lastMerge.primaryIds.length === 1 && (
-                            <a
-                                href={`/adopter/${lastMerge.primaryIds[0]}`}
-                                target="_blank"
-                                className="font-semibold underline hover:text-teal-900"
-                            >
-                                Abrir el perfil resultante →
-                            </a>
+                            // «Abrir perfil ↗», the one new-tab profile link (point B, review M1).
+                            <OpenProfileLink href={`/adopter/${encodeURIComponent(lastMerge.primaryIds[0])}`} testId="dup-merge-open-result" />
                         )}
                     </span>
                     <div className="flex items-center gap-2">
@@ -636,7 +661,7 @@ export default function DuplicatesPanel() {
                         className="px-3 py-1.5 text-xs font-medium text-stone-500 bg-stone-100 rounded-lg hover:bg-stone-200 hover:text-stone-700 disabled:opacity-50"
                         title={lastMerge.label}
                     >
-                        {undoing ? 'Deshaciendo…' : '↩︎ Deshacer última fusión'}
+                        {undoing ? 'Deshaciendo…' : '↩︎ Deshacer última unión'}
                     </button>
                 </div>
             )}
@@ -803,7 +828,7 @@ export default function DuplicatesPanel() {
                         disabled={!!bulkProgress || undoing}
                         className="px-4 py-1.5 text-sm font-semibold bg-teal-500 rounded-lg hover:bg-teal-400 disabled:opacity-50"
                     >
-                        {bulkProgress || `Fusionar cada par (${selectedPairs.size})`}
+                        {bulkProgress || `Unir cada par (${selectedPairs.size})`}
                     </button>
                     {/* Secondary: pool EVERY selected record into ONE survivor —
                         only for a single person's cluster, never for clearing
@@ -918,8 +943,8 @@ function MassMergeModal({ records, onMerge, onClose }: {
                 onClick={e => e.stopPropagation()}
             >
                 <div className="p-6 border-b border-stone-200">
-                    <h3 className="text-xl font-semibold text-stone-900">Fusionar grupo de duplicados</h3>
-                    <p className="text-sm text-stone-500 mt-1">Elegí qué perfil conservar; los seleccionados se fusionan dentro de él.</p>
+                    <h3 className="text-xl font-semibold text-stone-900">Unir grupo de duplicados</h3>
+                    <p className="text-sm text-stone-500 mt-1">Elegí qué perfil conservar; los seleccionados se suman a él.</p>
                 </div>
 
                 <div className="p-6 space-y-2">
@@ -955,7 +980,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                                             onChange={() => toggle(rec.id)}
                                             className="rounded border-stone-300 text-red-600 focus:ring-red-500"
                                         />
-                                        Fusionar
+                                        Unir
                                     </label>
                                 )}
                             </div>
@@ -964,7 +989,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
 
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm mt-4">
                         <p className="text-amber-700">
-                            Se fusionarán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong><AdopterNameLabel name={primary?.name ?? null} /></strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
+                            Se unirán <strong>{secondaryIds.length}</strong> perfil{secondaryIds.length === 1 ? '' : 'es'} en <strong><AdopterNameLabel name={primary?.name ?? null} /></strong>. Sus actividades y contactos se mueven al perfil conservado y sus nombres quedan como alias (siguen encontrándose al buscar).
                         </p>
                         <label className="flex items-start gap-2 mt-3 text-stone-700 cursor-pointer">
                             <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} className="mt-0.5 h-4 w-4 rounded" />
@@ -972,7 +997,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                         </label>
                         {secondaryIds.length > MASS_MERGE_SELECTION_MAX && (
                             <p className="text-red-700 font-medium mt-2">
-                                Máximo {MASS_MERGE_SELECTION_MAX} perfiles por fusión — destildá {secondaryIds.length - MASS_MERGE_SELECTION_MAX} o hacelo en tandas.
+                                Máximo {MASS_MERGE_SELECTION_MAX} perfiles por unión — destildá {secondaryIds.length - MASS_MERGE_SELECTION_MAX} o hacelo en tandas.
                             </p>
                         )}
                     </div>
@@ -992,7 +1017,7 @@ function MassMergeModal({ records, onMerge, onClose }: {
                         disabled={merging || secondaryIds.length === 0 || secondaryIds.length > MASS_MERGE_SELECTION_MAX}
                         className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
-                        {merging ? 'Fusionando…' : `Fusionar ${secondaryIds.length || ''}`}
+                        {merging ? 'Uniendo…' : `Unir ${secondaryIds.length || ''}`}
                     </button>
                 </div>
             </div>
@@ -1042,7 +1067,7 @@ function CandidateCard({
                         type="checkbox"
                         checked={!!selected}
                         onChange={onToggleSelect}
-                        aria-label="Seleccionar para fusión múltiple"
+                        aria-label="Seleccionar para unir varios"
                         className="mt-1 h-5 w-5 flex-shrink-0 rounded border-stone-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
                     />
                 )}
@@ -1053,7 +1078,7 @@ function CandidateCard({
                             <p className="text-sm font-semibold text-stone-900 truncate"><AdopterNameLabel name={name1} /></p>
                             {createdBy1 && <p className="text-xs text-stone-600 mt-0.5 break-words" data-testid="dup-created-by">Cargado por <span className="font-medium">{createdBy1}</span></p>}
                             {contact1 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact1}</p>}
-                            <a href={`/adopter/${id1}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
+                            <a href={`/adopter/${id1}`} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                 View →
                             </a>
                         </div>
@@ -1062,7 +1087,7 @@ function CandidateCard({
                             {createdBy2 && <p className="text-xs text-stone-600 mt-0.5 break-words" data-testid="dup-created-by">Cargado por <span className="font-medium">{createdBy2}</span></p>}
                             {contact2 && <p className="text-xs text-stone-500 mt-0.5 line-clamp-2">{contact2}</p>}
                             {id2 && (
-                                <a href={`/adopter/${id2}`} target="_blank" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
+                                <a href={`/adopter/${id2}`} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-700 hover:underline mt-1 inline-block">
                                     View →
                                 </a>
                             )}
@@ -1093,7 +1118,7 @@ function CandidateCard({
                             onClick={onMerge}
                             className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700"
                         >
-                            Merge
+                            Unir
                         </button>
                     )}
                     {onDismiss && (

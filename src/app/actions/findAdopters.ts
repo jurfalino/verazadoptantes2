@@ -37,6 +37,9 @@ import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE, DUPLICATE_MATCH_WEIGHTS, FUZZY_NAME_MATCH_TYPE } from '@/lib/scoring';
 import { classifyNameMatch, NAME_MATCH_WEIGHT, NAME_MATCH_TYPE, isNameLikeQuery, qualifiesForMainList } from '@/lib/searchRanking';
 import { phoneQueryPlan, phoneDuplicateTokens } from '@/domain/phoneNumber';
+import { extractQueryIdentifiers } from '@/domain/queryIdentifiers';
+import { redactedError, redactedErrorFields } from '@/lib/redactedError';
+import type { PersonInput } from '@/lib/identityMatch';
 import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
@@ -45,7 +48,7 @@ import { toGuestMatch } from '@/lib/guestMatch';
 import { getFeatureFlag } from '@/config/features';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries, parseBlobToContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers } from '@/lib/householdMembers';
+import { withHouseholdLines } from '@/lib/households';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -70,7 +73,8 @@ function tokenize(q: string): string[] {
 
 /**
  * Field-label words derived from the contactInfo blob's `TYPE_LABEL` (Dirección,
- * Tel, Email, Documento, Redes, "Otro nombre/identidad"). The stored blob prefixes every
+ * Tel, Email, Documento, Redes, "Otro nombre/identidad" — the stored label; cards show the alias as
+ * «Conocido/a como» at render time, contactBlobForDisplay). The stored blob prefixes every
  * entry with its label, and discovery does a substring LIKE over that blob — so a
  * bare label word matches EVERY record that has that field (e.g. "Dirección" hits
  * every address-bearing record). Normalized (accent-stripped, lowercased) so both
@@ -568,7 +572,8 @@ async function runDuplicateMode(
             // lookup instead of throwing the whole findAdopters call — otherwise the
             // caller (import detection) drops the row from comparison entirely.
             // Other tokens/strategies still run.
-            logger.warn('findAdopters: token lookup degraded', { tokenType: token.type, error: e instanceof Error ? e.message : String(e) });
+            // Redacted: the failed query's message ends with the bound phone / email / DNI.
+            logger.warn('findAdopters: token lookup degraded', { tokenType: token.type, ...redactedErrorFields(e) });
             return null;
         }
     }));
@@ -803,7 +808,7 @@ async function runDuplicateMode(
         // person from name alone, and the user can still find the
         // candidate via the search surface, just not via duplicate
         // detection.
-        if (hasStrongInputSignal) {
+        if (hasStrongInputSignal && !options.keepNameOnly) {
             const hitStrong = types.some(t => STRONG_SIGNAL_TYPES.has(t));
             const onlyNameSignals = types.every(t => NAME_SIGNAL_TYPES.has(t));
             if (!hitStrong && onlyNameSignals) continue;
@@ -827,6 +832,24 @@ async function runDuplicateMode(
 /** Server-side caller context the browser can never set (it is not part of
  *  FindAdoptersOptions, which the session action forwards from the client). */
 interface DiscoveryOrigin { origin: 'app' | 'api' }
+
+/** The identifiers a discovery search can ask the verdict about: the caller's structured ones, else those typed in the query. */
+function discoveryIdentityOf(given: PersonInput | undefined, query: string): PersonInput | null {
+    const has = (p: PersonInput) => !!(p.phones?.length || p.emails?.length || p.socials?.length || p.documentIds?.length);
+    if (given) return has(given) ? given : null;
+    const q = extractQueryIdentifiers(query);
+    const p: PersonInput = { name: q.rest, emails: q.emails, documentIds: q.documentIds, socials: q.handles };
+    return has(p) ? p : null;
+}
+
+/** «Same» profiles already in either list go to the top of the main list, in the verdict's order; nothing is added. */
+function promoteSame(main: DiscoveryMatch[], low: DiscoveryMatch[], sameIds: string[]): { main: DiscoveryMatch[]; low: DiscoveryMatch[] } {
+    const byId = new Map([...main, ...low].map(r => [r.adopterId, r]));
+    const promoted = [...new Set(sameIds)].flatMap(id => { const r = byId.get(id); return r ? [r] : []; });
+    if (promoted.length === 0) return { main, low };
+    const out = new Set(promoted.map(r => r.adopterId));
+    return { main: [...promoted, ...main.filter(r => !out.has(r.adopterId))], low: low.filter(r => !out.has(r.adopterId)) };
+}
 
 async function runDiscoveryMode(
     input: FindAdoptersInput,
@@ -961,7 +984,8 @@ async function runDiscoveryMode(
             else onBehalfByAdopter.set(r.adopterId, [r.onBehalfOf]);
         }
     } catch (e) {
-        logger.warn('findAdopters: onBehalfOf fetch fallback hit', { error: e instanceof Error ? e.message : String(e) });
+        options.trace?.degraded.push('relatives');
+        logger.warn('findAdopters: onBehalfOf fetch fallback hit', { requestId: options.trace?.requestId, error: e instanceof Error ? e.message : String(e) });
     }
 
     const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...weakPhoneIds, ...nameTokenIds]);
@@ -989,7 +1013,9 @@ async function runDiscoveryMode(
                     );
                 }
                 return db.select().from(adopters).where(and(...conds)).catch((e: unknown) => {
+                    options.trace?.degraded.push('profile_lookup');
                     logger.warn('findAdopters: D1 fallback hit (extra adopter profile lookup)', {
+                        requestId: options.trace?.requestId,
                         adopterId: id,
                         userCountry,
                         error: e instanceof Error ? e.message : String(e),
@@ -1152,15 +1178,14 @@ async function runDiscoveryMode(
             if (s && w > bestSnippetWeight) { bestSnippet = s; bestSnippetWeight = w; }
         }
 
-        // Family circle: legacy familyMembers blob + structured household
-        // members (name + their contacts) + adoptions' onBehalfOf names.
-        // Every one of these emits recall tokens (extractTokens), so every
-        // one must be scoreable and snippetable here — a source that can
-        // recall but not score produces the "why did this match?" result.
+        // Family circle: the legacy familyMembers free text + adoptions'
+        // onBehalfOf names. Both emit recall tokens (extractTokens), so both
+        // must be scoreable and snippetable here — a source that can recall
+        // but not score produces the "why did this match?" result. A
+        // housemate is a profile of its own (households as profiles): it is
+        // never scored on its host; the host's card shows it in `households`.
         const familyText = [
             a.familyMembers,
-            ...deserializeHouseholdMembers(a.householdMembers).map(m =>
-                [m.name, ...m.contactEntries.map(e2 => e2.value)].filter(Boolean).join(' ')),
             ...(onBehalfByAdopter.get(a.id) ?? []),
         ].filter(Boolean).join('\n');
         const familyNorm = normalizeText(familyText);
@@ -1378,8 +1403,25 @@ async function runDiscoveryMode(
         });
     }
 
-    const mainResults = allResults.filter(isStrong);
-    const lowRelevanceResults = allResults.filter(r => !isStrong(r));
+    let mainResults = allResults.filter(isStrong);
+    let lowRelevanceResults = allResults.filter(r => !isStrong(r));
+
+    // Identity verdict (spec 2026-11-02): an email, DNI or handle that identifies someone puts them
+    // on top. Only profiles this search already returned move (discovery is geo-filtered and
+    // guest-masked; the verdict's retrieval is not viewer-scoped, so adding one would widen
+    // visibility). A plain-name query asks nothing extra, and so does a guest (promoting a masked result would confirm the DNI or handle they typed). A failed verdict keeps today's ranking.
+    const identity = discoveryIdentityOf(options.identity, normalizedQuery);
+    if (identity && !isUnauthenticated && (mainResults.length + lowRelevanceResults.length) > 0) {
+        try {
+            const { findPersonMatches } = await import('@/lib/identityMatch');
+            const same = (await findPersonMatches(db, identity, { actor: user, country: userCountry, skipLikeFallback: true }))
+                .filter(m => m.verdict === 'same').map(m => m.adopterId);
+            if (same.length > 0) ({ main: mainResults, low: lowRelevanceResults } = promoteSame(mainResults, lowRelevanceResults, same));
+        } catch (e) {
+            options.trace?.degraded.push('identity_ranking');
+            logger.warn('findAdopters: identity verdict failed, ranking as today', { requestId: options.trace?.requestId, origin: caller.origin, ...redactedErrorFields(e) });
+        }
+    }
 
     const singleTokenResultCount = (!isMultiToken && allResults.length > REFINEMENT_NUDGE_THRESHOLD)
         ? allResults.length : undefined;
@@ -1449,9 +1491,23 @@ async function runDiscoveryMode(
         }).filter((r): r is DiscoveryMatch => r !== null)
         : list;
 
+    // The housemate alerts («Conviviente con calificación 1.0», «Conviviente con alertas») of the cards
+    // returned — never of the whole recall set — in one batched read. Only for
+    // a signed-in viewer in the app: it names people (a guest's names are
+    // masked) and the API's response doesn't carry it.
+    let shownMain: DiscoveryMatch[] = mainResults.slice(0, limit);
+    let shownLow: DiscoveryMatch[] = lowRelevanceResults.slice(0, limit);
+    // enrich:false callers (AdopterFlagging) render no line, so read none. Main
+    // results come first: they take the line budget (HOUSEHOLD_LINE_CARDS).
+    if (shouldEnrich && !isUnauthenticated && !isApi && shownMain.length + shownLow.length > 0) {
+        const withLines = await withHouseholdLines(db, user, [...shownMain, ...shownLow]);
+        shownMain = withLines.slice(0, shownMain.length);
+        shownLow = withLines.slice(shownMain.length);
+    }
+
     const response: FindAdoptersResponse = {
-        results: forViewer(mainResults.slice(0, limit)),
-        ...(lowRelevanceResults.length > 0 && { lowRelevanceResults: forViewer(lowRelevanceResults.slice(0, limit)) }),
+        results: forViewer(shownMain),
+        ...(shownLow.length > 0 && { lowRelevanceResults: forViewer(shownLow) }),
         ...(singleTokenResultCount !== undefined && { singleTokenResultCount }),
         ...(guestNameMasked && { guestNameMasked: true }),
     };
@@ -1509,7 +1565,8 @@ export async function findAdopters(
         );
 
     } catch (error) {
-        const errorId = logger.error('findAdopters failed', error, { mode: options.mode, user });
+        // Redacted: a failed query's message ends with the contact values it was bound to.
+        const errorId = logger.error('findAdopters failed', redactedError(error), { mode: options.mode, user });
         throw new Error(`findAdopters failed (ID: ${errorId})`);
     }
 }

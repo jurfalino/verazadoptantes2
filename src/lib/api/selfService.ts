@@ -1,12 +1,14 @@
 /**
- * /developers (Jon, 2026-10-17): any signed-in user creates and manages their
- * OWN API keys — after accepting the API terms — with self-service limits. An
- * admin still sees every key in Admin → API (marked as self-created) and can
- * revoke it or raise its limits. Server-only.
+ * /developers (Jon, 2026-10-17; 2026-10-22): any signed-in user creates and
+ * manages their OWN API keys right after accepting the API terms. Until an admin
+ * approves their access (filed with their first key), the keys run at
+ * PENDING_APPROVAL_CAPS; approved, at SELF_SERVICE_CAPS. An admin still sees
+ * every key in Admin → API (marked as self-created) and can revoke it or raise
+ * its limits. Server-only.
  */
 import { and, eq, gte, isNull, count } from 'drizzle-orm';
 import { apiKeys, apiTermsAcceptances } from '@/db/schema';
-import { canCreateKeys, getAccess } from './access';
+import { canCreateKeys, getAccess, hasFullLimits, PENDING_APPROVAL_CAPS, requestAccess } from './access';
 import { issueKey, listKeys, regenerateKey } from './review';
 import { environmentForHost } from './keys';
 
@@ -33,22 +35,34 @@ export async function acceptTerms(db: Db, email: string): Promise<void> {
 }
 
 export async function myDeveloperState(db: Db, email: string, host: string) {
-    const [accepted, keys, access, allowed] = await Promise.all([termsAccepted(db, email), listKeys(db, email), getAccess(db, email), canCreateKeys(db, email)]);
+    const [accepted, keys, access, allowed, full] = await Promise.all([termsAccepted(db, email), listKeys(db, email), getAccess(db, email), canCreateKeys(db, email), hasFullLimits(db, email)]);
+    const limited = !full;
     return {
         termsAccepted: accepted, termsVersion: API_TERMS_VERSION,
-        // The person's API access (admin approval) and whether they may create keys now.
-        access, canCreateKeys: allowed,
-        environment: environmentForHost(host), caps: SELF_SERVICE_CAPS, maxActiveKeys: MAX_ACTIVE_KEYS,
-        keys,
+        // The person's API access (admin approval), whether they may create keys now,
+        // and whether their own keys still run at the pending limits.
+        access, canCreateKeys: allowed, limited,
+        environment: environmentForHost(host),
+        caps: limited ? PENDING_APPROVAL_CAPS : SELF_SERVICE_CAPS, approvedCaps: SELF_SERVICE_CAPS, pendingCaps: PENDING_APPROVAL_CAPS,
+        maxActiveKeys: MAX_ACTIVE_KEYS,
+        // Each own key shown with the limits it really has today.
+        keys: keys.map(k => (limited && k.selfService
+            ? { ...k, dailyCapExact: Math.min(k.dailyCapExact, PENDING_APPROVAL_CAPS.exact), dailyCapFuzzy: Math.min(k.dailyCapFuzzy, PENDING_APPROVAL_CAPS.fuzzy) }
+            : k)),
     };
 }
 
-export type SelfServiceError = 'terms_required' | 'not_approved' | 'too_many_keys' | 'too_many_today' | 'name_required' | 'not_found' | 'revoked';
+export type SelfServiceError = 'terms_required' | 'blocked' | 'too_many_keys' | 'too_many_today' | 'name_required' | 'not_found' | 'revoked';
 
-export async function createMyKey(db: Db, email: string, name: string, host: string) {
+/**
+ * A new own key — working at once (at the pending limits until approved). The
+ * first key files the access request for the person: its name is the tool,
+ * `purpose` what it is for (an admin approves it to raise the limits).
+ */
+export async function createMyKey(db: Db, email: string, name: string, host: string, purpose = '') {
     if (!name.trim()) return { error: 'name_required' as const };
     if (!(await termsAccepted(db, email))) return { error: 'terms_required' as const };
-    if (!(await canCreateKeys(db, email))) return { error: 'not_approved' as const };
+    if (!(await canCreateKeys(db, email))) return { error: 'blocked' as const };
     const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);
     const today = await db.select({ n: count() }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, email), eq(apiKeys.createdBy, email), gte(apiKeys.createdAt, startOfDay))).get();
     if ((today?.n ?? 0) >= MAX_KEYS_CREATED_PER_DAY) return { error: 'too_many_today' as const };
@@ -56,7 +70,12 @@ export async function createMyKey(db: Db, email: string, name: string, host: str
     const active = await db.select({ n: count() }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, email), eq(apiKeys.createdBy, email), isNull(apiKeys.revokedAt))).get();
     if ((active?.n ?? 0) >= MAX_ACTIVE_KEYS) return { error: 'too_many_keys' as const };
     // createdBy = the owner: that is what marks a key as self-created.
-    return issueKey(db, { ownerEmail: email, name, dailyCapExact: SELF_SERVICE_CAPS.exact, dailyCapFuzzy: SELF_SERVICE_CAPS.fuzzy }, host, email);
+    const issued = await issueKey(db, { ownerEmail: email, name, dailyCapExact: SELF_SERVICE_CAPS.exact, dailyCapFuzzy: SELF_SERVICE_CAPS.fuzzy }, host, email);
+    if ('error' in issued) return issued;
+    // Nobody asked yet: this key's creation is the request (a denied person asks again on purpose).
+    const access = await getAccess(db, email);
+    const requested = access.status === 'none' && 'ok' in (await requestAccess(db, email, name, purpose));
+    return { ...issued, requested, limited: !(await hasFullLimits(db, email)) };
 }
 
 async function ownKey(db: Db, email: string, id: string) {
@@ -66,8 +85,8 @@ async function ownKey(db: Db, email: string, id: string) {
 export async function regenerateMyKey(db: Db, email: string, id: string, host: string) {
     const key = await ownKey(db, email, id);
     if (!key) return { error: 'not_found' as const };
-    // Regenerating is making a key: the same approval applies.
-    if (!(await canCreateKeys(db, email))) return { error: 'not_approved' as const };
+    // Regenerating is making a key: a blocked person can't.
+    if (!(await canCreateKeys(db, email))) return { error: 'blocked' as const };
     return regenerateKey(db, id, host);
 }
 

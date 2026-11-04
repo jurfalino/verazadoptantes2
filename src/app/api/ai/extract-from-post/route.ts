@@ -115,12 +115,24 @@ export async function POST(request: NextRequest) {
             body.language || 'es'
         );
 
-        logger.info('AI extraction completed', {
+        // Everything that shapes what the rescuer sees next — what was found and
+        // what the AI says it could not read. Counts and codes only, no values.
+        const issues = Array.isArray(extracted.extractionIssues) ? extracted.extractionIssues.filter(i => typeof i === 'string').slice(0, 10) : [];
+        const completed = {
             userEmail: session?.user?.email || 'anonymous',
             confidence: extracted.confidence,
+            extractionFailed: !!extracted.extractionFailed,
+            extractionIssues: issues,
             hasName: !!extracted.name,
             phoneCount: extracted.phones?.length || 0,
-        });
+            emailCount: extracted.emails?.length || 0,
+            socialCount: extracted.socialProfiles?.length || 0,
+            otherPeopleCount: Array.isArray(extracted.otherPeople) ? extracted.otherPeople.length : 0,
+            ratingSuggested: typeof extracted.adoptionRating === 'number',
+            imageCount: allImages.length,
+        };
+        if (extracted.extractionFailed || issues.length) logger.warn('AI extraction completed with issues', completed);
+        else logger.info('AI extraction completed', completed);
 
         return NextResponse.json({
             success: true,

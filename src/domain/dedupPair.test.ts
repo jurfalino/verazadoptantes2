@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideDedupMerge, isOpenDuplicateFlag, type DedupSide } from './dedupPair';
+import { pairKey, pairVerdict, mergeNeedsAdmins, decideDedupMerge, decideDedupAction, decideMergeRequestAnswer, canRequestAgain, keepOptions, keepByAge, pairChoices, orderPair, isOpenDuplicateFlag, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, realOwner, decideMergeDisputeRaise, decideMergeDisputeResolution, type DedupSide } from './dedupPair';
 
 const ME = 'me@example.com';
 const side = (id: string, addedBy: string | null, createdAt: number, teamOwned: boolean, deleted = false): DedupSide =>
@@ -63,9 +63,393 @@ describe('isOpenDuplicateFlag', () => {
         ({ adopterId: 'a', targetAdopterId: 'b', reason: 'duplicate', details: null, ...o });
     it('an open duplicate flag', () => expect(isOpenDuplicateFlag(f({}))).toBe(true));
     it('merged (annotated by mergeAdopters)', () => expect(isOpenDuplicateFlag(f({ details: 'Merged into b by x@example.com' }))).toBe(false));
+    it('kept separate (a declined merge request)', () => expect(isOpenDuplicateFlag(f({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}3f2b9c1e-request-id` }))).toBe(false));
     it('self-pointing after a merge re-pointed it', () => expect(isOpenDuplicateFlag(f({ targetAdopterId: 'a' }))).toBe(false));
     it('no target, or another reason', () => {
         expect(isOpenDuplicateFlag(f({ targetAdopterId: null }))).toBe(false);
         expect(isOpenDuplicateFlag(f({ reason: 'inaccurate_information' }))).toBe(false);
+    });    it("a profile page's flag rows (optional fields, as AdopterFlagging gets them)", () => {
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b' })).toBe(true);
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b', details: 'Merged into b by x@example.com' })).toBe(false);
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate', targetAdopterId: 'b', details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}req-1` })).toBe(false);
+        expect(isOpenDuplicateFlag({ adopterId: 'a', reason: 'duplicate' })).toBe(false);
+    });
+});
+
+describe('realOwner', () => {
+    it('a real email is the owner', () => expect(realOwner('owner@example.com')).toBe('owner@example.com'));
+    it('null, empty and anonymous have no owner', () => {
+        expect(realOwner(null)).toBeNull();
+        expect(realOwner(undefined)).toBeNull();
+        expect(realOwner('')).toBeNull();
+        expect(realOwner('anonymous')).toBeNull();
+    });
+    it('a system marker without @ (prod has system-demo) has no owner', () => {
+        expect(realOwner('system-demo')).toBeNull();
+        expect(realOwner('system')).toBeNull();
+    });
+});
+
+describe('decideDedupAction', () => {
+    it('refuses like decideDedupMerge: unauthenticated / not_found / not_yours', () => {
+        expect(decideDedupAction(null, MINE_OLD, MINE_NEW, 'detected')).toEqual({ kind: 'refuse', reason: 'unauthenticated' });
+        expect(decideDedupAction(ME, MINE_OLD, null as unknown as DedupSide, 'detected')).toEqual({ kind: 'refuse', reason: 'not_found' });
+        expect(decideDedupAction('stranger@example.com', MINE_OLD, FOREIGN_NEW, 'detected')).toEqual({ kind: 'refuse', reason: 'not_yours' });
+    });
+
+    it('both sides team-owned: merge, older survives, nobody to notify (detected and flag)', () => {
+        for (const src of ['detected', 'flag'] as const) {
+            expect(decideDedupAction(ME, MINE_NEW, MINE_OLD, src))
+                .toEqual({ kind: 'merge', primaryId: 'mine-old', secondaryId: 'mine-new', notifyOwner: null });
+        }
+    });
+
+    it('flag across rescuers where mine is newer: request, not merge', () => {
+        expect(decideDedupAction(ME, MINE_NEW, FOREIGN_OLD, 'flag'))
+            .toEqual({ kind: 'request', primaryId: 'foreign-old', secondaryId: 'mine-new', ownerEmail: 'other@example.com' });
+    });
+
+    it('flag across rescuers where mine is older: request to the other owner', () => {
+        expect(decideDedupAction(ME, MINE_OLD, FOREIGN_NEW, 'flag'))
+            .toEqual({ kind: 'request', primaryId: 'mine-old', secondaryId: 'foreign-new', ownerEmail: 'other@example.com' });
+    });
+
+    it('detected, mine newer, theirs older: merge and notify their owner', () => {
+        expect(decideDedupAction(ME, MINE_NEW, FOREIGN_OLD, 'detected'))
+            .toEqual({ kind: 'merge', primaryId: 'foreign-old', secondaryId: 'mine-new', notifyOwner: 'other@example.com' });
+    });
+
+    it('detected, mine older: request to their email', () => {
+        expect(decideDedupAction(ME, MINE_OLD, FOREIGN_NEW, 'detected'))
+            .toEqual({ kind: 'request', primaryId: 'mine-old', secondaryId: 'foreign-new', ownerEmail: 'other@example.com' });
+    });
+
+    it('anonymous / empty / null owner normalizes to null', () => {
+        for (const who of ['anonymous', '', null]) {
+            const theirs = side('t', who, 2_000, false);
+            expect(decideDedupAction(ME, MINE_OLD, theirs, 'detected'))
+                .toEqual({ kind: 'request', primaryId: 'mine-old', secondaryId: 't', ownerEmail: null });
+            const theirsOld = side('t', who, 500, false);
+            expect(decideDedupAction(ME, MINE_NEW, theirsOld, 'detected'))
+                .toEqual({ kind: 'merge', primaryId: 't', secondaryId: 'mine-new', notifyOwner: null });
+        }
+    });
+});
+
+describe('decideMergeRequestAnswer', () => {
+    const base = { actorIsRequester: false, actorOnOwnerTeam: false, actorIsAdmin: false };
+    const ok = (nextStatus: string, merges: boolean) => ({ ok: true, nextStatus, merges });
+    const no = (reason: string) => ({ ok: false, reason });
+
+    it('requester cancels own pending request', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsRequester: true, decision: 'cancel' })).toEqual(ok('cancelled', false));
+    });
+    it('admin requester can cancel too; non-requester cannot cancel', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsRequester: true, actorIsAdmin: true, decision: 'cancel' })).toEqual(ok('cancelled', false));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorOnOwnerTeam: true, decision: 'cancel' })).toEqual(no('not_allowed'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, decision: 'cancel' })).toEqual(no('not_allowed'));
+    });
+    it('owner team accepts / declines pending', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorOnOwnerTeam: true, decision: 'accept' })).toEqual(ok('accepted', true));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorOnOwnerTeam: true, decision: 'decline' })).toEqual(ok('declined', false));
+    });
+    it('requester cannot accept or decline own request (non-admin)', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsRequester: true, actorOnOwnerTeam: true, decision: 'accept' })).toEqual(no('not_allowed'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsRequester: true, decision: 'decline' })).toEqual(no('not_allowed'));
+    });
+    it('a stranger cannot answer', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', decision: 'accept' })).toEqual(no('not_allowed'));
+    });
+    it('admin approves / declines pending', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, decision: 'accept' })).toEqual(ok('admin_approved', true));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, decision: 'decline' })).toEqual(ok('admin_declined', false));
+    });
+    it('admin who is the requester approves from pending -> admin_approved', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, actorIsRequester: true, decision: 'accept' })).toEqual(ok('admin_approved', true));
+    });
+    it('admin on the owner team acts as owner while pending', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, actorOnOwnerTeam: true, decision: 'accept' })).toEqual(ok('accepted', true));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, actorOnOwnerTeam: true, decision: 'decline' })).toEqual(ok('declined', false));
+    });
+    it('admin approves after declined; requester and strangers cannot', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorIsAdmin: true, decision: 'accept' })).toEqual(ok('admin_approved', true));
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorIsRequester: true, decision: 'accept' })).toEqual(no('not_open'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', decision: 'accept' })).toEqual(no('not_open'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorIsAdmin: true, decision: 'decline' })).toEqual(no('not_open'));
+    });
+    it('the owner team changes its mind: accept from declined merges (D43)', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorOnOwnerTeam: true, decision: 'accept' })).toEqual(ok('accepted', true));
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorOnOwnerTeam: true, decision: 'decline' })).toEqual(no('not_open'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorOnOwnerTeam: true, decision: 'flip' })).toEqual(no('not_open'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'declined', actorOnOwnerTeam: true, decision: 'cancel' })).toEqual(no('not_open'));
+    });
+    it('flip («Conservar el mío») by the owner team while pending: accepted, merges swapped (D26)', () => {
+        const flipped = { ok: true, nextStatus: 'accepted', merges: true, swap: true };
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorOnOwnerTeam: true, decision: 'flip' })).toEqual(flipped);
+    });
+    it('an admin flips as admin: admin_approved, merges swapped; an admin on the owner team acts as owner', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, decision: 'flip' }))
+            .toEqual({ ok: true, nextStatus: 'admin_approved', merges: true, swap: true });
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsAdmin: true, actorOnOwnerTeam: true, decision: 'flip' }))
+            .toEqual({ ok: true, nextStatus: 'accepted', merges: true, swap: true });
+    });
+    it('the requester (non-admin) or a stranger cannot flip', () => {
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsRequester: true, decision: 'flip' })).toEqual(no('not_allowed'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', actorIsRequester: true, actorOnOwnerTeam: true, decision: 'flip' })).toEqual(no('not_allowed'));
+        expect(decideMergeRequestAnswer({ ...base, status: 'pending', decision: 'flip' })).toEqual(no('not_allowed'));
+    });
+    it('accept and decline never carry swap', () => {
+        const r = decideMergeRequestAnswer({ ...base, status: 'pending', actorOnOwnerTeam: true, decision: 'accept' });
+        expect(r.ok && r.swap).toBeFalsy();
+    });
+    it('anything on accepted/cancelled/closed/admin_* is not_open', () => {
+        for (const status of ['accepted', 'cancelled', 'closed', 'admin_approved', 'admin_declined'] as const) {
+            for (const decision of ['accept', 'decline', 'cancel', 'flip'] as const) {
+                expect(decideMergeRequestAnswer({ status, actorIsRequester: true, actorOnOwnerTeam: true, actorIsAdmin: true, decision })).toEqual(no('not_open'));
+            }
+        }
+    });
+});
+
+describe('decideDedupAction with a chosen survivor (keepId, D24/D41/D42)', () => {
+    const ANON_OLD = side('anon-old', 'anonymous', 500, false);
+
+    it('detected: keeping the other rescuer\'s profile folds mine in and notifies them', () => {
+        expect(decideDedupAction(ME, MINE_OLD, FOREIGN_NEW, 'detected', 'foreign-new'))
+            .toEqual({ kind: 'merge', primaryId: 'foreign-new', secondaryId: 'mine-old', notifyOwner: 'other@example.com' });
+    });
+
+    it('keeping mine against another rescuer\'s: a request to them, whatever the ages', () => {
+        expect(decideDedupAction(ME, MINE_NEW, FOREIGN_OLD, 'detected', 'mine-new'))
+            .toEqual({ kind: 'request', primaryId: 'mine-new', secondaryId: 'foreign-old', ownerEmail: 'other@example.com' });
+        expect(decideDedupAction(ME, MINE_OLD, FOREIGN_NEW, 'detected', 'mine-old'))
+            .toEqual({ kind: 'request', primaryId: 'mine-old', secondaryId: 'foreign-new', ownerEmail: 'other@example.com' });
+    });
+
+    it('hand-flagged pair, keeping the other\'s profile: immediate merge, owner notified (D41)', () => {
+        expect(decideDedupAction(ME, MINE_NEW, FOREIGN_OLD, 'flag', 'foreign-old'))
+            .toEqual({ kind: 'merge', primaryId: 'foreign-old', secondaryId: 'mine-new', notifyOwner: 'other@example.com' });
+        expect(decideDedupAction(ME, MINE_OLD, FOREIGN_NEW, 'flag', 'mine-old'))
+            .toEqual({ kind: 'request', primaryId: 'mine-old', secondaryId: 'foreign-new', ownerEmail: 'other@example.com' });
+    });
+
+    it('other side has no real owner: keeping it is refused, keeping mine asks the admins (D42)', () => {
+        for (const who of ['anonymous', '', null, 'system-demo']) {
+            const ownerless = side('t', who, 500, false);
+            expect(decideDedupAction(ME, MINE_NEW, ownerless, 'detected', 't')).toEqual({ kind: 'refuse', reason: 'keep_not_allowed' });
+            expect(decideDedupAction(ME, MINE_NEW, ownerless, 'flag', 't')).toEqual({ kind: 'refuse', reason: 'keep_not_allowed' });
+            expect(decideDedupAction(ME, MINE_NEW, ownerless, 'detected', 'mine-new'))
+                .toEqual({ kind: 'request', primaryId: 'mine-new', secondaryId: 't', ownerEmail: null });
+        }
+        expect(decideDedupAction(ME, ANON_OLD, MINE_NEW, 'detected', 'anon-old')).toEqual({ kind: 'refuse', reason: 'keep_not_allowed' });
+    });
+
+    it('same team: immediate either way, the chosen side survives', () => {
+        expect(decideDedupAction(ME, MINE_OLD, MATE_NEW, 'detected', 'mate-new'))
+            .toEqual({ kind: 'merge', primaryId: 'mate-new', secondaryId: 'mine-old', notifyOwner: null });
+        expect(decideDedupAction(ME, MINE_OLD, MINE_NEW, 'flag', 'mine-new'))
+            .toEqual({ kind: 'merge', primaryId: 'mine-new', secondaryId: 'mine-old', notifyOwner: null });
+    });
+
+    it('a keepId outside the pair: not found', () => {
+        expect(decideDedupAction(ME, MINE_OLD, FOREIGN_NEW, 'detected', 'someone-else')).toEqual({ kind: 'refuse', reason: 'not_found' });
+        expect(decideDedupAction(ME, MINE_OLD, FOREIGN_NEW, 'detected', '')).toEqual({ kind: 'refuse', reason: 'not_found' });
+    });
+
+    it('the earlier refusals still come first', () => {
+        expect(decideDedupAction(null, MINE_OLD, FOREIGN_NEW, 'detected', 'mine-old')).toEqual({ kind: 'refuse', reason: 'unauthenticated' });
+        expect(decideDedupAction('stranger@example.com', MINE_OLD, FOREIGN_NEW, 'detected', 'mine-old')).toEqual({ kind: 'refuse', reason: 'not_yours' });
+    });
+});
+
+describe('keepOptions', () => {
+    it('against another rescuer: either side may stay', () => {
+        expect(keepOptions(ME, MINE_OLD, FOREIGN_NEW)).toEqual({ a: true, b: true });
+    });
+    it('against an ownerless profile: only mine (D42)', () => {
+        const anon = side('anon', 'anonymous', 500, false);
+        expect(keepOptions(ME, MINE_NEW, anon)).toEqual({ a: true, b: false });
+        expect(keepOptions(ME, anon, MINE_NEW)).toEqual({ a: false, b: true });
+    });
+    it('same team: either side', () => {
+        expect(keepOptions(ME, MINE_OLD, MATE_NEW)).toEqual({ a: true, b: true });
+    });
+    it('a pair the viewer may not merge at all: neither', () => {
+        expect(keepOptions(null, MINE_OLD, FOREIGN_NEW)).toEqual({ a: false, b: false });
+        expect(keepOptions('stranger@example.com', MINE_OLD, FOREIGN_NEW)).toEqual({ a: false, b: false });
+        expect(keepOptions(ME, MINE_OLD, null)).toEqual({ a: false, b: false });
+    });
+});
+
+describe('canRequestAgain (D43)', () => {
+    it('no earlier requests: yes', () => expect(canRequestAgain([], ME)).toBe(true));
+    it('my own request was declined: no (case-insensitive)', () => {
+        expect(canRequestAgain([{ requesterEmail: ME, status: 'declined' }], ME)).toBe(false);
+        expect(canRequestAgain([{ requesterEmail: 'Me@Example.com ', status: 'declined' }], ME)).toBe(false);
+    });
+    it('someone else\'s request was declined: yes', () => {
+        expect(canRequestAgain([{ requesterEmail: 'mate@example.com', status: 'declined' }], ME)).toBe(true);
+    });
+    it('my earlier request ended another way (cancelled / closed / admin_declined): yes', () => {
+        expect(canRequestAgain([
+            { requesterEmail: ME, status: 'cancelled' },
+            { requesterEmail: ME, status: 'closed' },
+            { requesterEmail: ME, status: 'admin_declined' },
+        ], ME)).toBe(true);
+    });
+});
+
+describe('pairKey', () => {
+    it('is order-independent and joined with |', () => {
+        expect(pairKey('b', 'a')).toBe('a|b');
+        expect(pairKey('a', 'b')).toBe(pairKey('b', 'a'));
+    });
+});
+
+describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and the click alike', () => {
+    const NONE = { isAdmin: false, declinedByViewer: false, adminRuledSeparate: false, rebuilt: false };
+    const ANON_OLD = side('anon-old', 'anonymous', 100, false);
+    const ANON_NEW = side('anon-new', null, 9_000, false);
+
+    it('orderPair: newer is "new", ties keep a as the new one', () => {
+        expect(orderPair(MINE_OLD, MINE_NEW)).toEqual({ newer: MINE_NEW, older: MINE_OLD });
+        const tie = side('tie', ME, 1_000, true);
+        expect(orderPair(tie, MINE_OLD)).toEqual({ newer: tie, older: MINE_OLD });
+    });
+
+    it('same team: either side, merged straight away; default the older', () => {
+        expect(pairChoices(ME, MATE_NEW, MINE_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: true, existing: true }, actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing',
+        });
+    });
+
+    it("another rescuer's profile: keeping theirs merges, keeping mine asks", () => {
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: true, existing: true }, actionByKeep: { new: 'request', existing: 'merge' }, defaultKeep: 'existing',
+        });
+        // A flag: the same with a chosen side (D41).
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'flag', NONE).actionByKeep).toEqual({ new: 'request', existing: 'merge' });
+    });
+
+    it('an ownerless side cannot stay (D42); an ownerless OLDER side makes mine the default', () => {
+        expect(pairChoices(ME, ANON_NEW, MINE_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: false, existing: true }, actionByKeep: { new: null, existing: 'request' }, defaultKeep: 'existing',
+        });
+        expect(pairChoices(ME, MINE_NEW, ANON_OLD, 'detected', NONE)).toEqual({
+            keepOptions: { new: true, existing: false }, actionByKeep: { new: 'request', existing: null }, defaultKeep: 'new',
+        });
+    });
+
+    it("after the owner declined my request, asking again is not offered (D43); keeping theirs asks the admins instead of merging (D49)", () => {
+        expect(pairChoices(ME, FOREIGN_NEW, MINE_OLD, 'detected', { ...NONE, declinedByViewer: true })).toEqual({
+            keepOptions: { new: true, existing: false }, actionByKeep: { new: 'dispute', existing: null }, defaultKeep: 'new',
+        });
+        // A flag alike.
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'flag', { ...NONE, declinedByViewer: true }).actionByKeep).toEqual({ new: null, existing: 'dispute' });
+    });
+
+    it('after an admin ruled the pair separate (D50): every merge becomes a request to the admins, inside my team too', () => {
+        const ruled = { ...NONE, adminRuledSeparate: true };
+        expect(pairChoices(ME, MINE_NEW, FOREIGN_OLD, 'flag', ruled).actionByKeep).toEqual({ new: 'request', existing: 'dispute' });
+        expect(pairChoices(ME, MATE_NEW, MINE_OLD, 'detected', ruled).actionByKeep).toEqual({ new: 'dispute', existing: 'dispute' });
+    });
+
+    it('a decline does not turn a merge inside my own team into a dispute', () => {
+        expect(pairChoices(ME, MATE_NEW, MINE_OLD, 'detected', { ...NONE, declinedByViewer: true }).actionByKeep).toEqual({ new: 'merge', existing: 'merge' });
+    });
+
+    it('admins choose freely: both sides, both merge — ownerless and declined included', () => {
+        const admin = { isAdmin: true, declinedByViewer: true, adminRuledSeparate: true, rebuilt: false };
+        expect(pairChoices(ME, MINE_NEW, ANON_OLD, 'detected', admin)).toEqual({
+            keepOptions: { new: true, existing: true }, actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing',
+        });
+        // …but not on a pair they created neither side of.
+        expect(pairChoices('admin@example.com', FOREIGN_NEW, MINE_OLD, 'detected', admin).keepOptions).toEqual({ new: false, existing: false });
+    });
+
+    it('a pair rebuilt from a request: nothing the click could honour', () => {
+        for (const isAdmin of [false, true]) {
+            expect(pairChoices(ME, MINE_NEW, MINE_OLD, 'detected', { isAdmin, declinedByViewer: false, adminRuledSeparate: false, rebuilt: true })).toEqual({
+                keepOptions: { new: false, existing: false }, actionByKeep: { new: null, existing: null }, defaultKeep: 'existing',
+            });
+        }
+    });
+
+    it('a viewer who created neither side: nothing allowed', () => {
+        expect(pairChoices('stranger@example.com', FOREIGN_NEW, MINE_OLD, 'detected', NONE).actionByKeep).toEqual({ new: null, existing: null });
+    });
+});
+
+describe('decideMergeDisputeRaise (D50)', () => {
+    const base = { viewerIsActor: false, viewerOnSurvivorTeam: true, viewerOnAbsorbedTeam: false, soloMerge: false, undone: false, superseded: false, decided: false };
+
+    it("the kept profile's owner team may ask the admins; so may the absorbed profile's", () => {
+        expect(decideMergeDisputeRaise(base)).toEqual({ ok: true });
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false, viewerOnAbsorbedTeam: true })).toEqual({ ok: true });
+    });
+
+    it('a stranger, the rescuer who merged, or anyone on a solo merge: not_found (the same answer as a guessed id)', () => {
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false })).toEqual({ ok: false, reason: 'not_found' });
+        expect(decideMergeDisputeRaise({ ...base, viewerIsActor: true })).toEqual({ ok: false, reason: 'not_found' });
+        expect(decideMergeDisputeRaise({ ...base, soloMerge: true })).toEqual({ ok: false, reason: 'not_found' });
+    });
+
+    it('an undone merge, or one an admin already decided to keep: nothing to raise', () => {
+        expect(decideMergeDisputeRaise({ ...base, undone: true })).toEqual({ ok: false, reason: 'already_undone' });
+        expect(decideMergeDisputeRaise({ ...base, decided: true })).toEqual({ ok: false, reason: 'already_decided' });
+        // …but a stranger still learns nothing.
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false, undone: true })).toEqual({ ok: false, reason: 'not_found' });
+    });
+
+    it('superseded (the kept profile was merged away since): refused up front, not accepted and closed as moot later', () => {
+        expect(decideMergeDisputeRaise({ ...base, superseded: true })).toEqual({ ok: false, reason: 'superseded' });
+        expect(decideMergeDisputeRaise({ ...base, superseded: true, decided: true })).toEqual({ ok: false, reason: 'superseded' });
+        expect(decideMergeDisputeRaise({ ...base, superseded: true, undone: true })).toEqual({ ok: false, reason: 'already_undone' });
+        expect(decideMergeDisputeRaise({ ...base, viewerOnSurvivorTeam: false, superseded: true })).toEqual({ ok: false, reason: 'not_found' });
+    });
+});
+
+describe('decideMergeDisputeResolution (D50)', () => {
+    it('only an admin, only while open: undo → undone, keep → kept', () => {
+        expect(decideMergeDisputeResolution({ status: 'open', actorIsAdmin: true, decision: 'undo' })).toEqual({ ok: true, nextStatus: 'undone' });
+        expect(decideMergeDisputeResolution({ status: 'open', actorIsAdmin: true, decision: 'keep' })).toEqual({ ok: true, nextStatus: 'kept' });
+        expect(decideMergeDisputeResolution({ status: 'open', actorIsAdmin: false, decision: 'undo' })).toEqual({ ok: false, reason: 'not_allowed' });
+        for (const status of ['kept', 'undone'] as const) {
+            expect(decideMergeDisputeResolution({ status, actorIsAdmin: true, decision: 'undo' })).toEqual({ ok: false, reason: 'not_open' });
+        }
+    });
+});
+
+describe('pairVerdict / mergeNeedsAdmins — one rule for every non-admin merge', () => {
+    const TEAM = ['me@example.com', 'mate@example.com'];
+    it("a decline of any teammate's request holds for the whole team; someone else's doesn't", () => {
+        expect(pairVerdict({ requests: [{ requesterEmail: 'Mate@Example.com', status: 'declined' }], disputes: [] }, TEAM))
+            .toEqual({ declinedForTeam: true, adminRuledSeparate: false });
+        expect(pairVerdict({ requests: [{ requesterEmail: 'other@example.com', status: 'declined' }], disputes: [] }, TEAM).declinedForTeam).toBe(false);
+    });
+
+    it('an admin-declined request or an undone dispute: ruled separate, for everyone; a kept dispute is not', () => {
+        expect(pairVerdict({ requests: [{ requesterEmail: 'other@example.com', status: 'admin_declined' }], disputes: [] }, TEAM).adminRuledSeparate).toBe(true);
+        expect(pairVerdict({ requests: [], disputes: [{ status: 'undone' }] }, TEAM).adminRuledSeparate).toBe(true);
+        expect(pairVerdict({ requests: [], disputes: [{ status: 'kept' }, { status: 'closed' }] }, TEAM).adminRuledSeparate).toBe(false);
+    });
+
+    it('needs the admins: ruled separate always; declined only when keeping the other team\'s profile', () => {
+        expect(mergeNeedsAdmins({ declinedForTeam: false, adminRuledSeparate: true }, true)).toBe(true);
+        expect(mergeNeedsAdmins({ declinedForTeam: true, adminRuledSeparate: false }, false)).toBe(true);
+        expect(mergeNeedsAdmins({ declinedForTeam: true, adminRuledSeparate: false }, true)).toBe(false);
+        expect(mergeNeedsAdmins({ declinedForTeam: false, adminRuledSeparate: false }, false)).toBe(false);
+    });
+});
+
+describe('keepByAge — the side a merge proposes to keep, on every screen', () => {
+    it('the profile loaded first', () => {
+        expect(keepByAge({ id: 'new', createdAt: 2000 }, { id: 'old', createdAt: 1000 }).id).toBe('old');
+        expect(keepByAge({ id: 'old', createdAt: 1000 }, { id: 'new', createdAt: 2000 }).id).toBe('old');
+    });
+    it('equal or unknown dates keep the second, as Pendientes always has', () => {
+        expect(keepByAge({ id: 'a', createdAt: 1000 }, { id: 'b', createdAt: 1000 }).id).toBe('b');
+        expect(keepByAge({ id: 'a' }, { id: 'b', createdAt: null }).id).toBe('b');
+        expect(keepByAge({ id: 'a' }, { id: 'b', createdAt: 5 }).id).toBe('a');
     });
 });

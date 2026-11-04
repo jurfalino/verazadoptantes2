@@ -11,11 +11,10 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
+import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 import { safeError } from '@/lib/interviews/safeError';
 import { rowsAffected } from '@/lib/interviews/rowsAffected';
 import { adopterEvents, adopters, interviews } from '@/db/schema';
-import { deserializeHouseholdMembers } from '@/lib/householdMembers';
-import { normalizeText } from '@/lib/tokenizer';
 import { buildContactEntries } from '@/lib/contactEntries';
 import { contactKey, deriveKnownFacts } from '@/domain/interview/facts';
 import { QUESTION_BANK } from '@/domain/interview/bank';
@@ -39,8 +38,21 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
         if (s.conductedBy !== actor) return { ok: false, error: 'forbidden' };
         if (s.status === 'completed' && s.adopterId) return { ok: true, adopterId: s.adopterId };
 
-        const { adopterId: target, rating, summary } = parsed.data;
+        const { rating, summary } = parsed.data;
+        let target = parsed.data.adopterId;
         if (target !== 'new' && !s.candidateIds.includes(target)) return { ok: false, error: 'forbidden' };
+        // A candidate merged into another profile while the interview was open: save onto
+        // the profile that absorbed it (it already holds that candidate's data).
+        if (target !== 'new' && !s.adopterId) {
+            const survivorId = await resolveMergedAdopterId(target).catch((e) => {
+                logger.warn('interviews.complete: merge lookup failed', { interviewId: id, adopterId: target, error: e instanceof Error ? e.message : String(e) });
+                return null;
+            });
+            if (survivorId) {
+                logger.info('interviews.complete: target was merged, saving to its survivor', { interviewId: id, adopterId: target, survivorId });
+                target = survivorId;
+            }
+        }
 
         // An existing target must still be a live profile: a merged (soft-deleted) one would
         // receive contacts and an observation nobody sees. Checked before any write.
@@ -62,8 +74,10 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
             ...known.socials.map(v => `social:${contactKey('social', v)}`),
         ]);
         const contacts = parsed.data.additions.contacts.filter(c => knownKeys.has(`${c.type}:${contactKey(c.type, c.value)}`));
-        const household = parsed.data.additions.household.filter(h =>
-            known.household.some(k => k.name === h.name.trim() && k.relationship === h.relationship));
+        // Each addition keeps its position in the input: the membership's source key, stable across retries.
+        const household = parsed.data.additions.household
+            .map((h, index) => ({ ...h, index }))
+            .filter(h => known.household.some(k => k.name === h.name.trim() && k.relationship === h.relationship));
         const address = parsed.data.additions.address && known.address === parsed.data.additions.address.trim() ? known.address : null;
         const entriesJson = () => JSON.stringify(buildContactEntries({
             phones: contacts.filter(c => c.type === 'phone').map(c => c.value),
@@ -72,7 +86,6 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
         }));
 
         const { saveAdopter, appendToExistingAdopter } = await import('./adopters');
-        const { addHouseholdMember } = await import('./householdMembers');
         const { saveAdoption } = await import('./adoptions');
 
         // A retry must resolve to the profile this interview already chose.
@@ -104,14 +117,19 @@ export async function completeInterview(interviewId: string, input: CompleteInpu
                     const r = await appendToExistingAdopter(adopterId, { contactEntries: entriesJson(), ...(address ? { addressInfo: address } : {}) });
                     if (!r.success) logger.warn('interviews.complete: append refused', { interviewId: id, adopterId, error: r.error });
                 }
-                // addHouseholdMember always appends, so a retry must skip people already there.
-                const rawRow = created ? null : await db.select({ hm: adopters.householdMembers }).from(adopters).where(eq(adopters.id, adopterId)).get();
-                const present = deserializeHouseholdMembers(rawRow?.hm ?? null);
-                const have = (h: { name: string; relationship: string | null }) =>
-                    present.some(m => normalizeText(m.name.trim()) === normalizeText(h.name.trim()) && m.relationship === h.relationship);
-                for (const h of household.filter(h => !have(h))) {
-                    const r = await addHouseholdMember({ adopterId, name: h.name, relationship: h.relationship });
-                    if (!r.ok) logger.warn('interviews.complete: household add refused', { interviewId: id, adopterId, error: r.error });
+                // Households as profiles: each person becomes a profile (owned by the profile's
+                // owner) in this profile's household. No duplicate check (nobody to answer it);
+                // someone of the same name already in that household is not added again, and a
+                // retry finds each membership by its source key.
+                if (household.length) {
+                    const { attachHouseholdPeople } = await import('@/lib/householdPeople');
+                    const res = await attachHouseholdPeople(db, {
+                        anchorAdopterId: adopterId,
+                        people: household.map(h => ({ name: h.name.trim(), relationship: h.relationship, index: h.index })),
+                        actor, ownerEmail: owner ?? actor, sourceKey: `interview:${id}`, requestId: id,
+                    });
+                    const failed = res.skipped.filter(s => s.reason === 'failed');
+                    if (failed.length) logger.warn('interviews.complete: household people not all added', { interviewId: id, adopterId, failed: failed.length });
                 }
             }
         }

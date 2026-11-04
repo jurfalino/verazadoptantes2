@@ -39,3 +39,27 @@ export function scanRetryDelayMs(failures: number, retryInMs?: number): number |
     if (typeof retryInMs === 'number' && retryInMs > 0) return Math.min(retryInMs + 1000, MAX_LOCK_WAIT_MS);
     return backoff;
 }
+
+/**
+ * Batch sizes for «Scan Now» (Admin → Duplicates). The page loops one POST per
+ * batch until the route answers `done`.
+ *
+ * - `SCAN_BATCH_MAX`: the most records one call may re-tokenize (`?limit=` is
+ *   clamped to it).
+ * - `SCAN_PAGE_LIMIT`: what the page asks for. Writes go out in grouped D1
+ *   batches, so a call's cost is mostly its fixed reads (every live profile,
+ *   the adoptions view, the gift forms); a bigger batch amortizes them.
+ * - `SCAN_MAX_BATCHES`: a safety stop for the page's loop. The real guard is
+ *   «no forward progress» (the page stops when `remaining` does not fall); this
+ *   only stops a runaway. It must never cut a real scan short: the households
+ *   release needed ~239 batches of 25 (≈6,000 stale profiles) and the old stop
+ *   was 200, so one click never finished.
+ */
+export const SCAN_BATCH_MAX = 200;
+export const SCAN_PAGE_LIMIT = 100;
+export const SCAN_MAX_BATCHES = 500;
+
+/** A scan id the page sends with every batch of one «Scan Now» (`?scan=`); anything else is ignored. */
+export function validScanId(raw: string | null | undefined): string | null {
+    return raw && /^[A-Za-z0-9-]{8,64}$/.test(raw) ? raw : null;
+}

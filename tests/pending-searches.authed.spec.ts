@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * ENABLE_PENDING_SEARCHES: the homepage asks what came of the searches that
@@ -21,13 +21,6 @@ const ADOPTER = 'test-adopter-1';
 /** The adopter the two "Maria" searches resolve to, and the unmatched search. */
 const KNOWN = 'María García López';
 const UNKNOWN = 'Fulano Inexistente 11-5556666';
-
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
 
 /**
  * Reload the homepage until the deck matches what the flag was just set to.

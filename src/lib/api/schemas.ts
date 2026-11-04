@@ -10,6 +10,7 @@ import { isFullName, isUsableDocumentId } from '@/domain/apiExactMatch';
 import { readPhones } from '@/domain/phoneNumber';
 import { API_EMAIL_RE } from '@/domain/apiPersonCleanup';
 import { normalizeSpecies } from '@/domain/importRow';
+import { detectSocialPlatformFromValue, isUnusableSocialHandle, normalizeSocialHandle } from '@/lib/tokenizer';
 
 /** Activity types that place the animal with the person (they create it in the rescue's list). */
 export const PLACEMENT_TYPES: readonly string[] = [RECORD_TYPES.ADOPTION, RECORD_TYPES.FOSTER];
@@ -42,8 +43,35 @@ const personSchema = z.object({
         platform: z.enum(SOCIAL_PLATFORMS_API),
         handle: z.string().trim().min(1).max(200).meta({ example: '@mariajose' }),
     }).strict()).max(10).optional()
-        .meta({ description: 'Used by fuzzy search. Accepted but not used to decide an exact match.' }),
+        .meta({ description: 'Social network accounts. In exact mode an account counts as an identifier, like an email or a phone; a display name with spaces ("Ana Perez") is kept as text but identifies nobody.' }),
 }).strict();
+
+/**
+ * The account a social entry names, as the token index stores it (`social_handle`,
+ * src/lib/tokenizer.ts: the entry's platform, or the one its link shows when `other`).
+ * null: no account (a display name, a bare domain) — it identifies nobody.
+ */
+export function apiSocialHandle(s: { platform: string; handle: string }): string | null {
+    const platform = s.platform && s.platform !== 'other' ? s.platform : detectSocialPlatformFromValue(s.handle);
+    const h = normalizeSocialHandle(s.handle, platform);
+    // The index keeps a bare Facebook value as typed ("no", "-", "x"); as an identifier the API
+    // applies every platform the same floor (3 characters, the page-type stoplist).
+    return h === null || isUnusableSocialHandle(h) ? null : h;
+}
+
+/** At most this many social accounts of one call are looked up (each is one D1 query). */
+export const MAX_SOCIAL_LOOKUPS = 3;
+
+/** The accounts of `socials` (display names left out), distinct, the first MAX_SOCIAL_LOOKUPS. */
+export function apiSocialHandles(socials: Array<{ platform: string; handle: string }> | undefined): string[] {
+    const out: string[] = [];
+    for (const s of socials ?? []) {
+        const h = apiSocialHandle(s);
+        if (h && !out.includes(h)) out.push(h);
+        if (out.length === MAX_SOCIAL_LOOKUPS) break;
+    }
+    return out;
+}
 
 /** formContent: any JSON object, as the rescue's own form produced it. */
 export const FORM_CONTENT_MAX_BYTES = 50_000;
@@ -92,7 +120,7 @@ export const searchRequestSchema = z.object({
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
 
 export type ApiErrorCode =
-    | 'invalid_json' | 'invalid_request' | 'unauthorized' | 'forbidden' | 'not_found'
+    | 'invalid_json' | 'body_unreadable' | 'invalid_request' | 'unauthorized' | 'forbidden' | 'not_found'
     | 'full_name_required' | 'exact_requires_name_and_identifier' | 'invalid_phone'
     | 'invalid_document_id' | 'invalid_email' | 'fuzzy_requires_a_field'
     | 'activity_requires_exact' | 'activity_required' | 'external_id_required' | 'form_content_requires_adoption_request'
@@ -105,7 +133,7 @@ export type ApiErrorCode =
 /** Every error code a partner can get, published in the docs so clients can switch on them. */
 export type PublicApiErrorCode = ApiErrorCode;
 export const API_ERROR_CODES: PublicApiErrorCode[] = [
-    'invalid_json', 'invalid_request', 'unauthorized', 'forbidden', 'not_found',
+    'invalid_json', 'body_unreadable', 'invalid_request', 'unauthorized', 'forbidden', 'not_found',
     'full_name_required', 'exact_requires_name_and_identifier', 'invalid_phone',
     'invalid_document_id', 'invalid_email', 'fuzzy_requires_a_field',
     'activity_requires_exact', 'activity_required', 'external_id_required', 'form_content_requires_adoption_request',
@@ -132,8 +160,8 @@ export function checkSearchRules(req: SearchRequest): RuleProblem[] {
     }
     const a = req.activity;
     if (req.mode === 'exact') {
-        if (!p.fullName || !(p.email || p.phone || p.documentId)) {
-            add('exact_requires_name_and_identifier', p.fullName ? 'person' : 'person.fullName', 'exact mode needs person.fullName plus person.email, person.phone or person.documentId');
+        if (!p.fullName || !(p.email || p.phone || p.documentId || (p.socials ?? []).some(x => apiSocialHandle(x) !== null))) {
+            add('exact_requires_name_and_identifier', p.fullName ? 'person' : 'person.fullName', 'exact mode needs person.fullName plus person.email, person.phone, person.documentId or a social account in person.socials');
         } else if (!isFullName(p.fullName)) add('full_name_required', 'person.fullName', 'person.fullName must be a first name and surname (not an email, a phone number or a single word)');
         // An exact call always saves (Jon, 2026-10-17): to look someone up, use fuzzy.
         if (!a) add('activity_required', 'activity', 'an exact call always saves an activity; to look someone up without saving anything, use mode "fuzzy"');
@@ -185,9 +213,11 @@ export type ApiAlert = z.infer<typeof alertSchema>;
 export const profileSummarySchema = ratingSchema.extend({
     profileId: z.string(),
     url: z.string().meta({ description: 'The profile page. Opens for logged-in BuenAdoptante users, with their own access rules.' }),
-    matchedOn: z.array(z.enum(['email', 'phone', 'documentId'])).optional(),
-    nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional(),
-    flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs).' }),
+    matchedOn: z.array(z.enum(['email', 'phone', 'documentId', 'social'])).optional()
+        .meta({ description: 'Which of the identifiers you sent this profile holds. social: one of the accounts in person.socials.' }),
+    nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional()
+        .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). household_member is no longer returned: each person in a household is a profile of their own.' }),
+    flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs). duplicate is an open report only: once the two profiles are merged or kept separate it is no longer listed.' }),
     alerts: z.array(alertSchema).meta({ description: 'Activity alerts BuenAdoptante computed for this person: too_many_requests, too_many_adoptions. Empty when none.' }),
     records: z.partialRecord(z.enum(API_CONTEXTS), z.number().int()).meta({ description: 'Number of records per type.' }),
     lastRecordAt: z.string().nullable().meta({ description: 'Date (YYYY-MM-DD, UTC) of the latest record.' }),
@@ -203,8 +233,8 @@ export type SaveAction = typeof SAVE_ACTIONS[number];
 const savedSchema = z.object({
     action: z.enum(SAVE_ACTIONS).meta({
         description: 'added_to_profile: the activity went on the person found. created_profile: nobody had that data, a new profile was created with the activity. ' +
-            'added_to_best_match: several profiles fit the name, it went on the best match. created_profile_for_review: the email / phone / document belongs to someone with another name, ' +
-            'so a new profile was created and an admin reviews it as a possible duplicate. nothing_saved: a look-up without activity, or a dry run.',
+            'added_to_best_match: several profiles fit the name, it went on the best match. created_profile_for_review: the email / phone / document belongs to someone with another name, or is placeholder / widely shared data, ' +
+            'so a new profile was created; when an existing profile may be the same person, the pair is marked for an admin to review as a possible duplicate (placeholder data alone pairs nobody). nothing_saved: a look-up without activity, or a dry run.',
     }),
     dryRun: z.literal(true).optional().meta({ description: 'X-Dry-Run (staging only): `action` is what the call WOULD have done; nothing was saved and there are no ids.' }),
     activityId: z.string().optional().meta({ description: 'The saved activity (use it to attach a contract or void it). Absent when nothing was saved.' }),
@@ -238,7 +268,7 @@ export interface SavedActivity { activityId: string; activityUrl: string; profil
 
 const riskSchema = z.object({
     worstRating: ratingSchema,
-    flags: z.array(z.enum(RISK_FLAGS)).meta({ description: 'Every negative mark on any matched profile: inaccurate, duplicate, possible_duplicate.' }),
+    flags: z.array(z.enum(RISK_FLAGS)).meta({ description: 'Every negative mark on any matched profile: inaccurate, duplicate (an open report only), possible_duplicate.' }),
     alerts: z.array(alertSchema.extend({ profileId: z.string() })).meta({ description: 'Every activity alert of any matched profile (too_many_requests, too_many_adoptions), with the profile it belongs to.' }),
     profilesMatched: z.number().int(),
 }).meta({ description: 'Always present: the worst signal across EVERY profile your email / phone / document matched, whatever the result. Check this before handing over an animal.' });
@@ -247,7 +277,7 @@ export type ApiRisk = z.infer<typeof riskSchema>;
 export const warningSchema = z.object({
     field: z.string().meta({ example: 'person.phone' }),
     code: z.enum(['value_dropped', 'value_cleaned']),
-    reason: z.enum(['not_an_email', 'not_a_phone', 'no_account', 'first_valid_email', 'phone_numbers_only']),
+    reason: z.enum(['not_an_email', 'not_a_phone', 'no_account', 'not_a_social_profile', 'first_valid_email', 'phone_numbers_only']),
     message: z.string(),
 }).meta({ description: 'value_dropped: the value was not usable and was not saved (the rest was). value_cleaned: only the usable part was kept (the first valid email; the phone numbers without the note).' });
 export type ApiWarning = z.infer<typeof warningSchema>;
@@ -259,10 +289,10 @@ export const exactResponseSchema = z.object({
     profile: profileSummarySchema.optional().meta({ description: 'match = found. Describes the person BEFORE anything saved by this call.' }),
     otherMatches: z.array(z.object({ profileId: z.string(), url: z.string() })).optional()
         .meta({ description: 'match = found: other profiles the same email / phone / document also belongs to, under an unrelated name (e.g. a shared family phone). Their ratings and alerts are in `risk`. Check them before deciding.' }),
-    reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'match = ambiguous. multiple_profiles: several profiles fit the name. name_mismatch: the email / phone / document belongs to someone with another name.' }),
+    reason: z.enum(['multiple_profiles', 'name_mismatch']).optional().meta({ description: 'match = ambiguous. multiple_profiles: several profiles fit the name. name_mismatch: the email / phone / document belongs to someone with another name. Placeholder or widely shared data (a 00000000 document, an email on more than 3 differently-named profiles) links nobody.' }),
     candidates: z.array(z.object({
         profileId: z.string(), url: z.string(),
-        nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does.' }),
+        nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).nullable().meta({ description: 'Which of the profile\'s names fits the name you sent; null when none does. household_member is no longer returned: each person in a household is a profile of their own.' }),
     })).optional().meta({ description: 'match = ambiguous: the profiles the email / phone / document belongs to. Their ratings and alerts are in `risk`.' }),
     risk: riskSchema,
     saved: savedSchema.meta({ description: 'Always present: what this call did.' }),

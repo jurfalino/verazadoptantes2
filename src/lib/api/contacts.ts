@@ -6,7 +6,8 @@
  * notification. Voiding the call takes them back off (removeApiContacts).
  *
  * Only when the name matched the profile itself: a phone that matched through
- * an alias or a household member belongs to someone else. Server-only.
+ * an alias may belong to someone else (a housemate is a profile of its own
+ * now, matched on its own name). Server-only.
  */
 import { adopterHistory } from '@/db/schema';
 import { logger } from '@/lib/logger';

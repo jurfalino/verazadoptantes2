@@ -10,6 +10,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, checkIsAdmin, checkIsAdminAsync } from './_db';
 import { deleteAdopterRecords } from './_recordWrite';
 import { runAfterResponse } from '@/lib/background';
+import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 
 export interface AdminQueryResult {
     rows?: unknown[];
@@ -137,7 +138,7 @@ export async function resolveDataRequest(id: string, action: 'resolved' | 'rejec
             // record is hidden from search, dedup and its profile, and can be
             // restored or permanently purged from /admin/deleted. (Was a hard
             // delete in v2.19.72.)
-            await softDeleteAdopter(db, reqRow.adopterId);
+            await softDeleteAdopter(db, reqRow.adopterId, session.user.email);
             deletedAdopter = true;
         }
 
@@ -197,6 +198,15 @@ export async function deleteAdopter(adopterId: string) {
 
         // 8. Delete Adopter
         await db.delete(adopters).where(eq(adopters.id, adopterId));
+        await closeRequestsForDeletedAdopter(db, adopterId, session.user.email);
+
+        // 9. Households as profiles: the person leaves the households they lived in (as deleteOwnAdopter).
+        try {
+            const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
+            await dropMembershipsOfDeletedProfile(db, adopterId);
+        } catch (e) {
+            logger.warn('deleteAdopter (admin): household memberships of the deleted profile not removed (readers skip them)', { adopterId, actorEmail: session.user.email, error: e instanceof Error ? e.message : String(e) });
+        }
 
         logger.info('Adopter deleted', { adopterId, deletedBy: session.user.email });
         logAudit({ userEmail: session.user.email || undefined, action: 'adopter_deleted', target: adopterId });
@@ -216,10 +226,12 @@ export async function deleteAdopter(adopterId: string) {
  * keeping the row for restore. Mirrors the merge soft-delete (duplicates.ts:180):
  * set deletedAt + a tokenHash marker and drop the dedup tokens.
  */
-async function softDeleteAdopter(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string) {
+async function softDeleteAdopter(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string, actor: string) {
     const { duplicateTokens } = await import('@/db/schema');
     await db.update(adopters).set({ deletedAt: new Date(), tokenHash: 'DELETED' }).where(eq(adopters.id, adopterId));
     await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
+    // A restore does not reopen them: whoever still wants the merge asks again.
+    await closeRequestsForDeletedAdopter(db, adopterId, actor);
 }
 
 /** List all soft-deleted adopters (merges + deletion-requests) for /admin/deleted. */
@@ -451,8 +463,17 @@ export async function purgeAllData(confirmationCode: string) {
         // 6. Delete searches
         await db.delete(searches);
 
-        // 7. Delete adopters
+        // 7. Delete adopters, and the merge requests between them
         await db.delete(adopters);
+        const { mergeRequests, households, householdMemberships, householdCorrections, householdConversions } = await import('@/db/schema');
+        await db.delete(mergeRequests);
+
+        // 8. Households (final fix D3): memberships, «No vive acá» corrections and
+        // the conversion ledger all name adopters that no longer exist.
+        await db.delete(householdMemberships);
+        await db.delete(householdCorrections);
+        await db.delete(households);
+        await db.delete(householdConversions);
 
         revalidatePath('/admin');
         revalidatePath('/');
@@ -792,7 +813,9 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
         // 4. Notify both parties after the response (kept alive by
         //    runAfterResponse, which also logs a module-load failure).
         await runAfterResponse('transferAdopterOwnership.notify', async () => {
-            const { createNotification } = await import('@/app/actions/notifications');
+            const [{ createNotification, resolveDisplayNames }, { notificationContent }] = await Promise.all([
+                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+            ]);
             const url = `/adopter/${adopterId}`;
             const targets = [from, normalizedTo].filter(e => e && e.includes('@') && e !== 'anonymous');
             // v2.19.23: include the adopter name in both notification bodies
@@ -800,14 +823,17 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
             // having to click through. "an adopter" was useless when an
             // admin transferred several in a sweep — the notifications all
             // looked identical.
-            const adopterLabel = current.name?.trim() || 'un adoptante';
+            // Rescuers read names, never addresses (resolveDisplayNames falls back to the handle).
+            const names = await resolveDisplayNames([actor, normalizedTo]);
+            const nameOf = (e: string) => names.get(e.toLowerCase().trim()) ?? e.split('@')[0];
+            const params = {
+                actorName: nameOf(actor), toName: nameOf(normalizedTo),
+                ...(current.name?.trim() ? { adopterName: current.name.trim() } : {}),
+            };
             await Promise.all(targets.map(email => createNotification({
                 userId: email,
                 type: 'ownership_transferred',
-                title: 'Cambio de propietario',
-                body: email === normalizedTo
-                    ? `Ahora sos el propietario de "${adopterLabel}" (transferido por ${actor}).`
-                    : `Un administrador transfirió "${adopterLabel}" a ${normalizedTo}.`,
+                ...notificationContent({ key: 'ownership_transferred', params: { ...params, role: email === normalizedTo ? 'to' : 'from' } }),
                 url,
             }).catch((e: unknown) => {
                 logger.warn('transferAdopterOwnership: createNotification failed', {

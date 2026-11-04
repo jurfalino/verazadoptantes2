@@ -7,10 +7,14 @@ import { revalidatePath } from 'next/cache';
 import { getDb, getUser } from './_db';
 import { addFormRequestRecord, SPECIES_LABELS, LIFE_STAGE_LABELS, INTENT_LABELS } from '@/lib/formRequest';
 import { mergeAdopters } from '@/lib/adopterMerge';
+import { refuseDisputedMerge } from '@/lib/pairVerdict';
 import { createNotification, resolveDisplayName } from './notifications';
+import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdmin } from '@/config/admins';
 import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';
+import { answerNoteLines } from '@/domain/formNotes';
 import { logger, generateErrorId } from '@/lib/logger';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 
 // ── Human-readable label helpers ──────────────────────────────────
 
@@ -79,17 +83,8 @@ export async function getFormSubmissionPrefill(submissionId: string): Promise<Fo
 
         if (row.answersJson) {
             try {
-                const answers = JSON.parse(row.answersJson) as Record<string, unknown>;
-                const keys = Object.keys(answers).filter(k => !['selfie', 'name', 'email', 'phone', 'address', 'latitude', 'longitude'].includes(k));
-                if (keys.length > 0) {
-                    const extra: string[] = [];
-                    for (const k of keys.slice(0, 15)) {
-                        const v = answers[k];
-                        if (v != null && v !== '' && typeof v !== 'object') extra.push(`${k}: ${String(v)}`);
-                        else if (typeof v === 'object' && v !== null && !Array.isArray(v)) extra.push(`${k}: ${JSON.stringify(v)}`);
-                    }
-                    if (extra.length > 0) notes += '\n\n' + extra.join('\n');
-                }
+                const extra = answerNoteLines(JSON.parse(row.answersJson) as Record<string, unknown>);
+                if (extra.length > 0) notes += '\n\n' + extra.join('\n');
             } catch (e) {
                 logger.warn('getFormSubmissionPrefill: answersJson parse failed', {
                     submissionId,
@@ -247,6 +242,8 @@ export async function linkFormToExistingAdopter(
     // Set once the claim below is held, so a throw can release it — otherwise
     // the form would answer every retry with 'busy'.
     let releaseClaim: (() => Promise<unknown>) | null = null;
+    // The merge's audit id when linking folded the form's profile in (the owner's notice links to a dispute).
+    let mergeAuditId: string | undefined;
     try {
         if (!submissionId?.trim() || !adopterId?.trim()) return { success: false, error: 'Missing submissionId or adopterId' };
         const db = await getDb();
@@ -258,6 +255,7 @@ export async function linkFormToExistingAdopter(
             selectedAnimalId: formSubmissions.selectedAnimalId,
             linkedAdopterId: formSubmissions.linkedAdopterId,
             autoAdopterId: formSubmissions.autoAdopterId,
+            intent: formSubmissions.intent,
         }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
         // The form-link owner, an org-mate of theirs, or an admin — the same
         // rule the page applies before rendering the cards (team applicants,
@@ -304,6 +302,15 @@ export async function linkFormToExistingAdopter(
             return { success: false, error: plan.reason };
         }
 
+        // The pair verdict every non-admin merge consults (D43, D49, D50): after
+        // a rejection or an admin's «separate» ruling, the admins decide — the
+        // rescuer asks them from the «Pendientes» row. Before the claim: nothing to release.
+        if (plan.op === 'merge' && await refuseDisputedMerge(db, { keepId: adopterId, absorbedId: plan.orphanId, actor: actorEmail })) {
+            const errorId = generateErrorId();
+            logger.warn('linkFormToExistingAdopter: refused, the admins decide this pair', { submissionId, adopterId, orphanId: plan.orphanId, actorEmail, errorId });
+            return { success: false, error: 'pair_disputed', errorId };
+        }
+
         if (plan.op === 'noop') {
             // Also heals a claim a crashed attempt left behind after its merge landed.
             await db.update(formSubmissions).set({ status: 'linked' })
@@ -338,11 +345,18 @@ export async function linkFormToExistingAdopter(
             // undone merge never leaves this request on the wrong person.
             await addFormRequestRecord(db, submissionId, plan.orphanId, actorEmail);
             const merged = await mergeAdopters(adopterId, plan.orphanId, actorEmail);
+            mergeAuditId = merged.auditId;
             if (!merged.success) {
                 await releaseClaim?.();
-                const errorId = logger.error('linkFormToExistingAdopter: merge failed', new Error(merged.error ?? 'merge failed'), {
-                    submissionId, adopterId, orphanId: plan.orphanId, actorEmail,
-                });
+                const ctx = { submissionId, adopterId, orphanId: plan.orphanId, actorEmail };
+                // A merge rule's refusal (household data not converted yet) is an expected answer the card
+                // explains — warn, not error.
+                if (merged.error === HOUSEHOLD_NOT_CONVERTED) {
+                    const errorId = generateErrorId();
+                    logger.warn('linkFormToExistingAdopter: merge refused', { ...ctx, reason: merged.error, errorId });
+                    return { success: false, error: merged.error, errorId };
+                }
+                const errorId = logger.error('linkFormToExistingAdopter: merge failed', new Error(merged.error ?? 'merge failed'), ctx);
                 return { success: false, error: merged.error, errorId };
             }
         }
@@ -375,7 +389,15 @@ export async function linkFormToExistingAdopter(
                 });
             }
 
-            await notifyProfileCreator(target, adopterId, submissionId, actorEmail);
+            await notifyProfileCreator(target, adopterId, submissionId, actorEmail, mergeAuditId);
+        }
+
+        // A gift form's recipient phone is indexed with the profile the form is linked to
+        // (src/lib/giftRecipients.ts): it moved, so both profiles re-index (tokenizeAdopter logs, never throws).
+        if (plan.op !== 'noop' && sub.intent === 'gift') {
+            const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+            await tokenizeAdopter(adopterId, { force: true });
+            if (sub.linkedAdopterId && sub.linkedAdopterId !== adopterId) await tokenizeAdopter(sub.linkedAdopterId, { force: true });
         }
 
         // 'link' writes the request here; after a merge it already arrived with
@@ -410,6 +432,8 @@ async function notifyProfileCreator(
     adopterId: string,
     submissionId: string,
     actorEmail: string,
+    /** Set when linking folded the form's own profile into this one (a merge the owner may dispute, D50). */
+    mergeAuditId?: string,
 ): Promise<void> {
     if (!target?.addedBy || target.addedBy === actorEmail || isAdmin(target.addedBy)) return;
     try {
@@ -420,11 +444,12 @@ async function notifyProfileCreator(
         await createNotification({
             userId: target.addedBy,
             type: 'form_attached',
-            title: `${actorName} vinculó una solicitud de adopción a tu perfil ${target.name}`,
-            body: 'Tocá para revisar.',
-            url: `/adopter/${adopterId}`,
+            ...notificationContent({ key: 'form_attached', params: { actorName, profileName: target.name, ...(mergeAuditId ? { disputable: '1' } : {}) } }),
+            // «¿No es la misma persona?» opens from here when the link was a merge (D50).
+            url: mergeAuditId ? `/adopter/${adopterId}?dispute=${encodeURIComponent(mergeAuditId)}` : `/adopter/${adopterId}`,
             icon: '📋',
-            metadata: { attachedBy: actorEmail, submissionId },
+            // Another rescuer's bell: the actor by name, never by email.
+            metadata: { attachedByName: actorName, submissionId, auditId: mergeAuditId ?? null },
         });
     } catch (e) {
         logger.warn('notifyProfileCreator: notification failed (non-blocking)', {

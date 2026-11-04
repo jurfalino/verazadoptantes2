@@ -11,6 +11,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
+import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 import { saveAdopterSchema } from './validation';
 import { z } from 'zod';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
@@ -18,10 +19,18 @@ import {
     deserializeContactEntries,
     contactEntriesToBlob,
     parseBlobToContactEntries,
-    mergeContactEntries,
+    foldContactEntries,
+    contactEntryKey,
+    stripRenameMarks,
+    contactCapExceeded,
+    contactEntriesJsonCount,
+    stripClientRenameMarksJson,
+    CONTACT_ENTRIES_FULL,
+    MAX_CONTACT_ENTRIES,
 } from '@/lib/contactEntries';
+import { sameName } from '@/domain/profileIdentity';
 import { canEditAdopterRecord, maskAdopterContact, redactHistoryChanges, renderName } from '@/lib/piiAccess';
-import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
+import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 import { deleteAdopterRecords } from '@/app/actions/_recordWrite';
 import { runAfterResponse } from '@/lib/background';
 
@@ -60,7 +69,9 @@ async function getAdopterImpl(id: string) {
             const maskOpts = await buildMaskOptions(adopter);
             const fullyVisible = visibility.nothingMasked || !!maskOpts.adopterIsPublic;
             if (!fullyVisible) {
-                const masked = maskAdopterContact(adopter, visibility, maskOpts);
+                // viewerEmail: household members this viewer added keep their name and
+                // carry `own: true`, as do the entries they added (D54).
+                const masked = maskAdopterContact(adopter, visibility, { ...maskOpts, viewerEmail: user });
                 adopter.contactInfo = masked.contactInfo;
                 adopter.contactEntries = masked.contactEntries;
                 adopter.addressInfo = masked.addressInfo;
@@ -69,10 +80,11 @@ async function getAdopterImpl(id: string) {
                 // familyMembers → hidden (PII).
                 adopter.name = renderName(adopter.name, visibility, undefined, maskOpts);
                 adopter.familyMembers = null;
-                // Household masking is now part of maskAdopterContact (above).
-                adopter.householdMembers = masked.householdMembers;
             }
         }
+        // Households as profiles: the old household JSON is never shown or edited
+        // any more (the page reads src/lib/households.ts), so it never leaves the server.
+        adopter.householdMembers = null;
         return adopter;
     } catch (error) {
         logger.error('Get adopter failed', error, { adopterId: id });
@@ -93,8 +105,19 @@ async function getAdopterImpl(id: string) {
  */
 export async function appendToExistingAdopter(
     targetId: string,
-    fields: { contactInfo?: string; contactEntries?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string },
+    fields: {
+        contactInfo?: string; contactEntries?: string; addressInfo?: string; familyMembers?: string; sourceUrl?: string;
+        /**
+         * The import wizard's "público" switch was on for a post from a public
+         * source. Stamps the incoming entries public under the same rule the
+         * create path uses (needs a sourceUrl and ENABLE_PUBLIC_PROFILES). Merged
+         * contacts used to land protected whatever the switch said (audit D8).
+         */
+        publicSource?: boolean;
+    },
 ): Promise<{ success: boolean; adopterId?: string; error?: string }> {
+    // Client JSON: rename marks off FIRST (never counted or read as exempt from the cap).
+    if (fields && typeof fields.contactEntries === 'string') fields = { ...fields, contactEntries: stripClientRenameMarksJson(fields.contactEntries) };
     try {
         if (!targetId) return { success: false, error: 'Missing target adopter id' };
 
@@ -121,6 +144,9 @@ export async function appendToExistingAdopter(
             return { success: false, error: 'Not authorized to modify this adopter' };
         }
 
+        const stampPublic = !!fields.publicSource && !!fields.sourceUrl?.trim()
+            && await isPublicProfilesEnabled();
+
         const appendIfNew = (existing: string | null, incoming: string | undefined): string | null => {
             if (!incoming || !incoming.trim()) return existing;
             const trimmed = incoming.trim();
@@ -141,15 +167,28 @@ export async function appendToExistingAdopter(
             // the caller sends contactEntries; fall back to the legacy blob append
             // for callers that only send a contactInfo string.
             if (fields.contactEntries) {
-                const incoming = deserializeContactEntries(fields.contactEntries);
+                const parsed = stripRenameMarks(deserializeContactEntries(fields.contactEntries));
+                const incoming = stampPublic ? parsed.map(e => ({ ...e, isPublic: true })) : parsed;
                 if (incoming.length) {
                     const targetEntries = deserializeContactEntries(row.contactEntries);
                     const base = targetEntries.length ? targetEntries : parseBlobToContactEntries(row.contactInfo);
-                    const merged = mergeContactEntries(base, incoming);
-                    if (merged.length !== base.length) {
+                    // The same rule as the «Se agregará» preview (newContactsForProfile →
+                    // contactMatchKeys): a typed contact the profile already has in another
+                    // format is not stored twice.
+                    // A third party's typed contact never changes the visibility of the profile's own entry.
+                    const merged = foldContactEntries(base, incoming, { stricterVisibility: false });
+                    // S1: never grow past the cap (a later read would truncate it).
+                    if (merged.length !== base.length && (contactCapExceeded(merged) || contactEntriesJsonCount(fields.contactEntries) > MAX_CONTACT_ENTRIES)) return { result: { [CONTACT_ENTRIES_FULL]: '1' } };
+                    // A same-contact copy may only add its phone apps to an existing entry: still a write.
+                    if (merged.length !== base.length || JSON.stringify(merged) !== JSON.stringify(foldContactEntries(base, [], { stricterVisibility: false }))) {
                         updates.contactEntries = JSON.stringify(merged);
                         updates.contactInfo = contactEntriesToBlob(merged) || null;
-                        appendedFields.contactInfo = contactEntriesToBlob(incoming);
+                        // The history names only what was really added (not copies folded into an existing entry).
+                        // An entry that was already there (by id, or — a legacy entry without one — by key) is not «added».
+                        const baseIds = new Set(base.map(e => e.id).filter(Boolean));
+                        const baseKeys = new Set(base.map(contactEntryKey));
+                        const added = merged.filter(e => !(e.id && baseIds.has(e.id)) && !baseKeys.has(contactEntryKey(e)));
+                        if (added.length) appendedFields.contactInfo = contactEntriesToBlob(added);
                     }
                 }
             } else {
@@ -172,6 +211,10 @@ export async function appendToExistingAdopter(
         }, { op: 'appendToExistingAdopter', actorEmail });
         if (outcome.status === 'missing') return { success: false, error: 'Target adopter not found' };
         if (outcome.status === 'busy') return { success: false, error: `Failed to append (Error ID: ${outcome.errorId})` };
+        if (!outcome.wrote && outcome.result[CONTACT_ENTRIES_FULL]) {
+            logger.info('appendToExistingAdopter: refused — the profile holds the maximum number of contact entries', { adopterId: targetId, actorEmail });
+            return { success: false, error: CONTACT_ENTRIES_FULL };
+        }
         // Idempotent no-op — everything the user typed was already on the target.
         if (!outcome.wrote) return { success: true, adopterId: targetId };
         const appendedFields = outcome.result;
@@ -245,8 +288,13 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
     // Derive the contactInfo blob from structured entries when the caller
     // provides them, so the blob (read by LIKE search, the tokenizer and the
     // profile display) stays consistent with contactEntries.
+    // S1: a list past the cap is refused (after the session check), never stored for a later read to truncate.
+    // Client JSON: rename marks off FIRST, so no forged mark is counted or read as exempt.
+    data.contactEntries = stripClientRenameMarksJson(data.contactEntries);
+    const overCap = contactEntriesJsonCount(data.contactEntries) > MAX_CONTACT_ENTRIES;
     if (data.contactEntries !== undefined && data.contactEntries !== null) {
-        const entries = deserializeContactEntries(data.contactEntries);
+        // Client JSON: only the server's rename code may mark a rename alias.
+        const entries = stripRenameMarks(deserializeContactEntries(data.contactEntries));
         data.contactEntries = entries.length ? JSON.stringify(entries) : null;
         data.contactInfo = contactEntriesToBlob(entries) || null;
     }
@@ -261,6 +309,11 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
         const errorId = generateErrorId();
         logger.warn('saveAdopter: refused — no session', { adopterId: data?.id, errorId });
         throw new Error(`Authentication required (Error ID: ${errorId})`);
+    }
+    if (overCap) {
+        const errorId = generateErrorId();
+        logger.info('saveAdopter: refused — more contact entries than a profile holds', { adopterId: data.id || null, changedBy, errorId });
+        return { success: false, error: CONTACT_ENTRIES_FULL, errorId };
     }
 
     try {
@@ -314,7 +367,42 @@ export async function saveAdopter(data: SaveAdopterInput, opts?: { loaded?: Part
             // fields this editor CHANGED are written, each only if nobody
             // changed it since the form loaded (`opts.loaded`). Callers without
             // `loaded` keep the old behaviour (write what differs).
-            return await updateAdopterFields(db, existing, data, opts?.loaded, changedBy);
+            // A NAME change is a rename, whoever makes it and from wherever (households as
+            // profiles): the old name stays as a rename alias, the history row is a
+            // `name_changed`, and the owner team hears about it when it comes from outside.
+            // Same compare-and-set rules as the other fields: written only if the editor
+            // changed it and nobody else did since `loaded`.
+            const loadedIn = opts?.loaded ? { ...opts.loaded } : undefined;
+            const renamed: { saved: string[]; conflicts: AdopterFieldConflict[] } = { saved: [], conflicts: [] };
+            if (data.name !== undefined) {
+                const hasLoaded = !!loadedIn && 'name' in loadedIn;
+                const base = hasLoaded ? (loadedIn!.name ?? null) : existing.name;
+                if (!sameName(data.name, base)) {
+                    const { renameProfile, notifyProfileRenamed } = await import('@/lib/profileIdentity');
+                    const res = await renameProfile(db, { adopterId: existing.id, name: data.name ?? '', expectedName: hasLoaded ? base : undefined, actor: changedBy });
+                    if (res.status === 'busy') return { success: false, error: 'busy', errorId: res.errorId };
+                    if (res.status === 'missing') throw new Error('Adopter disappeared during save');
+                    if (res.status === 'conflict') {
+                        const by = (await adopterFieldAuthors(db, existing.id, ['name'])).name ?? '';
+                        renamed.conflicts.push({ field: 'name', by, value: res.theirs });
+                    } else {
+                        renamed.saved.push('name');
+                        if (res.status === 'renamed') {
+                            await notifyProfileRenamed(db, { adopterId: existing.id, actor: changedBy, ownerEmail: res.ownerEmail, from: res.from, to: res.to, historyId: res.historyId });
+                        }
+                    }
+                    // Handled here: never compared again below.
+                    if (loadedIn) delete loadedIn.name;
+                }
+                delete (data as Record<string, unknown>).name;
+            }
+            const rest = await updateAdopterFields(db, existing, data, loadedIn, changedBy);
+            if (!rest.success) return rest;
+            return {
+                ...rest,
+                saved: [...renamed.saved, ...(rest.saved ?? [])],
+                conflicts: [...renamed.conflicts, ...(rest.conflicts ?? [])],
+            };
         } else {
             // Create. The id is always minted here: a client-chosen id is never
             // trusted (the form sends '' for a new profile).
@@ -570,9 +658,10 @@ export async function getAverageRating(adopterId: string): Promise<number | null
 
         const { adoptions } = await import('@/db/schema');
         const result = await db.select({
+            // rating > 0 — null and 0 mean "not rated" (src/domain/ratings.ts computeAvgRating).
             avgRating: sql<number>`AVG(${adoptions.rating})`
         }).from(adoptions).where(
-            eq(adoptions.adopterId, adopterId)
+            and(eq(adoptions.adopterId, adopterId), sql`${adoptions.rating} > 0`)
         ).get();
 
         return result?.avgRating ?? null;
@@ -672,6 +761,18 @@ export async function checkAdopterDeletable(adopterId: string) {
     }
 }
 
+/** After a profile row is deleted for good: its ordinary household memberships go too (logged, never thrown). */
+async function dropHouseholdRows(adopterId: string, actorEmail: string): Promise<void> {
+    try {
+        const db = await getDb();
+        if (!db) return;
+        const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
+        await dropMembershipsOfDeletedProfile(db, adopterId);
+    } catch (e) {
+        logger.warn('deleteAdopter: household memberships of the deleted profile not removed (readers skip them)', { adopterId, actorEmail, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
 export async function deleteOwnAdopter(adopterId: string) {
     try {
         const db = await getDb();
@@ -732,6 +833,10 @@ export async function deleteOwnAdopter(adopterId: string) {
         ]);
 
         await db.delete(adopters).where(eq(adopters.id, adopterId));
+        await closeRequestsForDeletedAdopter(db, adopterId, user);
+        // Households as profiles: once the row is gone, the person leaves the households they lived in
+        // («deja de figurar en el hogar»). A failure only leaves rows every reader already skips.
+        await dropHouseholdRows(adopterId, user);
 
         logger.info('Adopter deleted by owner', { adopterId, deletedBy: user });
         logAudit({ userEmail: user, action: 'adopter_deleted', target: adopterId });
@@ -781,13 +886,14 @@ export async function requestAdopterDeletion(adopterId: string) {
 
         // Notify admins (after the response, kept alive — see src/lib/background.ts)
         await runAfterResponse('requestAdopterDeletion.notifyAdmins', async () => {
-            const { notifyAdmins, resolveDisplayName } = await import('@/app/actions/notifications');
+            const [{ notifyAdmins, resolveDisplayName }, { notificationContent }] = await Promise.all([
+                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+            ]);
             const displayName = await resolveDisplayName(user);
             await notifyAdmins({
                 actorEmail: user,
                 type: 'deletion_request',
-                title: '🗑️ Solicitud de eliminación',
-                body: `${displayName} solicitó eliminar un registro de adoptante.`,
+                ...notificationContent({ key: 'deletion_request', params: { requesterName: displayName } }),
                 url: '/admin/data-requests',
                 icon: '🗑️',
                 metadata: { adopterId },

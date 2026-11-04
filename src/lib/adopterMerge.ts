@@ -10,17 +10,29 @@
  *   - mergePendingDedupPair — the session-checked action PendingDedup uses.
  */
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions } from '@/db/schema';
-import { eq, or, and, gt, ne, sql } from 'drizzle-orm';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions, piiAccessGrants } from '@/db/schema';
+import { eq, or, and, gt, ne, sql, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
-import { deserializeContactEntries, mergeContactEntries } from '@/lib/contactEntries';
-import { deserializeHouseholdMembers, serializeHouseholdMembers, mergeHouseholdMembers, mergeHouseholdMembersTracked, undoHouseholdMerge } from '@/lib/householdMembers';
+import { deserializeContactEntries, foldContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
+import { knownAsNames, preserveRenameAliases, withRenameAliases } from '@/domain/profileIdentity';
+import { deserializeHouseholdMembers, serializeHouseholdMembers, undoHouseholdMerge } from '@/lib/householdMembers';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
-import { MERGED_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
+import { MERGED_FLAG_DETAILS_PREFIX, mergeOwnersToTell } from '@/domain/dedupPair';
+import { closeRequestsForAdopter } from '@/lib/mergeRequestClose';
+import { mergeSideParams } from '@/lib/mergeNotificationSides';
+import { notificationContent } from '@/domain/notificationTemplates';
+import { rowsAffected } from '@/lib/interviews/rowsAffected';
+import { historyKindForOwner } from '@/lib/profilePrivilege';
+import { relinkRestoredHost, restoreHouseholdLinks, type MovedHouseholdLink, type MovedHouseholdLinkCorrection } from '@/lib/householdLinks';
+import {
+    clearHousematePairsAfterMerge, emptyHouseholdMergeUndo, householdHostName, isHouseholdMergeUndo, moveMembershipsOnMerge,
+    restoreMembershipsAfterMerge, type HouseholdMergeUndo, type MergeDispute,
+} from '@/lib/householdMerge';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 
 export interface MergeAdoptersResult {
     success: boolean;
@@ -51,6 +63,11 @@ export async function mergeAdopters(
     secondaryId: string,
     actorEmail: string,
 ): Promise<MergeAdoptersResult> {
+    // Set once this merge has claimed the pair (soft-deleted the secondary), until
+    // its audit row exists: a failure in between gives the secondary back.
+    let restoreSecondary: (() => Promise<void>) | null = null;
+    // Likewise for the memberships / corrections step 6c moved (households as profiles).
+    let revertMemberships: (() => Promise<void>) | null = null;
     try {
         if (!primaryId || !secondaryId || primaryId === secondaryId) {
             return { success: false, error: 'Invalid merge request' };
@@ -70,6 +87,55 @@ export async function mergeAdopters(
         if (primary.deletedAt || secondary.deletedAt) {
             return { success: false, error: 'Cannot merge already-deleted profiles' };
         }
+
+        // Both profiles' old inline households (household_members JSON,
+        // household_links, Task 7) become memberships HERE, before the claim —
+        // each as a host, and every host whose household_links name it — so the
+        // merge (which moves only memberships, with their undo) carries them. An
+        // unconverted absorbed host would keep its people on a deleted row nobody
+        // views: a member that could not be placed (a DB error, a full household,
+        // its converted profile deleted) refuses the merge, `household_not_converted`.
+        {
+            const { ensureProfileConverted } = await import('@/lib/householdConversion');
+            let blocked = 0;
+            for (const id of [primaryId, secondaryId]) blocked += (await ensureProfileConverted(db, id)).blocked;
+            if (blocked) {
+                const errorId = logger.error('mergeAdopters: refused, part of a household could not be converted first', new Error('household conversion incomplete'), { primaryId, secondaryId, actor: actorEmail, blocked });
+                logger.info('mergeAdopters: household_not_converted', { primaryId, secondaryId, actor: actorEmail, errorId });
+                return { success: false, error: HOUSEHOLD_NOT_CONVERTED };
+            }
+        }
+
+        // 0. Claim the pair before moving anything: ONE statement soft-deletes
+        // the secondary only while it AND the primary are still live. Two merges
+        // of the same pair at once (two answers to two requests, an admin and a
+        // rescuer, opposite survivors) can both pass the reads above; only one
+        // claim lands, the other moves nothing (`pair_changed`). This is the
+        // same soft-delete unmergeAdopters reverses.
+        const claim = await db.update(adopters).set({ deletedAt: new Date(), tokenHash: 'MERGED' }).where(and(
+            eq(adopters.id, secondaryId),
+            isNull(adopters.deletedAt),
+            sql`(SELECT p.deleted_at FROM adopters p WHERE p.id = ${primaryId}) IS NULL`,
+        )).run();
+        let claimed = rowsAffected(claim);
+        if (claimed === null) {
+            // The driver reported no count: re-read whether the pair is in the state our claim leaves.
+            const [p, s2] = await Promise.all([primaryId, secondaryId].map(id =>
+                db.select({ deletedAt: adopters.deletedAt, tokenHash: adopters.tokenHash }).from(adopters).where(eq(adopters.id, id)).get()));
+            claimed = !p?.deletedAt && !!s2?.deletedAt && s2.tokenHash === 'MERGED' ? 1 : 0;
+        }
+        if (claimed !== 1) {
+            logger.warn('mergeAdopters: pair changed before the claim, nothing moved', { primaryId, secondaryId, actor: actorEmail });
+            return { success: false, error: 'pair_changed' };
+        }
+        restoreSecondary = async () => {
+            // tokenHash null, then a fresh tokenize: step 8 may already have
+            // deleted its duplicate_tokens, so the old hash would claim tokens
+            // that are no longer there.
+            await db.update(adopters).set({ deletedAt: null, tokenHash: null }).where(eq(adopters.id, secondaryId));
+            await tokenizeAdopter(secondaryId);
+            logger.info('mergeAdopters: absorbed profile given back after a failed merge (re-tokenize ran; its own errors log separately)', { primaryId, secondaryId, actor: actorEmail });
+        };
 
         const mergeDetails: Record<string, number> = {};
 
@@ -96,32 +162,30 @@ export async function mergeAdopters(
             annotatedFlags: [],
         };
 
-        // 6. (Runs first, so a merge that can't land its survivor write moves
-        // nothing.) Append text fields (preserve secondary data with separators).
+        // 6. (Runs first after the claim, so a merge that can't land its survivor
+        // write moves nothing — the failure path gives the secondary back.) Append text fields (preserve secondary data with separators).
         // Computed from the survivor as it is NOW and written with a
-        // compare-and-swap (src/lib/adopterListCas.ts): a teammate's contact or
-        // household edit landing mid-merge is merged in, never overwritten. The
+        // compare-and-swap (src/lib/adopterListCas.ts): a teammate's contact
+        // edit landing mid-merge is merged in, never overwritten. The
         // undo snapshot is the row this write actually replaced.
-        // The absorbed profile's household members, re-id'd ONCE (outside the
-        // CAS retry loop) so the ids this merge adds are known and can never
-        // collide with the survivor's — undo removes exactly these.
-        // Their contacts too: one may be carried onto a survivor's same-named
-        // member, and undo removes it by id.
-        const absorbedMembers = deserializeHouseholdMembers(secondary.householdMembers)
-            .map(m => ({ ...m, id: crypto.randomUUID(), contactEntries: m.contactEntries.map(c => ({ ...c, id: crypto.randomUUID() })) }));
+        // Households are NOT here any more: they are memberships (step 6c).
+        // Set by the last run of mergedFields (the one whose write landed).
+        let carriedAliasIds: string[] = [];
         const mergedFields = (p: typeof primary) => {
             const updates: Partial<typeof adopters.$inferInsert> = {};
 
+            // Joined, no separator line: the old English «--- Merged from X ---» showed up as a
+            // contact «Nota» (audit C1). The merge itself is the profiles_merged history row.
             if (secondary.contactInfo) {
                 updates.contactInfo = p.contactInfo
-                    ? `${p.contactInfo}\n--- Merged from ${secondary.name} ---\n${secondary.contactInfo}`
+                    ? `${p.contactInfo}\n${secondary.contactInfo}`
                     : secondary.contactInfo;
             }
 
             if (secondary.addressInfo && !p.addressInfo) {
                 updates.addressInfo = secondary.addressInfo;
             } else if (secondary.addressInfo && p.addressInfo) {
-                updates.addressInfo = `${p.addressInfo}\n--- Merged ---\n${secondary.addressInfo}`;
+                updates.addressInfo = `${p.addressInfo}\n${secondary.addressInfo}`;
             }
 
             if (secondary.familyMembers) {
@@ -148,30 +212,29 @@ export async function mergeAdopters(
             // this the absorbed record's name stops being a NAME token — a person
             // recorded under that spelling elsewhere would silently stop matching
             // the survivor (aliases tokenize as name_words; see extractTokens).
-            const mergedEntries = mergeContactEntries(
+            // A contact the survivor already holds wholly (contactCoveredBy:
+            // «11 6312-0851» in «+54 9 11 6312-0851») is not added twice: the
+            // survivor's entry stays, with the absorbed one's phone apps; the
+            // absorbed owner's access follows it (grantAccessAfterFold).
+            let mergedEntries = foldContactEntries(
                 deserializeContactEntries(p.contactEntries),
                 deserializeContactEntries(secondary.contactEntries),
+                { stricterVisibility: true },
             );
             const secondaryName = (secondary.name || '').trim();
-            const knownNames = new Set(
-                [p.name || '', ...mergedEntries.filter(e => e.type === 'alias').map(e => e.value)]
-                    .map(n => normalizeText(n)),
-            );
-            if (secondaryName && !knownNames.has(normalizeText(secondaryName))) {
-                mergedEntries.push({ id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: actorEmail });
+            // The absorbed name is a previous name of the same person: a rename-protected
+            // alias (households as profiles) — only the survivor's team may drop it. An
+            // existing plain copy is upgraded in place; unmerge reverts exactly these ids.
+            carriedAliasIds = [];
+            if (secondaryName && normalizeText(secondaryName) !== normalizeText(p.name || '')) {
+                // Credited to the rename sentinel (S2); the merge audit names the actor.
+                const carried: ContactEntry = { id: crypto.randomUUID(), type: 'alias', value: secondaryName, addedBy: RENAME_ALIAS_AUTHOR, fromRename: true };
+                const before = new Map(mergedEntries.map(e => [e.id, isRenameAlias(e)]));
+                mergedEntries = withRenameAliases(mergedEntries, [carried]);
+                carriedAliasIds = mergedEntries.filter(e => isRenameAlias(e) && before.get(e.id) !== true).map(e => e.id ?? '').filter(Boolean);
             }
             if (mergedEntries.length > 0) {
                 updates.contactEntries = JSON.stringify(mergedEntries);
-            }
-
-            // 6c. Carry the absorbed profile's household members (an adoption
-            // form can put people on the auto-created profile — spec
-            // 2026-10-04 §3). Without this, "Es la misma persona" dropped them.
-            // Read from `p`, the fresh row, like every field here (CAS-guarded).
-            if (absorbedMembers.length) {
-                updates.householdMembers = serializeHouseholdMembers(
-                    mergeHouseholdMembers(deserializeHouseholdMembers(p.householdMembers), absorbedMembers),
-                );
             }
 
             // Force re-tokenization on next save
@@ -179,9 +242,13 @@ export async function mergeAdopters(
             updates.updatedAt = new Date();
             return updates;
         };
-        const written = await casAdopterLists(db, primaryId, (row) => ({ write: mergedFields(row as typeof primary), result: null }), { op: 'mergeAdopters', secondaryId });
-        if (written.status === 'missing') throw new Error('Primary adopter disappeared during merge');
+        // requireLive: if another merge absorbed the survivor since the claim
+        // (S→P while P→Q), nothing is written onto the dead row — this merge
+        // fails and gives the secondary back.
+        const written = await casAdopterLists(db, primaryId, (row) => ({ write: mergedFields(row as typeof primary), result: null }), { op: 'mergeAdopters', secondaryId }, { requireLive: true });
+        if (written.status === 'missing') throw new Error('Primary adopter was deleted or merged away during the merge');
         if (written.status === 'busy') throw new Error(`Merge collided with concurrent edits (Error ID: ${written.errorId})`);
+        undo.renameAliasIdsAddedByMerge = carriedAliasIds;
         undo.primarySnapshot = {
             contactInfo: written.row.contactInfo,
             contactEntries: written.row.contactEntries,
@@ -190,14 +257,18 @@ export async function mergeAdopters(
             sourceUrl: written.row.sourceUrl,
             isPublic: written.row.isPublic,
         };
-        if (absorbedMembers.length) {
-            // Same computation the write used, on the same row: the absorbed
-            // members that actually landed, and what a repeat added to the
-            // survivor's own copy (gift mark, contacts it lacked).
-            const { added } = mergeHouseholdMembersTracked(deserializeHouseholdMembers(written.row.householdMembers), absorbedMembers);
-            undo.addedHouseholdMemberIds = added.memberIds;
-            if (added.enriched.length) undo.enrichedHouseholdMembers = added.enriched;
-        }
+        // 6c. Households follow the merge (spec «Merges and undo»): the absorbed
+        // profile's memberships become the survivor's (collapsed where it already
+        // lives), «hijo de …» points at the survivor, and «No vive acá»
+        // corrections name it. Recorded as it goes, so undo — or a failure before
+        // the audit row — puts back exactly what moved. An adoption form's
+        // auto-created applicant merged into another team's profile brings its
+        // household along: the person lives with those people (one reality); the
+        // target's team hears through the merge's own notices.
+        const householdUndo = emptyHouseholdMergeUndo();
+        undo.householdMemberships = householdUndo;
+        revertMemberships = () => restoreMembershipsAfterMerge(db, householdUndo, { survivorId: primaryId, absorbedId: secondaryId }, { op: 'mergeAdopters.revert', primaryId, secondaryId, actor: actorEmail });
+        const households = await moveMembershipsOnMerge(db, { survivorId: primaryId, absorbedId: secondaryId }, householdUndo, { primaryId, secondaryId, actor: actorEmail });
 
         // 1. Re-point adoptions (placements + adopter_events → normalized tables)
         const moved = await reassignAdopterRecords(db, secondaryId, primaryId);
@@ -247,11 +318,7 @@ export async function mergeAdopters(
         undo.formSubmissionIds = movedFormIds;
         mergeDetails.forms = movedFormIds.length;
 
-        // 7. Soft-delete secondary
-        await db.update(adopters).set({
-            deletedAt: new Date(),
-            tokenHash: 'MERGED',
-        }).where(eq(adopters.id, secondaryId));
+        // 7. The secondary was soft-deleted by the claim (step 0).
 
         // 8. Clean up tokens for secondary
         await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, secondaryId));
@@ -319,27 +386,53 @@ export async function mergeAdopters(
             }),
             createdAt: new Date(),
         });
+        // From here the merge stands (and undo can reverse it): no more giving back.
+        restoreSecondary = null;
+        revertMemberships = null;
+
+        // 11a. The survivor joined the absorbed profile's households: its pending
+        // duplicate pairs with its new housemates go (never throws, logs itself).
+        await clearHousematePairsAfterMerge(db, primaryId, households.joined, actorEmail);
+        // A merge that brought a corrected person back into that household is a
+        // dispute: the admins decide (D48).
+        await notifyMergeDisputes(db, households.disputes, { id: primaryId, name: primary.name }, actorEmail, { primaryId, secondaryId });
 
         // 11b. The survivor's own history says it absorbed a profile (2026-10-19,
         // Jon): the audit log alone was invisible on the profile. Best-effort —
         // the merge already happened; a missing line must not fail it.
+        // A rescuer folding their own profile into someone else's (contract or
+        // form «same person», an answered merge request) is no editor of the
+        // survivor: 'contribution' unless privileged on it (src/lib/profilePrivilege.ts).
+        const mergeKind = await historyKindForOwner(actorEmail, primary.addedBy, { primaryId, secondaryId });
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId: primaryId,
             changedBy: actorEmail,
             changes: JSON.stringify({ profiles_merged: { fromId: secondaryId, fromName: secondary.name, fromAddedBy: secondary.addedBy ?? null } }),
             changedAt: new Date(),
-            kind: 'edit',
+            kind: mergeKind,
         }).catch((e: unknown) => {
             logger.warn('mergeAdopters: history line not written', { primaryId, secondaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
         });
 
         // 12. Re-tokenize the survivor NOW instead of leaving it stale until
         // the next scan — the absorbed phones/emails and the new alias become
-        // searchable/dedup-matchable immediately. tokenizeAdopter logs its own
+        // searchable/dedup-matchable immediately, and so do the gift recipients'
+        // phones of the gift forms step 5b moved (indexed with the giver,
+        // src/lib/giftRecipients.ts). tokenizeAdopter logs its own
         // failure and never throws, so a hiccup here can't fail the merge; the
         // null tokenHash set above means the next scan retries it anyway.
-        await tokenizeAdopter(primaryId);
+        await tokenizeAdopter(primaryId, { force: true });
+
+        // 13. Any open merge request naming the ABSORBED profile is now stale:
+        // the pair it asked about is gone. The survivor's requests with other
+        // profiles stay valid — it is still live. Best-effort — the merge
+        // already happened; a request left open is refused later
+        // (profiles_changed).
+        await closeRequestsForAdopter(db, secondaryId)
+            .catch((e: unknown) => {
+                logger.warn('mergeAdopters: open merge requests not closed', { primaryId, secondaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+            });
 
         logger.info('Adopter merge complete', {
             primaryId,
@@ -359,6 +452,22 @@ export async function mergeAdopters(
         };
     } catch (error) {
         const errorId = logger.error('mergeAdopters failed', error, { primaryId, secondaryId, actor: actorEmail });
+        if (revertMemberships) {
+            try {
+                await revertMemberships();
+            } catch (e) {
+                logger.error('mergeAdopters: memberships not put back after a failed merge', e, { primaryId, secondaryId, actor: actorEmail, errorId });
+            }
+        }
+        if (restoreSecondary) {
+            // A failed merge leaves both profiles live (rows already re-pointed
+            // stay on the survivor, as before the claim moved first).
+            try {
+                await restoreSecondary();
+            } catch (e) {
+                logger.error('mergeAdopters: absorbed profile not restored after a failed merge', e, { primaryId, secondaryId, actor: actorEmail, errorId });
+            }
+        }
         return { success: false, error: `Merge failed (Error ID: ${errorId})` };
     }
 }
@@ -378,7 +487,8 @@ async function repointRows(db: any, table: any, idCol: any, ids: string[], adopt
 
 /**
  * Merge one PENDING candidate pair, picking the survivor automatically:
- * more activity records wins; tie → more contact entries; tie → older record.
+ * more activity records wins; tie → more contact entries; tie → older record;
+ * never a minor that would receive the other side's records or alerts.
  * The loser is absorbed via the shared mergeAdopters mechanics (alias
  * carry-over, candidate cleanup, undo payload).
  *
@@ -431,6 +541,27 @@ export async function mergeCandidatePair(candidateId: string, actorEmail: string
     }
 }
 
+/**
+ * The survivor's restored contacts on unmerge: the pre-merge snapshot, plus
+ * every rename alias the survivor carries now that the snapshot lacks (and that
+ * isn't its current name). With none to add, the snapshot as it was.
+ */
+function withRenameAliasesKept(
+    snapshot: { contactInfo: string | null; contactEntries: string | null },
+    current: { name: string | null; contactEntries: string | null },
+    leaving: ReadonlySet<string>,
+): { contactInfo: string | null; contactEntries: string | null } {
+    // The survivor's OWN rename aliases (not the absorbed profile's, not the name the
+    // merge carried over), except one equal to its current name.
+    const keep = deserializeContactEntries(current.contactEntries)
+        .filter(e => isRenameAlias(e) && !(e.id && leaving.has(e.id)) && knownAsNames([e], current.name).length > 0);
+    if (!keep.length) return snapshot;
+    const snapEntries = deserializeContactEntries(snapshot.contactEntries);
+    const base = snapEntries.length ? snapEntries : parseBlobToContactEntries(snapshot.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
+    const merged = preserveRenameAliases(keep, base);
+    return { contactEntries: JSON.stringify(merged), contactInfo: contactEntriesToBlob(merged) || null };
+}
+
 /** Everything unmergeAdopters needs to reverse one merge, stored in the merge's audit_log row. */
 interface MergeUndoPayload {
     primarySnapshot: {
@@ -443,6 +574,14 @@ interface MergeUndoPayload {
         isPublic?: number;
     };
     /**
+     * What the merge did to the household tables (households as profiles):
+     * memberships moved / collapsed, relatives and corrections re-pointed.
+     * Absent before households as profiles — those merges carried the JSON and
+     * links below instead, and undo still reverses them.
+     */
+    householdMemberships?: HouseholdMergeUndo;
+    /**
+     * OLD SHAPE (merges before households as profiles; still read by undo).
      * Household members this merge appended to the survivor (fresh ids). Undo
      * removes exactly these, so a teammate's later household edit survives —
      * restoring a whole-list snapshot would erase it. Absent before 2026-10-04.
@@ -453,6 +592,8 @@ interface MergeUndoPayload {
      * mark or contacts) — undo takes back exactly those. Absent before 2026-10-13.
      */
     enrichedHouseholdMembers?: Array<{ memberId: string; contactIds: string[]; giftRecipient: boolean }>;
+    /** Alias ids this merge marked as rename aliases (the absorbed name). Absent before households-as-profiles. */
+    renameAliasIdsAddedByMerge?: string[];
     placementIds: string[];
     adopterEventIds: string[];
     imageIds: string[];
@@ -461,6 +602,10 @@ interface MergeUndoPayload {
     statsIds: string[];
     /** Absent in payloads written before v2.56.129 — those merges never moved forms. */
     formSubmissionIds?: string[];
+    /** OLD SHAPE. Household links this merge moved, as they were before (D51). Absent before 2.57.1. */
+    householdLinks?: MovedHouseholdLink[];
+    /** OLD SHAPE. «No convive» corrections this merge moved, as they were before (D48/D51). Absent before 2.57.1. */
+    householdLinkCorrections?: MovedHouseholdLinkCorrection[];
     candidates: Array<{ id: string; status: string }>;
     annotatedFlags: Array<{ id: string; details: string | null }>;
 }
@@ -488,7 +633,7 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         if (!auditRow || auditRow.action !== 'adopter_merge') {
             return { success: false, error: 'Merge record not found' };
         }
-        let details: { primaryId?: string; secondaryId?: string; secondaryName?: string; undo?: MergeUndoPayload; undoneAt?: number; undoStartedAt?: number };
+        let details: { primaryId?: string; secondaryId?: string; secondaryName?: string; undo?: MergeUndoPayload; undoneAt?: number; undoStartedAt?: number; grantIds?: string[] };
         try {
             details = JSON.parse(auditRow.details || '{}');
         } catch {
@@ -552,6 +697,24 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
                 .where(eq(auditLog.id, auditId));
         }
 
+        // 0b. OLD SHAPE, after the conversion (Task 7): the survivor's copies of the
+        //     absorbed host's members, and the links this merge moved, became
+        //     memberships — they go back to the absorbed profile's home (the same
+        //     profiles; grants and owner follow), and the corrections with them.
+        //     BEFORE the absorbed profile is revived: until then no view converts it
+        //     from its own JSON (a retried undo that finds it converted reconciles).
+        if (undo.householdMemberships === undefined) {
+            const oldAdded = undo.addedHouseholdMemberIds ?? [];
+            const oldLinks = Array.isArray(undo.householdLinks) ? undo.householdLinks : [];
+            const oldCorrections = Array.isArray(undo.householdLinkCorrections) ? undo.householdLinkCorrections : [];
+            if (oldAdded.length || oldLinks.length || oldCorrections.length) {
+                const { reverseConvertedOldMerge } = await import('@/lib/householdConversion');
+                await reverseConvertedOldMerge(db, {
+                    survivorId: primaryId, absorbedId: secondaryId, addedMemberIds: oldAdded, movedLinks: oldLinks, movedCorrections: oldCorrections,
+                }, actorEmail, { op: 'unmergeAdopters', auditId });
+            }
+        }
+
         // 1. Restore the absorbed profile.
         await db.update(adopters).set({ deletedAt: null, tokenHash: null, updatedAt: new Date() })
             .where(eq(adopters.id, secondaryId));
@@ -577,9 +740,20 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 
         // 3. Restore the survivor's pre-merge fields (drops the appended
         //    contact blob, the merged entries and the auto-alias in one go).
+        //    Previous names a rename kept since (households as profiles) stay:
+        //    the snapshot predates them, and dropping them would make an old
+        //    name unfindable while the profile keeps its new one.
+        // Leaving with the absorbed profile: the rename aliases it already had (by id) and the
+        // name this merge carried over. An absorbed PLAIN alias a later rename on the survivor
+        // upgraded is the survivor's previous name now — it stays.
+        const leaving = new Set<string>([
+            ...deserializeContactEntries(secondary.contactEntries).filter(isRenameAlias).map(e => e.id ?? '').filter(Boolean),
+            ...(undo.renameAliasIdsAddedByMerge ?? []),
+        ]);
+        const restoredContacts = withRenameAliasesKept(undo.primarySnapshot, primary, leaving);
         await db.update(adopters).set({
-            contactInfo: undo.primarySnapshot.contactInfo,
-            contactEntries: undo.primarySnapshot.contactEntries,
+            contactInfo: restoredContacts.contactInfo,
+            contactEntries: restoredContacts.contactEntries,
             addressInfo: undo.primarySnapshot.addressInfo,
             familyMembers: undo.primarySnapshot.familyMembers,
             sourceUrl: undo.primarySnapshot.sourceUrl,
@@ -589,8 +763,20 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             updatedAt: new Date(),
         }).where(eq(adopters.id, primaryId));
 
-        // 3b. Take back only the household members the merge added — never the
-        //     survivor's own list, which may have been edited since.
+        // 3a. Households as profiles: the memberships, relatives and corrections
+        //     this merge moved go back; whatever changed since stays.
+        if (undo.householdMemberships !== undefined) {
+            if (isHouseholdMergeUndo(undo.householdMemberships)) {
+                await restoreMembershipsAfterMerge(db, undo.householdMemberships, { survivorId: primaryId, absorbedId: secondaryId }, { op: 'unmergeAdopters', auditId, actor: actorEmail });
+            } else {
+                logger.warn('unmergeAdopters: household part of the undo payload unreadable, memberships left as they are', { auditId, primaryId, secondaryId, actor: actorEmail });
+            }
+        }
+
+        // 3b. OLD SHAPE (merges recorded before households as profiles): take
+        //     back only the household members the merge added — never the
+        //     survivor's own list, which may have been edited since. (0b moved
+        //     their converted memberships, when the conversion ran since.)
         const householdAdded = { memberIds: undo.addedHouseholdMemberIds ?? [], enriched: undo.enrichedHouseholdMembers ?? [] };
         if (householdAdded.memberIds.length || householdAdded.enriched.length) {
             const out = await casAdopterLists(db, primaryId, (row) => {
@@ -601,6 +787,18 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             if (out.status === 'busy') throw new Error(`Undo collided with concurrent household edits (Error ID: ${out.errorId})`);
         }
 
+        // 3c. The household links and corrections this merge moved go back where
+        //     they were (D51); a correction made after the merge stays on the survivor.
+        const movedLinks = Array.isArray(undo.householdLinks) ? undo.householdLinks : [];
+        await restoreHouseholdLinks(db, {
+            links: movedLinks,
+            corrections: Array.isArray(undo.householdLinkCorrections) ? undo.householdLinkCorrections : [],
+        });
+        // 3d. A link this merge moved off the absorbed host and that was removed
+        //     on the survivor since («No convive», or the survivor's team removed
+        //     the member) did not come back above; the absorbed host still lists
+        //     that person, so the link is written again (I1).
+        await relinkRestoredHost(db, secondaryId, movedLinks, { auditId, actor: actorEmail });
         // 4. Put the touched duplicate candidates back to their prior status —
         //    grouped by target status so each group is a few chunked updates.
         const byStatus = new Map<string, string[]>();
@@ -622,6 +820,17 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
         await Promise.all(undo.annotatedFlags.map(f =>
             db.update(adopterFlags).set({ details: f.details }).where(eq(adopterFlags.id, f.id)),
         ));
+
+        // 5b. Revoke the contact-access grants THIS merge gave the absorbed
+        //     profile's owner team (D40, grantAccessAfterFold) — only those:
+        //     a grant someone held before the merge stays.
+        const grantIds = Array.isArray(details.grantIds) ? details.grantIds.filter((id): id is string => typeof id === 'string') : [];
+        for (let i = 0; i < grantIds.length; i += UNDO_CHUNK) {
+            const chunk = grantIds.slice(i, i + UNDO_CHUNK);
+            await db.update(piiAccessGrants)
+                .set({ revokedAt: new Date(), revokedByEmail: actorEmail })
+                .where(and(or(...chunk.map(id => eq(piiAccessGrants.id, id))), isNull(piiAccessGrants.revokedAt)));
+        }
 
         // 6. Mark the merge as undone (so a second undo is refused) + audit.
         await db.update(auditLog)
@@ -649,9 +858,10 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
             logger.warn('unmergeAdopters: history line not written', { adopterId: id, mergeAuditId: auditId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
         })));
 
-        // 7. Fresh tokens for both, so search/dedup reflect the split at once.
-        await tokenizeAdopter(primaryId);
-        await tokenizeAdopter(secondaryId);
+        // 7. Fresh tokens for both, so search/dedup reflect the split at once —
+        //    the gift recipients' phones of the gift forms step 2 moved back included.
+        await tokenizeAdopter(primaryId, { force: true });
+        await tokenizeAdopter(secondaryId, { force: true });
 
         logger.info('Adopter unmerge complete', { primaryId, secondaryId, mergeAuditId: auditId, actor: actorEmail });
         return { success: true, secondaryName: details.secondaryName };
@@ -662,29 +872,73 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
 }
 
 /**
+ * D48: each household a merge brought the survivor back into, after someone
+ * said it doesn't live there — the admins decide. After the merge stands;
+ * never throws (each notice logs its own failure).
+ */
+async function notifyMergeDisputes(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    disputes: readonly MergeDispute[],
+    person: { id: string; name: string },
+    actorEmail: string,
+    ctx: Record<string, unknown>,
+): Promise<void> {
+    if (disputes.length === 0) return;
+    try {
+        const { notifyHouseholdReaddDisputed } = await import('@/lib/householdNotices');
+        for (const d of disputes) {
+            const hostName = await householdHostName(db, d.householdId, person.id, ctx);
+            await notifyHouseholdReaddDisputed({ householdId: d.householdId, membershipId: d.membershipId, person, hostName, actor: actorEmail, viaMerge: true });
+        }
+    } catch (e) {
+        logger.warn('mergeAdopters: household dispute notice not sent', { ...ctx, actor: actorEmail, disputes: disputes.length, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
+/**
  * Optional, admin-chosen (2026-10-19): tell whoever registered each of the two
  * profiles that they are now one. Never the admin who merged; one notice per
  * person even when they registered both. Best-effort, logged.
+ * With the merge's `auditId` the notice links to «¿No es la misma persona?»
+ * on the profile (D50, src/lib/mergeDisputes.ts).
  */
 export async function notifyMergeOwners(
-    merge: { primaryId: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null },
+    merge: { primaryId: string; secondaryId?: string; primaryName?: string; secondaryName?: string; primaryAddedBy?: string | null; secondaryAddedBy?: string | null; auditId?: string },
     actorEmail: string,
+    /** People told some other way (e.g. the requester of an approved request), never sent this notice. */
+    opts: { skip?: readonly string[] } = {},
 ): Promise<number> {
-    const owners = [...new Set([merge.primaryAddedBy, merge.secondaryAddedBy])]
-        .filter((e): e is string => !!e && e.includes('@') && e !== actorEmail);
+    // Normalized: notifications are keyed (bell, email) by the lowercased
+    // email, and `added_by` keeps whatever case it was written with. The one
+    // rule for who hears it (the dup hint's «Les avisamos a …» uses it too).
+    const owners = mergeOwnersToTell(merge.primaryAddedBy, merge.secondaryAddedBy, actorEmail, opts.skip ?? []);
     if (!owners.length) return 0;
     const { createNotification } = await import('@/app/actions/notifications');
+    // D31: each side's owner and date, when the absorbed profile is known.
+    let content: ReturnType<typeof notificationContent>;
+    try {
+        const known = { survivorName: merge.primaryName, absorbedName: merge.secondaryName };
+        const db = merge.secondaryId ? await getDb() : null;
+        const sides = db && merge.secondaryId
+            ? await mergeSideParams(db, { survivorId: merge.primaryId, absorbedId: merge.secondaryId }, known)
+            : { survivorName: merge.primaryName ?? '', absorbedName: merge.secondaryName ?? '' };
+        content = notificationContent({ key: 'adopter_merged_by_admin', params: { ...sides, ...(merge.auditId ? { disputable: '1' } : {}) } });
+    } catch (e) {
+        logger.warn('notifyMergeOwners: notice not built, nobody notified', { primaryId: merge.primaryId, actor: actorEmail, error: e instanceof Error ? e.message : String(e) });
+        return 0;
+    }
     let sent = 0;
     for (const owner of owners) {
         try {
             await createNotification({
                 userId: owner,
                 type: 'adopter_merged',
-                title: `Se unieron dos perfiles: ${merge.secondaryName || 'sin nombre'} → ${merge.primaryName || 'sin nombre'}`,
-                body: 'Un administrador los unió porque son la misma persona. Todo lo registrado en los dos quedó en este perfil.',
-                url: `/adopter/${merge.primaryId}`,
+                ...content,
+                // «¿No es la misma persona?» opens from here when the merge can be found again (D50).
+                url: merge.auditId ? `/adopter/${merge.primaryId}?dispute=${encodeURIComponent(merge.auditId)}` : `/adopter/${merge.primaryId}`,
                 icon: '🔗',
-                metadata: { primaryId: merge.primaryId, mergedBy: actorEmail },
+                // Never the admin's email: the bell (and its metadata) is the owner's.
+                metadata: { primaryId: merge.primaryId, secondaryId: merge.secondaryId ?? null, auditId: merge.auditId ?? null },
             });
             sent++;
         } catch (e) {

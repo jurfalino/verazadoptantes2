@@ -12,7 +12,7 @@
  * typed entry.
  */
 
-import { extractEmails, extractSocials, extractIds, stripIdsFromText, isPlaceholderPhone } from './tokenizer';
+import { extractEmails, extractSocials, extractIds, stripIdsFromText, isPlaceholderPhone, extractPhones, extractPhoneSuffixes, normalizeIdValue, normalizeSocialHandle } from './tokenizer';
 
 export type ContactEntryType = 'phone' | 'email' | 'social' | 'id' | 'address' | 'alias' | 'other';
 
@@ -141,6 +141,25 @@ export interface ContactEntry {
      * saveAdopter re-derives entries from the owner's unmasked form input.
      */
     masked?: boolean;
+    /**
+     * Display-only (D54): the VIEWER added this entry — set by the masking
+     * layer on the profile page (maskHouseholdMembers with `viewerEmail`) so
+     * the UI can offer edit/remove without reading anyone's email. Never
+     * persisted: deserializeContactEntries drops it unless `viewMarks`, and
+     * serializeHouseholdMembers drops it from storage.
+     */
+    own?: boolean;
+    /**
+     * Alias-only: the profile's previous NAME, kept automatically when someone
+     * renamed it (households as profiles, Task 3). Still a name token (search
+     * and duplicate detection find the old name), but not listed among the
+     * contacts — the header shows it as «Conocido/a como». Persisted; only
+     * the rename path sets it (deserialize keeps it on aliases only, and the
+     * contact actions build entries from typed input, never from it). Always
+     * paired with `addedBy: RENAME_ALIAS_AUTHOR`; either marker makes a rename
+     * alias (`isRenameAlias`), since builds that predate the flag drop it.
+     */
+    fromRename?: true;
     /**
      * Address-only structured fields (additive — `value` stays the joined
      * source of truth). `streetAndNumber` is the PII-gated half; `locality`
@@ -346,15 +365,135 @@ export function deriveLocality(entry: ContactEntry): string {
     return firstComma > 0 ? v.slice(firstComma + 1).trim() : '';
 }
 
+/** The identity `mergeContactEntries` de-duplicates on: type + normalized value (+ network for socials). */
+export function contactEntryKey(e: Pick<ContactEntry, 'type' | 'value' | 'platform'>): string {
+    if (e.type === 'social') return `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`;
+    // A «phone» with no digits at all («ver notas», «llamar tarde») is text: compared as text,
+    // never as the same empty number (round 8).
+    if (e.type === 'phone' && !/\d/.test(e.value ?? '')) return `phone-text|${(e.value ?? '').trim().toLowerCase()}`;
+    return `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
+}
+
+/**
+ * THE «same contact» rule, as the duplicate matcher sees it (src/lib/tokenizer.ts):
+ * phones by the token index's keys — the digits, plus the last 8 for a number
+ * of 9+ digits — so «11 6312-0851» and «+54 9 11 6312-0851» are one phone
+ * (country / area prefixes ignored); emails lower-cased; social handles and id
+ * numbers normalized as the index normalizes them. Anything else (address,
+ * alias, note, or a value the matcher can't read) falls back to contactEntryKey.
+ * Matcher keys start with «~», so they never collide with a fallback key.
+ * Shared by every «what does this add?» preview AND the server write that
+ * folds one profile's contacts into another's, so the two can never disagree.
+ */
+export function contactMatchKeys(e: Pick<ContactEntry, 'type' | 'value' | 'platform'>): string[] {
+    const value = typeof e.value === 'string' ? e.value : '';
+    switch (e.type) {
+        case 'phone': {
+            const phones = extractPhones(value);
+            const keys = [...phones, ...extractPhoneSuffixes(phones)].map(k => `~phone|${k}`);
+            return keys.length ? [...new Set(keys)] : [contactEntryKey(e)];
+        }
+        case 'email': return [`~email|${value.trim().toLowerCase()}`];
+        case 'social': {
+            const h = normalizeSocialHandle(value, e.platform);
+            return [h ? `~social|${h}` : contactEntryKey(e)];
+        }
+        case 'id': {
+            const v = normalizeIdValue(value);
+            return [v ? `~id|${v}` : contactEntryKey(e)];
+        }
+        default: return [contactEntryKey(e)];
+    }
+}
+
+/** Two contacts are the same as the duplicate matcher sees them (contactMatchKeys). */
+export function sameContact(a: Pick<ContactEntry, 'type' | 'value' | 'platform'>, b: Pick<ContactEntry, 'type' | 'value' | 'platform'>): boolean {
+    if (a.type !== b.type) return false;
+    const keys = new Set(contactMatchKeys(a));
+    return contactMatchKeys(b).some(k => keys.has(k));
+}
+
+/**
+ * `a` is wholly contained in `b` — the rule for MERGING contacts and for
+ * ACCESS after a fold (round 7, review M1/S1), stricter than sameContact
+ * (which is for the hint's «coincide» and detection):
+ * - phones: EVERY number in `a` is one of `b`'s (by the matcher's keys, so
+ *   «11 6312-0851» ⊆ «+54 9 11 6312-0851»). An entry holding two numbers is
+ *   never "the same" as an entry holding one of them.
+ * - social handles: the same handle on the same network (or both without one).
+ *   A different network, or one side without a network, is a different
+ *   contact (as before round 4).
+ * - anything else: the matcher's key (emails lower-cased, ids normalized).
+ */
+export function contactCoveredBy(a: Pick<ContactEntry, 'type' | 'value' | 'platform'>, b: Pick<ContactEntry, 'type' | 'value' | 'platform'>): boolean {
+    if (a.type !== b.type) return false;
+    if (a.type === 'phone') {
+        const numbers = extractPhones(typeof a.value === 'string' ? a.value : '');
+        if (numbers.length === 0) return contactEntryKey(a) === contactEntryKey(b);
+        const bKeys = new Set(contactMatchKeys(b));
+        return numbers.every(n => [n, ...extractPhoneSuffixes([n])].some(k => bKeys.has(`~phone|${k}`)));
+    }
+    if (a.type === 'social' && (a.platform ?? '') !== (b.platform ?? '')) return false;
+    return sameContact(a, b);
+}
+
+/**
+ * The two entries hold exactly the same contact — for phones, the same SET of
+ * numbers (each holds every number of the other, by the matcher's keys). What
+ * merging and appending require before dropping an incoming entry (round 8):
+ * survivor «A / B» + absorbed «A» keeps «A» as its own entry, so the team that
+ * brought it never loses sight of it (its grant matches that entry).
+ */
+export function sameContactSet(a: Pick<ContactEntry, 'type' | 'value' | 'platform'>, b: Pick<ContactEntry, 'type' | 'value' | 'platform'>): boolean {
+    return contactCoveredBy(a, b) && contactCoveredBy(b, a);
+}
+
+/**
+ * Fold `incoming` (an absorbed profile's contacts, or what the new-profile form
+ * typed) into `base` (the profile that stays). An incoming contact the base
+ * already holds exactly (sameContactSet — the same numbers, same network) is
+ * NOT added a second time: the kept entry keeps its own formatting and id and gains
+ * the incoming phone's messaging apps (WhatsApp / Telegram, union). Any other
+ * overlap (a two-number entry sharing one number, either way) is kept as its
+ * own entry: nothing is lost, and nobody loses sight of what they brought.
+ *
+ * `stricterVisibility` — only when both lists are profiles being MERGED
+ * (mergeAdopters): the kept entry stays public only if BOTH copies were. A
+ * contact typed by a third party (the new-profile form's «Continuar») never
+ * changes the visibility of the profile's existing entry (round 7, S2).
+ * Everything else is mergeContactEntries (exact-key dedupe, rename aliases first).
+ */
+export function foldContactEntries(base: ContactEntry[], incoming: ContactEntry[], opts: { stricterVisibility: boolean }): ContactEntry[] {
+    const kept = base.map(e => ({ ...e }));
+    const added: ContactEntry[] = [];
+    for (const e of incoming) {
+        if (!e?.value?.trim()) continue;
+        if (e.type === 'alias') { added.push(e); continue; }
+        const holder = kept.find(k => k.type !== 'alias' && sameContactSet(e, k))
+            ?? added.find(k => k.type !== 'alias' && sameContactSet(e, k));
+        if (!holder) { added.push(e); continue; }
+        if (holder.type === 'phone' && e.apps?.length) {
+            const apps = [...new Set([...(holder.apps ?? []), ...e.apps])];
+            if (apps.length) holder.apps = apps;
+        }
+        if (opts.stricterVisibility && holder.isPublic && !e.isPublic) delete holder.isPublic;
+    }
+    return mergeContactEntries(kept, added);
+}
+
 function dedupe(entries: ContactEntry[]): ContactEntry[] {
-    const seen = new Set<string>();
+    const at = new Map<string, number>();
     const out: ContactEntry[] = [];
     for (const e of entries) {
-        const key = e.type === 'social'
-            ? `social|${normalizeEntryValue('social', e.value)}|${e.platform ?? ''}`
-            : `${e.type}|${normalizeEntryValue(e.type, e.value)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        const key = contactEntryKey(e);
+        const i = at.get(key);
+        if (i !== undefined) {
+            // Two copies of one name: the rename alias wins (with its marker) — a
+            // plain copy would let its contributor delete the only copy of an old name.
+            if (isRenameAlias(e) && !isRenameAlias(out[i])) out[i] = e;
+            continue;
+        }
+        at.set(key, out.length);
         out.push(e);
     }
     return out;
@@ -437,6 +576,29 @@ function formattedPhonesIn(text: string): string[] {
  * newlines) before matching digit runs, so feeding it the whole blob would
  * merge two phones on adjacent lines into one number.
  */
+/** «--- Merged from Elena Vidal ---» / «--- Merged ---», written by merges before 2026-10-28. */
+const LEGACY_MERGE_SEPARATOR = /^-{3}\s*Merged(?:\s+from\s.*?)?\s*-{3}$/i;
+
+/** The alias line's stored label at the start of a line («Otro nombre/identidad: Juan»). */
+const STORED_ALIAS_LABEL = new RegExp(`^(\\s*)${TYPE_LABEL.alias.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}:\\s*`);
+
+/**
+ * The contactInfo blob as people read it, wherever it is shown as text (a
+ * search card, a /my-adopters row, the picker preview, the «Reportar duplicado»
+ * search list, the demo profile):
+ * - without the legacy «--- Merged from X ---» separator lines (audit C1);
+ * - an alias reads as `aliasLabel` — «Conocido/a como», the words every other
+ *   surface uses for a person's other name (audit B12) — not the stored
+ *   «Otro nombre/identidad». Render time only: the stored blob (and TYPE_LABEL,
+ *   which the search stopwords and the blob parser read) is unchanged.
+ */
+export function contactBlobForDisplay(text: string | null | undefined, aliasLabel: string): string {
+    return (text ?? '').split(/\r?\n/)
+        .filter(l => !LEGACY_MERGE_SEPARATOR.test(l.trim()))
+        .map(l => l.replace(STORED_ALIAS_LABEL, (_m, lead: string) => `${lead}${aliasLabel}: `))
+        .join('\n');
+}
+
 export function categorizeContactText(text: string | null | undefined): ContactEntry[] {
     if (!text || !text.trim()) return [];
 
@@ -444,6 +606,8 @@ export function categorizeContactText(text: string | null | undefined): ContactE
 
     for (const rawLine of text.split(/\r?\n/)) {
         if (!rawLine.trim()) continue;
+        // A separator old merges wrote between two blobs («--- Merged from X ---»): not a note (audit C1).
+        if (LEGACY_MERGE_SEPARATOR.test(rawLine.trim())) continue;
 
         // Digits inside a link (a Facebook profile id, a post id) are part of
         // the link, never a phone or an id: read numbers from the line with its
@@ -476,6 +640,18 @@ export function categorizeContactText(text: string | null | undefined): ContactE
 /** Best-effort parse of a legacy contactInfo blob into typed entries. */
 export function parseBlobToContactEntries(blob: string | null | undefined): ContactEntry[] {
     return categorizeContactText(blob);
+}
+
+/**
+ * The typed identifiers of a contact list, as the identity verdict takes them
+ * (`matchImportRow`). Values are passed as entered: a social with spaces is not an
+ * account and is never converted to an alias; the verdict decides what it is.
+ */
+export function contactEntriesToIdentity(entries: readonly Pick<ContactEntry, 'type' | 'value'>[] | null | undefined): {
+    phones: string[]; emails: string[]; socials: string[]; documentIds: string[];
+} {
+    const of = (type: ContactEntryType) => (entries ?? []).filter(e => e.type === type).map(e => (e.value || '').trim()).filter(Boolean);
+    return { phones: of('phone'), emails: of('email'), socials: of('social'), documentIds: of('id') };
 }
 
 /**
@@ -542,8 +718,89 @@ export function buildContactEntries(parts: ContactParts): ContactEntry[] {
     return dedupe(entries).map(withStableId);
 }
 
-/** Upper bounds applied when reading stored/untrusted entry JSON. */
-const MAX_ENTRIES = 50;
+/**
+ * Upper bound on a profile's contact entries — the rename aliases aside
+ * (final fix S1: they are exempt, kept first on every read and write, so
+ * junk entries can never push a previous name out of search). Reads cap the
+ * rest at this; every add path refuses to grow past it (`CONTACT_ENTRIES_FULL`)
+ * instead of letting a later read truncate.
+ */
+export const MAX_CONTACT_ENTRIES = 50;
+const MAX_ENTRIES = MAX_CONTACT_ENTRIES;
+/** Error code: the profile already holds `MAX_CONTACT_ENTRIES` contact entries. */
+export const CONTACT_ENTRIES_FULL = 'contact_entries_full';
+/**
+ * Who a rename alias is credited to (final fix S2): never a real actor, so no
+ * build — even an old one that drops `fromRename` — lets the renamer delete
+ * it as «their own contribution». The renamer is credited in the history row.
+ */
+export const RENAME_ALIAS_AUTHOR = 'system:rename';
+
+/** The list grown past the cap (rename aliases don't count)? */
+export function contactCapExceeded(entries: readonly Pick<ContactEntry, 'type' | 'fromRename' | 'addedBy'>[]): boolean {
+    return entries.filter(e => !isRenameAlias(e)).length > MAX_CONTACT_ENTRIES;
+}
+
+/**
+ * How many contact entries (rename aliases aside) a JSON list holds BEFORE the
+ * read cap — so an add path can refuse an oversized list instead of storing
+ * it for a later read to truncate silently.
+ */
+export function contactEntriesJsonCount(json: string | null | undefined): number {
+    if (!json) return 0;
+    try {
+        const parsed: unknown = JSON.parse(json);
+        if (!Array.isArray(parsed)) return 0;
+        return parsed.filter(e => e && typeof e === 'object' && typeof (e as ContactEntry).value === 'string'
+            && (e as ContactEntry).value.trim().length > 0 && !isRenameAlias(e as ContactEntry)).length;
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * A client-supplied contact-entry list (raw JSON) with every rename mark taken
+ * off — the `fromRename` flag and the sentinel author — BEFORE anything counts
+ * or reads it (residual of final fix S1/S2): otherwise a forged mark makes an
+ * entry «a rename alias», exempt from the cap. Only the server's rename code
+ * marks a rename alias. Not a JSON array → returned as is (deserialize drops it).
+ */
+export function stripClientRenameMarksJson<T extends string | null | undefined>(json: T): T {
+    if (typeof json !== 'string' || !json) return json;
+    let parsed: unknown;
+    try { parsed = JSON.parse(json); } catch { return json; }
+    if (!Array.isArray(parsed)) return json;
+    return JSON.stringify(parsed.map(stripRawRenameMark)) as T;
+}
+
+function stripRawRenameMark(e: unknown): unknown {
+    if (!e || typeof e !== 'object' || Array.isArray(e)) return e;
+    const { fromRename: _f, ...rest } = e as Record<string, unknown>;
+    void _f;
+    if (rest.addedBy === RENAME_ALIAS_AUTHOR) delete rest.addedBy;
+    return rest;
+}
+
+/** The same for a client-supplied household JSON: each person's `contactEntries`. */
+export function stripClientRenameMarksHouseholdJson<T extends string | null | undefined>(json: T): T {
+    if (typeof json !== 'string' || !json) return json;
+    let parsed: unknown;
+    try { parsed = JSON.parse(json); } catch { return json; }
+    if (!Array.isArray(parsed)) return json;
+    return JSON.stringify(parsed.map(m => (m && typeof m === 'object' && Array.isArray((m as { contactEntries?: unknown }).contactEntries)
+        ? { ...(m as object), contactEntries: ((m as { contactEntries: unknown[] }).contactEntries).map(stripRawRenameMark) }
+        : m))) as T;
+}
+
+/** `entries` with the rename aliases first (stable otherwise) — the storage order. */
+export function renameAliasesFirst<T extends Pick<ContactEntry, 'type' | 'fromRename' | 'addedBy'>>(entries: readonly T[]): T[] {
+    return [...entries.filter(isRenameAlias), ...entries.filter(e => !isRenameAlias(e))];
+}
+
+/** `e` as a rename alias: both markers set (the flag, and the sentinel author old builds keep). */
+export function asRenameAlias<T extends ContactEntry>(e: T): T {
+    return { ...e, addedBy: RENAME_ALIAS_AUTHOR, fromRename: true as const };
+}
 const MAX_LABEL_LEN = 40;
 /**
  * Per-type value cap. Identifiers are short; `other` holds free-text prose
@@ -559,16 +816,26 @@ const MAX_VALUE_LEN: Record<ContactEntryType, number> = {
  * Drops malformed and empty-value entries and bounds count + value/label
  * length — the single sanitization chokepoint for untrusted entry JSON.
  */
-export function deserializeContactEntries(json: string | null | undefined): ContactEntry[] {
+export function deserializeContactEntries(
+    json: string | null | undefined,
+    /**
+     * `viewMarks`: keep the per-viewer `own` marker — ONLY when reading a view
+     * payload (the household on the profile page). Every other read drops it,
+     * so nothing written back from a read (or from client input) can store it.
+     */
+    opts: { viewMarks?: boolean } = {},
+): ContactEntry[] {
+    const viewMarks = typeof opts === 'object' && opts !== null && opts.viewMarks === true;
     if (!json) return [];
     try {
         const parsed = JSON.parse(json);
         if (!Array.isArray(parsed)) return [];
         const valid: ContactEntryType[] = ['phone', 'email', 'social', 'id', 'address', 'alias', 'other'];
-        return parsed
-            .filter((e): e is ContactEntry =>
-                e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0)
-            .slice(0, MAX_ENTRIES)
+        const ok = parsed.filter((e): e is ContactEntry =>
+            e && typeof e.value === 'string' && valid.includes(e.type) && e.value.trim().length > 0);
+        const isKept = (e: ContactEntry) => e.type === 'alias' && (e.fromRename === true || e.addedBy === RENAME_ALIAS_AUTHOR);
+        // Rename aliases first and outside the cap (S1); the rest capped.
+        return [...ok.filter(isKept), ...ok.filter(e => !isKept(e)).slice(0, MAX_ENTRIES)]
             .map(e => {
             const social = readSocialPlatform(e);
             return {
@@ -590,11 +857,17 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
                 ...social,
                 ...readPhoneApps(e),
                 ...(e.masked === true ? { masked: true } : {}),
+                ...(viewMarks && e.own === true ? { own: true } : {}),
                 // Per-entry contributor attribution (v2.16.0-9+). Length-capped
                 // defensively; undefined if absent (most pre-existing rows).
-                ...(typeof e.addedBy === 'string' && e.addedBy.trim()
-                    ? { addedBy: e.addedBy.slice(0, 256) }
-                    : {}),
+                // A rename alias (either marker — an old build keeps only the
+                // author) is always credited to the sentinel, flag set (S2).
+                ...(isKept(e)
+                    ? { addedBy: RENAME_ALIAS_AUTHOR }
+                    : typeof e.addedBy === 'string' && e.addedBy.trim()
+                        ? { addedBy: e.addedBy.slice(0, 256) }
+                        : {}),
+                ...(isKept(e) ? { fromRename: true as const } : {}),
                 // Per-entry "sourced from a public channel" flag (v2.16.0-12+).
                 // Stored only when explicitly true to keep the JSON tight.
                 ...(e.isPublic === true ? { isPublic: true } : {}),
@@ -616,9 +889,87 @@ export function deserializeContactEntries(json: string | null | undefined): Cont
     }
 }
 
+/**
+ * A new entry from what someone typed, credited to `addedBy` — built the way
+ * addContactEntry builds one: an address with parts gets its joined value,
+ * a social profile its network (detected from the value, else the one
+ * chosen), a phone its messaging apps. The caller validates the input.
+ */
+export function contactEntryFromInput(
+    input: { type: ContactEntryType; value: string; streetAndNumber?: string; locality?: string; platform?: SocialPlatform | null; apps?: MessagingApp[] },
+    addedBy: string,
+): ContactEntry {
+    const id = crypto.randomUUID();
+    const value = (input.value ?? '').trim();
+    if (input.type === 'address' && (input.streetAndNumber || input.locality)) {
+        return {
+            id, type: 'address',
+            value: joinedAddressValue(input.streetAndNumber ?? '', input.locality ?? '') || value,
+            streetAndNumber: input.streetAndNumber || undefined,
+            locality: input.locality || undefined,
+            addedBy,
+        };
+    }
+    const platform = input.type === 'social' ? (detectSocialPlatform(value) ?? input.platform ?? undefined) : undefined;
+    const apps = input.type === 'phone' && input.apps?.length ? [...new Set(input.apps)] : undefined;
+    return { id, type: input.type, value, addedBy, ...(platform ? { platform } : {}), ...(apps ? { apps } : {}) };
+}
+
+/** A previous name kept by a rename: a name token, never listed with the contacts. */
+export function isRenameAlias(e: Pick<ContactEntry, 'type' | 'fromRename' | 'addedBy'>): boolean {
+    return e.type === 'alias' && (e.fromRename === true || e.addedBy === RENAME_ALIAS_AUTHOR);
+}
+
+/**
+ * Entries that arrived from a client (create, append, import): only the
+ * server's rename code may mark a rename alias, so the marker is dropped.
+ */
+export function stripRenameMarks<T extends ContactEntry>(entries: readonly T[]): T[] {
+    return entries.map(e => {
+        const forgedAuthor = e.addedBy === RENAME_ALIAS_AUTHOR;
+        if (!('fromRename' in e) && !forgedAuthor) return e;
+        const { fromRename: _drop, ...rest } = e;
+        void _drop;
+        if (forgedAuthor) delete (rest as { addedBy?: string }).addedBy;
+        return rest as T;
+    });
+}
+
+/**
+ * The typed contacts that would be NEW on a profile — what «¿Continuar con el
+ * perfil de X?» lists under «Se agregará» (fix round 2, item 20). Mirrors the
+ * server's append (appendToExistingAdopter → foldContactEntries): the
+ * profile's typed list, else its legacy text read as entries; a typed contact
+ * counts as already there only when one entry holds exactly it (sameContactSet). A masked contact (`masked: true`) can't be compared, so a
+ * typed one is never assumed to be it — unless the duplicate engine matched on
+ * that same email (`matchValues`: the query's own normalized tokens).
+ * Blank and repeated typed entries count once.
+ */
+export function newContactsForProfile(
+    typed: readonly ContactEntry[],
+    profile: { contactEntries: string | null; contactInfo: string | null },
+    matchValues: ReadonlyArray<{ type: string; value: string }> = [],
+): ContactEntry[] {
+    const stored = deserializeContactEntries(profile.contactEntries);
+    const base = stored.length ? stored : parseBlobToContactEntries(profile.contactInfo);
+    // The same rule the save folds with (sameContactSet / foldContactEntries):
+    // «11 6312-0851» typed against «+54 9 11 6312-0851» adds nothing; any typed
+    // entry not holding exactly an entry's numbers is listed (it is saved as its own).
+    const known: Array<Pick<ContactEntry, 'type' | 'value' | 'platform'>> = base.filter(e => !e.masked && e.value?.trim());
+    for (const v of matchValues) if (v.type === 'email' && v.value) known.push({ type: 'email', value: v.value });
+    const out: ContactEntry[] = [];
+    for (const e of typed) {
+        if (!e.value?.trim()) continue;
+        if (known.some(k => sameContactSet(e, k))) continue;
+        known.push(e);
+        out.push(e);
+    }
+    return out;
+}
+
 /** Merge two entry lists, de-duplicating on normalized value. */
 export function mergeContactEntries(a: ContactEntry[], b: ContactEntry[]): ContactEntry[] {
-    return dedupe([...a, ...b]);
+    return renameAliasesFirst(dedupe([...a, ...b]));
 }
 
 /**

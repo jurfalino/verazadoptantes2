@@ -1,16 +1,30 @@
 'use server';
 
-import { adopterFlags, adopterHistory } from '@/db/schema';
+import { adopterFlags, adopterHistory, adopters } from '@/db/schema';
 import { eq, sql, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
-import { logger } from '@/lib/logger';
+import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
 import { runAfterResponse } from '@/lib/background';
+import { historyKindFor } from '@/lib/profilePrivilege';
+import { FLAG_REASONS } from '@/domain/constants';
 
-export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string) {
+export type FlagAdopterResult =
+    /** `already`: an open duplicate flag (its id) or a pending merge request ('') already covers this pair — nothing new written or sent. */
+    | { success: true; id: string; already?: true }
+    /**
+     * A duplicate flag refused: 'invalid_target' (the same profile, or one that
+     * doesn't exist or was merged away); 'said_no' (someone already said they are
+     * two people — declined for the flagger's team, or an admin ruled it — as the
+     * «Ya está en otro perfil» window says); 'settled_separate' (already recorded as
+     * two people: a shared home, «Mantener separados», «Viven juntos» — for admins too).
+     */
+    | { success: false; error: 'invalid_target' | 'said_no' | 'settled_separate'; errorId: string };
+
+export async function flagAdopter(adopterId: string, reason: string, details?: string, targetAdopterId?: string): Promise<FlagAdopterResult> {
     const parsed = flagAdopterSchema.safeParse({ adopterId, reason, details, targetAdopterId });
     if (!parsed.success) {
         throw new Error(`Invalid flag data: ${parsed.error.issues.map(i => i.message).join(', ')}`);
@@ -20,6 +34,34 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         const db = await getDb();
         if (!db) throw new Error("No database");
         const flaggedBy = await getUser();
+
+        // A duplicate flag names a pair — the profile menu «Reportar → Duplicado» and the
+        // «Ya está en otro perfil» window alike: once per pair, two real live profiles,
+        // and never on a pair someone already said are two people.
+        if (reason === FLAG_REASONS.DUPLICATE && targetAdopterId) {
+            const refuse = (error: 'invalid_target' | 'said_no' | 'settled_separate') => {
+                const errorId = generateErrorId();
+                logger.warn('flagAdopter: duplicate flag refused', { adopterId, targetAdopterId, actor: flaggedBy, reason: error, errorId });
+                return { success: false as const, error, errorId };
+            };
+            if (targetAdopterId === adopterId) return refuse('invalid_target');
+            const live = (id: string) => db.select({ deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, id)).get() as Promise<{ deletedAt: Date | null } | undefined>;
+            const [a, b] = await Promise.all([live(adopterId), live(targetAdopterId)]);
+            if (!a || !b || a.deletedAt || b.deletedAt) return refuse('invalid_target');
+            const { pairUnderReview, pairSettledSeparate, loadPairVerdict, teamOf } = await import('@/lib/pairVerdict');
+            if (await pairSettledSeparate(db, adopterId, targetAdopterId)) return refuse('settled_separate');
+            const review = await pairUnderReview(db, adopterId, targetAdopterId);
+            // Already up for review — an open flag, or a pending merge request (round 5): no second flag, no notices.
+            if (review.flagId || review.requestPending) {
+                logger.info('flagAdopter: the pair is already up for review, no second flag', { adopterId, targetAdopterId, actor: flaggedBy, flagId: review.flagId, requestPending: review.requestPending });
+                return { success: true, id: review.flagId ?? '', already: true };
+            }
+            const { isAdminAsync } = await import('@/config/admins');
+            if (!(await isAdminAsync(flaggedBy))) {
+                const verdict = await loadPairVerdict(db, adopterId, targetAdopterId, await teamOf(flaggedBy));
+                if (verdict.declinedForTeam || verdict.adminRuledSeparate) return refuse('said_no');
+            }
+        }
 
         const id = crypto.randomUUID();
         await db.insert(adopterFlags).values({
@@ -37,30 +79,48 @@ export async function flagAdopter(adopterId: string, reason: string, details?: s
         // with empty `changes` and the renderer rendered them as the
         // misleading "Metadata update" placeholder. The canonical shape across
         // every other writer is `changes: JSON.stringify({<event_key>: {...}})`.
+        // Flagging is open to anyone signed in: a stranger's flag is a
+        // contribution, never an 'edit' (src/lib/profilePrivilege.ts).
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId,
             changedBy: flaggedBy,
+            kind: await historyKindFor(db, adopterId, flaggedBy),
             changes: JSON.stringify({ flag_added: { reason, details: details || null } }),
             changedAt: new Date()
         });
 
         logAudit({ userEmail: flaggedBy, action: 'flag_created', target: adopterId, details: { reason, details } });
 
-        // Notify admins (after the response, kept alive — see src/lib/background.ts)
+        // Notify admins (after the response, kept alive — see src/lib/background.ts).
+        // A duplicate flag with a target also tells whoever added each profile
+        // first (duplicate_flagged); an owner who is an admin gets only that one.
         await runAfterResponse('flagAdopter.notifyAdmins', async () => {
-            const { notifyAdmins, resolveDisplayName } = await import('@/app/actions/notifications');
+            let ownersTold: string[] = [];
+            if (reason === FLAG_REASONS.DUPLICATE && targetAdopterId) {
+                try {
+                    const { notifyDuplicateFlagOwners } = await import('@/lib/duplicateFlagNotices');
+                    ownersTold = await notifyDuplicateFlagOwners({ adopterId, targetAdopterId, flaggedBy });
+                } catch (e) {
+                    logger.warn('flagAdopter: duplicate owner notices not sent', {
+                        adopterId, targetAdopterId, actor: flaggedBy, error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }
+            const [{ notifyAdmins, resolveDisplayName }, { notificationContent }] = await Promise.all([
+                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+            ]);
             const displayName = await resolveDisplayName(flaggedBy);
             await notifyAdmins({
+                skip: ownersTold,
                 actorEmail: flaggedBy,
                 type: 'adopter_flagged',
-                title: '🚩 Adoptante reportado',
-                body: `${displayName} reportó un adoptante. Motivo: ${reason}`,
+                ...notificationContent({ key: 'adopter_flagged', params: { reporterName: displayName, reason } }),
                 url: `/adopter/${adopterId}`,
                 icon: '🚩',
                 metadata: { adopterId, reason, details },
             });
-        }, { adopterId, flaggedBy });
+        }, { adopterId, targetAdopterId: targetAdopterId ?? null, flaggedBy });
 
         return { success: true, id };
     } catch (error) {
@@ -147,6 +207,8 @@ export async function removeVerification(adopterId: string, type: 'verified_iden
             id: crypto.randomUUID(),
             adopterId,
             changedBy: currentUser,
+            // The flagger removing their own verification is no editor of the profile.
+            kind: await historyKindFor(db, adopterId, currentUser),
             changes: JSON.stringify({ flag_removed: { reason: type, originalFlaggedBy: flag.flaggedBy || null } }),
             changedAt: new Date()
         });

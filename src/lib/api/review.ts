@@ -113,6 +113,8 @@ export interface TransactionRow {
     externalId: string | null; voidedAt: string | null; voidedBy: string | null; dryRun: boolean;
     durationMs: number | null; createdAt: string;
     errorCode: string | null;
+    /** A D1 blip shrank or reordered this call's search results. */
+    degraded: boolean;
     /** Who the call searched for (from its stored request; null after the 90-day purge). */
     searched: { fullName: string | null; email: string | null; phone: string | null; documentId: string | null } | null;
 }
@@ -136,7 +138,7 @@ function rowView(r: typeof apiRequests.$inferSelect, keyNames: Map<string, strin
         mode: r.mode, context: r.context, outcome: r.outcome, httpStatus: r.httpStatus, errorId: r.errorId,
         profileIds, recordId: r.recordId, profileCreated: r.profileCreated === 1, externalId: r.externalId, dryRun: r.dryRun === 1,
         voidedAt: iso(r.voidedAt), voidedBy: r.voidedBy, durationMs: r.durationMs, createdAt: iso(r.createdAt)!,
-        errorCode: r.errorCode ?? null, searched: searchedPerson(r.requestBody),
+        errorCode: r.errorCode ?? null, degraded: r.degraded === 1, searched: searchedPerson(r.requestBody),
     };
 }
 
@@ -206,7 +208,13 @@ export async function getTransaction(db: Db, id: string, ownerEmail: string | nu
     const names = await keyNameMap(db, ownerEmail);
     // A body that isn't JSON (the client sent garbage) is shown as the raw text it was.
     const parse = (s: string | null) => { if (!s) return null; try { return JSON.parse(s); } catch { return s; } };
-    return { ...rowView(r, names), requestBody: parse(r.requestBody), responseBody: parse(r.responseBody) };
+    return {
+        ...rowView(r, names), requestBody: parse(r.requestBody), responseBody: parse(r.responseBody),
+        // Troubleshooting (2026-11-04 audit): the client that sent it, and — for an admin — how
+        // the match was decided (other people's profile ids, so never to a partner).
+        client: { userAgent: r.userAgent ?? null, cfRay: r.cfRay ?? null, country: r.clientCountry ?? null },
+        ...(ownerEmail ? {} : { decision: parse(r.decision) }),
+    };
 }
 
 /** Admin: issue a key for an existing rescuer. The secret is returned once and never stored. */

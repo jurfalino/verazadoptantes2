@@ -30,7 +30,17 @@ export interface CleanablePerson {
     socials?: Array<{ platform: string; handle: string }>;
 }
 
-export type DroppedReason = 'not_an_email' | 'not_a_phone' | 'no_account';
+export type DroppedReason = 'not_an_email' | 'not_a_phone' | 'no_account' | 'not_a_social_profile';
+
+/** A link or bare domain of a website that is not a social network (a rescue's own site). Pure; mirrors isNonSocialWebsite in src/lib/tokenizer.ts. */
+const SOCIAL_HOST = /(?:^|\/\/|\.)(?:facebook\.co[mn]|fb\.com|fb\.me|instagram\.co[mn]|instagr\.am|tiktok\.com|x\.com|twitter\.com|t\.co|threads\.(?:net|com))\b/;
+export function isWebsiteNotSocial(value: string): boolean {
+    const v = value.trim().toLowerCase();
+    if (!v || SOCIAL_HOST.test(v)) return false;
+    return /^(https?:\/\/|www\.)/.test(v)
+        || /^[\w-]+(\.[\w-]+)+\//.test(v)
+        || /^[\w-]+(\.[\w-]+)*\.(com|org|net|ar|io|me|info|edu|gob|gov)(\.[a-z]{2})?\/?$/.test(v);
+}
 export interface DroppedValue { field: string; reason: DroppedReason }
 
 /** A cleaned value differs from what was sent (kept, but trimmed to what is usable). */
@@ -92,8 +102,10 @@ export function cleanApiPerson<P extends CleanablePerson>(person: P, country?: s
     const cleaned: CleanedValue[] = [];
 
     if (p.socials?.length) {
-        const kept = p.socials.filter(s => !isPlaceholderContact(s.handle));
-        p.socials.forEach((s, i) => { if (!kept.includes(s)) dropped.push({ field: `person.socials[${i}]`, reason: 'no_account' }); });
+        const kept = p.socials.filter(s => !isPlaceholderContact(s.handle) && !isWebsiteNotSocial(s.handle));
+        p.socials.forEach((s, i) => {
+            if (!kept.includes(s)) dropped.push({ field: `person.socials[${i}]`, reason: isWebsiteNotSocial(s.handle) ? 'not_a_social_profile' : 'no_account' });
+        });
         p.socials = kept.length ? kept : undefined;
     }
 

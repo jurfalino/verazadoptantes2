@@ -15,7 +15,7 @@ export default function SharedIdentifiersPanel({ groups }: { groups: SharedIdent
         <div data-testid="shared-identifiers">
             <p className="text-sm text-stone-500 mb-4">
                 Teléfonos, emails y documentos que están en más de un perfil. Una búsqueda exacta por API con ese dato puede
-                responder «ambiguous». Si es la misma persona, fusioná los perfiles; si son personas distintas (por ejemplo,
+                responder «ambiguous». Si es la misma persona, uní los perfiles; si son personas distintas (por ejemplo,
                 un teléfono familiar), está bien así.
             </p>
             {groups.length === 0 ? (

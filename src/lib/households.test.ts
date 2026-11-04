@@ -1,0 +1,666 @@
+/**
+ * Households as profiles — the read/write core (src/lib/households.ts). Real
+ * SQL (every drizzle/*.sql replayed), the real visibility resolver and
+ * masking; admins / teams come from the shared action mocks.
+ * OWNER (team: MATE) owns Pedro and Marta; STRANGER owns Lucas.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { migratedDb } from '@/test-utils/migratedDb';
+import * as mocks from '@/test-utils/actionMocks';
+
+const { OWNER, MATE, STRANGER, ADMIN } = mocks;
+const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
+
+vi.mock('@/app/actions/_db', () => ({ getDb: async () => state.db, getUser: mocks.getUser }));
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
+vi.mock('@/config/admins', () => ({ isAdminAsync: mocks.isAdmin, isModeratorOrAdminAsync: mocks.isAdmin, BOOTSTRAP_ADMIN_EMAILS: [] }));
+vi.mock('@/lib/orgMembership', async (orig) => ({
+    ...(await orig()), isOrgMate: mocks.isOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor,
+    isOwnerOrOrgMate: (v: string | null | undefined, o: string | null | undefined) => mocks.isOwnerOrOrgMate(v?.trim().toLowerCase(), o?.trim().toLowerCase()),
+}));
+// PII gating ON, so "a stranger sees masked" actually tests masking.
+vi.mock('@/config/features', async (orig) => ({
+    ...(await orig()),
+    getFeatureFlag: vi.fn(async (flag: string) => flag === 'ENABLE_PII_ACCESS_GATING' || flag === 'ENABLE_HOUSEHOLD_MEMBERS'),
+}));
+vi.mock('@/lib/logger', () => ({
+    logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
+    generateErrorId: () => 'gen12345',
+    withTrace: (_op: string, fn: () => unknown) => fn(),
+}));
+
+import {
+    addMembership, createHousehold, ensureHousehold, getHouseholdsFor, hasCorrection, householdIdsOf, householdLinesFor,
+    MAX_CARD_ALERT_READS, MAX_CARD_PROFILE_READS, removeMembership, sameHousehold, dropMembershipsOfDeletedProfile,
+} from './households';
+import { logger } from '@/lib/logger';
+import { MAX_HOUSEHOLD_LINES, currentAge } from '@/domain/households';
+import { countActivity } from '@/domain/activityCounts';
+import { countsFor } from '@/lib/profileSummary';
+import { NO_PERIOD_ALERTS } from '@/domain/periodAlerts';
+import { enrichAdopters } from '@/app/actions/enrichAdopters';
+
+type Row = Record<string, unknown>;
+type Sqlite = {
+    prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] };
+    exec: (s: string) => void;
+};
+let sqlite: Sqlite;
+// The lib takes the drizzle handle; tests hand it the in-memory one.
+const db = () => state.db as Parameters<typeof getHouseholdsFor>[0];
+
+const MARTA_CONTACTS = [
+    { id: 'c1', type: 'phone', value: '+54 11 5555 0101' },
+    { id: 'c2', type: 'email', value: 'marta@example.org' },
+];
+
+beforeEach(() => {
+    const m = migratedDb();
+    state.db = m.db;
+    sqlite = m.sqlite as unknown as Sqlite;
+    vi.mocked(logger.warn).mockClear();
+    const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, contact_entries, age, age_as_of, is_minor, deleted_at)
+        VALUES (?, ?, '5', ?, 1000, 1000, ?, ?, ?, ?, ?)`);
+    insert.run('pedro', 'Pedro Paez', OWNER, null, null, null, 0, null);
+    insert.run('marta', 'Marta Paez', OWNER, JSON.stringify(MARTA_CONTACTS), null, null, 0, null);
+    insert.run('lucas', 'Lucas Paez', STRANGER, null, 12, '2026-01-01', 1, null);
+    insert.run('rosa', 'Rosa Diaz', STRANGER, null, null, null, 0, null);
+    insert.run('ana', 'Ana Gift', OWNER, null, null, null, 0, null);
+    insert.run('gone', 'Merged Away', OWNER, null, null, null, 0, 5000);
+    sqlite.prepare(`INSERT INTO user (id, name, email) VALUES ('u1', 'Gatitos Olivos', ?)`).run(OWNER);
+    // Pedro is rated 1 with one open alert.
+    sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an1', 'Luna', ?)`).run(OWNER);
+    sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating) VALUES ('p1', 'an1', 'pedro', 'adoption', 1)`).run();
+    sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason) VALUES ('f1', 'pedro', ?, 'inaccurate_information')`).run(MATE);
+});
+
+const memberships = () => sqlite.prepare('SELECT * FROM household_memberships ORDER BY household_id, adopter_id').all();
+
+/** Pedro's household: Pedro (anchor), Marta (partner of Pedro), Lucas (child of Pedro, added by STRANGER). */
+async function pedrosHousehold(): Promise<string> {
+    const hh = await ensureHousehold(db(), 'pedro', OWNER);
+    await addMembership(db(), { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: OWNER });
+    await addMembership(db(), { householdId: hh, adopterId: 'lucas', relationship: 'child', relativeToAdopterId: 'pedro', addedBy: STRANGER });
+    return hh;
+}
+
+describe('migration 0096', () => {
+    it('creates the tables and the adopter age columns; the (household, adopter) pair is unique', () => {
+        const cols = (t: string) => sqlite.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
+        expect(cols('households')).toEqual(['id', 'created_by', 'created_at']);
+        expect(cols('household_memberships')).toEqual([
+            'id', 'household_id', 'adopter_id', 'relationship', 'relative_to_adopter_id', 'gift_recipient', 'added_by', 'added_at', 'source_key',
+            // 0097 (Task 2 fix round 2): when the add's record (history, notices) was claimed.
+            'recorded_at',
+        ]);
+        expect(cols('household_corrections')).toEqual(['id', 'household_id', 'adopter_id', 'corrected_by', 'corrected_at', 'snapshot']);
+        expect(cols('adopters')).toEqual(expect.arrayContaining(['age', 'age_as_of', 'is_minor']));
+        const ins = sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, added_at) VALUES (?, 'h', 'a', 1)`);
+        ins.run('m1');
+        expect(() => ins.run('m2')).toThrow(/UNIQUE/);
+        expect(sqlite.prepare(`SELECT relationship, gift_recipient FROM household_memberships WHERE id = 'm1'`).get())
+            .toEqual({ relationship: 'unknown', gift_recipient: 0 });
+        const idx = sqlite.prepare(`PRAGMA index_list(household_memberships)`).all().map(i => i.name);
+        expect(idx).toEqual(expect.arrayContaining([
+            'idx_household_memberships_pair', 'idx_household_memberships_adopter', 'idx_household_memberships_household', 'idx_household_memberships_source_key',
+        ]));
+    });
+});
+
+describe('write core', () => {
+    it('addMembership twice → one row, the same id, created only the first time', async () => {
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        const a = await addMembership(db(), { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: OWNER, sourceKey: 'form-s1-0' });
+        const b = await addMembership(db(), { householdId: hh, adopterId: 'marta', relationship: 'child', relativeToAdopterId: 'pedro', addedBy: STRANGER });
+        expect(a.created).toBe(true);
+        expect(b).toEqual({ membershipId: a.membershipId, created: false });
+        const rows = memberships().filter(r => r.adopter_id === 'marta');
+        expect(rows).toEqual([expect.objectContaining({
+            id: a.membershipId, household_id: hh, relationship: 'partner', relative_to_adopter_id: 'pedro', added_by: OWNER, gift_recipient: 0, source_key: 'form-s1-0',
+        })]);
+    });
+
+    it('addMembership racing itself on the same pair → one row, both callers get the same membership id', async () => {
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        const input = { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: OWNER };
+        const [a, b] = await Promise.all([addMembership(db(), input), addMembership(db(), { ...input, addedBy: MATE })]);
+        expect(a.membershipId).toBe(b.membershipId);
+        expect([a.created, b.created].sort()).toEqual([false, true]);
+        expect(memberships().filter(r => r.adopter_id === 'marta')).toHaveLength(1);
+    });
+
+    it('ensureHousehold racing itself → one household with the anchor once, no orphan', async () => {
+        const [a, b] = await Promise.all([ensureHousehold(db(), 'pedro', OWNER), ensureHousehold(db(), 'pedro', MATE)]);
+        expect(b).toBe(a);
+        expect(sqlite.prepare('SELECT id FROM households').all()).toEqual([{ id: a }]);
+        expect(memberships()).toHaveLength(1);
+        expect(await householdIdsOf(db(), 'pedro')).toEqual([a]);
+    });
+
+    it('ensureHousehold racing itself when hh-{anchor} is taken (anchor removed from it once) → one new household, the loser cleaned up', async () => {
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('hh-pedro', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'hh-pedro', adopterId: 'marta', addedBy: OWNER });
+        const [a, b, c] = await Promise.all([1, 2, 3].map(() => ensureHousehold(db(), 'pedro', OWNER)));
+        expect(new Set([a, b, c]).size).toBe(1);
+        expect(a).not.toBe('hh-pedro');
+        expect(await householdIdsOf(db(), 'pedro')).toEqual([a]);
+        expect(sqlite.prepare('SELECT id FROM households ORDER BY id').all().map(r => r.id).sort()).toEqual([a, 'hh-pedro'].sort());
+        // Pedro was never put back into the household he was taken out of.
+        expect(memberships().filter(r => r.household_id === 'hh-pedro').map(r => r.adopter_id)).toEqual(['marta']);
+    });
+
+    it('a relationship outside the list is stored as unknown; a person is never relative to themselves', async () => {
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        await addMembership(db(), { householdId: hh, adopterId: 'marta', relationship: 'enemy', relativeToAdopterId: 'marta', addedBy: OWNER });
+        expect(memberships().find(r => r.adopter_id === 'marta')).toMatchObject({ relationship: 'unknown', relative_to_adopter_id: null });
+    });
+
+    it("being linked into someone else's household never becomes a profile's default home", async () => {
+        // STRANGER links Pedro into Rosa's household (Rosa is the anchor there).
+        const rosas = await ensureHousehold(db(), 'rosa', STRANGER);
+        await addMembership(db(), { householdId: rosas, adopterId: 'pedro', relationship: 'partner', relativeToAdopterId: 'rosa', addedBy: STRANGER });
+        const home = await ensureHousehold(db(), 'pedro', OWNER);
+        expect(home).not.toBe(rosas);
+        expect(home).toBe('hh-pedro');
+        expect(await ensureHousehold(db(), 'pedro', MATE)).toBe(home);
+        // Rosa's household is untouched, and Pedro is in both.
+        expect((await householdIdsOf(db(), 'pedro')).sort()).toEqual([home, rosas].sort());
+    });
+
+    it('ensureHousehold creates one household with the anchor in it, and returns it again after', async () => {
+        const a = await ensureHousehold(db(), 'pedro', OWNER);
+        const b = await ensureHousehold(db(), 'pedro', MATE);
+        expect(b).toBe(a);
+        expect(sqlite.prepare('SELECT id, created_by FROM households').all()).toEqual([{ id: a, created_by: OWNER }]);
+        // The anchor's own row has no adder: whoever triggered the household gets no adder's rights over it (Task 2 fix 1).
+        expect(memberships()).toEqual([expect.objectContaining({ household_id: a, adopter_id: 'pedro', relationship: 'unknown', added_by: null, relative_to_adopter_id: null })]);
+        expect(await householdIdsOf(db(), 'pedro')).toEqual([a]);
+    });
+
+    it("ensureHousehold returns the anchor's own home — never one it was only added to (Task 2 fix round 2), never a gift household", async () => {
+        const hh = await pedrosHousehold();
+        // Marta was added to Pedro's household: that is Pedro's home, not her default.
+        const martas = await ensureHousehold(db(), 'marta', MATE);
+        expect(martas).toBe('hh-marta');
+        // Ana's only household is a gift one: a new ordinary household is made for her.
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
+        const own = await ensureHousehold(db(), 'ana', OWNER);
+        expect(own).not.toBe('gift1');
+        // With a gift household in the DB, everyone else's existing household is still found.
+        expect(await ensureHousehold(db(), 'marta', MATE)).toBe(martas);
+        expect(await ensureHousehold(db(), 'pedro', MATE)).toBe(hh);
+        expect(await ensureHousehold(db(), 'ana', OWNER)).toBe(own);
+        expect((await householdIdsOf(db(), 'ana')).sort()).toEqual(['gift1', own].sort());
+    });
+
+    it('removeMembership: a mistake leaves no record; «No vive acá» writes a correction with the snapshot; the household stays', async () => {
+        const hh = await pedrosHousehold();
+        const marta = memberships().find(r => r.adopter_id === 'marta')!;
+        const lucas = memberships().find(r => r.adopter_id === 'lucas')!;
+
+        const r1 = await removeMembership(db(), String(marta.id), STRANGER, { correction: false });
+        expect(r1.removed).toMatchObject({ id: marta.id, adopterId: 'marta', householdId: hh });
+        expect(r1.correctionId).toBeNull();
+        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM household_corrections').get()).toEqual({ n: 0 });
+        expect(await hasCorrection(db(), hh, 'marta')).toBe(false);
+
+        const r2 = await removeMembership(db(), String(lucas.id), MATE, { correction: true });
+        expect(r2.correctionId).toBeTruthy();
+        const c = sqlite.prepare('SELECT * FROM household_corrections').get()!;
+        expect(c).toMatchObject({ id: r2.correctionId, household_id: hh, adopter_id: 'lucas', corrected_by: MATE });
+        expect(JSON.parse(String(c.snapshot))).toMatchObject({ id: lucas.id, adopterId: 'lucas', relationship: 'child', relativeToAdopterId: 'pedro', addedBy: STRANGER });
+        expect(await hasCorrection(db(), hh, 'lucas')).toBe(true);
+
+        expect(memberships().map(r => r.adopter_id)).toEqual(['pedro']);
+        expect(sqlite.prepare('SELECT id FROM households').all()).toEqual([{ id: hh }]);
+        // Gone already: nothing happens.
+        expect(await removeMembership(db(), String(lucas.id), MATE, { correction: true })).toEqual({ removed: null, correctionId: null });
+    });
+
+    it('sameHousehold: housemates yes, strangers no, a gift household does not count, self is not a housemate', async () => {
+        await pedrosHousehold();
+        expect(await sameHousehold(db(), 'marta', 'lucas')).toBe(true);
+        expect(await sameHousehold(db(), 'pedro', 'marta')).toBe(true);
+        expect(await sameHousehold(db(), 'pedro', 'rosa')).toBe(false);
+        expect(await sameHousehold(db(), 'pedro', 'pedro')).toBe(false);
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
+        expect(await sameHousehold(db(), 'ana', 'rosa')).toBe(false);
+        // A gift household elsewhere never hides ordinary ones (the NOT EXISTS is correlated to each household).
+        expect(await sameHousehold(db(), 'marta', 'lucas')).toBe(true);
+        const rosas = await ensureHousehold(db(), 'rosa', STRANGER);
+        await addMembership(db(), { householdId: rosas, adopterId: 'lucas', addedBy: STRANGER });
+        expect(await sameHousehold(db(), 'rosa', 'lucas')).toBe(true);
+        expect(await sameHousehold(db(), 'pedro', 'rosa')).toBe(false);
+    });
+});
+
+describe('dropMembershipsOfDeletedProfile (Task 8: «Eliminar perfil»)', () => {
+    it('takes a deleted profile out of its ordinary households; gift households stay as they are', async () => {
+        const hh = await pedrosHousehold();
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'lucas', giftRecipient: true, relativeToAdopterId: 'ana', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: null });
+        await dropMembershipsOfDeletedProfile(db(), 'lucas');
+        expect(memberships().filter(r => r.adopter_id === 'lucas').map(r => r.household_id)).toEqual(['gift1']);
+        expect(memberships().filter(r => r.household_id === hh).map(r => r.adopter_id).sort()).toEqual(['marta', 'pedro']);
+    });
+});
+
+describe('getHouseholdsFor', () => {
+    it("excludes the viewed profile; labels per spec; each member's live summary", async () => {
+        const hh = await pedrosHousehold();
+        const [view] = await getHouseholdsFor(db(), OWNER, 'lucas');
+        expect(view.id).toBe(hh);
+        expect(view.isGift).toBe(false);
+        expect(view.members.map(m => m.profileId).sort()).toEqual(['marta', 'pedro']);
+        const pedro = view.members.find(m => m.profileId === 'pedro')!;
+        const marta = view.members.find(m => m.profileId === 'marta')!;
+        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: ['inaccurate'], activity: { adoption: 1 }, label: null, addedByName: null, isMinor: false });
+        expect(pedro).not.toHaveProperty('ownerName'); // «Perfil cargado por …» is not on household rows (addendum 2026-10-27)
+        // ↑ Pedro's own (anchor) row has no adder (Task 2 fix 1): no «según …» on it.
+        expect(pedro.linkId).toBe(pedro.membershipId);
+        expect(marta.label).toEqual({ key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_partner', name: 'Pedro Paez' } });
+
+        const onMarta = (await getHouseholdsFor(db(), OWNER, 'marta'))[0].members;
+        expect(onMarta.find(m => m.profileId === 'pedro')!.label).toEqual({ key: 'adopter.hh_rel_partner', params: {} });
+        const lucas = onMarta.find(m => m.profileId === 'lucas')!;
+        expect(lucas).toMatchObject({ isMinor: true, age: currentAge({ age: 12, ageAsOf: '2026-01-01' }), relationship: 'child', relativeToAdopterId: 'pedro', addedByName: 'stranger' });
+        expect(lucas.label).toEqual({ key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_child', name: 'Pedro Paez' } });
+    });
+
+    it("a member's activity is counted as their own «Actividad» counts it: active fosters and every event kind, not an ended placement", async () => {
+        await pedrosHousehold();
+        const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, ?, ?)`);
+        animal.run('an2', 'Michi', OWNER);
+        animal.run('an3', 'Tom', OWNER);
+        animal.run('an4', 'Gone', OWNER);
+        sqlite.exec(`UPDATE animals SET deleted_at = 5000 WHERE id = 'an4'`);
+        const place = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, ended_at) VALUES (?, ?, 'marta', ?, ?)`);
+        place.run('p2', 'an2', 'foster', null);        // Marta fosters Michi now: counted
+        place.run('p3', 'an3', 'adoption', 4000);      // an adoption that ended: not on «Actividad», not counted
+        place.run('p4', 'an4', 'adoption', null);      // a deleted animal: not on «Actividad», not counted
+        const ev = sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type) VALUES (?, 'marta', ?)`);
+        ev.run('e1', 'adoption_request');
+        ev.run('e2', 'adoption_request');
+        ev.run('e3', 'returned_pet');
+        ev.run('e4', 'observation');
+        const marta = (await getHouseholdsFor(db(), OWNER, 'pedro'))[0].members.find(m => m.profileId === 'marta')!;
+        expect(marta.activity).toEqual({ foster: 1, adoption_request: 2, returned_pet: 1, observation: 1 });
+        // The very rows the profile's own «Actividad» lists (getAdoptions reads the `adoptions` view).
+        const own = sqlite.prepare(`SELECT record_type AS recordType FROM adoptions WHERE adopter_id = 'marta'`).all() as Array<{ recordType: string }>;
+        expect(countActivity(own)).toEqual(marta.activity);
+        // Card lines read rating and alerts only: no activity listed, the rating from the same pass.
+        expect(await countsFor(db(), 'pedro', {}, { activity: false })).toEqual({ rating: 1, openAlerts: ['inaccurate'], activity: {} });
+        expect(await countsFor(db(), 'marta', {})).toEqual({ rating: null, openAlerts: [], activity: marta.activity });
+    });
+
+    it("Task 8: the viewed profile's own place («Lucas figura como hijo/a de Pedro · según …»), anchor rows, the viewer's own adds and profiles", async () => {
+        await pedrosHousehold();
+        const [onLucas] = await getHouseholdsFor(db(), STRANGER, 'lucas');
+        expect(onLucas.self).toEqual({
+            label: { key: 'adopter.hh_rel_of', params: { rel: 'adopter.hh_rel_child', name: 'Pedro Paez' } },
+            addedByName: 'stranger', isAnchor: false, addedByViewer: true,
+        });
+        const pedro = onLucas.members.find(m => m.profileId === 'pedro')!;
+        const marta = onLucas.members.find(m => m.profileId === 'marta')!;
+        expect(pedro).toMatchObject({ isAnchor: true, addedByViewer: false, ownerIsViewer: false });
+        expect(marta).toMatchObject({ isAnchor: false, addedByViewer: false, ownerIsViewer: false });
+
+        const [onPedro] = await getHouseholdsFor(db(), STRANGER, 'pedro');
+        expect(onPedro.self).toEqual({ label: null, addedByName: null, isAnchor: true, addedByViewer: false });
+        // STRANGER added Lucas and owns his profile.
+        expect(onPedro.members.find(m => m.profileId === 'lucas')).toMatchObject({ addedByViewer: true, ownerIsViewer: true, isAnchor: false });
+        const asOwner = (await getHouseholdsFor(db(), OWNER.toUpperCase(), 'pedro'))[0].members.find(m => m.profileId === 'marta')!;
+        expect(asOwner).toMatchObject({ addedByViewer: true, ownerIsViewer: true });
+        // A guest is nobody.
+        const asGuest = (await getHouseholdsFor(db(), null, 'pedro'))[0];
+        expect(asGuest.self.addedByViewer).toBe(false);
+        expect(asGuest.members.every(m => !m.addedByViewer && !m.ownerIsViewer)).toBe(true);
+    });
+
+    it('two households → two views', async () => {
+        await pedrosHousehold();
+        const second = await ensureHousehold(db(), 'rosa', STRANGER);
+        await addMembership(db(), { householdId: second, adopterId: 'lucas', relationship: 'child', relativeToAdopterId: 'rosa', addedBy: STRANGER });
+        const views = await getHouseholdsFor(db(), STRANGER, 'lucas');
+        expect(views.map(v => v.members.map(m => m.profileId).sort())).toEqual([['marta', 'pedro'], ['rosa']]);
+        // Lucas is Rosa's child; Rosa gets no reverse «madre» label (no gender, no reverse labels).
+        expect(views[1].members[0].label).toBeNull();
+    });
+
+    it('a gift household is flagged', async () => {
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
+        const [view] = await getHouseholdsFor(db(), OWNER, 'ana');
+        expect(view).toMatchObject({ id: 'gift1', isGift: true });
+        expect(view.members).toEqual([expect.objectContaining({ profileId: 'rosa', giftRecipient: true })]);
+        expect((await getHouseholdsFor(db(), OWNER, 'rosa'))[0].isGift).toBe(true);
+    });
+
+    it("a masked viewer gets the member's contacts masked as her profile masks them; her team sees them in full; no rescuer email leaks", async () => {
+        await pedrosHousehold();
+        const asStranger = (await getHouseholdsFor(db(), STRANGER, 'lucas'))[0].members.find(m => m.profileId === 'marta')!;
+        expect(asStranger.canSeeContact).toBe(false);
+        expect(asStranger.contacts).toHaveLength(2);
+        expect(asStranger.contacts.every(c => c.masked)).toBe(true);
+        expect(asStranger.contacts.map(c => c.value)).not.toContain('marta@example.org');
+        expect(asStranger.contacts.map(c => c.value)).not.toContain('+54 11 5555 0101');
+
+        const asMate = (await getHouseholdsFor(db(), MATE, 'lucas'))[0].members.find(m => m.profileId === 'marta')!;
+        expect(asMate.canSeeContact).toBe(true);
+        expect(asMate.contacts.map(c => c.value)).toEqual(['+54 11 5555 0101', 'marta@example.org']);
+
+        for (const viewer of [STRANGER, MATE, OWNER, null]) {
+            for (const id of ['pedro', 'marta', 'lucas']) {
+                const json = JSON.stringify(await getHouseholdsFor(db(), viewer, id));
+                for (const email of [OWNER, MATE, STRANGER, ADMIN]) expect(json, `${viewer} on ${id}`).not.toContain(email);
+            }
+        }
+    });
+
+    it('a deleted profile is skipped; a household with nobody else live shows no view; a deleted viewed profile shows nothing', async () => {
+        const hh = await pedrosHousehold();
+        await addMembership(db(), { householdId: hh, adopterId: 'gone', relationship: 'sibling', relativeToAdopterId: 'pedro', addedBy: OWNER });
+        expect((await getHouseholdsFor(db(), OWNER, 'pedro'))[0].members.map(m => m.profileId).sort()).toEqual(['lucas', 'marta']);
+        const lonely = await ensureHousehold(db(), 'rosa', STRANGER);
+        await addMembership(db(), { householdId: lonely, adopterId: 'gone', addedBy: STRANGER });
+        expect(await getHouseholdsFor(db(), STRANGER, 'rosa')).toEqual([]);
+        expect(await getHouseholdsFor(db(), OWNER, 'gone')).toEqual([]);
+    });
+
+    it('canRemove: the adder, a housemate team, an admin — not a stranger; canReportNotLiving follows canRemove', async () => {
+        await pedrosHousehold();
+        const flags = async (viewer: string | null, on: string, member: string) => {
+            const m = (await getHouseholdsFor(db(), viewer, on))[0].members.find(x => x.profileId === member)!;
+            return [m.canRemove, m.canReportNotLiving];
+        };
+        // STRANGER added Lucas (and owns him): may remove him; Marta was added by OWNER.
+        expect(await flags(STRANGER, 'pedro', 'lucas')).toEqual([true, true]);
+        // STRANGER owns Lucas, but STRANGER put Lucas there: standing is never self-granted (Task 2 fix 4).
+        expect(await flags(STRANGER, 'pedro', 'marta')).toEqual([false, false]);
+        // MATE: team of Pedro and Marta.
+        expect(await flags(MATE, 'lucas', 'marta')).toEqual([true, true]);
+        expect(await flags(ADMIN, 'lucas', 'marta')).toEqual([true, true]);
+        expect(await flags('other@example.com', 'lucas', 'marta')).toEqual([false, false]);
+        expect(await flags(null, 'lucas', 'marta')).toEqual([false, false]);
+    });
+
+    it('the pre-read hook runs before the read (Task 7 converts there); a failing hook is logged and the read goes on', async () => {
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        const hook = vi.fn(async (d: Parameters<typeof getHouseholdsFor>[0], id: string) => {
+            await addMembership(d, { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: id, addedBy: OWNER });
+        });
+        const views = await getHouseholdsFor(db(), OWNER, 'pedro', { beforeRead: hook });
+        expect(hook).toHaveBeenCalledWith(db(), 'pedro');
+        expect(views[0].members.map(m => m.profileId)).toEqual(['marta']);
+
+        const failing = vi.fn(async () => { throw new Error('boom'); });
+        expect((await getHouseholdsFor(db(), OWNER, 'pedro', { beforeRead: failing }))[0].members).toHaveLength(1);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('households'), expect.objectContaining({ adopterId: 'pedro', error: 'boom' }));
+    });
+
+    it("one member's failed profile read skips that member (logged with context), not the whole section", async () => {
+        await pedrosHousehold();
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const real = handle.select.bind(handle);
+        let profileReads = 0;
+        const spy = vi.spyOn(handle, 'select').mockImplementation((cols?: Record<string, unknown>) => {
+            // Profile reads select ageAsOf: the 1st is Pedro (viewed), the 2nd Marta.
+            if (cols && 'ageAsOf' in cols && ++profileReads === 2) {
+                return { from: () => ({ where: () => ({ get: async () => { throw new Error('D1 hiccup'); } }) }) };
+            }
+            return real(cols);
+        });
+        try {
+            const views = await getHouseholdsFor(db(), OWNER, 'pedro');
+            expect(views[0].members.map(m => m.profileId)).toEqual(['lucas']);
+            expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('households'),
+                expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, profileId: 'marta', error: 'D1 hiccup' }));
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('never throws: a broken read is logged and shows no households', async () => {
+        await pedrosHousehold();
+        sqlite.exec('DROP TABLE household_memberships');
+        expect(await getHouseholdsFor(db(), OWNER, 'pedro')).toEqual([]);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('households'), expect.objectContaining({ adopterId: 'pedro' }));
+    });
+});
+
+describe('householdLinesFor', () => {
+    it("each profile's housemates with live rating and alerts; gift and minors flagged; no household → []", async () => {
+        const hh = await pedrosHousehold();
+        sqlite.exec(`INSERT INTO households (id, created_by, created_at) VALUES ('gift1', '${OWNER}', 1)`);
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'ana', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', giftRecipient: true, addedBy: OWNER });
+
+        const homes = await householdLinesFor(db(), STRANGER, ['lucas', 'marta', 'ana', 'gone', 'nobody']);
+        expect(Object.keys(homes).sort()).toEqual(['ana', 'gone', 'lucas', 'marta', 'nobody']);
+        const lines = Object.fromEntries(Object.entries(homes).map(([k, v]) => [k, v.lines]));
+        expect(lines.lucas).toEqual(expect.arrayContaining([
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
+            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
+        ]));
+        expect(lines.lucas).toHaveLength(2);
+        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: true, isGift: false, householdId: hh });
+        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: true, householdId: 'gift1' }]);
+        expect(lines.nobody).toEqual([]);
+        expect(lines.gone).toEqual([]);
+    });
+
+    it("a housemate's ALERTS are the search card's own: the same rule, config and per-rescue request count (enrichAdopters)", async () => {
+        await pedrosHousehold();
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90'),
+            ('too_many_requests_threshold', '2'), ('too_many_requests_period_days', '30')`);
+        const day = 86_400, t0 = 1_780_000_000;
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an2', 'Mora', ?), ('an3', 'Tom', ?)`).run(OWNER, OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES ('p2', 'an2', 'marta', 'adoption', ?), ('p3', 'an3', 'marta', 'adoption', ?)`).run(t0, t0 + 10 * day);
+        // Three requests, two rescuers of ONE organization and a third rescue: 2 rescues.
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email) VALUES ('om1', 'org1', ?), ('om2', 'org1', ?)`).run(OWNER, MATE);
+        const ev = sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, date, recorded_by) VALUES (?, 'marta', 'adoption_request', ?, ?)`);
+        ev.run('e1', t0, OWNER); ev.run('e2', t0 + day, MATE); ev.run('e3', t0 + 2 * day, STRANGER);
+
+        const line = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines.find(l => l.profileId === 'marta')!;
+        const own = (await enrichAdopters(db(), ['marta'])).get('marta')!.flags;
+        expect(line.alerts).toEqual({ tooManyAdoptions: own.tooManyAdoptions, tooManyRequests: own.tooManyRequests });
+        expect(line.alerts.tooManyAdoptions).toMatchObject({ count: 2, threshold: 2, periodDays: 90 });
+        expect(line.alerts.tooManyRequests).toMatchObject({ count: 2, threshold: 2, periodDays: 30 });
+        // Flags stay what they were: Marta has none, Pedro's «Inexacto» is not an alert.
+        expect(line.openAlerts).toEqual([]);
+        const pedroLine = (await householdLinesFor(db(), OWNER, ['marta'])).marta.lines.find(l => l.profileId === 'pedro')!;
+        expect(pedroLine.alerts).toEqual(NO_PERIOD_ALERTS);
+    });
+
+    it("a failed alerts read is logged with the card's context and shows no alerts", async () => {
+        await pedrosHousehold();
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const real = handle.select.bind(handle);
+        const spy = vi.spyOn(handle, 'select').mockImplementation(((cols?: Record<string, unknown>) => {
+            if (cols && 'recordType' in cols && 'addedBy' in cols && Object.keys(cols).length === 3) throw new Error('D1 down');
+            return real(cols as never);
+        }) as never);
+        try {
+            const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+            expect(pedro.lines.find(l => l.profileId === 'marta')!.alerts).toEqual(NO_PERIOD_ALERTS);
+            expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alerts read failed'), expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, profileId: 'marta' }));
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('a big household reads at most the cap: profile reads stop once the card line is full, and deleted rows cannot make it read without end', async () => {
+        const hh = await ensureHousehold(db(), 'pedro', OWNER);
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at, deleted_at) VALUES (?, ?, '5', ?, 1000, 1000, ?)`);
+        // 25 deleted housemates first, then 4 live ones.
+        for (let i = 0; i < 29; i++) {
+            const id = `big${String(i).padStart(2, '0')}`;
+            insert.run(id, `Person ${i}`, OWNER, i < 25 ? 5000 : null);
+            await addMembership(db(), { householdId: hh, adopterId: id, addedBy: OWNER, addedAt: new Date(1_000_000 + i * 1000) });
+        }
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const spy = vi.spyOn(handle, 'select');
+        const profileReads = () => spy.mock.calls.filter(([cols]) => !!cols && 'ageAsOf' in (cols as object)).length;
+        try {
+            const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+            expect(profileReads()).toBeLessThanOrEqual(MAX_CARD_PROFILE_READS);
+            // The hard cap may hide live people behind many deleted ones; it never reads them all.
+            expect(pedro.lines.length).toBeLessThanOrEqual(MAX_HOUSEHOLD_LINES);
+
+            // All live: reading stops as soon as MAX_HOUSEHOLD_LINES are found.
+            sqlite.exec('UPDATE adopters SET deleted_at = NULL');
+            spy.mockClear();
+            const lines = (await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines;
+            expect(lines).toHaveLength(MAX_HOUSEHOLD_LINES);
+            expect(profileReads()).toBe(MAX_HOUSEHOLD_LINES);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('a housemate shared through two households is one line; a deleted housemate is left out', async () => {
+        const hh = await pedrosHousehold();
+        await addMembership(db(), { householdId: hh, adopterId: 'gone', addedBy: OWNER });
+        const second = await ensureHousehold(db(), 'rosa', STRANGER);
+        await addMembership(db(), { householdId: second, adopterId: 'lucas', addedBy: STRANGER });
+        await addMembership(db(), { householdId: second, adopterId: 'pedro', addedBy: STRANGER });
+        const { lucas } = await householdLinesFor(db(), null, ['lucas']);
+        expect(lucas.lines.map(l => l.profileId).sort()).toEqual(['marta', 'pedro', 'rosa']);
+    });
+
+    it('the households flag is read failing open: a failed read keeps the housemate lines', async () => {
+        await pedrosHousehold();
+        const { getFeatureFlag } = await import('@/config/features');
+        await householdLinesFor(db(), STRANGER, ['lucas']);
+        expect(vi.mocked(getFeatureFlag)).toHaveBeenCalledWith('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true });
+    });
+
+    it('households switched off: no lines at all, nothing read', async () => {
+        await pedrosHousehold();
+        const { getFeatureFlag } = await import('@/config/features');
+        vi.mocked(getFeatureFlag).mockImplementationOnce(async () => false);
+        expect(await householdLinesFor(db(), STRANGER, ['lucas', 'marta'])).toEqual({});
+    });
+});
+
+describe('review fix 2 — the chips answer for every housemate, whatever the list can show', () => {
+    /** Pedro's home with `n` more people (live, unrated), added after Marta and Lucas. */
+    async function bigHome(n: number): Promise<{ hh: string; ids: string[] }> {
+        const hh = await pedrosHousehold();
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 1000, 1000)`);
+        const ids: string[] = [];
+        for (let i = 0; i < n; i++) {
+            const id = `mate${String(i).padStart(2, '0')}`;
+            insert.run(id, `Mate ${i}`, OWNER);
+            await addMembership(db(), { householdId: hh, adopterId: id, addedBy: OWNER, addedAt: new Date(Date.now() + (i + 1) * 1000) });
+            ids.push(id);
+        }
+        return { hh, ids };
+    }
+
+    it('the 11th housemate is the 1★ one → the chip still shows, the list stops at 10 and says «y 1 más»', async () => {
+        // Pedro's home: Marta, Lucas and 8 more fill the list; the 11th, added last, is rated 1.
+        await bigHome(8);
+        const insert = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('late', 'Late Bad', '5', ?, 1000, 1000)`);
+        insert.run(OWNER);
+        const hh = (sqlite.prepare(`SELECT household_id FROM household_memberships WHERE adopter_id = 'pedro'`).get()!.household_id) as string;
+        await addMembership(db(), { householdId: hh, adopterId: 'late', addedBy: OWNER, addedAt: new Date(Date.now() + 3_600_000) });
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an9', 'Nube', ?)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating) VALUES ('p9', 'an9', 'late', 'adoption', 1)`).run();
+        // Pedro's card: Marta, Lucas, 8 mates, then «late» — the 11th housemate.
+        const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+        expect(pedro.lines).toHaveLength(MAX_HOUSEHOLD_LINES);
+        expect(pedro.lines.map(l => l.profileId)).not.toContain('late');
+        expect(pedro.alert).toEqual({ lowRating: 1, hasAlerts: false });
+        expect(pedro.more).toBe(1);
+    });
+
+    it('an alert of a housemate the list leaves out still raises «Conviviente con alertas»', async () => {
+        const { ids } = await bigHome(10);
+        const last = ids[ids.length - 1];
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90')`);
+        sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an2', 'Mora', ?), ('an3', 'Tom', ?)`).run(OWNER, OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES ('p2', 'an2', ?, 'adoption', 1780000000), ('p3', 'an3', ?, 'adoption', 1780864000)`).run(last, last);
+        const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+        expect(pedro.lines.map(l => l.profileId)).not.toContain(last);
+        expect(pedro.alert.hasAlerts).toBe(true);
+        // Pedro's own ★1 is not his own housemate: no rating chip on his card.
+        expect(pedro.alert.lowRating).toBeNull();
+    });
+
+    it('a card past `listCards` reads its list only when it raises a chip; a gift home never raises one', async () => {
+        await pedrosHousehold();
+        await createHousehold(db(), OWNER, 'gift1');
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'rosa', addedBy: OWNER });
+        await addMembership(db(), { householdId: 'gift1', adopterId: 'pedro', giftRecipient: true, relativeToAdopterId: 'rosa', addedBy: OWNER });
+        const homes = await householdLinesFor(db(), OWNER, ['nobody', 'marta', 'rosa'], { listCards: 1 });
+        // Marta (#2) lives with Pedro (★1): chip and list.
+        expect(homes.marta.alert.lowRating).toBe(1);
+        expect(homes.marta.lines.map(l => l.profileId).sort()).toEqual(['lucas', 'pedro']);
+        // Rosa (#3) only GAVE to Pedro: no chip, and no list read for her.
+        expect(homes.rosa).toEqual({ lines: [], more: 0, alert: { lowRating: null, hasAlerts: false } });
+    });
+
+    it('too many housemates who might have alerts: reads stop at the cap, logged with the card\'s context', async () => {
+        // Re-review M-c: every one is screened in (two adoptions, threshold 2) but NONE has an alert (a year
+        // apart, 90-day period), so the reads never stop early on a found alert — only the cap stops them.
+        const n = MAX_CARD_ALERT_READS + 2;
+        const { ids } = await bigHome(n);
+        sqlite.exec(`INSERT OR REPLACE INTO app_config (key, value) VALUES ('too_many_adoptions_threshold', '2'), ('too_many_adoptions_period_days', '90')`);
+        const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, 'X', ?)`);
+        const adopt = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES (?, ?, ?, 'adoption', ?)`);
+        ids.forEach((id, i) => {
+            for (const k of [0, 1]) { animal.run(`anx${i}-${k}`, OWNER); adopt.run(`pa${i}-${k}`, `anx${i}-${k}`, id, 1_780_000_000 + k * 365 * 86_400); }
+        });
+        const handle = state.db as { select: (cols?: Record<string, unknown>) => unknown };
+        const spy = vi.spyOn(handle, 'select');
+        try {
+            // listCards: 0 — no list read, so every alert read counted is a chip read.
+            const { pedro } = await householdLinesFor(db(), OWNER, ['pedro'], { listCards: 0 });
+            expect(pedro.alert).toEqual({ lowRating: null, hasAlerts: false });
+            const alertReads = spy.mock.calls.filter(([cols]) => !!cols && 'recordType' in (cols as object) && 'addedBy' in (cols as object) && Object.keys(cols as object).length === 3);
+            expect(alertReads).toHaveLength(MAX_CARD_ALERT_READS);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('alert read cap hit'), expect.objectContaining({ adopterId: 'pedro', viewer: OWNER, candidates: n, cap: MAX_CARD_ALERT_READS }));
+    });
+});
+
+describe('final fix D1(a) — a member merged away by an old build shows as its survivor', () => {
+    /** What an old build's merge leaves: the absorbed row soft-deleted as MERGED, its memberships untouched, the audit row. */
+    const oldBuildMerge = (absorbed: string, survivor: string) => {
+        sqlite.prepare(`UPDATE adopters SET deleted_at = 6000, token_hash = 'MERGED' WHERE id = ?`).run(absorbed);
+        sqlite.prepare(`INSERT INTO audit_log (id, user_email, action, target, details, created_at) VALUES (?, ?, 'adopter_merge', ?, ?, 6000)`)
+            .run(`al-${absorbed}`, OWNER, survivor, JSON.stringify({ primaryId: survivor, secondaryId: absorbed }));
+    };
+
+    it('the household on Pedro\'s profile and his card line show Rosa (who absorbed Marta) in Marta\'s place', async () => {
+        await pedrosHousehold();
+        oldBuildMerge('marta', 'rosa');
+        const [view] = await getHouseholdsFor(db(), OWNER, 'pedro');
+        expect(view.members.map(m => m.profileId).sort()).toEqual(['lucas', 'rosa']);
+        const { pedro } = await householdLinesFor(db(), OWNER, ['pedro']);
+        expect(pedro.lines.map(l => l.profileId).sort()).toEqual(['lucas', 'rosa']);
+    });
+
+    it('a survivor already in the household, or the profile itself, is never listed twice', async () => {
+        await pedrosHousehold();
+        oldBuildMerge('marta', 'lucas');
+        const [view] = await getHouseholdsFor(db(), OWNER, 'pedro');
+        expect(view.members.map(m => m.profileId)).toEqual(['lucas']);
+        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines.map(l => l.profileId)).toEqual(['lucas']);
+        // Merged into Pedro himself: not his own housemate.
+        sqlite.prepare(`UPDATE adopters SET deleted_at = NULL, token_hash = NULL WHERE id = 'marta'`).run();
+        sqlite.prepare(`DELETE FROM audit_log`).run();
+        oldBuildMerge('marta', 'pedro');
+        expect((await getHouseholdsFor(db(), OWNER, 'pedro'))[0].members.map(m => m.profileId)).toEqual(['lucas']);
+        expect((await householdLinesFor(db(), OWNER, ['pedro'])).pedro.lines.map(l => l.profileId)).toEqual(['lucas']);
+    });
+});

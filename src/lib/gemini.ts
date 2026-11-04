@@ -19,7 +19,12 @@ export interface ExtractedAdopterData {
     addresses?: string[];
     socialProfiles?: string[];
     notes?: string;
+    /** How well the AI could READ and EXTRACT the data — never how it interprets the post. */
     confidence: 'high' | 'medium' | 'low';
+    /** What got in the way of extracting (see EXTRACTION QUALITY in the prompt). */
+    extractionIssues?: string[];
+    /** The AI call itself failed; nothing was read. */
+    extractionFailed?: boolean;
     rawExtraction?: string;
     // Adoption detection
     adoptionDetected?: boolean;
@@ -27,7 +32,15 @@ export interface ExtractedAdopterData {
     animalSpecies?: string;
     adoptionConfidence?: 'high' | 'medium' | 'low';
     recordType?: 'adoption' | 'adoption_request' | 'returned_pet' | 'follow_up' | 'observation';
-    adoptionRating?: number; // 1-5 rating for the adoption
+    adoptionRating?: number; // 1-5 SUGGESTED rating — shown to the rescuer to confirm, never saved silently
+    // Other people the post names alongside the main person (a partner, a relative,
+    // someone they live with). Saved as relatives of the main profile (Jon, 2026-10-22).
+    otherPeople?: Array<{
+        name: string;
+        relationship?: 'partner' | 'child' | 'parent' | 'sibling' | 'other_relative' | 'housemate' | 'unknown';
+        phones?: string[];
+        socialProfiles?: string[];
+    }>;
     adoptionDate?: string; // YYYY-MM-DD format if mentioned in the post
 }
 
@@ -76,13 +89,40 @@ Look for phrases like "ya adoptado", "ya tiene hogar", "fue adoptado", "adopted"
 If an adoption is mentioned, extract the animal's name, species, and the date of the adoption if mentioned.
 For the adoption date, look for explicit dates, relative dates ("yesterday", "last week", "hace 2 días"), or contextual dates from the post. Return in YYYY-MM-DD format, or null if no date is mentioned.
 
-RATING: If an adoption is detected, assign a rating from 1 to 5 based on your assessment:
-- 1 = Concerning (red flags, rushed adoption, unknown person)
-- 2 = Low confidence (limited info, cannot verify)
-- 3 = Neutral (some info but not enough to assess)
-- 4 = Positive (good signs, responsive adopter)
-- 5 = Excellent (verified, thorough process)
-For most adoption announcements from rescue groups where you have minimal information about the adopter, default to rating 2 (low confidence).
+RATING — a SUGGESTION the rescuer will confirm or change. Most posts imported here REPORT or CALL OUT a person
+(denuncias, escraches) for what they did to animals. Suggest a rating from what the post says the person did:
+- 1 = HARM: abuse, beating, torture, killing, poisoning, sexual abuse of animals, abandonment (dumping, leaving an
+  animal behind or tied up), selling or giving away adopted animals, hoarding with suffering.
+- 2 = NEGLECT / IRRESPONSIBILITY: neglect without described harm, broken adoption commitments (no spay/neuter,
+  no follow-up, not answering), returning animals, lying on an adoption form, irresponsible behaviour.
+- 3, 4 or 5 only when the post clearly praises the person as an adopter (rare here).
+- null when the post gives no grounds (unclear who did what, no conduct described). NEVER default to a rating
+  without grounds in the post.
+DATE: "adoptionDate" is when the reported events (or the adoption) happened, if the post says; else null.
+
+EXTRACTION QUALITY — "confidence" and "extractionIssues" describe ONLY how well you could read and extract the
+data from the text/images you were given. They must NOT reflect what you think of the content (whether the
+accusation is true, how serious it is — that belongs in the rating).
+- "high": everything relevant was legible and you are sure of every name, phone, email and handle you returned.
+- "medium": minor doubts (a digit or a spelling you are not sure of, part of the text hard to read).
+- "low": important parts were unreadable, cut off or missing, or you had to guess.
+"extractionIssues" lists each problem you hit, using only these codes:
+- "image_unreadable": an image is blurry, too small, dark or otherwise hard to read
+- "text_cut_off": the text or screenshot is cut off / truncated, so information may be missing
+- "uncertain_contact": you are not sure of some digits of a phone or the spelling of an email/handle
+- "uncertain_name": you are not sure how a name is spelled, or only part of it is visible
+- "unclear_attribution": you cannot tell which contact or detail belongs to which person
+Use [] when there were no extraction problems.
+
+SEVERAL PEOPLE: a post may name more than one person (e.g. "cuidado con Juan Pérez y su pareja Ana Gómez").
+- "name" and the top-level contacts belong to the MAIN person: the one the post is mainly about (usually the
+  first one named or the one directly accused).
+- Put every OTHER person the post names as involved with the main person (partner, relative, someone they
+  live with, an accomplice) in "otherPeople", each with their own name, relationship to the main person if
+  stated ("partner" | "child" | "parent" | "sibling" | "other_relative" | "housemate" | "unknown"), and ONLY
+  the phones/social profiles the post attributes to THEM (never duplicate the main person's).
+- Do NOT include the author of the post, the rescuers, the victims (animals) or people only mentioned in
+  passing. Use [] when the post names only one person.
 
 RECORD TYPE CLASSIFICATION — CRITICAL:
 You MUST ALWAYS classify the post into one of these record types:
@@ -106,17 +146,19 @@ Respond ONLY with valid JSON in this exact format:
   "socialProfiles": ["MUST include ALL @handles and profile links found — never omit them"],
   "notes": "any other relevant information as a string",
   "confidence": "high" | "medium" | "low",
+  "extractionIssues": ["image_unreadable" | "text_cut_off" | "uncertain_contact" | "uncertain_name" | "unclear_attribution"],
   "adoptionDetected": true | false,
   "recordType": "adoption" | "adoption_request" | "follow_up" | "observation" | "returned_pet",
   "animalName": "name of the animal or null",
   "animalSpecies": "dog" | "cat" | "bird" | "other" | null,
   "adoptionConfidence": "high" | "medium" | "low" | null,
   "adoptionRating": 1-5 or null,
+  "otherPeople": [{"name": "string", "relationship": "partner|child|parent|sibling|other_relative|housemate|unknown", "phones": [], "socialProfiles": []}],
   "adoptionDate": "YYYY-MM-DD or null"
 }
 
 If you cannot extract any relevant information, return:
-{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "adoptionDate": null}
+{"name": null, "phones": [], "emails": [], "addresses": [], "socialProfiles": [], "notes": "", "confidence": "low", "extractionIssues": [], "adoptionDetected": false, "recordType": "observation", "animalName": null, "animalSpecies": null, "adoptionConfidence": null, "adoptionRating": null, "otherPeople": [], "adoptionDate": null}
 `;
 }
 
@@ -198,6 +240,9 @@ export async function extractAdopterData(
         logger.error('Gemini extraction failed', error);
         return {
             confidence: 'low',
+            // Said explicitly so the wizard shows "we could not read it, retry"
+            // instead of a review screen of empty fields (Jon, 2026-10-22).
+            extractionFailed: true,
             notes: `Extraction failed: ${error instanceof Error ? error.message : String(error)}`,
             rawExtraction: String(error),
         };

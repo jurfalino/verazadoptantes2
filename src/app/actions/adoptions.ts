@@ -12,12 +12,13 @@ import { z } from 'zod';
 import { planFieldSave, canonField, holdTogether } from '@/domain/fieldCollab';
 import { recordFieldAuthors } from '@/lib/collabAttribution';
 import { casAdopterLists } from '@/lib/adopterListCas';
-import { deserializeContactEntries, parseBlobToContactEntries, mergeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
+import { deserializeContactEntries, parseBlobToContactEntries, mergeContactEntries, contactEntriesToBlob, contactCapExceeded } from '@/lib/contactEntries';
 import { SAVE_BUSY, ANIMAL_ALREADY_PLACED } from '@/domain/fieldCollab';
 import { insertRecord, updateRecord, isActivePlacementConflict, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { animalPrimaryFirst } from '@/lib/showcase';
+import { historyKindFor } from '@/lib/profilePrivilege';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
 export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
@@ -86,10 +87,14 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
 
             // Log to adopter history ONLY if linked immediately
             if (data.adopterId) {
+                // Logging a record on a profile is open to anyone signed in: on
+                // someone else's profile it is a contribution (src/lib/profilePrivilege.ts).
+                const kind = await historyKindFor(db, data.adopterId, changedBy);
                 await db.insert(adopterHistory).values({
                     id: crypto.randomUUID(),
                     adopterId: data.adopterId,
                     changedBy,
+                    kind,
                     changes: JSON.stringify({
                         adoption_added: {
                             animalName: data.animalName,
@@ -114,6 +119,11 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                         const base = current.length ? current : parseBlobToContactEntries(row.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
                         const merged = mergeContactEntries(base, [{ id: crypto.randomUUID(), type: 'address', value: verified, addedBy: changedBy }]);
                         if (merged.length === base.length) return { result: null };
+                        if (contactCapExceeded(merged)) {
+                            // S1: never past the cap (a later read would truncate). The record is saved.
+                            logger.warn('saveAdoption: verified address not added — the profile holds the maximum contact entries', { adopterId: data.adopterId, changedBy });
+                            return { result: null };
+                        }
                         const blob = contactEntriesToBlob(merged) || null;
                         return { write: { contactEntries: JSON.stringify(merged), contactInfo: blob }, result: { from: row.contactInfo, to: blob } };
                     }, { op: 'saveAdoption.verifiedAddress', changedBy });
@@ -126,6 +136,7 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                             id: crypto.randomUUID(),
                             adopterId: data.adopterId,
                             changedBy,
+                            kind,
                             changes: JSON.stringify({
                                 contactInfo: {
                                     from: added.result.from || '(empty)',
@@ -289,11 +300,13 @@ export async function deleteAdoption(adoptionId: string, adopterId: string, keep
             }
         }
 
-        // Log to adopter history
+        // Log to adopter history — the record's author on someone else's
+        // profile is a contributor there, not an editor.
         await db.insert(adopterHistory).values({
             id: crypto.randomUUID(),
             adopterId,
             changedBy,
+            kind: await historyKindFor(db, adopterId, changedBy),
             changes: JSON.stringify({
                 adoption_deleted: existing
             }),
@@ -538,6 +551,8 @@ async function updateRecordFields(
                 id: crypto.randomUUID(),
                 adopterId: targetAdopterId,
                 changedBy,
+                // Against the profile the row lands on (a re-link moves it).
+                kind: await historyKindFor(db, targetAdopterId, changedBy),
                 changes: JSON.stringify({ adoption_updated: changes }),
                 changedAt: new Date(),
             });

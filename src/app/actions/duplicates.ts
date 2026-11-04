@@ -1,14 +1,27 @@
 'use server';
 
-import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandidates, auditLog } from '@/db/schema';
-import { eq, or, and, inArray, sql, isNull } from 'drizzle-orm';
+import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandidates, auditLog, mergeRequests, pendingPairHidden } from '@/db/schema';
+import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
-import { decideDedupMerge, isOpenDuplicateFlag, type DedupSide } from '@/domain/dedupPair';
+import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, MERGED_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
+import { needsIdentityChoice } from '@/domain/identityChoice';
+import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
+import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
+import { getTeamEmails, normEmail } from '@/lib/orgMembership';
+import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 import { mergeAdopters } from '@/lib/adopterMerge';
+import { createMergeRequest, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
+import { loadPairVerdict, refuseDisputedMerge, teamOf } from '@/lib/pairVerdict';
+import { mergeChosenPair } from '@/lib/pairMerge';
+import { notificationContent } from '@/domain/notificationTemplates';
+import { isAdminAsync } from '@/config/admins';
+import { addHouseholdPerson } from './households';
+import { hiddenAsHousematesSql } from '@/lib/housemateSql';
+import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, type CardHousehold } from '@/domain/households';
 
 /**
  * Attach a just-signed contract's adoption to an existing matched adopter profile,
@@ -28,7 +41,7 @@ import { mergeAdopters } from '@/lib/adopterMerge';
 export async function attachContractToExistingAdopter(
     notificationId: string,
     matchAdopterId: string,
-): Promise<{ success: boolean; error?: string; primaryName?: string; matchedProfileUrl?: string }> {
+): Promise<{ success: boolean; error?: string; errorId?: string; primaryName?: string; matchedProfileUrl?: string }> {
     let actorEmail = 'unknown';
     try {
         const { getUser } = await import('./_db');
@@ -70,10 +83,22 @@ export async function attachContractToExistingAdopter(
         if (!match) return { success: false, error: 'Matched adopter not found' };
         if (match.deletedAt) return { success: false, error: 'Matched adopter has been deleted' };
 
+        // The pair verdict every non-admin merge consults (D43, D49, D50): after
+        // a rejection or an admin's «separate» ruling, the admins decide —
+        // the rescuer asks them from the «Pendientes» row.
+        if (await refuseDisputedMerge(db, { keepId: matchAdopterId, absorbedId: orphanAdopterId, actor: actorEmail })) {
+            const errorId = generateErrorId();
+            logger.warn('attachContractToExistingAdopter: refused, the admins decide this pair', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, errorId });
+            return { success: false, error: 'pair_disputed', errorId };
+        }
+
         // Run merge — match becomes primary, orphan becomes secondary
         const mergeResult = await mergeAdopters(matchAdopterId, orphanAdopterId, actorEmail);
         if (!mergeResult.success) {
-            return { success: false, error: mergeResult.error };
+            // A merge rule's refusal (minor survivor; household data not converted yet) is expected: warn with an id.
+            const errorId = generateErrorId();
+            logger.warn('attachContractToExistingAdopter: merge refused or failed', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, reason: mergeResult.error, errorId });
+            return { success: false, error: mergeResult.error, errorId };
         }
 
         // Context-specific audit entry on top of the generic one written by mergeAdopters
@@ -132,17 +157,20 @@ export async function attachContractToExistingAdopter(
                 await createNotification({
                     userId: match.addedBy,
                     type: 'contract_attached',
-                    title: `${actorName} adjuntó un contrato a tu perfil ${match.name}`,
-                    body: animalName
-                        ? `Adopción de ${animalName} atribuida a este perfil. Tocá para revisar.`
-                        : 'Tocá para revisar.',
-                    url: `/adopter/${matchAdopterId}`,
+                    ...notificationContent({
+                        key: 'contract_attached',
+                        params: { actorName, profileName: match.name, ...(animalName ? { animalName } : {}), ...(mergeResult.auditId ? { disputable: '1' } : {}) },
+                    }),
+                    // The attach folded the rescuer's profile into this one: «¿No es la misma persona?» opens from here (D50).
+                    url: mergeResult.auditId ? `/adopter/${matchAdopterId}?dispute=${encodeURIComponent(mergeResult.auditId)}` : `/adopter/${matchAdopterId}`,
                     icon: '📝',
+                    // Another rescuer's bell: the actor by name, never by email.
                     metadata: {
-                        attachedBy: actorEmail,
+                        attachedByName: actorName,
                         sourceNotificationId: notificationId,
                         animalId,
                         animalName,
+                        auditId: mergeResult.auditId ?? null,
                     },
                 });
             }
@@ -230,6 +258,8 @@ export interface DuplicateCandidate {
     confidence: string;
     /** Normalised 0–100 confidence percentage derived from score / PRACTICAL_MAX_DUPLICATE. */
     confidencePercent: number;
+    /** The pair is on the viewer's «Pendientes de revisar» list: they created either side and didn't take it off. */
+    onViewerList: boolean;
 }
 
 /**
@@ -239,7 +269,8 @@ export interface DuplicateCandidate {
 export async function getDuplicateCandidates(adopterId: string): Promise<DuplicateCandidate[]> {
     // Signed-in only (the profile page and its flagging panel both are): the
     // result names the other profiles that look like this one.
-    try { await getUser(); } catch {
+    let viewer: string;
+    try { viewer = await getUser(); } catch {
         logger.warn('getDuplicateCandidates: refused — no session', { adopterId });
         return [];
     }
@@ -262,6 +293,9 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
                     eq(duplicateCandidates.adopter1Id, adopterId),
                     eq(duplicateCandidates.adopter2Id, adopterId),
                 ),
+                // A housemate is never a duplicate candidate (a pair detected before
+                // they shared a household). In SQL, so housemates can't fill the cap.
+                sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
             ))
             // Strongest first, so weak pairs can't crowd a strong one out of the cap.
             .orderBy(sql`${duplicateCandidates.score} DESC`)
@@ -269,34 +303,42 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
 
         if (candidates.length === 0) return [];
 
-        // Get names for the "other" adopter in each pair
+        // Get names for the "other" adopter in each pair. A profile merged away
+        // (deletedAt set) or gone drops out: there is nothing left to open.
         const otherIds = candidates.map((c: { adopter1Id: string; adopter2Id: string }) =>
             c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id
         );
-        const otherAdopters = await Promise.all(
+        const [otherAdopters, self, hidden] = await Promise.all([Promise.all(
             otherIds.map((id: string) =>
-                db.select({ id: adopters.id, name: adopters.name })
+                db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy })
                     .from(adopters)
-                    .where(eq(adopters.id, id))
+                    .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
                     .get()
             )
-        );
+        ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
+        loadHiddenPairKeys(db, viewer)]);
         const nameMap = new Map<string, string>();
+        const ownerMap = new Map<string, string | null>();
         for (const a of otherAdopters) {
-            if (a) nameMap.set(a.id, a.name);
+            if (a) { nameMap.set(a.id, a.name); ownerMap.set(a.id, a.addedBy); }
         }
+        // The same test as the feed's `listed` (owns either side), minus the pairs the viewer hid.
+        const onViewerList = (otherId: string) =>
+            (self?.addedBy === viewer || ownerMap.get(otherId) === viewer) && !hidden.has(pairKey(adopterId, otherId));
 
         return candidates
+            .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
             .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
                 const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
                 return {
                     id: c.id,
                     otherAdopterId: otherId,
-                    otherAdopterName: nameMap.get(otherId) || 'Unknown',
+                    otherAdopterName: nameMap.get(otherId)!,
                     matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
                     score: c.score,
                     confidence: c.confidence,
                     confidencePercent: storedScoreToPercent(c.score),
+                    onViewerList: onViewerList(otherId),
                 };
             })
             .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
@@ -346,21 +388,31 @@ function redactInexactValue(type: string, value: string): string {
  * the blob that gets masked.
  */
 /** The adopter columns the pair builder needs before visibility is applied. */
-type PairRow = { id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null };
+type PairRow = {
+    id: string; name: string; contactInfo: string | null; source: string; addedBy: string | null; createdAt: Date | null;
+    age?: number | null; ageAsOf?: string | null; isMinor?: number | null;
+};
 
 async function buildPairSide(
     viewerEmail: string | null | undefined,
     row: PairRow,
-): Promise<PendingDedupPair['newAdopter']> {
+    names: ReadonlyMap<string, string>,
+): Promise<Omit<PendingDedupSide, 'teamOwned'>> {
     let contactInfo = row.contactInfo;
+    let contactEntries: string | null = null;
     let canSeeContact = true;
     try {
         const { resolveAdopterVisibility } = await import('@/lib/piiAccessServer');
         const { maskAdopterContact } = await import('@/lib/piiAccess');
         const visibility = await resolveAdopterVisibility(viewerEmail, { id: row.id, addedBy: row.addedBy });
         if (!visibility.nothingMasked) {
-            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: null, addressInfo: null }, visibility);
+            // Typed entries from the blob, so the masked result carries a typed list
+            // the comparison table can read (re-parsing masked text mislabels it).
+            const { parseBlobToContactEntries } = await import('@/lib/contactEntries');
+            const typed = parseBlobToContactEntries(row.contactInfo);
+            const masked = maskAdopterContact({ contactInfo: row.contactInfo, contactEntries: typed.length ? JSON.stringify(typed) : null, addressInfo: null }, visibility);
             contactInfo = masked.contactInfo;
+            contactEntries = masked.contactEntries;
             canSeeContact = masked.maskedFieldCount === 0;
         }
     } catch (e) {
@@ -376,12 +428,164 @@ async function buildPairSide(
         id: row.id,
         name: row.name,
         contactInfo,
+        contactEntries,
         source: row.source,
         createdAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,
         canSeeContact,
+        isMine: !!realOwner(row.addedBy) && normEmail(row.addedBy) === normEmail(viewerEmail),
+        ...creatorLabel(viewerEmail, row.addedBy, names),
+        ...(minorNow(row) ? { isMinor: true } : {}),
     };
 }
 
+/** "Cargado por …" for one side (D1, D15): nothing for the viewer's own record. */
+function creatorLabel(
+    viewerEmail: string | null | undefined,
+    addedBy: string | null,
+    names: ReadonlyMap<string, string>,
+): Pick<PendingDedupSide, 'createdByName' | 'createdByAnonymous'> {
+    const creator = realOwner(addedBy);
+    if (!creator) return { createdByName: null, createdByAnonymous: true };
+    if (normEmail(creator) === normEmail(viewerEmail)) return { createdByName: null, createdByAnonymous: false };
+    return { createdByName: names.get(creator) || emailHandle(creator), createdByAnonymous: false };
+}
+
+/** A pending or owner-declined merge request as the feed sees it, keyed to its pair. */
+type FeedRequestRow = {
+    id: string; primaryId: string; secondaryId: string; candidateId: string | null; flagId: string | null;
+    requesterEmail: string; ownerEmail: string | null; createdAt: Date | null;
+    status: 'pending' | 'declined'; resolvedByEmail: string | null; resolvedAt: Date | null;
+    dispute: number;
+};
+/** Per query: no one has anywhere near this many open requests. */
+const OPEN_REQUESTS_CAP = 100;
+/**
+ * Declined requests never leave the table, so they get their own (smaller)
+ * cap, newest first — they must never crowd pending ones out of the feed.
+ */
+const DECLINED_REQUESTS_CAP = 50;
+
+/**
+ * The merge requests the viewer filed, or that ask the viewer or a teammate
+ * (D16), one per pair: the pending one (the oldest, should two have been filed
+ * at once), else the latest owner decline — a declined pair stays on both
+ * lists as «Rechazado» (D27); an admin's decline resolved the pair. TWO
+ * queries in parallel (pending, declined), each `requester = ? OR owner = ? OR
+ * owner = ? …` — one bind per email (D1-safe, never `IN (array)`) however
+ * large the team, since this feed already sits close to the Workers
+ * subrequest ceiling (see the ranking note in getPendingDuplicatesForUser).
+ * ≤ 31 binds each.
+ */
+async function loadRequestsByPair(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    actorEmail: string,
+    team: readonly string[],
+): Promise<Map<string, FeedRequestRow>> {
+    const columns = {
+        id: mergeRequests.id,
+        primaryId: mergeRequests.primaryId,
+        secondaryId: mergeRequests.secondaryId,
+        candidateId: mergeRequests.candidateId,
+        flagId: mergeRequests.flagId,
+        requesterEmail: mergeRequests.requesterEmail,
+        ownerEmail: mergeRequests.ownerEmail,
+        createdAt: mergeRequests.createdAt,
+        status: mergeRequests.status,
+        resolvedByEmail: mergeRequests.resolvedByEmail,
+        resolvedAt: mergeRequests.resolvedAt,
+        dispute: mergeRequests.dispute,
+    };
+    // Both columns are stored normalized (createMergeRequest); so are these.
+    const involves = or(eq(mergeRequests.requesterEmail, normEmail(actorEmail)), ...team.map(e => eq(mergeRequests.ownerEmail, normEmail(e))));
+    const [pending, declined] = await Promise.all([
+        db.select(columns).from(mergeRequests).where(and(eq(mergeRequests.status, 'pending'), involves))
+            .orderBy(asc(mergeRequests.createdAt)).limit(OPEN_REQUESTS_CAP).all() as Promise<FeedRequestRow[]>,
+        db.select(columns).from(mergeRequests).where(and(eq(mergeRequests.status, 'declined'), involves))
+            .orderBy(desc(mergeRequests.createdAt)).limit(DECLINED_REQUESTS_CAP).all() as Promise<FeedRequestRow[]>,
+    ]);
+    const byPair = new Map<string, FeedRequestRow>();
+    // Pending first: an open question beats an earlier «no» on the same pair.
+    for (const r of [...pending, ...declined]) {
+        const key = pairKey(r.primaryId, r.secondaryId);
+        if (!byPair.has(key)) byPair.set(key, r);
+    }
+    return byPair;
+}
+
+/**
+ * The pairs this viewer took off their list («Quitar de la lista», D27). One
+ * query. A failed lookup shows them again rather than taking out the feed.
+ */
+async function loadHiddenPairKeys(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    actorEmail: string,
+): Promise<Set<string>> {
+    try {
+        const rows = await db.select({ pairKey: pendingPairHidden.pairKey }).from(pendingPairHidden)
+            .where(eq(pendingPairHidden.viewerEmail, normEmail(actorEmail))).all() as Array<{ pairKey: string }>;
+        return new Set(rows.map(r => r.pairKey));
+    } catch (e) {
+        logger.warn('getPendingDuplicatesForUser: hidden pairs unreadable, showing them', {
+            actorEmail, error: e instanceof Error ? e.message : String(e),
+        });
+        return new Set();
+    }
+}
+
+/**
+ * Display names (else nothing — callers fall back to the email handle) for the
+ * people a feed page mentions. A failed lookup degrades to handles, logged.
+ */
+async function resolvePeopleNames(emails: string[], actorEmail: string): Promise<Map<string, string>> {
+    if (emails.length === 0) return new Map();
+    try {
+        const { resolveUserNames } = await import('./userNames');
+        return new Map(Object.entries(await resolveUserNames(emails)));
+    } catch (e) {
+        logger.warn('getPendingDuplicatesForUser: names unresolved, showing handles', {
+            actorEmail, count: emails.length, error: e instanceof Error ? e.message : String(e),
+        });
+        return new Map();
+    }
+}
+
+/** The card's request line (D7, D8, D15, D27, D28): who it waits on, who asked, who declined. */
+function requestView(
+    r: FeedRequestRow,
+    actorEmail: string,
+    teamKeys: ReadonlySet<string>,
+    names: ReadonlyMap<string, string>,
+): NonNullable<PendingDedupPair['request']> {
+    const direction = normEmail(r.requesterEmail) === normEmail(actorEmail) ? 'sent' : 'received';
+    const counterpart = direction === 'sent' ? r.ownerEmail : r.requesterEmail;
+    const nameOf = (email: string) => names.get(email) || emailHandle(email);
+    const declined = r.status === 'declined';
+    // Whoever declined: the owner or a teammate (D16). Not named to themselves.
+    const decliner = declined ? (r.resolvedByEmail ?? r.ownerEmail) : null;
+    return {
+        id: r.id,
+        status: r.status,
+        direction,
+        keepId: r.primaryId,
+        createdAt: r.createdAt ? Math.floor(r.createdAt.getTime() / 1000) : 0,
+        counterpartName: counterpart ? nameOf(counterpart) : null,
+        toAdmins: r.ownerEmail === null,
+        dispute: r.dispute === 1,
+        // The same rule sendPairMessage enforces: requester ⇄ owner team, never the admins.
+        canMessage: !!r.ownerEmail && (direction === 'sent' || teamKeys.has(normEmail(r.ownerEmail))),
+        declinedAt: declined && r.resolvedAt ? Math.floor(r.resolvedAt.getTime() / 1000) : null,
+        declinedByName: decliner && normEmail(decliner) !== normEmail(actorEmail) ? nameOf(decliner) : null,
+    };
+}
+
+/** A side's contact as the card shows it to this viewer (masked typed list, else the visible text). */
+function entriesAsShown(side: PendingDedupSide): Array<{ type: string; value: string }> {
+    return (side.contactEntries ? deserializeContactEntries(side.contactEntries) : parseBlobToContactEntries(side.contactInfo))
+        .map(e => ({ type: e.type, value: e.value }));
+}
+
+/** Order of the groups on the list (D21). */
+const GROUP_ORDER: ReadonlyArray<PendingDedupPair['group']> = ['received', 'sent', 'declined', 'pair'];
 
 /** Tolerant parse of `duplicate_candidates.match_values`. Null (per-save path)
  *  or malformed JSON both degrade to "no values", never to a thrown render. */
@@ -413,25 +617,9 @@ export interface PendingDedupPair {
      */
     source: 'detected' | 'flagged';
     /** The "new" auto-created side — heuristically the more recent record. */
-    newAdopter: {
-        id: string;
-        name: string;
-        contactInfo: string | null;
-        source: string;
-        createdAt: number | null;
-        /** False ⇒ contactInfo is masked and the card offers "ask the owner". */
-        canSeeContact: boolean;
-    };
+    newAdopter: PendingDedupSide;
     /** The "existing" side — older record. Use as merge primary. */
-    existingAdopter: {
-        id: string;
-        name: string;
-        contactInfo: string | null;
-        source: string;
-        createdAt: number | null;
-        /** False ⇒ contactInfo is masked and the card offers "ask the owner". */
-        canSeeContact: boolean;
-    };
+    existingAdopter: PendingDedupSide;
     matchTypes: string[];
     /**
      * The values that actually matched, keyed by token type — e.g.
@@ -441,7 +629,97 @@ export interface PendingDedupPair {
      */
     matchValues: Record<string, string[]>;
     confidence: string;
-    confidencePercent: number;
+    /** The engine's score — admins only (null for everyone else, D22). Superseded by `adminScore`. */
+    confidencePercent: number | null;
+    /**
+     * The match % behind the admin gauge (D22). null for rescuers, and for
+     * flagged pairs and pairs rebuilt from a request, whose 100 is made up (D34).
+     */
+    adminScore: number | null;
+    /**
+     * Where the row sits (D21), in this order: 'received' (a pending request
+     * asks the viewer or their team), 'sent' (the viewer's pending request),
+     * 'declined' (an owner declined a request, either side, D27), 'pair'
+     * (a possible duplicate with no request).
+     */
+    group: 'received' | 'sent' | 'declined' | 'pair';
+    /**
+     * The closed row's «Coinciden: … · Distinto: …» (D22), from matchBreakdown
+     * on what this viewer may see (new side = the rescuer's data, existing side
+     * = the profile, as the card compares them). `flagged`: a person marked the
+     * pair («Marcado manualmente»).
+     */
+    summary: { same: BreakdownField[]; diff: BreakdownField[]; flagged: boolean };
+    /**
+     * What «Combinar» does with the default survivor: `actionByKeep[defaultKeep]`
+     * (kept for the current card until the layout-D UI reads actionByKeep).
+     * 'merge' merges now («Combinar perfiles»); 'request' asks the other
+     * profile's owner («Pedir combinar»); 'dispute' asks the admins after the
+     * owner rejected it («Pedir revisión a un administrador», D49). Nothing allowed (the viewer created
+     * neither side — only listed for a request, whose card shows no button)
+     * reads 'merge'.
+     */
+    mergeAction: KeepAction;
+    /** Which side the viewer may keep («¿Cuál se conserva?», D24, D42, D43). Admins: either. From pairChoices. */
+    keepOptions: { new: boolean; existing: boolean };
+    /** What keeping each side does («Combinar perfiles» / «Pedir combinar» / «Pedir revisión a un administrador», D49); null = not offered. From pairChoices. */
+    actionByKeep: { new: KeepAction | null; existing: KeepAction | null };
+    /** The survivor selected by default, and the one mergePendingDedupPair keeps when sent no keepId. */
+    defaultKeep: KeepSide;
+    /** Combining asks «¿Es la misma persona?» first (D35): the same test mergePendingDedupPair applies. */
+    identityChoice: boolean;
+    /**
+     * The merge request on this pair, if any: pending — one the viewer filed
+     * ('sent', D8) or one asking the viewer or a teammate ('received', D7,
+     * D16) — or declined by the owner team, shown to both sides until the
+     * viewer hides the pair (D27). An admin's decline resolves the pair.
+     */
+    request: null | {
+        id: string;
+        status: 'pending' | 'declined';
+        direction: 'sent' | 'received';
+        createdAt: number; // epoch s
+        /** 'sent': the asked owner (null when it went to the admins); 'received': the requester. Name or handle, never an email. */
+        counterpartName: string | null;
+        /** No real owner, so the admins decide (D15). */
+        toAdmins: boolean;
+        /** Sent to the admins after the owner rejected the pair (D49). */
+        dispute: boolean;
+        /** «Escribirle» (D28): requester ⇄ owner team, never a request to the admins. */
+        canMessage: boolean;
+        /** When it was declined (epoch s); null while pending. */
+        declinedAt: number | null;
+        /** Who declined («Rechazado por María»), name or handle; null while pending and when the viewer declined it. */
+        declinedByName: string | null;
+        /** The profile the requester chose to keep (the request's survivor, D24): «Se conserva» on the row. */
+        keepId: string;
+    };
+}
+
+export interface PendingDedupSide {
+    id: string;
+    name: string;
+    contactInfo: string | null;
+    /** Masked typed entries (JSON) when this viewer can't see everything; null = read contactInfo. */
+    contactEntries: string | null;
+    source: string;
+    createdAt: number | null;
+    /** False ⇒ contactInfo is masked and the card offers "ask the owner". */
+    canSeeContact: boolean;
+    /** Who created this profile (display name, else email handle) — null for the viewer's own, and for no real creator (D1). */
+    createdByName: string | null;
+    /** No real creator (`added_by` null, '' or 'anonymous'): "Cargado por un usuario anónimo" (D15). */
+    createdByAnonymous: boolean;
+    /** The viewer created this profile («Tuyo», D22–D23). */
+    isMine: boolean;
+    /** The viewer or a teammate created it: keeping the other side moves nothing to another rescuer's list (D25). */
+    teamOwned: boolean;
+    /** «Menor de edad» (final fix P2: the same tag as every card showing one person). */
+    isMinor?: boolean;
+    /** Who they live with, with live ratings and alerts: the housemate alert chips, as on search and «¿Es este perfil?». */
+    households?: CardHousehold;
+    /** The person's own average rating, shown at the top of the side as on every card (point C); null = unrated, undefined = not read. */
+    rating?: number | null;
 }
 
 /**
@@ -449,68 +727,301 @@ export interface PendingDedupPair {
  * a merge: the actor comes from the session, never from the caller. The pair
  * must be one getPendingDuplicatesForUser lists for them (a pending
  * duplicate_candidates row, or a manual duplicate flag — the feed uses the
- * flag's id as the candidate id — where the caller created a live side), AND
- * the absorbed record must be the caller's own or a teammate's; a flag needs
- * both sides in the team (decideDedupMerge, src/domain/dedupPair.ts). The
- * older record survives, as the card shows. The merge itself is the shared
- * mergeAdopters (src/lib/adopterMerge.ts).
+ * flag's id as the candidate id — where the caller created a live side).
+ *
+ * v2 (spec 2026-10-25-pendientes-d): `opts.keepId` is the profile the rescuer
+ * chose to keep (D24; default: the older one). The server never trusts it:
+ * decideDedupAction (src/domain/dedupPair.ts) re-decides — a keepId outside
+ * the pair is `not_found`; keeping the other rescuer's profile merges now and
+ * tells them (`adopter_merged`); keeping yours while the other is someone
+ * else's files a merge request to them and their team, or to the admins when
+ * there is no real owner (createMergeRequest, src/lib/mergeRequests.ts) —
+ * unless that requester was already declined on this pair (`declined_before`,
+ * D43). An ownerless profile can't be kept (`keep_not_allowed`, D42). Admins
+ * choose freely: their choice merges straight away and the owners are told.
+ *
+ * After that decline, keeping the OTHER rescuer's profile no longer merges
+ * (D49, revising D43): it is a 'dispute' (pairChoices) — a request to the
+ * admins marked as a dispute (createMergeRequest with `ownerEmail: null,
+ * dispute: true`) → outcome 'disputed'. Never a merge: only the rescuer who
+ * declined (accepting, answerMergeRequest) or an admin can merge that pair.
+ *
+ * Different names matched on a contact ask «¿Es la misma persona?» first
+ * (`identity_required`, D35); `identity: 'household'` is accepted only there
+ * (`identity_not_applicable` otherwise) and merges nothing: the
+ * other person is added by name, linked, to each side the caller's team owns
+ * (never another rescuer's profile), and the pair is resolved as kept-separate.
+ *
+ * Every merge is the shared mergeAdopters (src/lib/adopterMerge.ts); after it
+ * the absorbed profile's owner team keeps access to the survivor (D40): full
+ * contact after an admin's merge, otherwise only the contact values their
+ * profile brought (grantAccessAfterFold, src/lib/mergeAccess.ts).
  */
-export async function mergePendingDedupPair(candidateId: string): Promise<{ success: boolean; error?: string; errorId?: string }> {
+export async function mergePendingDedupPair(candidateId: string, opts?: { keepId?: string; identity?: 'same' | 'household' }): Promise<
+    | { success: true; outcome: 'merged' }
+    | { success: true; outcome: 'household' }
+    | { success: true; outcome: 'requested'; toName: string | null; toAdmins: boolean }
+    | { success: true; outcome: 'disputed' }
+    /** `reason`: with error 'household_refused', the household rule that said no (householdErrorCopy). */
+    | { success: false; error: string; errorId?: string; reason?: string }
+> {
     let actorEmail: string | null = null;
+    // From the browser: only a string keepId and a known identity answer count.
+    const chosenKeepId = typeof opts?.keepId === 'string' && opts.keepId ? opts.keepId : undefined;
+    const identity = opts?.identity === 'same' || opts?.identity === 'household' ? opts.identity : undefined;
     try {
         try { actorEmail = await getUser(); } catch { actorEmail = null; }
         const db = await getDb();
         if (!db) return { success: false, error: 'Database not available', errorId: generateErrorId() };
+        const refuse = (reason: string) => {
+            const errorId = generateErrorId();
+            logger.warn('mergePendingDedupPair: refused', { candidateId, actorEmail, reason, keepId: chosenKeepId, identity, errorId });
+            return { success: false as const, error: reason, errorId };
+        };
 
-        let pair: { a: string; b: string; source: 'detected' | 'flag' } | null = null;
+        let pair: { a: string; b: string; source: 'detected' | 'flag'; matchTypes: string[] } | null = null;
         if (typeof candidateId === 'string' && candidateId.trim()) {
-            const cand = await db.select({ a: duplicateCandidates.adopter1Id, b: duplicateCandidates.adopter2Id, status: duplicateCandidates.status })
+            const cand = await db.select({ a: duplicateCandidates.adopter1Id, b: duplicateCandidates.adopter2Id, status: duplicateCandidates.status, matchTypes: duplicateCandidates.matchTypes })
                 .from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
-            if (cand && cand.status === 'pending') pair = { a: cand.a, b: cand.b, source: 'detected' };
+            if (cand && cand.status === 'pending') pair = { a: cand.a, b: cand.b, source: 'detected', matchTypes: parseMatchTypes(cand.matchTypes, candidateId) };
             if (!cand) {
                 const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
                     .from(adopterFlags).where(eq(adopterFlags.id, candidateId)).get();
-                if (flag && isOpenDuplicateFlag(flag)) pair = { a: flag.adopterId, b: flag.targetAdopterId!, source: 'flag' };
+                if (flag && isOpenDuplicateFlag(flag)) pair = { a: flag.adopterId, b: flag.targetAdopterId!, source: 'flag', matchTypes: ['flagged_by_user'] };
             }
         }
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-        const load = async (id: string): Promise<DedupSide | null> => {
-            const r = await db.select({ id: adopters.id, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt })
+        const { isOwnerOrOrgMate, normEmail } = await import('@/lib/orgMembership');
+        const load = async (id: string): Promise<(DedupSide & { name: string }) | null> => {
+            const r = await db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt })
                 .from(adopters).where(eq(adopters.id, id)).get();
             if (!r) return null;
             return {
-                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: !!r.deletedAt,
+                id: r.id, name: r.name ?? '', addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: !!r.deletedAt,
                 teamOwned: !!actorEmail && await isOwnerOrOrgMate(actorEmail, r.addedBy),
             };
         };
         const [a, b] = pair ? await Promise.all([load(pair.a), load(pair.b)]) : [null, null];
-        const decision = decideDedupMerge(actorEmail, a, b, pair?.source);
-        if (!decision.ok) {
-            const errorId = generateErrorId();
-            logger.warn('mergePendingDedupPair: refused', { candidateId, actorEmail, reason: decision.reason, errorId });
-            return { success: false, error: decision.reason, errorId };
+        // Who may touch this pair at all, whatever is kept (any side will do:
+        // these refusals don't depend on the choice).
+        const gate = decideDedupAction(actorEmail, a, b, pair?.source, a?.id);
+        if (gate.kind === 'refuse' && gate.reason !== 'keep_not_allowed') return refuse(gate.reason);
+        const sideA = a!, sideB = b!, actor = actorEmail!;
+        // The same choices the row offers (pairChoices, also used by the feed):
+        // no keepId → the row's default survivor; a keepId outside the pair → not_found.
+        // What has been said about the pair (PairVerdict): a decline of my
+        // team's request (D43), an admin's ruling that they are two people (D50).
+        const [isAdmin, verdict] = await Promise.all([
+            isAdminAsync(actor),
+            teamOf(actor).then(team => loadPairVerdict(db, sideA.id, sideB.id, team)),
+        ]);
+        const choices = pairChoices(actor, sideA, sideB, pair!.source, {
+            isAdmin, declinedByViewer: verdict.declinedForTeam, adminRuledSeparate: verdict.adminRuledSeparate, rebuilt: false,
+        });
+        const { newer, older } = orderPair(sideA, sideB);
+        const keepSide: KeepSide | null = chosenKeepId === undefined ? choices.defaultKeep
+            : chosenKeepId === newer.id ? 'new' : chosenKeepId === older.id ? 'existing' : null;
+        if (!keepSide) return refuse('not_found');
+        const keepId = keepSide === 'new' ? newer.id : older.id;
+        const action = decideDedupAction(actor, sideA, sideB, pair!.source, keepId);
+
+        // «¿Es la misma persona?» (D35): a detected pair matched on a contact
+        // but not on the (different) names. A flag is a person saying "same".
+        const asksIdentity = pair!.source === 'detected'
+            && needsIdentityChoice({ matchTypes: pair!.matchTypes, nameA: sideA.name, nameB: sideB.name });
+        if (!identity && asksIdentity) return refuse('identity_required');
+        if (identity === 'household') {
+            // Only offered where the question is asked (D35).
+            if (!asksIdentity) return refuse('identity_not_applicable');
+            return await keepAsHousehold(db, candidateId, actor, sideA, sideB);
         }
-        const result = await mergeAdopters(decision.primaryId, decision.secondaryId, actorEmail!);
-        if (!result.success) {
-            const errorId = logger.error('mergePendingDedupPair: merge failed', new Error(result.error ?? 'merge failed'), {
-                candidateId, actorEmail, primaryId: decision.primaryId, secondaryId: decision.secondaryId,
+
+        // A keep the row would not offer: the reason it isn't offered. Asking
+        // again after a decline is declined_before (D43); an ownerless side,
+        // keep_not_allowed (D42).
+        const chosen: KeepAction | null = choices.actionByKeep[keepSide];
+        if (!chosen) return refuse(action.kind === 'refuse' ? action.reason : 'declined_before');
+        // Admins choose freely (D24): no consent needed, any side may be kept.
+        const viaAdmin = isAdmin && action.kind !== 'merge';
+        const primaryId = keepId;
+        const secondaryId = keepId === sideA.id ? sideB.id : sideA.id;
+
+        // File the request (to the other owner, or the admins); one pending per
+        // pair. Null when it was filed or was already ours; else the refusal.
+        const fileRequest = async (ownerEmail: string | null, dispute: boolean) => {
+            const fromFlag = pair!.source === 'flag';
+            const filed = await createMergeRequest(db, {
+                primaryId, secondaryId,
+                candidateId: fromFlag ? null : candidateId,
+                flagId: fromFlag ? candidateId : null,
+                requesterEmail: actor,
+                ownerEmail,
+                dispute,
             });
-            return { success: false, error: 'merge_failed', errorId };
+            if ('refused' in filed) return refuse(filed.refused);
+            const { id: requestId, created, requesterEmail } = filed;
+            // Someone else already asked about this pair (possibly asking the
+            // caller, or the decliner asking the other way round): not "your
+            // request was sent" — nothing was filed or sent; answer that one.
+            if (!created && normEmail(requesterEmail) !== normEmail(actor)) {
+                const errorId = generateErrorId();
+                logger.warn('mergePendingDedupPair: request already pending', { candidateId, actorEmail, requestId, errorId });
+                return { success: false as const, error: 'request_pending', errorId };
+            }
+            logger.info(dispute ? 'mergePendingDedupPair: disputed' : 'mergePendingDedupPair: requested', {
+                candidateId, actorEmail, requestId, created, primaryId, secondaryId,
+            });
+            return null;
+        };
+
+        if (chosen === 'dispute') {
+            // D49/D50: the other owner rejected my team's request on the pair,
+            // or an admin ruled them separate. The admins decide instead;
+            // nothing is merged here.
+            return (await fileRequest(null, true)) ?? { success: true, outcome: 'disputed' };
         }
-        logger.info('mergePendingDedupPair: merged', { candidateId, actorEmail, primaryId: decision.primaryId, secondaryId: decision.secondaryId });
-        return { success: true };
+
+        if (action.kind === 'request' && !viaAdmin) {
+            const refused = await fileRequest(action.ownerEmail, false);
+            if (refused) return refused;
+            // Who was asked, so the toast names the right person. Display name
+            // or email handle, never the address; null when the admins decide.
+            const toAdmins = action.ownerEmail === null;
+            // resolveDisplayName is the one name rule (displayNameFor): a name that is an email
+            // address is never shown; a social handle in a name («Patitas @refugio») is.
+            let toName: string | null = null;
+            if (action.ownerEmail) {
+                const ownerEmail = action.ownerEmail;
+                const { resolveDisplayName } = await import('./notifications');
+                toName = await resolveDisplayName(ownerEmail).catch((e) => {
+                    logger.warn('mergePendingDedupPair: owner name lookup failed, naming the handle', { candidateId, actorEmail, error: e instanceof Error ? e.message : String(e) });
+                    return emailHandle(ownerEmail);
+                });
+            }
+            return { success: true, outcome: 'requested', toName, toAdmins };
+        }
+
+        // The merge, D40's access and the notices: shared with «Continuar con
+        // este perfil» (src/lib/pairMerge.ts), wording of these logs unchanged.
+        const absorbed = secondaryId === sideA.id ? sideA : sideB;
+        const merged = await mergeChosenPair(db, {
+            primaryId, secondaryId, actor, isAdmin, viaAdmin,
+            notifyOwner: action.kind === 'merge' ? action.notifyOwner : null,
+            absorbedAddedBy: absorbed.addedBy,
+            label: 'mergePendingDedupPair', ctx: { candidateId, actorEmail },
+        });
+        // Some old household data of these two couldn't be converted yet (Task 7): retryable, nothing moved.
+        if (!merged.ok && merged.error === HOUSEHOLD_NOT_CONVERTED) return refuse(HOUSEHOLD_NOT_CONVERTED);
+        if (!merged.ok) return { success: false, error: 'merge_failed', errorId: merged.errorId };
+        return { success: true, outcome: 'merged' };
     } catch (e) {
         const errorId = logger.error('mergePendingDedupPair failed', e, { candidateId, actorEmail });
         return { success: false, error: 'merge_failed', errorId };
     }
 }
 
+function parseMatchTypes(raw: string | null, candidateId: string): string[] {
+    try {
+        const v = JSON.parse(raw || '[]');
+        return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
+    } catch (e) {
+        // Unreadable types read as "no name match" — the safer side: it asks.
+        logger.warn('mergePendingDedupPair: unreadable match types', { candidateId, error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
+/** addHouseholdPerson answers that are the household rules saying no (not a failure). */
+const HOUSEHOLD_REFUSALS: ReadonlySet<string> = new Set(['household_full', 'too_many_households', 'not_found', 'not_authorized', 'invalid', 'identifier_required']);
+
+/**
+ * «No, es alguien de su hogar» (D35): nothing is merged. The two profiles now
+ * live together: the other person joins the household of the first side the
+ * caller's team owns — relationship unknown, the existing profile linked —
+ * through the same add anyone uses («Agregar familiar / conviviente»,
+ * addHouseholdPerson with `existingProfileId`: credited, history, notices).
+ * A household is a group, so one membership puts them together on both
+ * profiles. Neither profile's own data changes. Then the pair
+ * leaves both lists: kept-separate; a pending request asking the caller's team
+ * counts as their decline, any other pending one closes
+ * (settleRequestsAsHousehold).
+ */
+async function keepAsHousehold(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    candidateId: string,
+    actor: string,
+    a: DedupSide & { name: string },
+    b: DedupSide & { name: string },
+): Promise<{ success: true; outcome: 'household' } | { success: false; error: string; errorId: string; reason?: string }> {
+    const ctx = { candidateId, actorEmail: actor, primaryId: a.id, secondaryId: b.id };
+    const pair = ([[a, b], [b, a]] as const).find(([own]) => own.teamOwned);
+    if (pair) {
+        const [own, other] = pair;
+        const res = await addHouseholdPerson({ anchorAdopterId: own.id, existingProfileId: other.id, relationship: 'unknown' });
+        if (!res.ok && res.error !== 'already_there') {
+            // An expected refusal (a full household, too many households, the profile gone…): the row
+            // stays and the rescuer is told why — never «No se pudieron combinar los perfiles».
+            if (HOUSEHOLD_REFUSALS.has(res.error)) {
+                const errorId = generateErrorId();
+                logger.warn('mergePendingDedupPair: «alguien de su hogar» refused by the household rules', { ...ctx, adopterId: own.id, reason: res.error, errorId });
+                return { success: false, error: 'household_refused', reason: res.error, errorId };
+            }
+            const errorId = res.errorId
+                ?? logger.error('mergePendingDedupPair: household member not added', new Error(res.error), { ...ctx, adopterId: own.id });
+            return { success: false, error: 'household_failed', errorId };
+        }
+        // The answer itself (D35) says they live together: their pending pairs with
+        // everyone in the shared home go, whoever owns them (final fix S3).
+        await dropPairsInSharedHomes(db, own.id, other.id, ctx);
+    }
+    await keepSeparate(db, { a: a.id, b: b.id }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}household`, ctx);
+    try {
+        await settleRequestsAsHousehold(db, a.id, b.id, actor);
+    } catch (e) {
+        logger.warn('mergePendingDedupPair: open requests on a household pair left open', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
+    logger.info('mergePendingDedupPair: kept as household', ctx);
+    return { success: true, outcome: 'household' };
+}
+
+/** «Alguien de su hogar»: `other`'s pending pairs in every ordinary home it now shares with `own` go (never an email / ID pair). */
+async function dropPairsInSharedHomes(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, ownId: string, otherId: string, ctx: Record<string, unknown>): Promise<void> {
+    try {
+        const { householdIdsOf, dropHousemateCandidates } = await import('@/lib/households');
+        const [mine, theirs] = await Promise.all([householdIdsOf(db, ownId), householdIdsOf(db, otherId)]);
+        const shared = mine.filter(h => theirs.includes(h));
+        for (const h of shared) await dropHousemateCandidates(db, h, otherId, { force: true });
+    } catch (e) {
+        logger.warn('mergePendingDedupPair: housemate pairs after «alguien de su hogar» not removed (the feed still hides them)', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
+/** A row the feed ranks and pages: a detected candidate, a duplicate flag, or a pair rebuilt from a request. */
+type FeedCandidate = {
+    candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; matchValues: string | null;
+    score: number; confidence: string; detectedAt: Date | null;
+    /** Rebuilt from a merge request whose candidate row is gone: its score is made up (D34). */
+    rebuilt?: boolean;
+};
+
+/** Pairs per «Pendientes de revisar» page at most, whatever the browser asks for (re-review M-h). */
+const MAX_PENDING_PAGE_SIZE = 50;
+
 /**
  * Pending-dedup feed for the current user's /my-adopters section.
- * Returns up to 20 pending candidate pairs where the current rescuer is the
- * `addedBy` on either side of the pair. The newer record is presented as
- * "the new submission"; the older as "the existing profile" so the merge
- * preserves the older record as primary.
+ * Returns a page of pending candidate pairs where the current rescuer is the
+ * `addedBy` on either side of the pair, plus every pair with an open merge
+ * request the rescuer filed or that asks them or a teammate (D16 — a teammate
+ * of the asked owner may have created neither side), and every pair whose
+ * request the owner team declined (D27). Each side names its creator unless it
+ * is the viewer (D1). The newer record is presented as "the new submission";
+ * the older as "the existing profile" — the default survivor (D24).
+ *
+ * Layout D (spec 2026-10-25-pendientes-d): rows come grouped received → sent →
+ * declined → possible duplicates (D21), each with its summary line, the
+ * admin-only score, the survivor choices and whether combining asks
+ * «¿Es la misma persona?». Pairs the viewer took off their list
+ * (hidePendingPair) are skipped — unless a pending request on them needs an
+ * answer, which the bell points here for.
  *
  * Different from getDuplicateCandidates(adopterId): that one is single-adopter
  * + limit-5 (profile banner). This one is user-scoped + limit-20 (queue view).
@@ -519,14 +1030,55 @@ export async function getPendingDuplicatesForUser(
     page = 1,
     pageSize = 10,
     includeLow = false,
-): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number }> {
+    /** pairKey of a pair to show (the profile banner's «Revisar»): the page holding it is returned instead of `page`. */
+    focusPair?: string,
+): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string }> {
     const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0 };
+    // Re-review M-h: both come from the browser, and the fan-out below is bounded by the page size — so
+    // the server bounds it (1–MAX_PENDING_PAGE_SIZE; anything unreadable is the default page).
+    pageSize = Math.min(MAX_PENDING_PAGE_SIZE, Math.max(1, Math.floor(Number(pageSize)) || 10));
+    page = Math.max(1, Math.floor(Number(page)) || 1);
+    let actorEmail: string | null = null;
     try {
         const { getUser } = await import('./_db');
-        const actorEmail = await getUser();
+        const viewer = await getUser();
+        actorEmail = viewer;
 
         const db = await getDb();
         if (!db) return EMPTY;
+
+        // The viewer and their org-mates (fails open to the viewer alone):
+        // whose open requests concern them, and whose profiles they may
+        // absorb (mergeAction).
+        const team = await getTeamEmails(viewer);
+        const teamKeys = new Set(team.map(normEmail));
+
+        // Merge requests the viewer is part of, by pair. A failed lookup
+        // must not take out the list: the pairs still render, without the
+        // request line.
+        let requests = new Map<string, FeedRequestRow>();
+        const [loaded, hidden, isAdmin] = await Promise.all([
+            loadRequestsByPair(db, viewer, team).catch((e) => {
+                logger.warn('getPendingDuplicatesForUser: merge-request fetch failed', {
+                    actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
+                });
+                return null;
+            }),
+            loadHiddenPairKeys(db, viewer),
+            isAdminAsync(viewer).catch((e) => {
+                // Degrades to the rescuer view (no score, the usual rules), never to no list.
+                logger.warn('getPendingDuplicatesForUser: admin check failed, rescuer view', {
+                    actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
+                });
+                return false;
+            }),
+        ]);
+        if (loaded) requests = loaded;
+        // A hidden pair stays hidden unless someone must answer a pending
+        // request on it. Dropped before the per-request checks below, so a
+        // long list of hidden declines costs no subrequests.
+        const isHidden = (key: string) => hidden.has(key) && requests.get(key)?.status !== 'pending';
+        for (const key of [...requests.keys()]) if (isHidden(key)) requests.delete(key);
 
         const candidates = await db.select({
             candidateId: duplicateCandidates.id,
@@ -537,12 +1089,14 @@ export async function getPendingDuplicatesForUser(
             score: duplicateCandidates.score,
             confidence: duplicateCandidates.confidence,
             detectedAt: duplicateCandidates.detectedAt,
+            // Housemates (indexed per row, no table scan): filtered below, once the requests are known.
+            housemates: sql<number>`${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
         })
             .from(duplicateCandidates)
             .where(eq(duplicateCandidates.status, 'pending'))
-            .all() as Array<{ candidateId: string; adopter1Id: string; adopter2Id: string; matchTypes: string; matchValues: string | null; score: number; confidence: string; detectedAt: Date | null }>;
+            .all() as Array<FeedCandidate & { housemates?: number | null }>;
 
-        if (candidates.length === 0) return EMPTY;
+        if (candidates.length === 0 && requests.size === 0) return EMPTY;
 
         // ── Rank and page on the CANDIDATE rows, before fetching any adopter ──
         //
@@ -556,12 +1110,26 @@ export async function getPendingDuplicatesForUser(
         //
         // The fan-out is now bounded by pageSize instead of corpus size.
         const ownRows = await db.select({ id: adopters.id }).from(adopters)
-            .where(and(eq(adopters.addedBy, actorEmail), isNull(adopters.deletedAt))).all();
+            .where(and(eq(adopters.addedBy, viewer), isNull(adopters.deletedAt))).all();
         const ownIds = new Set((ownRows as Array<{ id: string }>).map(r => r.id));
-        if (ownIds.size === 0) return EMPTY;
+        if (ownIds.size === 0 && requests.size === 0) return EMPTY;
 
-        // The actor must own at least one side of the pair.
-        const mine = candidates.filter(c => ownIds.has(c.adopter1Id) || ownIds.has(c.adopter2Id));
+        // The actor must own at least one side of the pair — or be party to
+        // an open request on it (filed it, or is on the asked owner's team).
+        const listed = (a: string, b: string) => ownIds.has(a) || ownIds.has(b) || requests.has(pairKey(a, b));
+        const hasRequest = (c: { adopter1Id: string; adopter2Id: string }) => requests.has(pairKey(c.adopter1Id, c.adopter2Id));
+        const mine = candidates.filter(c => listed(c.adopter1Id, c.adopter2Id));
+
+        // Detected pairs of housemates are not duplicates («alguien de su hogar» is
+        // already a recorded answer): one detected before they shared a household
+        // leaves the list as soon as they do, before ranking so `total` agrees. A
+        // person's flag or merge request is someone asking: those stay — a pair
+        // with a request keeps its candidate row here, or the request check below
+        // would read the still-pending row as settled and drop the request.
+        for (let i = mine.length - 1; i >= 0; i--) {
+            const c = mine[i] as FeedCandidate & { housemates?: number | null };
+            if (Number(c.housemates ?? 0) === 1 && !requests.has(pairKey(c.adopter1Id, c.adopter2Id))) mine.splice(i, 1);
+        }
 
         // Manually flagged duplicates (adopter_flags, reason='duplicate') join
         // the same queue — they were visible only on /admin/duplicates, the one
@@ -569,7 +1137,29 @@ export async function getPendingDuplicatesForUser(
         // candidate shape here so they rank and page through the identical
         // path; one query, and their adopter rows come from the page fan-out
         // below rather than a fan-out of their own.
+        //
+        // Only flags that can pass `listed` are read, in SQL (EM I4): a side the
+        // viewer loaded (ownIds' rule: added_by = viewer, live), or a pair with
+        // a merge request the viewer is party to (loadRequestsByPair's rule:
+        // they filed it, or it asks them or a teammate). It used to read the
+        // 100 newest duplicate flags platform-wide and filter afterwards: once
+        // 100 newer flags existed on other people's profiles, an owner's open
+        // flag fell off and the notice's «Revisar» landed on an empty
+        // Pendientes. `listed` below stays the gate; this is only ever wider.
+        // Correlated EXISTS with bound scalars — never a bound id array (D1
+        // does not expand IN).
         try {
+            const ownSide = (id: typeof adopterFlags.adopterId | typeof adopterFlags.targetAdopterId) =>
+                sql`EXISTS (SELECT 1 FROM adopters o WHERE o.id = ${id} AND o.added_by = ${viewer} AND o.deleted_at IS NULL)`;
+            const party = sql.join([
+                sql`r.requester_email = ${normEmail(viewer)}`,
+                ...team.map(e => sql`r.owner_email = ${normEmail(e)}`),
+            ], sql` OR `);
+            const requestOnPair = sql`EXISTS (SELECT 1 FROM merge_requests r
+                WHERE ((r.primary_id = ${adopterFlags.adopterId} AND r.secondary_id = ${adopterFlags.targetAdopterId})
+                    OR (r.primary_id = ${adopterFlags.targetAdopterId} AND r.secondary_id = ${adopterFlags.adopterId}))
+                  AND (r.status = 'pending' OR r.status = 'declined')
+                  AND (${party}))`;
             const flags = await db.select({
                 id: adopterFlags.id,
                 adopterId: adopterFlags.adopterId,
@@ -577,14 +1167,22 @@ export async function getPendingDuplicatesForUser(
                 reason: adopterFlags.reason,
                 details: adopterFlags.details,
                 createdAt: adopterFlags.createdAt,
-            }).from(adopterFlags).where(eq(adopterFlags.reason, 'duplicate')).limit(100).all();
+            // Newest first within the cap: a flag raised now (its owners were just told «Revisar») is always read.
+            }).from(adopterFlags).where(and(
+                eq(adopterFlags.reason, 'duplicate'),
+                // Open flags only, in SQL too (isOpenDuplicateFlag's rule), so settled ones never fill the cap.
+                sql`${adopterFlags.targetAdopterId} IS NOT NULL AND ${adopterFlags.targetAdopterId} <> ${adopterFlags.adopterId}`,
+                sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
+                    AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
+                sql`(${ownSide(adopterFlags.adopterId)} OR ${ownSide(adopterFlags.targetAdopterId)} OR ${requestOnPair})`,
+            )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
             for (const f of flags as Array<{ id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null }>) {
                 // Merged (annotated) and self-pointing flags are settled; the
                 // merge action refuses them too (isOpenDuplicateFlag).
                 if (!f.targetAdopterId || !isOpenDuplicateFlag(f)) continue;
-                if (!ownIds.has(f.adopterId) && !ownIds.has(f.targetAdopterId)) continue;
+                if (!listed(f.adopterId, f.targetAdopterId)) continue;
                 const key = [f.adopterId, f.targetAdopterId].sort().join('|');
                 if (seen.has(key)) continue; // the engine already found this pair
                 seen.add(key);
@@ -597,31 +1195,133 @@ export async function getPendingDuplicatesForUser(
                     score: 100,
                     confidence: 'high',
                     detectedAt: f.createdAt,
+                    rebuilt: false,
                 });
             }
         } catch (e) {
             // A flag-fetch failure must not take out the detected list.
             logger.warn('getPendingDuplicatesForUser: flagged-pair fetch failed', {
-                error: e instanceof Error ? e.message : String(e),
+                actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
             });
+        }
+
+        // Every request pair is checked, one bounded lookup per open request
+        // (normally a handful; ≤ the request cap), before it may rank first:
+        // - Both profiles must be live. A request on a deleted profile closes
+        //   with the delete (closeRequestsForDeletedAdopter); this guards
+        //   against one that did not, which would otherwise rank first, count
+        //   in `total` and then vanish at render, eating page-1 slots.
+        // - A request whose pair has no pending candidate or open flag listed:
+        //   if the row it came from is GONE (the admin rescan deletes every
+        //   pending candidate and re-detects; a pair it no longer finds has no
+        //   row) it still needs answering, so the pair is listed from the
+        //   request itself. If the row is still there it was settled — a
+        //   candidate is non-pending (every pending one is loaded above), e.g.
+        //   set aside with «Mantener separados» — and the pair stays out. A
+        //   flag may be open yet unlisted (the flag fetch is capped).
+        // Adopter rows come from the page fan-out below.
+        //
+        // Declined requests skip the liveness lookup: they never leave the
+        // table, so checking each would grow the fan-out with every decline.
+        // A merge or delete closes them (closeRequestsForAdopter), and the page
+        // fan-out skips a deleted side anyway; the cost is that `total` may
+        // count a declined pair whose profile went away by a path that did not
+        // close its requests. A listed declined pair needs no lookup at all.
+        const listedKeys = new Set(mine.map(c => pairKey(c.adopter1Id, c.adopter2Id)));
+        const checked = await Promise.all([...requests].map(async ([key, r]) => {
+            try {
+                if (r.status === 'pending') {
+                    const live = await db.select({ n: sql<number>`COUNT(*)` }).from(adopters).where(and(
+                        or(eq(adopters.id, r.primaryId), eq(adopters.id, r.secondaryId)),
+                        isNull(adopters.deletedAt),
+                    )).get();
+                    if (Number(live?.n ?? 0) < 2) return { key, r, keep: false, synthesize: false };
+                }
+                if (listedKeys.has(key)) return { key, r, keep: true, synthesize: false };
+                if (r.flagId) {
+                    const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
+                        .from(adopterFlags).where(eq(adopterFlags.id, r.flagId)).get();
+                    const open = !flag || isOpenDuplicateFlag(flag);
+                    return { key, r, keep: open, synthesize: open };
+                }
+                if (r.candidateId) {
+                    const cand = await db.select({ id: duplicateCandidates.id })
+                        .from(duplicateCandidates).where(eq(duplicateCandidates.id, r.candidateId)).get();
+                    return { key, r, keep: !cand, synthesize: !cand };
+                }
+                return { key, r, keep: true, synthesize: true };
+            } catch (e) {
+                logger.warn('getPendingDuplicatesForUser: request pair lookup failed, listing it', {
+                    actorEmail: viewer, requestId: r.id, pair: key, error: e instanceof Error ? e.message : String(e),
+                });
+                return { key, r, keep: true, synthesize: !listedKeys.has(key) };
+            }
+        }));
+        const dropped = new Set<string>();
+        for (const { key, r, keep, synthesize } of checked) {
+            if (!keep) {
+                requests.delete(key); // settled or dead: no request line, no "request first" ranking
+                if (listedKeys.has(key)) dropped.add(key);
+                continue;
+            }
+            if (!synthesize) continue;
+            mine.push({
+                candidateId: r.candidateId ?? r.flagId ?? r.id,
+                adopter1Id: r.primaryId,
+                adopter2Id: r.secondaryId,
+                matchTypes: JSON.stringify(r.flagId ? ['flagged_by_user'] : []),
+                matchValues: null,
+                score: 100,
+                confidence: 'high',
+                detectedAt: r.createdAt,
+                rebuilt: true,
+            });
+        }
+        // A listed pair whose request found a profile gone: it would only
+        // vanish at render after being counted. And the pairs the viewer hid.
+        for (let i = mine.length - 1; i >= 0; i--) {
+            const key = pairKey(mine[i].adopter1Id, mine[i].adopter2Id);
+            if (dropped.has(key) || isHidden(key)) mine.splice(i, 1);
         }
 
         if (mine.length === 0) return EMPTY;
 
-        const lowHidden = mine.filter(c => c.confidence === 'low').length;
-        const eligible = includeLow ? mine : mine.filter(c => c.confidence !== 'low');
+        // A pair with a request on it is never hidden as low-confidence: a
+        // pending one needs an answer (the bell points here), a declined one
+        // stays on both lists until the viewer removes it (D27).
+        const lowHidden = mine.filter(c => c.confidence === 'low' && !hasRequest(c)).length;
+        const eligible = includeLow ? mine : mine.filter(c => c.confidence !== 'low' || hasRequest(c));
 
-        // Strongest match first; ties break on detection time so a page is
-        // stable across loads. (Ties used to break on adopters.createdAt, which
-        // required the very fetch this ordering exists to avoid.)
-        eligible.sort((x, y) =>
-            (storedScoreToPercent(y.score) - storedScoreToPercent(x.score))
-            || ((y.detectedAt?.getTime() ?? 0) - (x.detectedAt?.getTime() ?? 0)));
+        // By group (D21): waiting on the viewer's answer, sent, declined, then
+        // the possible duplicates. Request rows: newest request first.
+        // Possible duplicates: strongest match, then detection time. The id
+        // last, so a page is stable across loads. (Ties used to break on
+        // adopters.createdAt, which required the very fetch this ordering
+        // exists to avoid.)
+        const groupOf = (c: FeedCandidate): PendingDedupPair['group'] => {
+            const r = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
+            if (!r) return 'pair';
+            if (r.status === 'declined') return 'declined';
+            return normEmail(r.requesterEmail) === normEmail(viewer) ? 'sent' : 'received';
+        };
+        const requestTime = (c: FeedCandidate) => requests.get(pairKey(c.adopter1Id, c.adopter2Id))?.createdAt?.getTime() ?? 0;
+        eligible.sort((x, y) => {
+            const gx = groupOf(x), gy = groupOf(y);
+            return (GROUP_ORDER.indexOf(gx) - GROUP_ORDER.indexOf(gy))
+                || (gx === 'pair'
+                    ? (storedScoreToPercent(y.score) - storedScoreToPercent(x.score))
+                        || ((y.detectedAt?.getTime() ?? 0) - (x.detectedAt?.getTime() ?? 0))
+                    : requestTime(y) - requestTime(x))
+                || (x.candidateId < y.candidateId ? -1 : x.candidateId > y.candidateId ? 1 : 0);
+        });
 
         const total = eligible.length;
+        const focusIndex = focusPair ? eligible.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
+        if (focusIndex >= 0) page = Math.floor(focusIndex / pageSize) + 1;
+        const focusCandidateId = focusIndex >= 0 ? eligible[focusIndex].candidateId : undefined;
         const start = Math.max(0, (page - 1) * pageSize);
         const pageCandidates = eligible.slice(start, start + pageSize);
-        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden };
+        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page };
 
         // Fan out only over the ids on THIS page: at most 2 × pageSize.
         const ids = new Set<string>();
@@ -634,19 +1334,58 @@ export async function getPendingDuplicatesForUser(
             addedBy: adopters.addedBy,
             createdAt: adopters.createdAt,
             deletedAt: adopters.deletedAt,
+            age: adopters.age,
+            ageAsOf: adopters.ageAsOf,
+            isMinor: adopters.isMinor,
         }).from(adopters).where(eq(adopters.id, id)).get()));
         const byId = new Map<string, PairRow & { deletedAt: Date | null }>();
         for (const r of rows) if (r) byId.set(r.id, r as PairRow & { deletedAt: Date | null });
 
+        // Creators (other than the viewer) and request counterparts on THIS
+        // page, resolved to names in one batched lookup.
+        const people = new Set<string>();
+        for (const r of byId.values()) {
+            const creator = realOwner(r.addedBy);
+            if (creator && normEmail(creator) !== normEmail(viewer)) people.add(creator);
+        }
+        for (const c of pageCandidates) {
+            const r = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
+            if (r) for (const e of [r.requesterEmail, r.ownerEmail, r.resolvedByEmail]) if (e && normEmail(e) !== normEmail(viewer)) people.add(e);
+        }
+        const names = await resolvePeopleNames([...people], viewer);
+
         // Visibility is resolved once per adopter, not once per appearance.
-        const sideCache = new Map<string, PendingDedupPair['newAdopter']>();
+        const sideCache = new Map<string, PendingDedupSide>();
         const side = async (row: PairRow) => {
             const hit = sideCache.get(row.id);
             if (hit) return hit;
-            const built = await buildPairSide(actorEmail, row);
+            const built: PendingDedupSide = {
+                ...await buildPairSide(viewer, row, names),
+                teamOwned: !!realOwner(row.addedBy) && teamKeys.has(normEmail(row.addedBy!)),
+            };
             sideCache.set(row.id, built);
             return built;
         };
+
+        // The same verdict the click reads (PairVerdict): did an owner decline a
+        // request on the pair by the viewer's team (D43), did an admin rule it
+        // separate (D50)? Every request and dispute on it — two queries per pair
+        // on THIS page (≤ pageSize), none for admins (who choose freely) or
+        // rebuilt pairs (nothing to choose).
+        const verdictOnPage = new Map<string, PairVerdict>();
+        if (!isAdmin) {
+            const viewerTeam = [viewer, ...teamKeys];
+            await Promise.all(pageCandidates.filter(c => !c.rebuilt).map(async (c) => {
+                try {
+                    verdictOnPage.set(c.candidateId, await loadPairVerdict(db, c.adopter1Id, c.adopter2Id, viewerTeam));
+                } catch (e) {
+                    // Offered anyway; the click re-checks the same verdict.
+                    logger.warn('getPendingDuplicatesForUser: pair verdict check failed', {
+                        actorEmail: viewer, candidateId: c.candidateId, error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }));
+        }
 
         const pairs: PendingDedupPair[] = [];
         for (const c of pageCandidates) {
@@ -656,32 +1395,126 @@ export async function getPendingDuplicatesForUser(
             if (a.deletedAt || b.deletedAt) continue; // merged elsewhere meanwhile
 
             // Newer record is the "new" side; older is the merge primary.
-            const aMs = a.createdAt?.getTime() ?? 0;
-            const bMs = b.createdAt?.getTime() ?? 0;
-            const newOne = aMs >= bMs ? a : b;
-            const oldOne = aMs >= bMs ? b : a;
+            const oldOne = keepByAge({ row: a, createdAt: a.createdAt?.getTime() ?? 0 }, { row: b, createdAt: b.createdAt?.getTime() ?? 0 }).row;
+            const newOne = oldOne === a ? b : a;
+            const request = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
+            const matchTypes = JSON.parse(c.matchTypes || '[]') as string[];
+            const source = matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected';
+            // Same inputs, same order as mergePendingDedupPair's decision.
+            const dedupSide = (r: PairRow): DedupSide => ({
+                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
+                teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
+            });
+            // The switch's choices, by the same function the click runs
+            // (pairChoices): admin bypass (D24), ownerless (D42), no asking
+            // again after a decline (D43), nothing on a rebuilt pair.
+            const verdict = verdictOnPage.get(c.candidateId);
+            const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
+                isAdmin, declinedByViewer: verdict?.declinedForTeam ?? false, adminRuledSeparate: verdict?.adminRuledSeparate ?? false, rebuilt: !!c.rebuilt,
+            });
+            const [newSide, existingSide] = [await side(newOne), await side(oldOne)];
+            const { same, diff } = summarizeBreakdown(matchBreakdown({
+                matchTypes,
+                source: { name: newSide.name, entries: entriesAsShown(newSide) },
+                profile: { name: existingSide.name, has: null, entries: entriesAsShown(existingSide) },
+            }));
 
             pairs.push({
                 candidateId: c.candidateId,
-                source: c.matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected',
-                newAdopter: await side(newOne),
-                existingAdopter: await side(oldOne),
-                matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
+                source,
+                newAdopter: newSide,
+                existingAdopter: existingSide,
+                matchTypes,
                 matchValues: Object.fromEntries(
                     Object.entries(safeParseMatchValues(c.matchValues))
                         .map(([type, vals]) => [type, vals.map(v => redactInexactValue(type, v))]),
                 ),
                 confidence: c.confidence,
-                confidencePercent: storedScoreToPercent(c.score),
+                confidencePercent: isAdmin ? storedScoreToPercent(c.score) : null,
+                adminScore: isAdmin && source === 'detected' && !c.rebuilt ? storedScoreToPercent(c.score) : null,
+                group: groupOf(c),
+                summary: { same, diff, flagged: source === 'flagged' },
+                // With no survivor allowed (a pair the viewer only answers) it reads 'merge'.
+                mergeAction: choices.actionByKeep[choices.defaultKeep] ?? 'merge',
+                keepOptions: choices.keepOptions,
+                actionByKeep: choices.actionByKeep,
+                defaultKeep: choices.defaultKeep,
+                // As mergePendingDedupPair asks it: a detected pair it can load
+                // (a pair rebuilt from a request has no candidate row to load).
+                identityChoice: source === 'detected' && !c.rebuilt
+                    && needsIdentityChoice({ matchTypes, nameA: a.name ?? '', nameB: b.name ?? '' }),
+                request: request ? requestView(request, viewer, teamKeys, names) : null,
             });
         }
 
-        return { pairs, total, lowHidden };
+        // Final fix P2: each side's homes, as on search cards (one batched read per call: every side gets
+        // its chips, the first HOUSEHOLD_LINE_CARDS sides in the order shown their list; never throws).
+        const sidesShown = [...new Set(pairs.flatMap(p => [p.newAdopter.id, p.existingAdopter.id]))];
+        if (sidesShown.length) {
+            const { householdLinesFor, HOUSEHOLD_LINE_CARDS } = await import('@/lib/households');
+            const { countsFor } = await import('@/lib/profileSummary');
+            // Each side's own rating (point C, Jon 2026-11-01): one indexed read per side, the same source every
+            // card's rating comes from, capped like the household lines (the first HOUSEHOLD_LINE_CARDS sides).
+            // countsFor never throws (logs its own fallback); a side past the cap shows no rating pill.
+            const capped = sidesShown.slice(0, HOUSEHOLD_LINE_CARDS);
+            const [homes, counts] = await Promise.all([
+                householdLinesFor(db, viewer, sidesShown, { listCards: HOUSEHOLD_LINE_CARDS }),
+                Promise.all(capped.map(id => countsFor(db, id, { actorEmail, adopterId: id, op: 'getPendingDuplicatesForUser' }, { activity: false }))),
+            ]);
+            for (const built of sideCache.values()) {
+                const home = homes[built.id];
+                if (home && (home.lines.length > 0 || raisesHousemateAlert(home.alert))) built.households = home;
+            }
+            capped.forEach((id, i) => { const built = sideCache.get(id); if (built) built.rating = counts[i].rating; });
+        }
+
+        return { pairs, total, lowHidden, page, focusCandidateId };
     } catch (error) {
         logger.warn('getPendingDuplicatesForUser failed', {
-            error: error instanceof Error ? error.message : String(error),
+            actorEmail, error: error instanceof Error ? error.message : String(error),
         });
         return EMPTY;
+    }
+}
+
+/** Longest pair key accepted from the browser: two ids and a '|'. */
+const PAIR_KEY_MAX = 200;
+
+/**
+ * «Quitar de la lista» (D27): take a pair off the viewer's own «Pendientes de
+ * revisar» — offered on declined rows. Writes `pending_pair_hidden` for the
+ * session's user only; nobody else's list changes, nothing about the pair
+ * does (it can still be combined from the profile, and a new pending request
+ * on it shows again). Safe with any key a stranger chooses: it can only hide
+ * rows from their own list. Either id order names the same pair.
+ */
+export async function hidePendingPair(key: string): Promise<{ success: boolean; errorId?: string }> {
+    let actorEmail: string | null = null;
+    try {
+        let authError: string | undefined;
+        try { actorEmail = await getUser(); } catch (e) { actorEmail = null; authError = e instanceof Error ? e.message : String(e); }
+        const refuse = (reason: string) => {
+            const errorId = generateErrorId();
+            logger.warn('hidePendingPair: refused', { actorEmail, reason, errorId, ...(authError ? { authError } : {}) });
+            return { success: false, errorId };
+        };
+        if (!actorEmail) return refuse('unauthenticated');
+        const ids = typeof key === 'string' && key.length <= PAIR_KEY_MAX ? key.split('|') : [];
+        if (ids.length !== 2 || !ids[0] || !ids[1] || ids[0] === ids[1]) return refuse('invalid_pair');
+        const db = await getDb();
+        if (!db) {
+            const errorId = logger.error('hidePendingPair: database not available', new Error('Database not available'), { actorEmail });
+            return { success: false, errorId };
+        }
+        const normalized = pairKey(ids[0], ids[1]);
+        await db.insert(pendingPairHidden)
+            .values({ viewerEmail: normEmail(actorEmail), pairKey: normalized, createdAt: new Date() })
+            .onConflictDoNothing();
+        logger.info('hidePendingPair: hidden', { actorEmail, pairKey: normalized });
+        return { success: true };
+    } catch (e) {
+        const errorId = logger.error('hidePendingPair failed', e, { actorEmail });
+        return { success: false, errorId };
     }
 }
 

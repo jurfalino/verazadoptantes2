@@ -23,6 +23,7 @@ import {
     contactEntriesToBlob,
     mergeContactEntries,
 } from './contactEntries';
+import { preserveRenameAliases, renameEntries, sameName } from '@/domain/profileIdentity';
 
 /**
  * A log-safe reference to an invitation token. Tokens are bearer credentials
@@ -156,6 +157,10 @@ export interface ContactUpdate {
     addressInfo: string | null;
     /** Whether the signer's name replaces the profile's name. */
     replaceName: boolean;
+    /** The name to write — set only when it actually changes (a rename). */
+    name?: string;
+    /** That rename, for its `name_changed` history row (the old name is kept as a rename alias). */
+    nameChange?: { from: string; to: string; aliasKept: boolean };
 }
 
 /**
@@ -168,16 +173,30 @@ export interface ContactUpdate {
  * alone.
  */
 export function contactUpdateOnSign(
-    existing: { contactInfo: string | null; contactEntries: string | null; addressInfo: string | null },
-    signed: { entries: ContactEntry[]; address: string | null },
+    existing: { name?: string | null; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null },
+    signed: { entries: ContactEntry[]; address: string | null; name?: string | null },
     overwrite: boolean,
+    /** Credited on the old name's rename alias (the signature's sentinel actor). */
+    actor = 'contract-signed-via-invitation',
 ): ContactUpdate {
     if (overwrite) {
+        // The list is replaced, but the names a rename kept never go (preserveRenameAliases),
+        // and a new name is a rename: the old one stays findable as a rename alias.
+        let entries: ContactEntry[] = preserveRenameAliases(deserializeContactEntries(existing.contactEntries), signed.entries);
+        const to = (signed.name ?? '').trim();
+        const from = (existing.name ?? '').trim();
+        let rename: Pick<ContactUpdate, 'name' | 'nameChange'> = {};
+        if (to && signed.name !== undefined && existing.name !== undefined && !sameName(from, to)) {
+            const r = renameEntries(entries, { from, to, actor, newId: crypto.randomUUID() });
+            entries = r.entries;
+            rename = { name: to, nameChange: { from, to, aliasKept: r.aliasKept } };
+        }
         return {
-            contactInfo: contactEntriesToBlob(signed.entries) || null,
-            contactEntries: signed.entries.length ? JSON.stringify(signed.entries) : null,
+            contactInfo: contactEntriesToBlob(entries) || null,
+            contactEntries: entries.length ? JSON.stringify(entries) : null,
             addressInfo: signed.address || null,
             replaceName: true,
+            ...rename,
         };
     }
     const parsed = deserializeContactEntries(existing.contactEntries);

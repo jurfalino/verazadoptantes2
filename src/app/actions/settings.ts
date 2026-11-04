@@ -1,7 +1,7 @@
 'use server';
 
-import { getUser } from './_db';
-import { logger } from '@/lib/logger';
+import { getDb, getUser } from './_db';
+import { generateErrorId, logger } from '@/lib/logger';
 import { acceptTermsAndCountrySchema } from './validation';
 import { logAudit } from '@/lib/audit';
 import { isValidTimezone } from '@/domain/timezones';
@@ -445,6 +445,80 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
         return { success: true };
     } catch (error) {
         const errorId = logger.error('saveFollowupSettings failed', error, { userEmail });
+        return { success: false, errorId };
+    }
+}
+
+// ── Email notification switches (per category) ──────────────────────────────
+
+import { and, eq, isNull } from 'drizzle-orm';
+import { apiKeys } from '@/db/schema';
+import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
+import { getEmailPrefsForEmail, getLocaleForEmail, setEmailPrefForEmail, setLocaleForEmail } from '@/lib/emailPrefs';
+import { READ_ONLY_ERROR_NAME } from '@/lib/readOnlyGuard';
+
+/** The viewer's email switches + whether they hold a live API key (null = no session). */
+export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean } | null> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') return null;
+
+        const db = await getDb();
+        const [prefs, keys] = await Promise.all([
+            getEmailPrefsForEmail(db, userEmail),
+            db.select({ id: apiKeys.id }).from(apiKeys)
+                .where(and(eq(apiKeys.ownerEmail, userEmail), isNull(apiKeys.revokedAt))).limit(1),
+        ]);
+        return { prefs, hasApiKey: keys.length > 0 };
+    } catch (error) {
+        logger.error('getEmailPrefs failed', error, { userEmail });
+        return null;
+    }
+}
+
+/** Switch one email category on or off. Always-on categories and unknown values are refused. */
+export async function saveEmailPref(category: EmailCategory, enabled: boolean): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        if (!EMAIL_CATEGORIES.includes(category) || typeof enabled !== 'boolean') {
+            throw new Error(`Invalid email preference: ${String(category)}`);
+        }
+        if (ALWAYS_ON_CATEGORIES.has(category)) throw new Error(`Email category cannot be switched off: ${category}`);
+
+        await setEmailPrefForEmail(await getDb(), userEmail, category, enabled);
+
+        logAudit({ userEmail, action: 'email_pref_saved', details: { category, enabled } });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('saveEmailPref failed', error, { userEmail, category });
+        return { success: false, errorId };
+    }
+}
+
+/**
+ * Remember the language the viewer picked, so emails to them go out in it.
+ * Unchanged → no write (the app pushes it on sign-in). A "view as" session is
+ * read-only by design: that refusal is expected, so it logs at warn.
+ */
+export async function saveMyLocale(locale: 'es' | 'en' | 'pt'): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        const db = await getDb();
+        if (await getLocaleForEmail(db, userEmail) === locale) return { success: true };
+        await setLocaleForEmail(db, userEmail, locale);
+        return { success: true };
+    } catch (error) {
+        if (error instanceof Error && error.name === READ_ONLY_ERROR_NAME) {
+            const errorId = generateErrorId();
+            logger.warn('saveMyLocale: read-only ("view as") session, not saved', { userEmail, locale: String(locale), errorId });
+            return { success: false, errorId };
+        }
+        const errorId = logger.error('saveMyLocale failed', error, { userEmail, locale: String(locale) });
         return { success: false, errorId };
     }
 }

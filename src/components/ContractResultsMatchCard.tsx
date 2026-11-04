@@ -1,18 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
+import type { OpenAlertKind } from '@/domain/flags';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-
-interface MatchType {
-    icon: string;
-    es: string;
-    en: string;
-}
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
+import { MatchCard } from '@/components/MatchCardParts';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import type { CardHousehold } from '@/domain/households';
 
 interface ContractResultsMatchCardProps {
     matchId: string;
@@ -21,10 +20,22 @@ interface ContractResultsMatchCardProps {
         id: string;
         name: string;
         contactInfo: string | null;
+        /** Masked like contactInfo, as typed entries. */
+        contactEntries?: string | null;
         status: string | null;
+        /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
+        isMinor?: boolean;
+        households?: CardHousehold;
+        /** Their own standing in the card's header (audit B6). */
+        rating?: number | null;
+        openAlerts?: OpenAlertKind[];
     };
     matchTypes: string[];
-    matchTypeLabels: Record<string, MatchType>;
+    score?: number;
+    /** What the adopter wrote in the contract — the rescuer's side of the comparison. */
+    signer: { name: string; entries: Array<{ type: string; value: string }> };
+    /** Open the comparison by itself — when this is the only possible match. */
+    compareOpen?: boolean;
 }
 
 export default function ContractResultsMatchCard({
@@ -32,13 +43,16 @@ export default function ContractResultsMatchCard({
     notificationId,
     profile,
     matchTypes,
-    matchTypeLabels,
+    score,
+    signer,
+    compareOpen = false,
 }: ContractResultsMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
     const toast = useShowToast();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
+    const [dismissed, setDismissed] = useState(false);
 
     const handleConfirm = async () => {
         setLinking(true);
@@ -51,7 +65,11 @@ export default function ContractResultsMatchCard({
                 router.push(result.matchedProfileUrl || `/adopter/${matchId}`);
                 router.refresh();
             } else {
-                toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', t('errors.attach_contract_failed') || undefined);
+                // A merge rule's refusal says why (households as profiles); anything else, the generic line. Always with its id.
+                const why = result.error === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
+                    : (t('errors.attach_contract_failed') || undefined);
+                toast.error(t('contractResults.link_error') || 'No se pudo atribuir la adopción', why,
+                    result.errorId ?? resolveErrorId(new Error(`attachContractToExistingAdopter: ${result.error}`), 'ContractResultsMatchCard'));
                 setLinking(false);
                 setConfirmOpen(false);
             }
@@ -62,94 +80,44 @@ export default function ContractResultsMatchCard({
         }
     };
 
+    if (dismissed) return null;
     return (
         <>
-            <div className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-stone-800 line-clamp-2 break-words" title={profile.name}>{profile.name}</p>
-                        {profile.contactInfo && (
-                            <p className="text-xs text-stone-500 mt-0.5 line-clamp-2 break-words">{profile.contactInfo}</p>
-                        )}
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                            {matchTypes.map((type) => {
-                                const label = matchTypeLabels[type];
-                                return (
-                                    <span
-                                        key={type}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"
-                                    >
-                                        {label?.icon || '🔗'} {label?.es || type}
-                                    </span>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Action row — split intents: link adoption (destructive) vs. investigate (navigate) */}
-                <div className="mt-3 pt-3 border-t border-stone-100 flex flex-wrap items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setConfirmOpen(true)}
-                        className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 py-2 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 transition-colors flex-1 sm:flex-initial"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2} aria-hidden="true">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                        {t('contractResults.same_person') || 'Es la misma persona'}
-                    </button>
-                    <Link
-                        href={`/adopter/${profile.id}`}
-                        className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 py-2 rounded-lg text-sm font-medium border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
-                    >
-                        {t('contractResults.view_profile') || 'Ver perfil'}
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                    </Link>
-                </div>
+            {/* The shared match card (audit B6): header (name + their own standing, household line) → «Qué coincide
+                y qué no» → the same actions and labels as every match card. */}
+            <div data-testid="contract-match-card" className="block bg-white rounded-xl border border-stone-200 p-4 shadow-sm">
+                <MatchCard
+                    person={profile}
+                    compare={(
+                        // What matches and what doesn't, field by field (Jon, 2026-10-25).
+                        <MatchCompare
+                            adopterId={profile.id}
+                            matchTypes={matchTypes}
+                            profileName={profile.name}
+                            source={{ kind: 'contract', name: signer.name, entries: signer.entries }}
+                            profileEntries={entriesAsShown(profile)}
+                            score={score}
+                            defaultOpen={compareOpen}
+                            t={t}
+                        />
+                    )}
+                    // «No es esta persona» takes the card off this page, as on a form's results.
+                    actions={{ onSame: () => setConfirmOpen(true), busy: linking, onNotThis: () => setDismissed(true), notThisTestId: 'contract-match-not-this' }}
+                />
             </div>
 
-            {/* Confirmation modal */}
-            {confirmOpen && (
-                <div
-                    className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
-                    onClick={() => !linking && setConfirmOpen(false)}
-                >
-                    <div
-                        className="bg-white rounded-2xl shadow-xl max-w-md w-full"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="p-5 border-b border-stone-100">
-                            <h3 className="text-lg font-semibold text-stone-900 break-words">
-                                {t('contractResults.confirm_link_title') || 'Atribuir adopción a este perfil'}
-                            </h3>
-                            <p className="text-sm text-stone-600 mt-2 break-words">
-                                {(t('contractResults.confirm_link_body') || 'Esta acción mueve el contrato firmado al perfil de {name}, elimina el perfil temporal recién creado y notifica al creador original.').replace('{name}', profile.name)}
-                            </p>
-                        </div>
-                        <div className="p-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setConfirmOpen(false)}
-                                disabled={linking}
-                                className="min-h-[44px] px-4 py-2 rounded-lg text-sm font-medium border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors disabled:opacity-50"
-                            >
-                                {t('contractResults.cancel') || 'Cancelar'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleConfirm}
-                                disabled={linking}
-                                className="min-h-[44px] px-4 py-2 rounded-lg text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-50"
-                            >
-                                {linking ? (t('contractResults.linking') || 'Atribuyendo...') : (t('contractResults.confirm_link_action') || 'Confirmar atribución')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* The shared dialog (role="dialog", focus, Escape); the same question as a form's «¿Vincular a …?». */}
+            <ConfirmDialog
+                open={confirmOpen}
+                title={(t('formResults.confirm_link_title') || '¿Vincular a {name}?').replace('{name}', profile.name)}
+                message={(t('contractResults.confirm_link_body') || 'Esta acción mueve el contrato firmado al perfil de {name}, elimina el perfil temporal recién creado y notifica al creador original.').replace('{name}', profile.name)}
+                confirmLabel={linking ? (t('formResults.linking') || 'Vinculando…') : (t('formResults.confirm_link_action') || 'Sí, es la misma persona')}
+                destructive={false}
+                busy={linking}
+                onConfirm={() => { void handleConfirm(); }}
+                onCancel={() => setConfirmOpen(false)}
+                testId="contract-link-confirm"
+            />
         </>
     );
 }

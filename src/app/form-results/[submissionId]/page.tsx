@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 
 import { selfieUrlColumn } from '@/lib/selfieLink';
+import type { OpenAlertKind } from '@/domain/flags';
 import { photoLinks } from '@/domain/formPhotos';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
@@ -16,11 +17,16 @@ import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
+import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
+import { countsFor } from '@/lib/profileSummary';
+import { isMinor, type CardHousehold } from '@/domain/households';
 
 interface MatchedAdopter {
     id: string;
     name: string;
     matchTypes: string[];
+    /** Search score; stored on notifications since 2026-10-25, admins only. */
+    score?: number;
 }
 
 interface NotificationMetadata {
@@ -171,7 +177,13 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
     const matchIds = (metadata.matchedAdopters ?? []).map(a => a.id);
     const profileIds = [...new Set([...matchIds, ...(linkedId ? [linkedId] : [])])];
 
-    type ProfileRow = { id: string; name: string; contactInfo: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null };
+    type ProfileRow = {
+        id: string; name: string; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null;
+        /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
+        isMinor?: boolean; households?: CardHousehold;
+        /** Their own standing on the match card (audit B6). */
+        rating?: number | null; openAlerts?: OpenAlertKind[];
+    };
     let matchedProfiles: ProfileRow[] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
     if (profileIds.length > 0) {
@@ -185,6 +197,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                     // Masking inputs only — never forwarded to the client.
                     addedBy: adopters.addedBy, isPublic: adopters.isPublic,
                     contactInfo: adopters.contactInfo, contactEntries: adopters.contactEntries, addressInfo: adopters.addressInfo,
+                    age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor,
                 })
                 .from(adopters)
                 .where(or(...profileIds.map(id => eq(adopters.id, id)))!)
@@ -220,6 +233,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             id: string; name: string; status: string | null; deletedAt: Date | null;
             addedBy: string | null; isPublic: number | null;
             contactInfo: string | null; contactEntries: string | null; addressInfo: string | null;
+            age: number | null; ageAsOf: string | null; isMinor: number | null;
         };
         // Another rescuer's protected profile must not reach this page raw
         // (props are serialized into the RSC payload): contact and address go
@@ -237,9 +251,11 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             id: r.id,
             name: r.name,
             contactInfo: masked.get(r.id)?.contactInfo ?? null,
+            contactEntries: masked.get(r.id)?.contactEntries ?? null,
             addressInfo: masked.get(r.id)?.addressInfo ?? null,
             status: r.status,
             profileImageUrl: imageByAdopter.get(r.id) ?? null,
+            ...(isMinor(r) ? { isMinor: true } : {}),
         });
 
         // Soft-deleted (merged-away) matches are dropped at read time, so a
@@ -254,6 +270,16 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
                 const bc = order.get(b.id) ?? { count: 0, index: 999 };
                 return bc.count !== ac.count ? bc.count - ac.count : ac.index - bc.index;
             });
+        // Who each one lives with (never throws; the first HOUSEHOLD_LINE_CARDS cards).
+        if (matchedProfiles.length) {
+            // Every card its housemate chips; the first HOUSEHOLD_LINE_CARDS their list whatever it says.
+            const homes = await householdLinesFor(db, currentUser, matchedProfiles.map(p => p.id), { listCards: HOUSEHOLD_LINE_CARDS });
+            matchedProfiles = matchedProfiles.map(p => (homes[p.id] ? { ...p, households: homes[p.id] } : p));
+            // Each card's own rating and alerts (audit B6), the same counts a household line shows; countsFor
+            // never throws (a failure logs and shows «Sin calificación»). One query per card, capped like the lines.
+            const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { submissionId, user: currentUser }, { activity: false })));
+            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openAlerts: standing[i].openAlerts } : p));
+        }
 
         // A form linked to a profile that was later merged away (before merges
         // carried form links along, v2.56.129) has no live profile to name —

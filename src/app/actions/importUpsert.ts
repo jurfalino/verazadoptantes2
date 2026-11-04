@@ -11,10 +11,10 @@
  * added as an alias).
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { adopters } from '@/db/schema';
-import { deserializeContactEntries, detectSocialPlatform, type ContactEntry } from '@/lib/contactEntries';
+import { deserializeContactEntries, detectSocialPlatform, stripRenameMarks, stripClientRenameMarksJson, type ContactEntry } from '@/lib/contactEntries';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { planRecordMerge, type MergeContact } from '@/domain/importMerge';
 import { addContactEntry } from './addContactEntry';
@@ -92,7 +92,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
             existingEntries: deserializeContactEntries(existing.contactEntries).map(toMergeContact),
             existingActivities,
             incomingName: input.name,
-            incomingEntries: deserializeContactEntries(input.contactEntries).map(toMergeContact),
+            incomingEntries: stripRenameMarks(deserializeContactEntries(stripClientRenameMarksJson(input.contactEntries))).map(toMergeContact),
             incomingActivity: { recordType: input.adoption.recordType, date: toYmd(input.adoption.date), details: input.adoption.details },
         });
 
@@ -100,6 +100,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
         for (const c of plan.contactsToAdd) {
             const res = await addContactEntry({ adopterId: input.adopterId, type: c.type as ContactEntry['type'], value: c.value, streetAndNumber: c.streetAndNumber, locality: c.locality, ...(c.type === 'social' ? { platform: detectSocialPlatform(c.value) ?? undefined } : {}) });
             if (res.ok && res.appended) addedContacts++;
+            else if (!res.ok) logger.warn('upsertImportRecord: a contact was not added', { adopterId: input.adopterId, actor, type: c.type, error: res.error });
         }
 
         let nameFilled = false, aliasAdded = false;
@@ -110,11 +111,17 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
             // an overwrite of another contributor's value. Any authenticated importer
             // may do it, consistent with the collaborative "adds are open" model. A
             // record that already has a name gets the incoming one as an alias instead.
-            await db.update(adopters).set({ name: plan.nameValue }).where(eq(adopters.id, input.adopterId));
-            nameFilled = true;
+            // Compare-and-set on «still blank»: a rename landing since the read is never overwritten
+            // (it would lose that name without its alias). Lost → nothing filled.
+            const won = await db.update(adopters).set({ name: plan.nameValue, updatedAt: new Date() })
+                .where(and(eq(adopters.id, input.adopterId), sql`trim(coalesce(${adopters.name}, '')) = ''`))
+                .returning({ id: adopters.id });
+            nameFilled = won.length > 0;
+            if (!nameFilled) logger.info('upsertImportRecord: name no longer blank, fill skipped', { adopterId: input.adopterId, actor });
         } else if (plan.nameAction === 'alias' && plan.nameValue) {
             const res = await addContactEntry({ adopterId: input.adopterId, type: 'alias', value: plan.nameValue });
             aliasAdded = res.ok && res.appended;
+            if (!res.ok) logger.warn('upsertImportRecord: the incoming name was not added as an alias', { adopterId: input.adopterId, actor, error: res.error });
         }
 
         if (plan.addActivity) {

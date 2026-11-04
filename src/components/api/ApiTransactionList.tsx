@@ -20,13 +20,14 @@ export interface TransactionRow {
     dryRun?: boolean;
     /** A refusal's error.code. */
     errorCode?: string | null;
+    degraded?: boolean;
     /** Who the call searched for (null after the 90-day purge). */
     searched?: { fullName: string | null; email: string | null; phone: string | null; documentId: string | null } | null;
 }
 
 /** Error codes worth filtering by (the API's published codes). */
 const ERROR_CODES = ['invalid_request', 'activity_required', 'external_id_required', 'external_id_reused', 'request_in_progress', 'partially_saved',
-    'example_data', 'unauthorized', 'access_blocked', 'access_not_approved', 'forbidden', 'daily_cap_reached', 'daily_call_ceiling_reached', 'temporarily_unavailable', 'server_error'] as const;
+    'example_data', 'invalid_json', 'body_unreadable', 'unauthorized', 'access_blocked', 'forbidden', 'daily_cap_reached', 'daily_call_ceiling_reached', 'temporarily_unavailable', 'abandoned', 'server_error'] as const;
 
 const OUTCOMES = ['found', 'not_found', 'ambiguous', 'results', 'voided', 'replayed', 'error'] as const;
 
@@ -71,7 +72,7 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
     const [to, setTo] = useState('');
     const [query, setQuery] = useState('');
     const [submittedQuery, setSubmittedQuery] = useState('');
-    const [open, setOpen] = useState<Record<string, { requestBody: unknown; responseBody: unknown } | 'loading'>>({});
+    const [open, setOpen] = useState<Record<string, { requestBody: unknown; responseBody: unknown; client?: unknown; decision?: unknown } | 'loading'>>({});
     const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
 
     const load = useCallback(async (before: string | null) => {
@@ -108,8 +109,8 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
         try {
             const res = await fetch(detailUrl(id));
             if (!res.ok) throw await failure(res, 'detail');
-            const { transaction } = await res.json() as { transaction: { requestBody: unknown; responseBody: unknown } };
-            setOpen(o => ({ ...o, [id]: { requestBody: transaction.requestBody, responseBody: transaction.responseBody } }));
+            const { transaction } = await res.json() as { transaction: { requestBody: unknown; responseBody: unknown; client?: unknown; decision?: unknown } };
+            setOpen(o => ({ ...o, [id]: { requestBody: transaction.requestBody, responseBody: transaction.responseBody, client: transaction.client, decision: transaction.decision } }));
         } catch (e) {
             setOpen(({ [id]: _drop, ...rest }) => rest);
             toast.error(t('apiReview.error_title'), t('apiReview.error_load'), resolveErrorId(e, 'ApiTransactionList.detail'));
@@ -202,6 +203,12 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
                                 </span>
                                 {r.httpStatus >= 400 && <span className="text-xs text-red-700">HTTP {r.httpStatus}{r.errorCode ? ` · ${r.errorCode}` : ''}{r.errorId ? ` · ${r.errorId}` : ''}</span>}
                                 {r.voidedAt && <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('apiReview.voided_badge')}</span>}
+                                {r.httpStatus === 0 && Date.now() - new Date(r.createdAt).getTime() > 120_000 && (
+                                    <span data-testid="api-unfinished-badge" title={t('apiReview.unfinished_hint')} className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--status-warning-bg)', color: 'var(--status-warning-text)' }}>{t('apiReview.unfinished')}</span>
+                                )}
+                                {r.degraded && (
+                                    <span data-testid="api-degraded-badge" title={t('apiReview.degraded_hint')} className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--status-warning-bg)', color: 'var(--status-warning-text)' }}>{t('apiReview.degraded')}</span>
+                                )}
                                 {r.dryRun && <span data-testid="api-dry-run-badge" title={t('apiReview.dry_run_hint')} className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-semibold">{t('apiReview.dry_run_badge')}</span>}
                             </div>
                             {r.searched && (r.searched.fullName || r.searched.email || r.searched.phone || r.searched.documentId) && (
@@ -244,6 +251,13 @@ export default function ApiTransactionList({ listUrl, detailUrl, voidUrl, showOw
                                             <pre className="text-xs bg-stone-50 dark:bg-stone-900 rounded-xl p-3 overflow-x-auto max-h-80">
                                                 {detail[k] === null ? t('apiReview.body_purged') : JSON.stringify(detail[k], null, 2)}
                                             </pre>
+                                        </div>
+                                    ))}
+                                    {/* Troubleshooting: which client sent it; for an admin, how the match was decided. */}
+                                    {(['client', 'decision'] as const).filter(k => detail[k]).map(k => (
+                                        <div key={k} className="min-w-0" data-testid={`api-detail-${k}`}>
+                                            <p className="text-xs font-semibold text-stone-500 mb-1">{t(k === 'client' ? 'apiReview.client' : 'apiReview.decision')}</p>
+                                            <pre className="text-xs bg-stone-50 dark:bg-stone-900 rounded-xl p-3 overflow-x-auto max-h-80">{JSON.stringify(detail[k], null, 2)}</pre>
                                         </div>
                                     ))}
                                 </div>

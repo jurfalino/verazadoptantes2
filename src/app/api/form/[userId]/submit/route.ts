@@ -8,7 +8,6 @@ import { parseHouseholdPeople, childrenAnswer, fullName } from '@/domain/househo
 import { parseGiftRecipient, recipientFullName } from '@/domain/giftRecipient';
 import { clampFreeText, socialHandle, normalizeOpenAnswers } from '@/domain/formFreeText';
 import { parsePhotoInputs, type StoredPhoto } from '@/domain/formPhotos';
-import type { HouseholdMember } from '@/lib/householdMembers';
 
 export const runtime = 'edge';
 
@@ -231,7 +230,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // manually links them" workflow. The matches returned here feed the
         // notification below.
         let adopterId: string | null = null;
-        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
+        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent?: number }> = [];
         try {
             const { createAdopterFromSubmission } = await import('@/app/actions/_adopterFactory');
             const result = await createAdopterFromSubmission({
@@ -245,30 +244,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 animalId: selectedAnimalId,
                 animalName: selectedAnimalName,
                 socials,
-                householdMembers: [
-                    // Only fully named people become profile household members —
-                    // and in a gift, the people list is the RECIPIENT's home, not
-                    // the giver's household: those never reach the giver's profile.
-                    ...(gift ? [] : householdPeople.flatMap((p, i): HouseholdMember[] => {
-                        const memberName = fullName(p);
-                        return memberName ? [{
-                            id: `form-${submissionId}-${i}`, name: memberName, relationship: p.relationship, contactEntries: [],
-                            age: p.age, ageAsOf: new Date().toISOString().slice(0, 10), addedBy: 'form-submission',
-                        }] : [];
-                    })),
-                    // The gift's recipient, when fully named, on the giver's profile.
-                    ...(recipient && recipientFullName(recipient) ? [{
-                        id: `form-${submissionId}-recipient`, name: recipientFullName(recipient)!, relationship: recipient.relationship,
-                        giftRecipient: true, addedBy: 'form-submission',
-                        contactEntries: recipient.phone ? [{ id: crypto.randomUUID(), type: 'phone' as const, value: recipient.phone, addedBy: 'form-submission' }] : [],
-                    }] : []),
-                ],
             });
             adopterId = result.adopterId;
             matches = result.dupCandidates.map(c => ({
                 adopterId: c.adopterId,
                 adopterName: c.adopterName,
                 matchTypes: c.matchTypes,
+                relevancePercent: c.relevancePercent,
             }));
 
             // Link form submission to the new adopter and mark it linked
@@ -294,6 +276,43 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             });
         }
 
+        // Households as profiles (spec «When nobody can answer», «Gift recipient»):
+        // after the applicant exists, is linked and has its request — a failure
+        // here never leaves the submission unlinked.
+        if (adopterId) {
+            const applicantId = adopterId;
+            if (!gift) {
+                // The fully named people of "¿Quiénes viven en la casa?" become profiles
+                // (owner = the form's owner) in the applicant's household. In a gift the
+                // people list is the RECIPIENT's home: never the giver's household.
+                const people = householdPeople.flatMap((p, i) => {
+                    const memberName = fullName(p);
+                    return memberName ? [{ name: memberName, relationship: p.relationship, age: p.age, index: i }] : [];
+                });
+                if (people.length) {
+                    try {
+                        const { attachHouseholdPeople } = await import('@/lib/householdPeople');
+                        await attachHouseholdPeople(db, {
+                            anchorAdopterId: applicantId, people, actor: 'form-submission', ownerEmail: rescuerEmail,
+                            sourceKey: `form-${submissionId}`, requestId: submissionId, background: true,
+                        });
+                    } catch (e) {
+                        logger.error('Form household people not attached (the form is saved)', e, { submissionId, adopterId: applicantId });
+                    }
+                }
+            } else if (recipient?.phone && recipientFullName(recipient)) {
+                // The gift's recipient is form data on the giver (no profile until a rescuer
+                // presses «Crear perfil»): index its phone with the giver's, now that the
+                // form is linked, so searching it finds the giver (src/lib/giftRecipients.ts).
+                try {
+                    const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+                    await tokenizeAdopter(applicantId, { force: true });
+                } catch (e) {
+                    logger.warn('Form gift recipient phone not indexed on the giver', { submissionId, adopterId: applicantId, error: e instanceof Error ? e.message : String(e) });
+                }
+            }
+        }
+
         logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId, shownCount: shownSteps ? shownSteps.length : null });
 
         // Notification + org fan-out. Helper above already ran duplicate
@@ -306,16 +325,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // When the submission targets a specific animal the title reads
             // "Juana aplicó para Luna", with the match count appended
             // (src/domain/formNotification.ts — shared with the teammate copy).
-            const { formSubmissionOwnerTitle, formSubmissionTeammateTitle } = await import('@/domain/formNotification');
-            const titleInput = { submitterName: name, animalName: selectedAnimalName, matchCount };
-            const ownerTitle = formSubmissionOwnerTitle(titleInput);
+            const { notificationContent } = await import('@/domain/notificationTemplates');
+            const titleParams = { submitterName: name, matchCount: String(matchCount) };
+            const ownerContent = notificationContent({
+                key: 'form_submission_owner',
+                params: { ...titleParams, ...(selectedAnimalName ? { animalName: selectedAnimalName } : {}) },
+            });
             if (matchCount > 0) {
                 await createNotification({
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: ownerTitle,
-                    body: `Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.`,
+                    ...ownerContent,
                     url: `/form-results/${submissionId}`,
                     icon: '⚠️',
                     metadata: {
@@ -326,6 +347,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                             id: m.adopterId,
                             name: m.adopterName,
                             matchTypes: m.matchTypes,
+                            // The search score, shown to admins only (Jon, 2026-10-25).
+                            score: m.relevancePercent,
                         })),
                         selectedAnimalId,
                         selectedAnimalName,
@@ -336,8 +359,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
-                    title: ownerTitle,
-                    body: `No se encontraron registros previos. Revisá las respuestas para continuar.`,
+                    ...ownerContent,
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: {
@@ -359,7 +381,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // the generic title and no animal: never name another team's
             // animal to these teammates.
             await runAfterResponse('formSubmit.notifyOrgMembers', async () => {
-                const [{ notifyOrgMembers }, { getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
+                const [{ notifyOrgMembers, resolveDisplayName }, { getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
                     import('@/app/actions/notifications'),
                     import('@/lib/orgMembership'),
                     import('@/lib/applicantScope'),
@@ -370,11 +392,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         await getTeamEmails(rescuerEmail),
                     )
                     : null;
+                // Teammates read the sharer's name, never the address.
+                const sharedByName = await resolveDisplayName(rescuerEmail);
                 await notifyOrgMembers({
                     actorEmail: rescuerEmail,
                     type: 'form_submission',
-                    title: formSubmissionTeammateTitle({ ...titleInput, animalName: animal?.name ?? null }),
-                    body: `${name} completó el formulario de adopción compartido por ${rescuerEmail}.`,
+                    ...notificationContent({
+                        key: 'form_submission_teammate',
+                        params: { ...titleParams, sharedByName, ...(animal?.name ? { animalName: animal.name } : {}) },
+                    }),
                     url: `/form-results/${submissionId}`,
                     icon: '📋',
                     metadata: {

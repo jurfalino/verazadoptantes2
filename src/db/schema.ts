@@ -59,6 +59,14 @@ export const adopters = sqliteTable("adopters", {
     // free; the walkthrough + the /admin/walkthrough panel fetch them by this
     // marker (ignoring deletedAt). Never tokenized, never in real search.
     isDemo: integer("is_demo").notNull().default(0),
+
+    // Age lives on the profile (drizzle/0096, households as profiles): the age
+    // as given on `ageAsOf` (YYYY-MM-DD); show currentAge(), never this raw.
+    // isMinor: the «Es menor de edad» checkbox — see isMinor() in
+    // src/domain/households.ts for the rule (a known age decides).
+    age: integer("age"),
+    ageAsOf: text("age_as_of"),
+    isMinor: integer("is_minor").notNull().default(0),
 }, (table) => ({
     nameIdx: index("name_idx").on(table.name),
 }));
@@ -109,11 +117,17 @@ export const adopterHistory = sqliteTable("adopter_history", {
     changedBy: text("changed_by").default("anonymous"),
     changes: text("changes"), // JSON string of what changed
     changedAt: integer("changed_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
-    // 'edit' (owner/admin core-record write via saveAdopter / appendToExistingAdopter)
-    // | 'contribution' (any authenticated user via addContactEntry). Only 'edit'
-    // rows make the writer an "editor" for PII visibility purposes.
+    // 'edit' (a write by someone privileged on the profile: owner, org-mate,
+    // admin, moderator) | 'contribution' (anyone else: open paths such as
+    // addContactEntry, household adds, flags, activity records). Writers pick it
+    // with src/lib/profilePrivilege.ts. An 'edit' row alone grants nothing
+    // (loadApprovers re-checks privilege); old builds still trust it, so a
+    // non-privileged write must never default to 'edit'.
     kind: text("kind").notNull().default('edit'),
-});
+}, (table) => ({
+    // Migration 0100: the per-person rename rate limit counts a person's recent rows.
+    changedByIdx: index("idx_adopter_history_changed_by").on(table.changedBy, table.changedAt),
+}));
 
 export const searches = sqliteTable("searches", {
     id: text("id").primaryKey(),
@@ -454,6 +468,172 @@ export const piiAccessRequests = sqliteTable("pii_access_requests", {
     requesterStatusIdx: index("idx_pii_req_requester_status").on(table.requesterEmail, table.status),
 }));
 
+// merge_requests — a rescuer asks the owner of a duplicate profile to merge two
+// adopters. `primaryId` (older) survives; `secondaryId` (newer) is absorbed.
+// `ownerEmail` NULL = no real owner, so admins decide.
+export const mergeRequests = sqliteTable("merge_requests", {
+    id: text("id").primaryKey(),
+    primaryId: text("primary_id").notNull(),
+    secondaryId: text("secondary_id").notNull(),
+    candidateId: text("candidate_id"),
+    flagId: text("flag_id"),
+    requesterEmail: text("requester_email").notNull(),
+    ownerEmail: text("owner_email"),
+    status: text("status").notNull().default("pending"), // pending, accepted, declined, cancelled, admin_approved, admin_declined, closed
+    resolvedByEmail: text("resolved_by_email"),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    // 1 = a request to the admins after the owner rejected the pair (D49, drizzle/0095).
+    dispute: integer("dispute").notNull().default(0),
+}, (table) => ({
+    statusCreatedIdx: index("idx_merge_req_status_created").on(table.status, table.createdAt),
+    requesterIdx: index("idx_merge_req_requester").on(table.requesterEmail, table.status),
+    ownerIdx: index("idx_merge_req_owner").on(table.ownerEmail, table.status),
+    pairIdx: index("idx_merge_req_pair").on(table.primaryId, table.secondaryId, table.status),
+}));
+
+// merge_disputes — «No es la misma persona» on a merge that already happened
+// (D50, drizzle/0095). `audit_id` is the merge's audit_log row (the handle
+// unmergeAdopters takes). status: open | kept | undone; one open per merge.
+export const mergeDisputes = sqliteTable("merge_disputes", {
+    id: text("id").primaryKey(),
+    auditId: text("audit_id").notNull(),
+    survivorId: text("survivor_id").notNull(),
+    absorbedId: text("absorbed_id").notNull(),
+    raisedBy: text("raised_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    status: text("status").notNull().default("open"),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+}, (table) => ({
+    openAuditIdx: uniqueIndex("idx_merge_disputes_open_audit").on(table.auditId).where(sql`status = 'open'`),
+    auditIdx: index("idx_merge_disputes_audit").on(table.auditId),
+    statusCreatedIdx: index("idx_merge_disputes_status_created").on(table.status, table.createdAt),
+}));
+
+// pending_pair_hidden — a viewer hid a duplicate pair from their «Pendientes de revisar»
+// list (D27). `pair_key` is pairKey(aId, bId) from src/domain/dedupPair.ts.
+export const pendingPairHidden = sqliteTable("pending_pair_hidden", {
+    viewerEmail: text("viewer_email").notNull(),
+    pairKey: text("pair_key").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.viewerEmail, table.pairKey] }),
+}));
+
+// household_links — a household member with their own profile (D44, drizzle/0094).
+// The reverse index behind «Convive con»; the host's household_members JSON stays
+// the source of truth (a row shows only while the member still points here).
+// hidden_at/hidden_by: written by the withdrawn D47 («Quitar de mi perfil» forked
+// the fact per side); no longer read or written — a row hidden then reads as live.
+export const householdLinks = sqliteTable("household_links", {
+    id: text("id").primaryKey(),
+    hostAdopterId: text("host_adopter_id").notNull(),
+    linkedAdopterId: text("linked_adopter_id").notNull(),
+    memberId: text("member_id").notNull(),
+    createdBy: text("created_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    hiddenAt: integer("hidden_at", { mode: "timestamp" }),
+    hiddenBy: text("hidden_by"),
+}, (table) => ({
+    hostMemberIdx: uniqueIndex("idx_household_links_host_member").on(table.hostAdopterId, table.memberId),
+    hostIdx: index("idx_household_links_host").on(table.hostAdopterId),
+    linkedIdx: index("idx_household_links_linked").on(table.linkedAdopterId),
+}));
+
+// household_link_corrections — «No convive» (D48, drizzle/0095): the linked
+// profile's owner team (or an admin) said the person does not live with the
+// host; the member and its link were removed. Re-adding the same person to
+// the same host afterwards is a dispute (admins are told). Follows merges like
+// the links. member_snapshot: the removed member's JSON, for an admin to put
+// back if the correction was wrong (PII — never logged).
+export const householdLinkCorrections = sqliteTable("household_link_corrections", {
+    id: text("id").primaryKey(),
+    hostAdopterId: text("host_adopter_id").notNull(),
+    linkedAdopterId: text("linked_adopter_id").notNull(),
+    memberId: text("member_id"),
+    memberSnapshot: text("member_snapshot"),
+    correctedBy: text("corrected_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    pairIdx: index("idx_household_link_corrections_pair").on(table.hostAdopterId, table.linkedAdopterId),
+    linkedIdx: index("idx_household_link_corrections_linked").on(table.linkedAdopterId),
+}));
+
+// households / household_memberships / household_corrections — households as
+// profiles (drizzle/0096). A household is a group of adopter profiles; the
+// memberships are the only record of who lives with whom. relationship is
+// relative to relativeToAdopterId; giftRecipient marks a gift household;
+// sourceKey names where the membership came from (inline:{hostId}:{memberId},
+// link:{linkId}, form-{submissionId}-{i}, interview:{id}:{i},
+// import:{batch}:{row}). A correction («No vive acá», D48) is remembered per
+// (household, person); snapshot is the removed membership row (JSON).
+// Reads and writes: src/lib/households.ts. Rules: src/domain/households.ts.
+export const households = sqliteTable("households", {
+    id: text("id").primaryKey(),
+    createdBy: text("created_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }),
+});
+
+export const householdMemberships = sqliteTable("household_memberships", {
+    id: text("id").primaryKey(),
+    householdId: text("household_id").notNull(),
+    adopterId: text("adopter_id").notNull(),
+    relationship: text("relationship").notNull().default("unknown"),
+    relativeToAdopterId: text("relative_to_adopter_id"),
+    giftRecipient: integer("gift_recipient").notNull().default(0),
+    addedBy: text("added_by"),
+    addedAt: integer("added_at", { mode: "timestamp" }).notNull(),
+    sourceKey: text("source_key"),
+    /** When the add's record (history, notices, dispute check) was claimed — compare-and-set (0097). */
+    recordedAt: integer("recorded_at", { mode: "timestamp" }),
+}, (table) => ({
+    pairIdx: uniqueIndex("idx_household_memberships_pair").on(table.householdId, table.adopterId),
+    adopterIdx: index("idx_household_memberships_adopter").on(table.adopterId),
+    householdIdx: index("idx_household_memberships_household").on(table.householdId),
+    // 0098: unique when set — two runs of one source can never place a person twice.
+    sourceKeyIdx: uniqueIndex("idx_household_memberships_source_key").on(table.sourceKey).where(sql`source_key IS NOT NULL`),
+}));
+
+export const householdCorrections = sqliteTable("household_corrections", {
+    id: text("id").primaryKey(),
+    householdId: text("household_id").notNull(),
+    adopterId: text("adopter_id").notNull(),
+    correctedBy: text("corrected_by").notNull(),
+    correctedAt: integer("corrected_at", { mode: "timestamp" }).notNull(),
+    snapshot: text("snapshot"),
+}, (table) => ({
+    pairIdx: index("idx_household_corrections_pair").on(table.householdId, table.adopterId),
+    adopterIdx: index("idx_household_corrections_adopter").on(table.adopterId),
+}));
+
+// household_conversions — the conversion ledger (drizzle/0099, Task 7): one row
+// per inline member (inline:{hostId}:{memberId}), household_links row
+// (link:{linkId}) or «No convive» correction (correction:{id}) the conversion
+// handled, written with the membership it produced and never deleted — a row
+// here is what "converted" means (a membership removed since must not come
+// back from the old JSON). src/lib/householdConversion.ts. No PII.
+export const householdConversions = sqliteTable("household_conversions", {
+    sourceKey: text("source_key").primaryKey(),
+    hostAdopterId: text("host_adopter_id").notNull(),
+    memberId: text("member_id"),
+    linkId: text("link_id"),
+    outcome: text("outcome").notNull(), // 'converted' | 'skipped'
+    reason: text("reason"),
+    fingerprint: text("fingerprint"),
+    contactRefs: text("contact_refs"), // JSON string[]: entry refs of the member's contacts carried over
+    householdId: text("household_id"),
+    membershipId: text("membership_id"),
+    profileId: text("profile_id"),
+    createdProfile: integer("created_profile").notNull().default(0),
+    ownerEmail: text("owner_email"),
+    actor: text("actor"),
+    convertedAt: integer("converted_at", { mode: "timestamp" }).notNull(),
+}, (table) => ({
+    hostIdx: index("idx_household_conversions_host").on(table.hostAdopterId),
+    profileIdx: index("idx_household_conversions_profile").on(table.profileId),
+}));
+
 // pii_access_grants — the access facts. A live (non-revoked) row means
 // `grantee_email` can see some/all of `adopter_id`'s contact info.
 //   scope='entry'       — one entry, unlocked by a search match.
@@ -589,6 +769,10 @@ export const userProfiles = sqliteTable("user_profiles", {
     // FollowupSettings JSON (src/domain/followups.ts), NULL = defaults. Read
     // whole, never queried by field (the reminder Worker joins user→profile).
     followupSettings: text("followup_settings"),
+    // Email notification preferences — EmailPrefs JSON, NULL = defaults.
+    emailPrefs: text("email_prefs"),
+    // UI language the person chose (es | en | pt); NULL = unknown -> emails go out in es.
+    locale: text("locale"),
     // Legal
     termsAcceptedAt: integer("terms_accepted_at", { mode: "timestamp" }), // Unix timestamp when T&C were accepted
     termsVersion: integer("terms_version"), // Version of T&C accepted (matches CURRENT_TERMS_VERSION)
@@ -671,6 +855,7 @@ export const notifications = sqliteTable("notifications", {
     metadata: text("metadata"), // JSON blob (match count, animal name, etc.)
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     expiresAt: integer("expires_at", { mode: "timestamp" }),
+    emailedAt: integer("emailed_at", { mode: "timestamp" }), // NULL = not (yet) emailed
 }, (table) => ({
     userIdx: index("idx_notif_user").on(table.userId, table.read, table.createdAt),
     typeIdx: index("idx_notif_type").on(table.type, table.createdAt),
@@ -979,6 +1164,11 @@ export const apiRequests = sqliteTable("api_requests", {
     voidedBy: text("voided_by"),
     durationMs: integer("duration_ms"),
     errorCode: text("error_code"),             // a refused call's error.code (kept after the body purge)
+    userAgent: text("user_agent"),             // which client / tool sent the call (≤200 chars; never the IP)
+    cfRay: text("cf_ray"),                     // Cloudflare's id of the edge request
+    clientCountry: text("client_country"),     // CF-IPCountry
+    decision: text("decision"),                // JSON: how an exact match was decided (ids, field names, verdicts — no values)
+    degraded: integer("degraded").notNull().default(0), // 1 = a D1 fallback shrank this call's search results
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
     keyTimeIdx: index("idx_api_requests_key_time").on(table.keyId, table.createdAt),

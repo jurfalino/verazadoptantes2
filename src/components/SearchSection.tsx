@@ -699,7 +699,7 @@ export default function SearchSection({ locale: _locale, showCardMetadata = true
                     {results.length > 0 && (
                         <div className="px-2">
                             <h3 className="text-lg font-semibold text-stone-800">
-                                {t('search.results').replace('{count}', results.length.toString())}
+                                {results.length === 1 ? t('search.results_one') : t('search.results').replace('{count}', results.length.toString())}
                             </h3>
                         </div>
                     )}

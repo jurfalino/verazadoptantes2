@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import {
     deserializeContactEntries,
+    isRenameAlias,
     contactEntriesToBlob,
     joinedAddressValue,
     detectSocialPlatform,
@@ -15,9 +16,11 @@ import {
 } from '@/lib/contactEntries';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { hashEntryValue, isRealActorEmail } from '@/lib/piiAccess';
-import { isAdminAsync } from '@/config/admins';
+import { isModeratorOrAdminAsync } from '@/config/admins';
+import { historyKind } from '@/lib/profilePrivilege';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { itemAuthors } from '@/lib/collabAttribution';
+import { insertContributionGrant } from '@/lib/contributionSideEffects';
 
 // History rows that name an entry by id when it is edited or removed.
 const ENTRY_HISTORY_KEYS = ['updated_entry', 'removed_entry'] as const;
@@ -37,8 +40,10 @@ function sameEntry(a: ContactEntry, b: ContactEntry): boolean {
  *
  * Side effects on success:
  *   1. UPDATE adopters.contactEntries (entry mutated in place, list re-serialized).
- *   2. INSERT adopter_history kind='edit' with hashed before/after values
- *      (no raw PII in history.changes).
+ *   2. INSERT adopter_history with hashed before/after values (no raw PII in
+ *      history.changes): kind='edit' for owner/admin/org-mate, kind='contribution'
+ *      for a contributor fixing their own entry (they are not an editor; editors
+ *      get approver rights only while privileged — loadApprovers).
  *   3. Re-tokenize so search reflects the new value.
  *
  * Notes:
@@ -83,8 +88,9 @@ export async function updateContactEntry(
         // Entries with no `addedBy` (legacy / blob-migrated / pre-2.16.0-9)
         // stay owner+admin-only by virtue of failing the third check.
         const isOwner = target.addedBy === actor;
+        // Moderators count, as in the visibility resolver and loadHousehold.
         const [actorIsAdmin, actorIsOrgMate] = await Promise.all([
-            isAdminAsync(actor),
+            isModeratorOrAdminAsync(actor),
             (await import('@/lib/orgMembership')).isOrgMate(actor, target.addedBy),
         ]);
 
@@ -107,7 +113,8 @@ export async function updateContactEntry(
                 return { result: expectedValue !== undefined ? { kind: 'deleted' } : { kind: 'not_found' } };
             }
             const original = entries[idx];
-            const isOwnContribution = !!original.addedBy && original.addedBy === actor;
+            // A rename alias (the old name) is the profile team's to correct, never the renamer's.
+            const isOwnContribution = !!original.addedBy && original.addedBy === actor && !isRenameAlias(original);
             if (!isOwner && !actorIsAdmin && !actorIsOrgMate && !isOwnContribution) return { result: { kind: 'forbidden' } };
 
             const previousValueHash = hashEntryValue(original.type, original.value);
@@ -130,6 +137,8 @@ export async function updateContactEntry(
                     value,
                     ...(original.label ? { label: original.label } : {}),
                     ...(original.addedBy ? { addedBy: original.addedBy } : {}),
+                    // A corrected rename alias stays one (hidden, team-only).
+                    ...(isRenameAlias(original) ? { fromRename: true as const } : {}),
                     // Re-deduce the social network from the new value (URL); keep the
                     // prior platform for a bare handle.
                     ...(original.type === 'social' && (detectSocialPlatform(value) ?? original.platform)
@@ -177,12 +186,21 @@ export async function updateContactEntry(
             id: crypto.randomUUID(),
             adopterId,
             changedBy: actor,
-            kind: 'edit',
+            // A contributor editing their own entry is not an editor (see header).
+            kind: historyKind(isOwner || actorIsAdmin || actorIsOrgMate),
             changes: JSON.stringify({
                 updated_entry: { type: r.updated.type, id: entryId, previousValueHash: r.previousValueHash, newValueHash: r.newValueHash },
             }),
             changedAt: new Date(),
         });
+
+        // A contributor keeps seeing the value they just typed: their grant names
+        // the OLD value (same rule as the household path). Logged, never a failed edit.
+        if (!(isOwner || actorIsAdmin || actorIsOrgMate) && r.updated.type !== 'alias') {
+            await insertContributionGrant(db, adopterId, actor, r.updated).catch((e: unknown) => {
+                logger.error('updateContactEntry: contribution grant not written', e, { adopterId, actor, entryId });
+            });
+        }
 
         await tokenizeAdopter(adopterId).catch(e => {
             logger.error('updateContactEntry: tokenize after edit failed', e, { adopterId });

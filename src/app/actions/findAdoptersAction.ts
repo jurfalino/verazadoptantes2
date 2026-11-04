@@ -5,7 +5,8 @@
  * a plain server module). Discovery mode is unchanged: the engine resolves the
  * session itself and masks for anonymous viewers. 'duplicate' mode — raw names
  * and match values, no masking, no geo gate — is only for signed-in rescuers
- * (DuplicateHint, the import wizards); an anonymous caller gets no results.
+ * (the import wizards; DuplicateHint now goes through getDuplicateHintMatches);
+ * an anonymous caller gets no results.
  * Server code that runs without a session (the public form / contract submit
  * via _adopterFactory) imports the engine directly.
  */
@@ -26,7 +27,10 @@ export async function findAdopters(
             return { results: [] };
         }
     }
-    return runFindAdopters(input, capLimit(options));
+    // `identity` is for server callers (API fuzzy) only: a browser must not steer the verdict.
+    const { identity: _identity, ...fromBrowser } = (options ?? {}) as FindAdoptersOptions;
+    void _identity;
+    return runFindAdopters(input, capLimit(fromBrowser as FindAdoptersOptions));
 }
 
 /**

@@ -17,6 +17,7 @@
  * Never destructive: it only adds. Rating is intentionally NOT handled here —
  * avgRating derives from the activities, so adding the activity updates it.
  */
+import { namesCompatible } from './apiExactMatch';
 
 export type MergeContact = { type: string; value: string; streetAndNumber?: string; locality?: string };
 export interface MergeActivity { recordType?: string | null; date?: string | null; details?: string | null }
@@ -93,10 +94,14 @@ export function planRecordMerge(input: PlanRecordMergeInput): RecordMergePlan {
     return { contactsToAdd, addActivity, nameAction, nameValue };
 }
 
-/** Token types that represent an EXACT identifier match (safe to auto-update).
- *  A name-only or address-only overlap is NOT exact — it must be reviewed. */
-const EXACT_IDENTIFIER_TOKENS = new Set(['phone', 'phone_suffix', 'email', 'id_number', 'social']);
-
-export function isExactIdentifierMatch(matchTypes: string[] | null | undefined): boolean {
-    return Array.isArray(matchTypes) && matchTypes.some(t => EXACT_IDENTIFIER_TOKENS.has(t));
+/** Default action for a sheet row from its identity-judged matches (ranked: same before possible).
+ *  Same person → update; any "possible" → the reviewer decides; nothing → new profile.
+ *  Two or more "same" whose names don't agree with each other are two different people
+ *  sharing a contact → the reviewer decides (names agreeing = likely duplicate profiles). */
+export function defaultImportAction(matches: Array<{ verdict: 'same' | 'possible'; adopterName: string }>): 'upsert' | 'review' | 'create' {
+    if (matches.length === 0) return 'create';
+    if (matches[0].verdict !== 'same') return 'review';
+    const first = matches[0];
+    const disagree = matches.slice(1).some(m => m.verdict === 'same' && !namesCompatible(first.adopterName, m.adopterName));
+    return disagree ? 'review' : 'upsert';
 }

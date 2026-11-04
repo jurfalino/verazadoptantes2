@@ -3,7 +3,7 @@
 /**
  * Peripheral duplicate-match surface for AdopterForm (create mode).
  *
- * - A sticky filled bar across the top of the form ("⚠️ N posibles
+ * - A sticky filled bar across the top of the form (AlertTriangle "N posibles
  *   coincidencias — Revisar") so the user is never unaware that matches exist.
  * - Click → slide-in side panel (right on desktop, bottom sheet on mobile) with
  *   the same per-row content the legacy inline amber card had — names, contact
@@ -20,48 +20,37 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { DiscoveryMatch } from '@/app/actions';
-import { buildMatchChips, hasStrongMatch, type MatchChip } from '@/lib/matchChips';
+import { isSamePerson } from '@/lib/matchChips';
 import { highlightMatches } from '@/lib/matchHighlight';
 import { useLanguage } from '@/context/LanguageContext';
 import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
+import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
+import { MatchCard } from '@/components/MatchCardParts';
+import { openAlertKinds } from '@/domain/flags';
+import { AlertTriangle } from 'lucide-react';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
-const CONTACT_HL_TYPES = ['phone', 'phone_suffix', 'email', 'social', 'id_number', 'address_word', 'source_url'];
 
 interface Props {
+    /** What the rescuer has typed — their side of «Qué coincide y qué no». */
+    compareSource: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> };
     results: DiscoveryMatch[] | null;
     searching: boolean;
     onContinueWith?: (adopterId: string) => Promise<void> | void;
     /** Distinguishes "user dismissed it" from "no matches" — DuplicatePeek itself
      *  doesn't persist dismissal state; consumers wire if needed. */
     busyAdopterId?: string | null;
+    /** «No es esta persona» (the form's dismissal, shared with the strong-match strip and the save check). */
+    dismissedIds?: Set<string>;
+    onNotThis?: (adopterId: string) => void;
 }
 
-function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
-    if (chips.length === 0) return null;
-    return (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-            {chips.map(chip => (
-                <span
-                    key={chip.key}
-                    className={
-                        chip.isStrong
-                            ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200'
-                            : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200'
-                    }
-                    title={chip.label}
-                >
-                    <span aria-hidden="true">{chip.icon}</span>
-                    <span className="truncate max-w-[180px]">{chip.label}</span>
-                </span>
-            ))}
-        </div>
-    );
-}
 
-export default function DuplicatePeek({ results, searching, onContinueWith, busyAdopterId }: Props) {
+export default function DuplicatePeek({ results: allResults, searching, onContinueWith, busyAdopterId, compareSource, dismissedIds, onNotThis }: Props) {
     const { t } = useLanguage();
+    // A profile the rescuer said is not this person leaves the list (and the count).
+    const results = allResults && dismissedIds?.size ? allResults.filter(r => !dismissedIds.has(r.adopter.id)) : allResults;
     const [expanded, setExpanded] = useState(false);
     const [pulse, setPulse] = useState(false);
     const prevCountRef = useRef(0);
@@ -69,7 +58,7 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
 
     const count = results?.length ?? 0;
     const firstResult = results?.[0];
-    const firstIsStrong = firstResult ? hasStrongMatch(firstResult.matchValues) : false;
+    const firstIsStrong = firstResult ? isSamePerson(firstResult) : false;
 
     useEffect(() => {
         const prev = prevCountRef.current;
@@ -125,7 +114,7 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                         </>
                     ) : (
                         <>
-                            <span aria-hidden>⚠️</span>
+                            <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                             <span className="truncate">
                                 {count === 1
                                     ? (t('adopter.dup_peek_pill_one') || '1 possible match — Review')
@@ -169,13 +158,13 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
                                     {t('adopter.dup_peek_panel_title') || 'Possible matches'}
                                 </h3>
                                 <p className="text-xs text-stone-500 mt-0.5">
-                                    {count} {count === 1 ? 'perfil' : 'perfiles'}
+                                    {count === 1 ? t('adopter.dup_peek_count_one') : t('adopter.dup_peek_count_many').replace('{n}', String(count))}
                                 </p>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setExpanded(false)}
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
+                                className="w-11 h-11 -mr-2 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100"
                                 aria-label={t('common.close') || 'Close'}
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -186,56 +175,35 @@ export default function DuplicatePeek({ results, searching, onContinueWith, busy
 
                         <ul className="divide-y divide-stone-100">
                             {(results ?? []).map(result => {
-                                const chips = buildMatchChips(result.matchValues, t);
-                                const strong = hasStrongMatch(result.matchValues);
+                                const strong = isSamePerson(result);
                                 return (
                                     <li key={result.adopter.id} className={`px-5 py-3 ${strong ? 'bg-amber-50/40' : ''}`}>
-                                        <div className="flex items-start gap-3">
-                                            {result.thumbnail ? (
-                                                <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold text-sm flex-shrink-0">
-                                                    {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                                </div>
+                                        {/* The shared match card (audit B6): header → household line → «Qué coincide» → actions. */}
+                                        <MatchCard newTab thumbnail={result.thumbnail} headTestId="dup-peek-head"
+                                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
+                                            nameNode={isNamelessAdopter(result.adopter)
+                                                ? <AdopterName adopter={result.adopter} className="break-words" />
+                                                : highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
+                                            compare={(
+                                                <MatchCompare
+                                                    adopterId={result.adopter.id}
+                                                    matchTypes={result.matchTypes}
+                                                    profileName={result.adopter.name ?? ''}
+                                                    source={compareSource}
+                                                    profileEntries={entriesAsShown(result.adopter)}
+                                                    score={result.relevancePercent}
+                                                    defaultOpen={(results ?? []).length === 1}
+                                                    t={t}
+                                                />
                                             )}
-                                            <div className="min-w-0 flex-1">
-                                                {isNamelessAdopter(result.adopter)
-                                                    ? <AdopterName adopter={result.adopter} className="font-semibold text-stone-900 text-sm break-words block" />
-                                                    : (
-                                                        <p className="font-semibold text-stone-900 text-sm break-words">
-                                                            {highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
-                                                        </p>
-                                                    )}
-                                                {result.adopter.contactInfo && (
-                                                    <p className="text-xs text-stone-600 mt-0.5 break-words whitespace-pre-wrap">
-                                                        {highlightMatches(result.adopter.contactInfo, result.matchValues, CONTACT_HL_TYPES)}
-                                                    </p>
-                                                )}
-                                                <MatchChipsRow chips={chips} />
-                                                <div className="flex gap-2 mt-2.5">
-                                                    <a
-                                                        href={`/adopter/${result.adopter.id}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="px-2.5 py-1 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors"
-                                                    >
-                                                        {t('adopter.dup_action_view') || 'View profile'}
-                                                    </a>
-                                                    {onContinueWith && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => onContinueWith(result.adopter.id)}
-                                                            disabled={busyAdopterId === result.adopter.id}
-                                                            className="px-2.5 py-1 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-lg transition-colors"
-                                                        >
-                                                            {busyAdopterId === result.adopter.id
-                                                                ? (t('common.processing') || '...')
-                                                                : (t('adopter.dup_action_continue_with_existing') || 'Continue with this profile')}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
+                                            actions={{
+                                                busy: busyAdopterId === result.adopter.id,
+                                                onSame: onContinueWith ? () => onContinueWith(result.adopter.id) : undefined,
+                                                sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
+                                                onNotThis: onNotThis ? () => onNotThis(result.adopter.id) : undefined,
+                                                notThisTestId: 'dup-peek-not-this',
+                                                sameTestId: 'dup-peek-continue',
+                                            }} />
                                     </li>
                                 );
                             })}

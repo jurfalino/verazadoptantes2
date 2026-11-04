@@ -17,6 +17,9 @@ import AdoptionHistory from '@/components/AdoptionHistory';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
 import VisitIntentCard from '@/components/VisitIntentCard';
+import { DeletionCollaboratorList } from '@/components/household/HouseholdDialogs';
+import MergeDisputePrompt from '@/components/MergeDisputePrompt';
+import { ContinuedProfileBanner } from '@/components/ContinuedProfileBanner';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
 import { ImageGallery } from '@/components/ImageGallery';
@@ -30,7 +33,15 @@ import { actorLabel } from '@/lib/userDisplay';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, HistoryEntry, AdopterStats, AdoptionConfig, DuplicateCandidateInfo } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
-import { NO_ACCESS_VISIBILITY, maskAdopterContact, renderName } from '@/lib/piiAccess';
+import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderName } from '@/lib/piiAccess';
+import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profileHouseholds';
+import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
+import { pairKey } from '@/domain/dedupPair';
+import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
+import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
+import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
+import { buttonClasses } from '@/components/ui/Button';
+import { AlertTriangle, ArrowRight, Search } from 'lucide-react';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -57,6 +68,8 @@ interface AdopterProfileV2Props {
      *  Drives the "you can edit this" affordances + the attribution chip's
      *  shared-org accent. */
     isOrgMateOfOwner?: boolean;
+    /** Admin or moderator (the page's getIsModeratorOrAdmin): changes every household member (D54). */
+    isModeratorOrAdmin?: boolean;
     /** v2.18.11: pre-resolved creator name + org for the attribution chip
      *  below the adopter name. null means the chip is suppressed (creation
      *  context unknown, e.g. anonymous-created or DB error). */
@@ -76,14 +89,27 @@ interface AdopterProfileV2Props {
     pinnedVisitIntent?: boolean;
     /** ENABLE_ORIGIN_LABELS: tag where the profile and each activity came from. */
     originLabels?: boolean;
+    /** D32: the id of an absorbed profile whose link led here (`?merged=`); shows a one-line note. */
+    mergedFrom?: string | null;
     /** ENABLE_INTERVIEW_GUIDE — «Entrevistar» in the profile's ⋯ menu. */
     interviewEnabled?: boolean;
+    /** Households as profiles: every household this profile is in, members masked for this viewer by the server; gift forms. */
+    households?: ProfileHouseholds;
+    /** ENABLE_HOUSEHOLD_MEMBERS as the server read it (the section renders at once, no free-text flash). */
+    householdsEnabled?: boolean;
+    /** Households as profiles: «Conocido/a como», age and «Menor de edad», computed on the server. */
+    identity?: ProfileIdentityView | null;
+    /** The rename this viewer may undo from the history (owner team / admin / moderator), or null. */
+    renameUndoId?: string | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
+    const disputeAuditId = searchParams.get('dispute')?.trim() || null;
+    // The email's «Deshacer» lands here: ask first, never act on the link itself.
+    const undoRenameParam = searchParams.get(UNDO_RENAME_PARAM)?.trim() || null;
     const toast = useShowToast();
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [deleteLoading, setDeleteLoading] = useState(false);
@@ -142,9 +168,37 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             contactInfo: masked.contactInfo,
             contactEntries: masked.contactEntries,
             addressInfo: masked.addressInfo,
-            householdMembers: masked.householdMembers,
         };
     }, [previewAsStranger, adopter]);
+
+    // Preview-as-stranger also masks the household members' summaries the same
+    // way (they arrive masked for the REAL viewer, who may see it all), and
+    // drops everything a stranger can't do there (menus, own markers, «Crear perfil»).
+    const displayedHouseholds = useMemo<ProfileHouseholds>(() => {
+        if (!previewAsStranger) return households;
+        return {
+            views: households.views.map(v => ({
+                ...v,
+                self: { ...v.self, addedByViewer: false },
+                members: v.members.map(m => ({
+                    ...m, contacts: maskContactEntries(m.contacts, NO_ACCESS_VISIBILITY).entries, canSeeContact: false,
+                    canReportNotLiving: false, canRemove: false, addedByViewer: false, ownerIsViewer: false,
+                })),
+            })),
+            giftForms: households.giftForms.map(g => g.masked ? g : {
+                ...g, masked: true,
+                name: renderName(g.name, NO_ACCESS_VISIBILITY) || '',
+                phone: g.phone ? maskContactEntries([{ type: 'phone', value: g.phone }], NO_ACCESS_VISIBILITY).entries[0]?.value ?? null : null,
+            }),
+            canCreateGift: false,
+            // Two answers, no names: the same for a stranger.
+            housemateAlert: households.housemateAlert,
+        };
+    }, [previewAsStranger, households]);
+    /** profileId → name of everyone in a home shown on this profile (history names who was added, B17). */
+    const householdMemberNames = useMemo(() => new Map(
+        (displayedHouseholds?.views ?? []).flatMap(v => v.members.map(m => [m.profileId, m.name?.trim() || ''] as const)).filter(([, n]) => n),
+    ), [displayedHouseholds]);
 
     // Effective piiContext for preview mode — flips `privileged` off and
     // `masked` on so children that branch on those flags render the
@@ -364,38 +418,54 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     an always-on banner — see VisibilityBadgeModal's public branch,
                     which renders <PublicProfileSourceNotice> with the same copy. */}
 
-                {/* v39: pending-duplicate signal. Owner / admin gets the clickable
-                    "Revisar" affordance straight to /my-adopters#pending-dedup
-                    where the merge UI lives. Everyone else sees the same flag
-                    informationally — non-owners can't act on someone else's record. */}
-                {!isNew && adopter && reviewableDups.length > 0 && (
-                    (isOwner || isAdmin) ? (
-                        <a
-                            href="/my-adopters#pending-dedup"
-                            className="block rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors p-3 text-sm text-amber-900 flex items-center justify-between gap-3"
-                        >
-                            <span className="flex items-center gap-2 min-w-0">
-                                <span aria-hidden>🔍</span>
-                                <span className="font-semibold">
-                                    {reviewableDups.length === 1
-                                        ? (t('myAdopters.profile_pending_dup_one') || 'Posible duplicado detectado')
-                                        : (t('myAdopters.profile_pending_dup_many') || '{n} posibles duplicados detectados').replace('{n}', String(reviewableDups.length))}
-                                </span>
-                            </span>
-                            <span className="text-xs font-medium text-amber-800 flex-shrink-0">
-                                {t('myAdopters.profile_pending_dup_review') || 'Revisar'} →
-                            </span>
-                        </a>
-                    ) : (
-                        <div
-                            className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-700 flex items-center gap-2"
-                            title={t('myAdopters.profile_pending_dup_other_tooltip') || 'El sistema detectó otro registro similar. Solo el responsable del registro puede revisarlo.'}
-                        >
-                            <span aria-hidden>🔍</span>
-                            <span>{t('myAdopters.profile_pending_dup_other') || 'Posible duplicado — el responsable del registro puede revisarlo.'}</span>
-                        </div>
-                    )
+                {/* «Continuar con este perfil» (DuplicateHint) lands here: «Listo: … ahora es este perfil», once. */}
+                {!isNew && adopter && <ContinuedProfileBanner adopterId={adopter.id} />}
+
+                {!isNew && mergedFrom && (
+                    <p data-testid="merged-profile-note" role="status" className="rounded-lg px-3 py-2 text-sm" style={{ background: 'var(--accent-subtle-bg)', color: 'var(--text-primary)' }}>
+                        {t('adopter.merged_note')}
+                    </p>
                 )}
+
+                {/* D50: the `adopter_merged` notice links here with ?dispute=<auditId>;
+                    the prompt asks the server whether this viewer may dispute it. */}
+                {!isNew && adopter && disputeAuditId && !previewAsStranger && (
+                    <MergeDisputePrompt auditId={disputeAuditId} />
+                )}
+
+                {!isNew && adopter && undoRenameParam && !previewAsStranger && (
+                    <RenameUndoPrompt historyId={undoRenameParam} />
+                )}
+
+                {/* Pending-duplicate signal, one line for everyone: «Posible duplicado de <name>», the name
+                    opening the strongest match. «Revisar» shows only when the pair is on the viewer's own
+                    «Pendientes de revisar» list, and opens that list at the pair. */}
+                {!isNew && adopter && reviewableDups.length > 0 && (() => {
+                    const top = reviewableDups[0];
+                    const reviewable = reviewableDups.find(c => c.onViewerList);
+                    const template = reviewableDups.length === 1
+                        ? (t('myAdopters.profile_pending_dup_of') || 'Posible duplicado de {name}')
+                        : (t('myAdopters.profile_pending_dup_of_more') || 'Posible duplicado de {name} y {n} más').replace('{n}', String(reviewableDups.length - 1));
+                    const [before, after = ''] = template.split('{name}');
+                    const title = (
+                        <>
+                            {before}
+                            <a href={`/adopter/${top.otherAdopterId}`} data-testid="profile-pending-dup-link" className="underline underline-offset-2">
+                                {top.otherAdopterName}
+                            </a>
+                            {after}
+                        </>
+                    );
+                    return reviewable ? (
+                        <ProfilePromptBanner tone="warning" icon={Search} testId="profile-pending-dup" singleLine title={title}
+                            actions={<a href={`/my-adopters?pair=${encodeURIComponent(pairKey(adopter.id, reviewable.otherAdopterId))}#pendientes`}
+                                data-testid="profile-pending-dup-review" className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
+                                {t('myAdopters.profile_pending_dup_review') || 'Revisar'}<ArrowRight className="w-4 h-4" aria-hidden="true" />
+                            </a>} />
+                    ) : (
+                        <ProfilePromptBanner tone="info" icon={Search} testId="profile-pending-dup" singleLine title={title} />
+                    );
+                })()}
 
                 {/* PII access gating — pending-request approver panel stays here at
                     record level: it's an actionable task that must be seen and
@@ -421,13 +491,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     header only to the owner + admins/moderators (gated by the
                     page). No requester identity or date, per product decision. */}
                 {showDeletionRequested && !isNew && (
-                    <div className="mb-4 flex gap-3 items-start rounded-2xl border px-4 py-3" style={{ backgroundColor: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)' }}>
-                        <svg className="w-5 h-5 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--status-warning-text)' }}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-                        </svg>
-                        <p className="text-sm" style={{ color: 'var(--status-warning-text)' }}>
-                            <span className="font-semibold">{t('adopter.deletion_requested_title')}</span> {t('adopter.deletion_requested_body')}
-                        </p>
+                    <div className="mb-4">
+                        <ProfilePromptBanner tone="warning" icon={AlertTriangle} testId="deletion-requested" title={t('adopter.deletion_requested_title')}>
+                            {t('adopter.deletion_requested_body')}
+                        </ProfilePromptBanner>
                     </div>
                 )}
 
@@ -448,10 +515,15 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     hasDuplicateBanner={false}
                     attribution={attribution}
                     isOrgMateOfOwner={isOrgMateOfOwner && !previewAsStranger}
+                    isModerator={isModeratorOrAdmin && !previewAsStranger}
+                    previewAsStranger={previewAsStranger}
                     isPrivileged={!!effectivePiiContext?.privileged}
                     visibilityBadge={visibilityBadge}
                     onBadgeClick={() => setVisibilityModalOpen(true)}
                     canEdit={!effectivePiiContext?.gatingOn || !!effectivePiiContext?.privileged}
+                    households={displayedHouseholds}
+                    householdsEnabled={householdsEnabled}
+                    identity={identity}
                     onMaskedContactClick={
                         effectivePiiContext?.masked
                             ? (entryType) => setVerifyPopoverOpen(entryType)
@@ -505,6 +577,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                             <AdoptionHistory
                                 adoptions={adoptions as any}
                                 originLabels={originLabels}
+                                avgRating={avgRating ?? null}
                                 adopterId={id}
                                 currentUser={currentUser}
                                 isAdmin={isAdmin}
@@ -523,7 +596,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
                 {/* Photos */}
                 {!isNew && adopter && (
-                    <CollapsibleSection title={t('common.photos') || 'Photos'} count={images.length} defaultOpen={false}>
+                    <CollapsibleSection title={t('common.photos_title')} count={images.length} defaultOpen={false}>
                         <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
                             <ImageGallery
                                 adopterId={id}
@@ -550,10 +623,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {!isNew && adopter && canViewAudit && (
                     <CollapsibleSection title={t('audit.log_title') || 'History'} count={history.length} defaultOpen={false}>
                         <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5">
-                            <h3 className="text-sm font-semibold text-teal-800 mb-4 uppercase tracking-wider flex items-center gap-2">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                {t('audit.log_title') || 'History Log'} <span className="text-stone-500 font-normal">({history.length} {t('audit.events') || 'events'})</span>
-                            </h3>
+                            {/* No inner heading: the section's own title and count say it (audit B17). */}
                             {history.length > 0 ? (
                                 <div className="space-y-4">
                                     {history.map((h) => {
@@ -561,7 +631,10 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                         let eventType = 'update';
                                         try {
                                             const parsed = JSON.parse(h.changes as string);
-                                            if (parsed.adoption_updated) { eventType = 'adoption_updated'; changes = parsed.adoption_updated; }
+                                            // Households as profiles: a rename (or its undo) and an age change.
+                                            if (parsed.name_changed) { eventType = parsed.name_changed.undoOf ? 'name_restored' : 'name_changed'; changes = parsed.name_changed; }
+                                            else if (parsed.age_changed) { eventType = 'age_changed'; changes = parsed.age_changed; }
+                                            else if (parsed.adoption_updated) { eventType = 'adoption_updated'; changes = parsed.adoption_updated; }
                                             else if (parsed.adoption_added) { eventType = 'adoption_added'; changes = parsed.adoption_added; }
                                             else if (parsed.adoption_deleted) { eventType = 'adoption_deleted'; changes = parsed.adoption_deleted; }
                                             else if (parsed.image_deleted) { eventType = 'image_deleted'; changes = parsed.image_deleted; }
@@ -581,14 +654,26 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             // Merges (2026-10-19): the survivor's history says it absorbed a profile, and an undo says so too.
                                             else if (parsed.profiles_merged) { eventType = 'profiles_merged'; changes = parsed.profiles_merged; }
                                             else if (parsed.profiles_unmerged) { eventType = 'profiles_unmerged'; changes = parsed.profiles_unmerged; }
+                                            // «No convive» (D48): written on both profiles. A plain member removal shares the host-side key.
+                                            else if (parsed.household_member_removed?.reason === 'not_living_together') { eventType = 'hh_not_living_host'; changes = parsed.household_member_removed; }
+                                            else if (parsed.household_not_living_together) { eventType = 'hh_not_living_linked'; changes = parsed.household_not_living_together; }
+                                            // The host's team removed this person from its household (M7): «Convive con» went away with it.
+                                            else if (parsed.household_removed_by_host) { eventType = 'hh_removed_by_host'; changes = parsed.household_removed_by_host; }
+                                            // Households as profiles: a person made in a household, added to one, joined one, a relationship changed, a mistaken add taken out.
+                                            else if (parsed.created_in_household) { eventType = 'hh_created'; changes = parsed.created_in_household; }
+                                            else if (parsed.household_member_added) { eventType = 'hh_member_added'; changes = parsed.household_member_added; }
+                                            else if (parsed.household_joined) { eventType = 'hh_joined'; changes = parsed.household_joined; }
+                                            else if (parsed.household_relationship_changed) { eventType = 'hh_rel_changed'; changes = parsed.household_relationship_changed; }
+                                            else if (parsed.household_member_removed) { eventType = 'hh_member_removed_mistake'; changes = parsed.household_member_removed; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
                                         return (
                                             <div key={h.id} className="text-sm border-l-4 border-teal-200 pl-4 py-3 bg-teal-50 rounded-r-lg">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-teal-700 text-xs font-semibold uppercase tracking-wider">
+                                                {/* Date, kind and «por X» wrap as three pieces at 390, never into one blob (audit B17). */}
+                                                <div className="flex flex-wrap justify-between items-center gap-x-2 gap-y-1 mb-2">
+                                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                                                        <span className="text-teal-700 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
                                                             {formatDateTime(new Date(h.changedAt as string | number))}
                                                         </span>
                                                         {eventType === 'adoption_added' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_adoption_added')}</span>}
@@ -608,8 +693,18 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'api_contract' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contract')}</span>}
                                                         {eventType === 'profiles_merged' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_merged')}</span>}
                                                         {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
+                                                        {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_not_living')}</span>}
+                                                        {eventType === 'hh_removed_by_host' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
+                                                        {eventType === 'hh_member_removed_mistake' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
+                                                        {eventType === 'hh_created' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_created')}</span>}
+                                                        {eventType === 'hh_member_added' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_member_added')}</span>}
+                                                        {eventType === 'hh_joined' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_joined')}</span>}
+                                                        {eventType === 'hh_rel_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_relationship_changed')}</span>}
+                                                        {eventType === 'name_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_changed')}</span>}
+                                                        {eventType === 'name_restored' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_restored')}</span>}
+                                                        {eventType === 'age_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_age_changed')}</span>}
                                                     </div>
-                                                    <span className="text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
+                                                    <span className="max-w-full truncate text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
                                                         {t('audit.by')} {(h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))}
                                                     </span>
                                                 </div>
@@ -628,6 +723,38 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     </div>
                                                                 </div>
                                                             ))}
+                                                            {(eventType === 'name_changed' || eventType === 'name_restored') && (
+                                                                <div data-testid="history-name-changed">
+                                                                    <div className="grid grid-cols-[120px_1fr] gap-3 items-start text-sm">
+                                                                        <span className="font-semibold text-teal-800">{t('audit.field_name')}:</span>
+                                                                        <div className="text-teal-700 break-words font-medium min-w-0">
+                                                                            <div className="line-through text-rose-400 text-xs mr-2 opacity-70 inline-block max-w-full break-all">{changes.from || t('audit.empty_val')}</div>
+                                                                            <span className="text-teal-700 mr-2">➜</span>
+                                                                            <span className="text-teal-900 bg-teal-100 px-1.5 rounded inline-block max-w-full break-all">{changes.to || t('audit.empty_val')}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {changes.aliasKept && changes.from && (
+                                                                        <p className="text-xs text-teal-800 mt-1.5 break-words">{t('audit.desc_name_alias_kept').replace('{name}', changes.from)}</p>
+                                                                    )}
+                                                                    {eventType === 'name_changed' && h.id === renameUndoId && !previewAsStranger && (
+                                                                        <RenameUndoButton historyId={h.id} source="AdopterProfileV2.history" />
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'age_changed' && (() => {
+                                                                const side = (v: { age?: number | null; minor?: boolean } | undefined) => {
+                                                                    const parts = [typeof v?.age === 'number' ? t('adopter.hh_years').replace('{n}', String(v.age)) : t('audit.desc_age_none')];
+                                                                    if (v?.minor) parts.push(t('audit.desc_age_minor'));
+                                                                    return parts.join(' · ');
+                                                                };
+                                                                return (
+                                                                    <div className="text-teal-800 break-words" data-testid="history-age-changed">
+                                                                        <span className="line-through text-rose-400 text-xs mr-2 opacity-70">{side(changes.from)}</span>
+                                                                        <span className="text-teal-700 mr-2">➜</span>
+                                                                        <span className="text-teal-900 bg-teal-100 px-1.5 rounded">{side(changes.to)}</span>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                             {eventType === 'api_contacts' && Array.isArray(changes.fields) && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_api_contacts').replace('{fields}', (changes.fields as string[]).map(f => t(f === 'documentId' ? 'audit.field_document' : f === 'phone' ? 'audit.field_phone' : 'audit.field_email')).join(', '))}
@@ -645,6 +772,77 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     {changes.otherName ? t('audit.desc_profiles_unmerged').replace('{name}', changes.otherName) : t('audit.desc_profiles_unmerged_plain')}
                                                                 </div>
                                                             )}
+                                                            {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && (() => {
+                                                                const who = h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous');
+                                                                // The other profile of the correction: the linked one (host side) or the host (linked side).
+                                                                const otherId = eventType === 'hh_not_living_host' ? changes.linkedId : changes.hostId;
+                                                                return (
+                                                                    <div className="text-teal-800 font-medium break-words" data-testid="history-hh-not-living">
+                                                                        {eventType === 'hh_not_living_host'
+                                                                            ? t('audit.desc_hh_not_living_host').replace('{who}', who)
+                                                                            : t('audit.desc_hh_not_living_linked').replace('{who}', who).replace('{host}', changes.hostName || t('adopter.nameless'))}
+                                                                        {typeof otherId === 'string' && otherId && (
+                                                                            <> <a href={`/adopter/${encodeURIComponent(otherId)}`} className="inline-flex min-h-[44px] items-center font-semibold text-teal-700 hover:underline">{t('audit.hh_not_living_view')} ↗</a></>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {['hh_created', 'hh_member_added', 'hh_joined', 'hh_rel_changed', 'hh_member_removed_mistake'].includes(eventType) && (() => {
+                                                                const who = h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous');
+                                                                const rel = (code: unknown) => (typeof code === 'string' && code && code !== 'unknown' ? t(`adopter.hh_rel_${code}`) : t('adopter.hh_rel_unknown_display'));
+                                                                const host = changes.hostName || changes.anchorName || t('adopter.nameless');
+                                                                let text = '';
+                                                                let otherId: unknown = null;
+                                                                if (eventType === 'hh_created') {
+                                                                    const via = typeof changes.via === 'string' ? changes.via.replace(/^household-/, '') : '';
+                                                                    text = changes.gift ? t('audit.desc_hh_created_gift')
+                                                                        : ['form', 'import', 'interview', 'conversion'].includes(via) ? t(`audit.desc_hh_created_via_${via}`)
+                                                                        : t('audit.desc_hh_created');
+                                                                    text = text.replace('{host}', host);
+                                                                    otherId = changes.anchorId;
+                                                                } else if (eventType === 'hh_member_added') {
+                                                                    // Who was added (audit B17): their name while they're still in a home shown here, else «una persona».
+                                                                    const added = typeof changes.profileId === 'string' ? householdMemberNames.get(changes.profileId) : undefined;
+                                                                    const hasRel = changes.relationship && changes.relationship !== 'unknown';
+                                                                    text = changes.gift ? t('audit.desc_hh_member_added_gift')
+                                                                        : added
+                                                                            ? (hasRel ? t('audit.desc_hh_member_added_named').replace('{rel}', rel(changes.relationship).toLowerCase()) : t('audit.desc_hh_member_added_named_plain')).replace('{name}', added)
+                                                                            : hasRel
+                                                                                ? t('audit.desc_hh_member_added').replace('{rel}', rel(changes.relationship).toLowerCase())
+                                                                                : t('audit.desc_hh_member_added_plain');
+                                                                    otherId = changes.profileId;
+                                                                } else if (eventType === 'hh_joined') {
+                                                                    text = t('audit.desc_hh_joined').replace('{host}', host);
+                                                                    otherId = changes.hostId;
+                                                                } else if (eventType === 'hh_member_removed_mistake') {
+                                                                    text = t('audit.desc_hh_member_removed_mistake').replace('{who}', who);
+                                                                    otherId = changes.linkedId;
+                                                                }
+                                                                return (
+                                                                    <div className="text-teal-800 font-medium break-words" data-testid={`history-${eventType}`}>
+                                                                        {eventType === 'hh_rel_changed' ? (
+                                                                            <>
+                                                                                <span className="line-through text-rose-400 text-xs mr-2 opacity-70">{rel(changes.from)}</span>
+                                                                                <span className="text-teal-700 mr-2">➜</span>
+                                                                                <span className="text-teal-900 bg-teal-100 px-1.5 rounded">{rel(changes.to)}</span>
+                                                                            </>
+                                                                        ) : text}
+                                                                        {typeof otherId === 'string' && otherId && otherId !== id && (
+                                                                            <> <a href={`/adopter/${encodeURIComponent(otherId)}`} className="inline-flex min-h-[44px] items-center font-semibold text-teal-700 hover:underline">{t('audit.hh_view_profile')} ↗</a></>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {eventType === 'hh_removed_by_host' && (
+                                                                <div className="text-teal-800 font-medium break-words" data-testid="history-hh-removed-by-host">
+                                                                    {t(changes.reason === 'mistake' ? 'audit.desc_hh_removed_mistake' : 'audit.desc_hh_removed_by_host')
+                                                                        .replace('{who}', h.changedBy ? actorLabel(h.changedBy, userNameMap?.[h.changedBy], t) : t('common.anonymous'))
+                                                                        .replace('{host}', changes.hostName || t('adopter.nameless'))}
+                                                                    {typeof changes.hostId === 'string' && changes.hostId && (
+                                                                        <> <a href={`/adopter/${encodeURIComponent(changes.hostId)}`} className="inline-flex min-h-[44px] items-center font-semibold text-teal-700 hover:underline">{t('audit.hh_not_living_view')} ↗</a></>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                             {eventType === 'adoption_added' && (
                                                                 <div className="text-teal-800 font-medium break-words">
                                                                     {t('audit.desc_adoption_added')} <span className="font-semibold break-all">{changes.animalName}</span> ({changes.species}) - {changes.status}
@@ -654,7 +852,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                 <div className="space-y-1 text-teal-800 break-words">
                                                                     <div><span className="font-semibold">{t('adoption.animal_name')}:</span> <span className="break-all">{changes.animalName}</span> ({changes.species})</div>
                                                                     <div><span className="font-semibold">{t('adoption.status')}:</span> {changes.status}</div>
-                                                                    <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} variant="inline" size="sm" /></div>
+                                                                    {!!changes.rating && <div className="flex items-center gap-1"><span className="font-semibold">{t('adoption.rating')}:</span> <RatingBadge rating={changes.rating} /></div>}
                                                                     {changes.details && <div className="text-xs italic mt-1 line-clamp-3 break-words" title={changes.details}>"{changes.details}"</div>}
                                                                 </div>
                                                             )}
@@ -774,37 +972,21 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
 
                 {/* Delete confirmation modal */}
                 {deleteModalOpen && deleteCheck && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }}>
-                        <div className="rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4" style={{ background: 'var(--surface-card)' }}>
-                            {deleteCheck.canDelete ? (
-                                <>
-                                    <h3 className="text-lg font-bold text-rose-600">{t('adopter.delete_confirm_title')}</h3>
-                                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.delete_confirm_body')}</p>
-                                    <div className="flex gap-3 pt-2">
-                                        <button onClick={() => setDeleteModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors" style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}>{t('adopter.delete_cancel')}</button>
-                                        <button onClick={handleConfirmDelete} disabled={deleteLoading} className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50">{deleteLoading ? '...' : t('adopter.delete_confirm_btn')}</button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{t('adopter.delete_collab_title')}</h3>
-                                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('adopter.delete_collab_body')}</p>
-                                    <div className="text-xs space-y-1 rounded-xl p-3" style={{ background: 'var(--surface-muted)', color: 'var(--text-muted)' }}>
-                                        <p className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('adopter.delete_collab_detail')}:</p>
-                                        {deleteCheck.collaborators.adoptions > 0 && <p>• {deleteCheck.collaborators.adoptions} {t('adopter.delete_collab_adoptions')}</p>}
-                                        {deleteCheck.collaborators.images > 0 && <p>• {deleteCheck.collaborators.images} {t('adopter.delete_collab_images')}</p>}
-                                        {deleteCheck.collaborators.edits > 0 && <p>• {deleteCheck.collaborators.edits} {t('adopter.delete_collab_edits')}</p>}
-                                        {deleteCheck.collaborators.flags > 0 && <p>• {deleteCheck.collaborators.flags} {t('adopter.delete_collab_flags')}</p>}
-                                        {deleteCheck.collaborators.forms > 0 && <p>• {deleteCheck.collaborators.forms} {t('adopter.delete_collab_forms')}</p>}
-                                    </div>
-                                    <div className="flex gap-3 pt-2">
-                                        <button onClick={() => setDeleteModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors" style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}>{t('adopter.delete_cancel')}</button>
-                                        <button onClick={handleRequestDeletion} disabled={deleteLoading} className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50">{deleteLoading ? '...' : t('adopter.delete_request_btn')}</button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
+                    // The shared dialog (audit B8), as a household row's «Eliminar perfil» / «Pedir eliminación».
+                    deleteCheck.canDelete ? (
+                        <Modal title={t('adopter.delete_confirm_title')} onClose={() => setDeleteModalOpen(false)} busy={deleteLoading} testId="profile-delete-dialog">
+                            <ModalText>{t('adopter.delete_confirm_body')}</ModalText>
+                            <ModalActions onCancel={() => setDeleteModalOpen(false)} cancelLabel={t('adopter.delete_cancel')} busy={deleteLoading}
+                                confirm={{ label: t('adopter.delete_confirm_btn'), onClick: () => { void handleConfirmDelete(); }, testId: 'profile-delete-confirm' }} />
+                        </Modal>
+                    ) : (
+                        <Modal title={t('adopter.delete_collab_title')} onClose={() => setDeleteModalOpen(false)} busy={deleteLoading} testId="profile-request-dialog">
+                            <ModalText>{t('adopter.delete_collab_body')}</ModalText>
+                            <DeletionCollaboratorList collaborators={deleteCheck.collaborators} />
+                            <ModalActions onCancel={() => setDeleteModalOpen(false)} cancelLabel={t('adopter.delete_cancel')} busy={deleteLoading}
+                                confirm={{ label: t('adopter.delete_request_btn'), onClick: () => { void handleRequestDeletion(); }, testId: 'profile-request-confirm' }} />
+                        </Modal>
+                    )
                 )}
 
                 {/* PII access request modal — masked viewers only */}

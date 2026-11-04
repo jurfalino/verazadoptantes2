@@ -207,7 +207,193 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // v2.56.171: getLinkedFormSubmissions(adopterId) REMOVED — an unauthenticated action
 // that returned every linked form's answers (PII) for any profile id; nothing on
 // screen used it, but Next still published it with the adopters module. 155 = 156 − 1.
-const EXPECTED_ACTIONS = 155;
+// Email prefs (merge requests + email notifications, Task 3): getEmailPrefs() and
+// saveEmailPref(category, enabled) in settings.ts — both session-gated, own row only. 157 = 155 + 2.
+// Merge requests (Task 7): resolveMergeRequest(requestId, 'accept' | 'decline') and
+// cancelMergeRequest(requestId) in src/app/actions/mergeRequests.ts. Safe with a request id
+// a stranger chooses: the actor is the session (anonymous → refused); answerMergeRequest
+// (src/lib/mergeRequests.ts) lets only the requester cancel, only the other owner's team
+// (never the requester) or an admin accept/decline (decideMergeRequestAnswer, unit +
+// integration tested); status moves by compare-and-set so the merge runs once; the merge
+// is the shared, audited, undoable mergeAdopters. Refusals logged with an errorId.
+// COMPUTED, not measured: nothing imports them until the PendingDedup / admin-list UI
+// tasks, and Next only records referenced actions. 159 = 157 + 2.
+// MEASURED 159 once wired (Task 11 build): EmailNotificationsSection imports getEmailPrefs /
+// saveEmailPref; PendingDedup and MergeRequestsPanel import resolveMergeRequest / cancelMergeRequest.
+// Pendientes D, Task 2: +1 = saveMyLocale (settings.ts), imported by LanguageContext's
+// setLocale, so it is wired. 160 = 159 + 1. Session-checked; the only argument is
+// validated against es|en|pt and writes the caller's own profile row.
+// Pendientes D, Task 4: +1 = sendPairMessage (pairMessages.ts, «Escribirle»). COMPUTED, not
+// measured: nothing imports it until the PendingDedup UI task wires it, and Next only records
+// referenced actions. Session-checked; team/requester-only; never returns recipient emails.
+// 161 = 160 + 1.
+// Pendientes D, Task 5: +1 = hidePendingPair(pairKey) (duplicates.ts, «Quitar de la lista», D27).
+// COMPUTED, not measured: nothing imports it until the PendingDedup UI task (Task 7) wires it,
+// and Next only records referenced actions. Session-checked; the key is shape-checked (two
+// distinct ids, ≤ 200 chars) and the only write is the caller's own pending_pair_hidden row —
+// a stranger's key can only hide rows from their own list. Refusals logged with an errorId.
+// 162 = 161 + 1.
+// 163 since the linked convivientes (spec 2026-10-25 pendientes D): +1 =
+// reportNotLivingTogether(linkId) (src/app/actions/householdLinks.ts, «No convive», D48 —
+// one shared reality, 2.57.1: it REPLACED D47's hideHouseholdLink one-for-one, so the count
+// did not move). MEASURED (npm run build: 163). What a stranger can do with arguments they
+// choose: it takes only a link id (capped at 200 chars); getUser() first (no session →
+// not_authenticated); then it acts only when the session is the LINKED profile's owner (the
+// live profile, followed through a merge), a teammate of theirs, or an admin — anyone else,
+// including the host's own team, gets `not_found`, the same answer as a guessed id, so it
+// cannot probe which links exist. Its writes: that ONE member (the link's member id, still
+// pointing at the linked profile) off the host's household via compare-and-swap — no other
+// member or field of the host changes, even when another rescuer owns the host; then one
+// batch: the household_links row deleted, one household_link_corrections row (with the
+// removed member's JSON, for an admin to restore), one adopter_history row on each of the
+// two profiles; then notices to the host's owner team (never the actor). Returns only
+// { success, error?, errorId? } — no profile data, no emails. The summaries it sits beside
+// are read by src/lib/householdLinks.ts getLinkedSummaries, a plain server module called by
+// the profile page — deliberately NOT an endpoint; so are the merge/undo link moves.
+// 163 = 162 + 1.
+// One shared reality (2.57.1), Task 1 — disputes (D49, D50): +3 in
+// src/app/actions/mergeDisputes.ts. COMPUTED, not measured: nothing imports them until the
+// UI task (Task 3) wires them, and Next only records referenced actions, so EXPECTED_ACTIONS
+// stays 163 here and becomes 166 (measured in Task 4) in the commit that imports them.
+// What a stranger can do with arguments they choose:
+//   raiseMergeDispute(auditId)        session required; the id is capped at 200 chars; the
+//                                     only write is one merge_disputes row (one open per merge,
+//                                     partial unique index), and only when the session is on the
+//                                     owner team of the survivor or the absorbed profile of THAT
+//                                     merge and is not the rescuer who merged (nor on a solo
+//                                     merge) — anyone else, and any id that is not an
+//                                     adopter_merge audit row, gets `not_found`. Notifies admins.
+//   getMergeDisputeOption(auditId)    session required; returns only { canRaise, status } and
+//                                     'none' for anyone who may not raise it — no names, ids,
+//                                     emails or merge details, so it cannot probe merges.
+//   resolveMergeDispute(id, decision) admin only (decideMergeDisputeResolution); decision is
+//                                     checked against undo|keep; status moves by compare-and-set
+//                                     so the undo (the shared, audited unmergeAdopters) runs once.
+// The workers that take the actor (fileMergeDispute, answerMergeDispute, mergeDisputeOption,
+// src/lib/mergeDisputes.ts) are listed in MUST_NOT_BE_ACTIONS (serverActionSurface.test.ts).
+// One shared reality (2.57.1), Task 3 — the UI wires those three: raiseMergeDispute and
+// getMergeDisputeOption (MergeDisputePrompt on the profile, `?dispute=<auditId>`) and
+// resolveMergeDispute (MergeDisputesSection, admin «Disputas»). MEASURED (npm run build: 166).
+// No other new action: the admin lists are read by the page (lib), «No convive» was already
+// counted, and the D52 confirmation row calls nothing new. 166 = 163 + 3.
+// Households as profiles, Task 2: +4 in src/app/actions/households.ts, exported from the
+// barrel. MEASURED (npm run build: 170) — the barrel export alone makes Next record them.
+// What a stranger can do with arguments they choose (every door needs a session; the
+// actor is the session, never an argument; errors are codes, failures carry an errorId):
+//   addHouseholdPerson(input)          anchor must be a live profile; a chosen householdId
+//                                      must exist AND hold the anchor (else not_found), so a
+//                                      guessed id puts nobody anywhere; existingProfileId must
+//                                      be live and not the anchor. A new profile is owned by the
+//                                      ANCHOR's owner (never the caller), protected (is_public 0),
+//                                      needs a name or a contact; contacts are zod-checked as
+//                                      addContactEntry's (≤20) and credited to the caller, who
+//                                      gets entry grants only on what they typed. Caps: 30 people
+//                                      per household, 10 households per profile. Writes history as
+//                                      'contribution' for anyone without standing (never an editor).
+//   updateHouseholdMembership(input)   open to anyone signed in by design (spec «Editing»):
+//                                      only the relationship, checked against RELATIONSHIPS,
+//                                      compare-and-swap; credited + history + the household's
+//                                      teams told, so every change is visible to the owners.
+//   removeHouseholdMembership(input)   canRemoveMembership on the STORED rows (the adder — never
+//                                      on a profile's own anchor row, which has no adder; the
+//                                      team of a household profile whose membership that team
+//                                      did NOT add, so standing is never self-granted;
+//                                      admins/moderators), else not_authorized; reason checked
+//                                      against mistake|not_living; never deletes a profile.
+//   getHouseholdMatchCandidates(input) the same masked duplicate check «Nuevo adoptante»
+//                                      already exposes (src/lib/formDuplicates.ts, also searching
+//                                      by a contact alone — an option findFormDuplicates never
+//                                      accepts from the browser) plus each match's household line
+//                                      (names, rating, alert counts — no contacts).
+// The notice workers that take the actor (src/lib/householdNotices.ts) are plain lib code.
+// 170 = 166 + 4.
+// Households as profiles, Task 3: +4 in src/app/actions/profileIdentity.ts, exported from
+// the barrel. What a stranger can do with arguments they choose (session required; the
+// actor is the session; errors are codes, failures carry an errorId):
+//   changeProfileName(input)     open by design (Jon, 2026-10-27): renames ANY live profile,
+//                                but only while the stored name equals `expectedName`
+//                                (compare-and-set, else `conflict`); ≤200 chars, never empty.
+//                                The old name stays a name token (hidden rename alias), history
+//                                is 'contribution' for a stranger (never an approver), and the
+//                                owner's team is told in-app + by email with «Deshacer».
+//   changeProfileAge(input)      open by design: integer 0–120 or null + the «menor» box;
+//                                credited, history, owner's team told. «Menor» is a marker only
+//                                (Jon, 2026-10-28): any profile can be marked. [Removed: see 171.]
+//   undoProfileRename(historyId) owner ∨ org-mate ∨ admin ∨ moderator of the profile, else
+//                                not_authorized; only a rename row (never an undo), only while
+//                                the profile still carries that rename's name, once.
+//   getRenameUndoOption(id)      read-only; the same gate — anyone else gets a bare status,
+//                                no names.
+// The writers and notice workers that take the actor (src/lib/profileIdentity.ts) are plain lib code.
+// 174 = 170 + 4.
+// Households as profiles, Task 4: +1 in src/app/actions/households.ts, exported from the barrel.
+//   createGiftRecipientProfile(input) session required; only the giver's team (owner,
+//                                org-mates) or an admin, else not_authorized. Only for a gift
+//                                form currently linked to that giver (else not_found); makes
+//                                the profile from THAT form's stored answers (nothing typed by
+//                                the caller), owned by the giver's owner; once per form
+//                                (a claimed household id, then the membership's source_key).
+// The unattended attach / match / gift readers (src/lib/householdPeople.ts,
+// src/lib/giftRecipients.ts) are plain lib code.
+// 175 = 174 + 1.
+// Households as profiles, Task 8: the old household JSON actions are RETIRED (nothing reads or
+// writes adopters.household_members for display or edits any more; the profile UI, the importer
+// and «alguien de su hogar» use src/app/actions/households.ts). Removed with their files:
+//   addHouseholdMember, updateHouseholdMember, removeHouseholdMember, addMemberContactEntry,
+//   updateMemberContactEntry, removeMemberContactEntry (src/app/actions/householdMembers.ts) and
+//   reportNotLivingTogether (src/app/actions/householdLinks.ts — «No vive acá» is now
+//   removeHouseholdMembership(…, 'not_living')). No action added. MEASURED (npm run build): 168.
+// 168 = 175 − 7.
+// Households as profiles, final fix P1: +1 checkHouseholdPersonEdit (src/app/actions/households.ts)
+// — «⋯ → Editar» checks name, relationship and age for changes since the form opened BEFORE saving
+// any (no partial save). Signed-in only, read-only, answers field NAMES only (never the stored
+// values); a stranger learns nothing they couldn't see on the profile. (S4 removed a branch of
+// addHouseholdPerson, not an action.)
+// 169 = 168 + 1.
+// «Ya está en otro perfil», option B (Jon 2026-10-29; coordinator sign-off «dup-hint enrichment»):
+// +1 getDuplicateHintMatches (src/app/actions/households.ts, exported from the barrel). What a
+// stranger can do with arguments they choose: session required (else empty); `type` must be
+// phone|email|social|id and the value is capped at 200 chars; detection RE-RUNS from the typed
+// value (findAdopters 'duplicate', the same floor 5 / cap 3 the hint always used, fixed
+// server-side), so it never hydrates ids the caller picks — it answers only profiles matching
+// what was typed, masked for that viewer exactly as «¿Es este perfil?» (hydrateDuplicateMatches)
+// plus their household line, rating, alert counts and activity counts. `matchedEntryIndexes` names
+// which stored entry (by position) equals the typed value — nothing beyond what was typed.
+// Read-only; the typed value is never logged.
+// 170 = 169 + 1.
+// «Ya está en otro perfil» → continue / flag by ownership (Jon 2026-10-29; coordinator sign-off
+// «dup-hint continue»): +2 in src/app/actions/dupHintActions.ts, exported from the barrel.
+// - continueWithMatchedProfile({ currentId, matchId, typed? }): MERGES the profile being edited
+//   into the matched one. Session required; never trusts the window — re-decides from the
+//   database (decideDupHintAction via src/lib/dupHintFacts.ts): only when the caller or their team
+//   loaded the profile being edited, or the caller is an admin; refused when the match has no real
+//   owner, after a «no» on the pair (declined / admin ruled separate) or while the pair is up for
+//   review. Then the same merge, D40 access and notices as «Pendientes» (mergeChosenPair). `typed`
+//   goes through addContactEntry (its own validation) on the caller's profile first.
+// - askAdminsToReviewPair({ currentId, matchId }): files the «Pendientes» dispute (a merge request
+//   to the admins) — only when the pair verdict says «no» for this viewer; one pending per pair.
+//   (mergePendingDedupPair can't be reused: it needs a candidate or flag row this pair may not have.)
+// Both answer codes only, never another profile's data.
+// 172 = 170 + 2.
+// Age editing closed on the server (Jon 2026-10-29: no age field or «Es menor de edad» box until a
+// new design; EM review I2, Jon approved 2026-11-01): −1 changeProfileAge, removed from
+// src/app/actions/profileIdentity.ts and the barrel — nothing in src/ or tests/ called it, and a
+// tab still on 2.58.6 (or anyone calling it directly) could set any profile's age or «menor» with
+// no UI left to correct it. addHouseholdPerson stays, now ignoring the browser's `age`/`isMinor`
+// (no caller sends them, fromImport included). The lib writer (setProfileAge) is plain lib code.
+// MEASURED (npm run build): 171.
+// 171 = 172 − 1.
+// Spreadsheet import «También coincide con» for identical rows uses the API's exact-mode lookup
+// (Jon 2026-11-01; EM review I3: the fuzzy engine cost ~110–200 D1 queries per identical row):
+// +1 findIdenticalRowsOtherMatches(rows) in src/app/actions/importOtherMatches.ts. Session
+// required; ≤50 rows and ≤400 D1 queries per call (the rest come back deferred), ≤3 phones/emails/ids
+// each, ≤6 profiles read per row; looks up only the duplicate_tokens the
+// API's exact mode reads (findIdentifierHitsFor) on live, non-demo profiles, and answers ids +
+// names of profiles sharing an identifier the caller already holds — what the fuzzy search it
+// replaces already answered. Never logs a value.
+// 172 = 171 + 1.
+// 173 = 172 + 1. 2026-11-02 matchImportRow — sheet import identity verdict (spec docs/superpowers/specs/2026-11-02-identity-verdict-design.md).
+const EXPECTED_ACTIONS = 173;
 
 let manifest;
 try {

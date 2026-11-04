@@ -1,15 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * ENABLE_INTERVIEW_GUIDE is off in the seed; this file turns it on for itself
  * and is the ONLY spec that touches it (serial, so toggles never race).
  * Fixtures: test-interview-fixture-* rows and a uniquely named created person.
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
 const flagOn = () => execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_INTERVIEW_GUIDE', 'true', strftime('%s','now'), 'e2e')`);
 const flagOff = () => execD1(`DELETE FROM app_config WHERE key = 'ENABLE_INTERVIEW_GUIDE'`);
 

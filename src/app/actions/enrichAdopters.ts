@@ -4,6 +4,7 @@
 // from a client component.
 
 import { adoptions, adopterFlags, adopterStats, adopterImages, duplicateCandidates } from '@/db/schema';
+import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { eq, sql, and, isNull, ne, or } from 'drizzle-orm';
 import { ADMIN_STATS_EXCLUSION_SQL } from '@/config/constants';
 import type { AdopterFlags } from '@/types/adopter';
@@ -11,10 +12,10 @@ import { getAdoptionConfig } from './config';
 
 import { computeAvgRating } from '@/domain/ratings';
 import { computeStats } from '@/domain/stats';
+import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { logger, withTrace } from '@/lib/logger';
 
@@ -32,7 +33,7 @@ const logBatchFallback = (op: string, chunkSize: number) => (e: unknown) => {
 export interface EnrichmentResult {
     avgRating: number | null;
     thumbnail: string | null;
-    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number };
+    stats: { searchHits: number; profileViews: number; requests: number; adoptions: number; activity?: ActivityCounts };
     flags: AdopterFlags;
 }
 
@@ -70,7 +71,7 @@ async function _enrichAdoptersImpl(
     // list twice, so chunk*2 must stay within budget).
     const CHUNK = 40;
     type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null; addedBy: string | null };
-    type FlagRow = { adopterId: string; reason: string };
+    type FlagRow = { adopterId: string; reason: string | null; targetAdopterId: string | null; details: string | null };
     type StatRow = { adopterId: string; eventType: string };
     type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null };
     type DupRow = { adopter1Id: string; adopter2Id: string };
@@ -92,7 +93,7 @@ async function _enrichAdoptersImpl(
         const [a, f, s, im, d] = await Promise.all([
             db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
                 .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(riskRead('adoptions', chunk.length)),
-            db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason })
+            db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                 .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(riskRead('flags', chunk.length)),
             db.select({ adopterId: adopterStats.adopterId, eventType: adopterStats.eventType })
                 .from(adopterStats).where(and(
@@ -112,7 +113,9 @@ async function _enrichAdoptersImpl(
                 .from(duplicateCandidates).where(and(
                     eq(duplicateCandidates.status, 'pending'),
                     ne(duplicateCandidates.confidence, 'low'),
-                    sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`
+                    sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`,
+                    // Housemates are never duplicates: a pair left from before they shared a household never shows.
+                    sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
                 )).catch(riskRead('dupCandidates', chunk.length)),
         ]);
         adoptionRows.push(...(a as AdoptionRow[]));
@@ -159,25 +162,15 @@ async function _enrichAdoptersImpl(
         const adoptionCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.ADOPTION).length;
         const requestCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.REQUEST).length;
 
-        const flags = buildFlags(adopterFlagRecords.map((fr) => fr.reason), systemDupCount);
-        const adoptionsDensity = computeMaxDensityPeriod(adopterAdoptions as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
-        if (adoptionsDensity.count >= adoptionConfig.threshold) {
-            flags.tooManyAdoptions = {
-                count: adoptionsDensity.count, threshold: adoptionConfig.threshold, periodDays: adoptionConfig.periodDays,
-                actualSpanDays: adoptionsDensity.timeSpanDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate,
-            };
-        }
-        const requestsDensity = computeRequestRescueDensity(adopterAdoptions, adoptionConfig.requestsPeriodDays);
-        if (requestsDensity.count >= adoptionConfig.requestsThreshold) {
-            flags.tooManyRequests = {
-                count: requestsDensity.count, threshold: adoptionConfig.requestsThreshold, periodDays: adoptionConfig.requestsPeriodDays,
-                actualSpanDays: requestsDensity.timeSpanDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate,
-            };
-        }
+        const flags = buildFlags(adopterFlagRecords, systemDupCount);
+        // The period alerts: one rule (periodAlerts), also on a housemate's household line.
+        Object.assign(flags, periodAlerts(adopterAdoptions, adoptionConfig));
 
-        const stats = computeStats(adopterStatRecords, adopterAdoptions);
+        const stats: EnrichmentResult['stats'] = computeStats(adopterStatRecords, adopterAdoptions);
         stats.adoptions = adoptionCount;
         stats.requests = requestCount;
+        // The same counts a household row and the «Actividad» header show (audit B12).
+        stats.activity = countActivity(adopterAdoptions);
 
         resultMap.set(id, { avgRating, thumbnail: thumbByAdopter.get(id) || null, stats, flags });
     }

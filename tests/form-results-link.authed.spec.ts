@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1Batch, rows } from './db';
 
 /**
  * "Es la misma persona" on /form-results — the flow that looked broken:
@@ -21,21 +21,6 @@ import { dismissCountryBanner } from './helpers';
  */
 
 const ADMIN_USER_ID = 'test-admin-id';
-
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-
-/** Throws on a failed query, so a broken read can't pass an assertion by returning nothing. */
-function rows(sql: string): Array<Record<string, unknown>> {
-    const wrapped = JSON.parse(execD1(sql));
-    const results = (Array.isArray(wrapped) ? wrapped[0] : wrapped)?.results;
-    if (!Array.isArray(results)) throw new Error(`D1 query returned no result set: ${sql}`);
-    return results;
-}
 
 /** Exactly one row, or the test fails here — not later on an `undefined`. */
 function one(sql: string): Record<string, unknown> {
@@ -81,8 +66,10 @@ test.describe('form-results: linking to an existing profile', () => {
 
         // Give the existing person a history worth reading: one 4-star
         // adoption (own fixture rows, never a seed adopter).
-        execD1(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('test-formlink-fixture-animal-${stamp}', 'E2E Fixture Pet', 'dog', 'test-seed', strftime('%s','now'), strftime('%s','now'))`);
-        execD1(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES ('test-formlink-fixture-placement-${stamp}', 'test-formlink-fixture-animal-${stamp}', '${existingId}', 'adoption', strftime('%s','now','-10 days'), NULL, 'completed', 4, 'test-seed')`);
+        execD1Batch([
+            `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('test-formlink-fixture-animal-${stamp}', 'E2E Fixture Pet', 'dog', 'test-seed', strftime('%s','now'), strftime('%s','now'))`,
+            `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at, status, rating, recorded_by) VALUES ('test-formlink-fixture-placement-${stamp}', 'test-formlink-fixture-animal-${stamp}', '${existingId}', 'adoption', strftime('%s','now','-10 days'), NULL, 'completed', 4, 'test-seed')`,
+        ]);
 
         // Before deciding: the page asks, instead of claiming "linked".
         await page.goto(`/form-results/${secondId}`);
@@ -178,14 +165,14 @@ test.describe('form-results: linking to an existing profile', () => {
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
 
         const dot = (label: RegExp, signal: string) =>
-            page.locator('div.flex.items-baseline', { hasText: label }).locator(`[data-signal="${signal}"]`);
+            page.getByTestId('answer-row').filter({ hasText: label }).locator(`[data-signal="${signal}"]`);
         await expect(dot(/Children in household|Niños en el hogar|Crianças/, 'caution')).toBeVisible();
         await expect(dot(/Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/, 'risk')).toBeVisible();
         await expect(dot(/Intent|Intención|Intenção/, 'risk')).toBeVisible();
         // Colour is never the only signal: each dot is labelled.
         await expect(dot(/Intent|Intención|Intenção/, 'risk')).toHaveAttribute('aria-label', /Attention|Atención|Atenção/);
         // Questions outside the semáforo get no dot.
-        await expect(page.locator('div.flex.items-baseline', { hasText: /Home type|Tipo de vivienda|Tipo de moradia/ }).locator('[data-signal]')).toHaveCount(0);
+        await expect(page.getByTestId('answer-row').filter({ hasText: /Home type|Tipo de vivienda|Tipo de moradia/ }).locator('[data-signal]')).toHaveCount(0);
     });
 
     test('household people: only the fully named one reaches the profile, children is recomputed, the request is recorded at submit', async ({ request }) => {
@@ -209,11 +196,13 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(answers.children).toBe('2');
         expect(answers.householdPeople).toHaveLength(3); // the unknown relationship is dropped
 
-        const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
-        const members = JSON.parse(String(prof.household_members));
-        expect(members.map((m: { name: string }) => m.name)).toEqual(['Tomás López']);
-        expect(members[0]).toMatchObject({ relationship: 'child', age: 3, addedBy: 'form-submission' });
-        expect(members[0].ageAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        // Households as profiles: the named person is a profile in the applicant's household; no JSON.
+        expect(isNull(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members)).toBe(true);
+        const members = rows(`SELECT a.name, a.age, a.age_as_of, a.is_minor, a.added_by AS owner, m.relationship, m.added_by FROM household_memberships m JOIN adopters a ON a.id = m.adopter_id
+            WHERE m.household_id = (SELECT household_id FROM household_memberships WHERE adopter_id = '${row.auto_adopter_id}' LIMIT 1) AND m.adopter_id <> '${row.auto_adopter_id}'`);
+        expect(members.map(m => m.name)).toEqual(['Tomás López']);
+        expect(members[0]).toMatchObject({ relationship: 'child', age: 3, is_minor: 1, added_by: 'form-submission' });
+        expect(String(members[0].age_as_of)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
         // Every form is linked from its profile: the request exists from submit time.
         expect(rows(`SELECT id FROM adoptions WHERE adopter_id = '${row.auto_adopter_id}' AND source_url = 'form:${submissionId}'`)).toHaveLength(1);
@@ -245,12 +234,17 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(people.locator('[data-signal="ok"]')).toHaveCount(1);      // 38
         await expect(people).toContainText('Tomás López');
         // The derived count is not shown twice next to the list.
-        await expect(page.locator('div.flex.items-baseline', { hasText: /Children in household|Niños en el hogar/ })).toHaveCount(0);
+        await expect(page.getByTestId('answer-row').filter({ hasText: /Children in household|Niños en el hogar/ })).toHaveCount(0);
 
         await page.goto(`/adopter/${row.auto_adopter_id}`);
         await dismissCountryBanner(page);
-        await expect(page.getByText('Tomás López').first()).toBeVisible();
-        await expect(page.getByText(/3 years old|3 años|3 anos/).first()).toBeVisible();
+        // Households as profiles: Tomás is a profile in the applicant's household — his card links to it,
+        // says «Hijo/a · 3 años» and carries the minor tag (a minor is rated like anyone else; he has no records yet, so no stars).
+        const tomas = page.getByTestId('household-member').filter({ hasText: 'Tomás López' });
+        await expect(tomas).toHaveCount(1, { timeout: 30_000 });
+        await expect(tomas.getByTestId('household-member-label')).toContainText(/3 years old|3 años|3 anos/);
+        await expect(tomas.getByTestId('minor-tag')).toBeVisible();
+        await expect(tomas.getByTestId('household-member-profile-link')).toHaveAttribute('href', /\/adopter\//);
         await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
     });
 
@@ -266,10 +260,12 @@ test.describe('form-results: linking to an existing profile', () => {
         const { submissionId } = await res.json();
         const row = one(`SELECT auto_adopter_id, answers_json FROM form_submissions WHERE id = '${submissionId}'`);
         expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Laura', lastName: 'Pérez' });
-        const members = JSON.parse(String(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members));
-        expect(members.map((m: { name: string }) => m.name)).toEqual(['Laura Pérez']);
-        expect(members[0]).toMatchObject({ relationship: 'child', giftRecipient: true });
-        expect(JSON.stringify(members[0].contactEntries)).toContain('11 5555 1234');
+        // The recipient is form data on the giver (spec «Gift recipient»): no profile, no household, no JSON
+        // until a rescuer presses «Crear perfil». Her phone is indexed with the giver's.
+        expect(isNull(one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`).household_members)).toBe(true);
+        expect(rows(`SELECT id FROM household_memberships WHERE adopter_id = '${row.auto_adopter_id}'`)).toHaveLength(0);
+        expect(rows(`SELECT id FROM adopters WHERE name IN ('Laura Pérez', 'Marcos Gómez') AND added_by IS NOT NULL AND created_at >= ${Math.floor(stamp / 1000) - 5}`)).toHaveLength(0);
+        expect(rows(`SELECT token_value FROM duplicate_tokens WHERE adopter_id = '${row.auto_adopter_id}' AND token_value LIKE '%55551234%'`).length).toBeGreaterThan(0);
 
         // The form screen: who it is for comes first, the home rows talk about her, "No sabe" carries no dot.
         await page.goto(`/form-results/${submissionId}`);
@@ -286,15 +282,43 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(page.getByText(/Patio o jardín de Laura|Laura's patio or yard|Quintal ou jardim de Laura/)).toBeVisible();
         await expect(page.getByText(/Plan para vacaciones de Laura|Laura's vacation plan|Plano de férias de Laura/)).toBeVisible();
         for (const label of [/patio or yard|patio o jardín|quintal ou jardim/i, /Protected spaces|Secure spaces|Espacios protegidos|Espaços protegidos/]) {
-            const line = page.locator('div.flex.items-baseline', { hasText: label });
+            const line = page.getByTestId('answer-row').filter({ hasText: label });
             await expect(line).toContainText(/No sabe|Doesn't know|Não sabe/);
             await expect(line.locator('[data-signal]')).toHaveCount(0);
         }
 
-        // The profile marks her as the person the animal is for.
+        // The giver's profile: «Destinatario del regalo (según el formulario)» exactly as the form gave it (P4) —
+        // never «Convive con» — and the giver's team may make her profile (P5).
         await page.goto(`/adopter/${row.auto_adopter_id}`);
         await dismissCountryBanner(page);
-        await expect(page.getByText(/Gift recipient|Destinatario\/a del regalo|Destinatário\/a do presente/).first()).toBeVisible();
+        const fromForm = page.getByTestId('household-gift-form');
+        await expect(fromForm).toHaveCount(1, { timeout: 30_000 });
+        await expect(fromForm.getByTestId('household-gift-form-data')).toContainText('Laura Pérez');
+        await expect(fromForm.getByTestId('household-gift-form-data')).toContainText('11 5555 1234');
+        await expect(page.getByTestId('household-member')).toHaveCount(0);
+        try {
+            await fromForm.getByTestId('household-gift-create').click();
+            const gift = page.getByTestId('household-gift');
+            await expect(gift).toHaveCount(1, { timeout: 30_000 });
+            await expect(fromForm).toHaveCount(0);
+            await expect(gift.getByTestId('household-gift-recipient')).toContainText('Laura Pérez');
+            const laura = rows(`SELECT a.id, a.added_by, m.gift_recipient FROM household_memberships m JOIN adopters a ON a.id = m.adopter_id WHERE m.source_key = 'gift-${submissionId}'`);
+            expect(laura).toEqual([expect.objectContaining({ gift_recipient: 1 })]);
+        } finally {
+            // Laura's profile and the gift household, whatever happened above.
+            execD1Batch([
+                ...rows(`SELECT adopter_id AS a FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}' AND gift_recipient = 1`).flatMap(r => {
+                    const id = String(r.a);
+                    return [
+                        `DELETE FROM duplicate_tokens WHERE adopter_id = '${id}'`,
+                        `DELETE FROM adopter_history WHERE adopter_id = '${id}'`,
+                        `DELETE FROM adopters WHERE id = '${id}'`,
+                    ];
+                }),
+                `DELETE FROM household_memberships WHERE household_id = 'hh-gift-${submissionId}'`,
+                `DELETE FROM households WHERE id = 'hh-gift-${submissionId}'`,
+            ]);
+        }
     });
 
     test('a submission without a phone is still stored — the server never refuses it (spec Part 3)', async ({ request }) => {
@@ -341,7 +365,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await dismissCountryBanner(page);
         const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
-        const row = (label: RegExp) => page.locator('div.flex.items-baseline', { hasText: label });
+        const row = (label: RegExp) => page.getByTestId('answer-row').filter({ hasText: label });
         await expect(row(/Moving, no animals|Mudanza sin animales|Mudança sem animais/).locator('[data-signal="risk"]')).toBeVisible();
         await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/).locator('[data-signal="risk"]')).toBeVisible();
         await expect(page.getByText('Me mudé')).toBeVisible();
@@ -388,7 +412,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await dismissCountryBanner(page);
         const answers = page.getByRole('button', { name: /Complete answers|Respuestas completas|Respostas completas/ });
         if ((await answers.getAttribute('aria-expanded')) === 'false') await answers.click();
-        const row = (label: RegExp) => page.locator('div.flex.items-baseline', { hasText: label });
+        const row = (label: RegExp) => page.getByTestId('answer-row').filter({ hasText: label });
         await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/)).toContainText('yes');
         await expect(row(/Gave an animal away|Regaló un animal|Deu um animal/).locator('[data-signal]')).toHaveCount(0);
         await expect(page.getByText('Alquilo, el dueño acepta gatos')).toBeVisible();
@@ -406,6 +430,7 @@ test.describe('form-results: linking to an existing profile', () => {
         expect(JSON.parse(String(row.answers_json)).giftRecipient).toMatchObject({ firstName: 'Ana' });
         const prof = one(`SELECT household_members FROM adopters WHERE id = '${row.auto_adopter_id}'`);
         expect(isNull(prof.household_members) || JSON.parse(String(prof.household_members)).length === 0).toBe(true);
+        expect(rows(`SELECT id FROM household_memberships WHERE adopter_id = '${row.auto_adopter_id}'`)).toHaveLength(0);
     });
 
     test('a fresh submission with no look-alikes reads as a new profile, not as "linked"', async ({ page, request }) => {

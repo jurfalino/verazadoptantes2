@@ -72,6 +72,55 @@ const MUST_NOT_BE_ACTIONS = [
     'resolveDisplayNames',
     // Takes the requester as an argument: reachable means forging one.
     'fileAccessRequestFor',
+    // Same for merge requests: the requester / answering actor is an argument
+    // (src/lib/mergeRequests.ts); the browser goes through resolveMergeRequest
+    // and cancelMergeRequest, which take the actor from the session.
+    'createMergeRequest',
+    'answerMergeRequest',
+    // Merge disputes (D50, src/lib/mergeDisputes.ts): the raiser / resolving
+    // admin is an argument; the browser goes through raiseMergeDispute,
+    // getMergeDisputeOption and resolveMergeDispute (session).
+    'fileMergeDispute',
+    'answerMergeDispute',
+    'mergeDisputeOption',
+    // The pair verdict (src/lib/pairVerdict.ts) takes the actor / team as arguments.
+    'refuseDisputedMerge',
+    'loadPairVerdict',
+    // Households as profiles (src/lib/householdNotices.ts, _adopterFactory.ts): the actor /
+    // owner is an argument; the browser goes through src/app/actions/households.ts (session).
+    'createHouseholdProfile',
+    // Households, unattended paths (src/lib/householdPeople.ts, giftRecipients.ts, Task 4):
+    // the actor / owner is an argument; the browser goes through createGiftRecipientProfile.
+    'attachHouseholdPeople',
+    'resolveHouseholdPerson',
+    'createGiftRecipientFromForm',
+    'giftRecipientsForViewer',
+    'giftRecipientsOf',
+    'findAndPersistDuplicateCandidates',
+    'notifyHouseholdPersonAdded',
+    'notifyHouseholdReaddDisputed',
+    'notifyHouseholdRelationshipChanged',
+    'notifyHouseholdMemberRemoved',
+    // Conversion of today's household data (src/lib/householdConversion.ts, Task 7): the actor is an
+    // argument; the browser has no way in (the bulk run is the admin route /api/admin/households/convert).
+    'convertInlineHouseholds',
+    'convertHost',
+    'ensureHostConverted',
+    'ensureProfileConverted',
+    'reverseConvertedOldMerge',
+    // Households as profiles, Task 8: the profile page's household read and the delete cleanup.
+    'readProfileHouseholds',
+    'dropMembershipsOfDeletedProfile',
+    // Profile name / age (src/lib/profileIdentity.ts): the actor is an argument; the browser
+    // goes through src/app/actions/profileIdentity.ts (session).
+    'renameProfile',
+    'undoRename',
+    'setProfileAge',
+    'notifyProfileRenamed',
+    'notifyRenameUndone',
+    'notifyProfileAgeChanged',
+    // The duplicate check with server-only options (contact-only search): findFormDuplicates never takes them.
+    'searchFormDuplicates',
 ];
 
 const files = walk(SRC);

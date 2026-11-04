@@ -4,8 +4,8 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { FileText, AlertCircle } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { FileText, AlertCircle, Search } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
@@ -15,7 +15,10 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
+import { MyAdoptersFlagBadges, hasHousemateChip } from '@/components/MyAdoptersFlagBadges';
+import type { HousemateAlertSummary } from '@/domain/profileHouseholds';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 import type { AdopterFlags } from '@/types/adopter';
 
@@ -65,6 +68,8 @@ interface Adopter {
     formNeedsReview?: boolean;
     /** Newest form linked to this person (submittedAt: epoch seconds). */
     latestForm?: { submissionId: string; submittedAt: number; animalName: string | null; ownedByViewer: boolean } | null;
+    /** Someone in their home (getMyAdopters → housemateAlertsFor): the two chip answers only, never names. Null when none. */
+    housemateAlert?: HousemateAlertSummary | null;
 }
 
 /** `?filtro=formularios` — kept in the URL so Back and shared links keep the view. */
@@ -74,8 +79,7 @@ const FORMS_FILTER = 'formularios';
  * The person's newest form as a provenance event: "Formulario para Luna ·
  * hace 2 d". Opens the form's results — only for the viewer's own forms,
  * since form-results refuses everyone else (a teammate would land on "no
- * permission"). The row itself links to the profile, so this stops the
- * click from reaching it, like the "Posible duplicado" pill does.
+ * permission"). A ROW_CONTROL: it sits above the row's stretched name link.
  */
 function FormLine({ form, onOpen, t }: {
     form: NonNullable<Adopter['latestForm']>;
@@ -99,8 +103,8 @@ function FormLine({ form, onOpen, t }: {
     return (
         <a
             href={`/form-results/${form.submissionId}`}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(form.submissionId); }}
-            className="flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium hover:underline underline-offset-2"
+            onClick={(e) => { e.preventDefault(); onOpen(form.submissionId); }}
+            className={`flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium hover:underline underline-offset-2 ${ROW_CONTROL}`}
         >
             {content}
         </a>
@@ -108,21 +112,65 @@ function FormLine({ form, onOpen, t }: {
 }
 
 /** Amber "Por revisar" pill beside the name; opens the form to decide. */
+/**
+ * A row's one link: the person's name, stretched over the whole row by its
+ * ::after, so the row still opens the profile anywhere you tap it. The row is a
+ * plain container (fix round 2, item 19): an <a> or <button> inside an <a> is
+ * invalid HTML and a hydration error (audit C3).
+ */
+// `truncate` on the link: it is the flex item now, so it is what clips a long name (its ::after is positioned
+// against the row, so the clip doesn't cut the stretched hit area).
+const ROW_LINK = "after:absolute after:inset-0 after:content-[''] after:rounded-[inherit] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-teal-500";
+/**
+ * Anything else in the row that acts (pills, the form line, the rating hint): positioned, and after the name
+ * in the DOM, so it paints above the stretched link. No z-index — that would trap the rating hint's popup
+ * under the next row.
+ */
+const ROW_CONTROL = 'relative';
+
+/** A row pill that acts (opens the form, jumps to «Pendientes de revisar»). One look for both. */
+function RowPill({ onClick, title, icon, testId, children }: { onClick: () => void; title: string; icon: ReactNode; testId: string; children: ReactNode }) {
+    return (
+        <button
+            type="button"
+            data-testid={testId}
+            onClick={onClick}
+            title={title}
+            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0 ${ROW_CONTROL}`}
+        >
+            {icon}
+            {children}
+        </button>
+    );
+}
+
 function NeedsReviewPill({ form, onOpen, t }: {
     form: NonNullable<Adopter['latestForm']> | null | undefined;
     onOpen: (submissionId: string) => void;
     t: (key: string) => string;
 }) {
     return (
-        <a
-            href={form ? `/form-results/${form.submissionId}` : '#'}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (form) onOpen(form.submissionId); }}
+        <RowPill testId="row-needs-review" onClick={() => { if (form) onOpen(form.submissionId); }}
             title={t('myAdopters.form_needs_review_tooltip') || 'Hay perfiles parecidos: decidí si es la misma persona'}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
-        >
-            <AlertCircle className="w-3 h-3" strokeWidth={2} aria-hidden="true" />
+            icon={<AlertCircle className="w-3 h-3" strokeWidth={2} aria-hidden="true" />}>
             {t('myAdopters.form_needs_review') || 'Por revisar'}
-        </a>
+        </RowPill>
+    );
+}
+
+/** «Posible duplicado»: jumps to «Pendientes de revisar» above (opens it, scrolls to it). */
+function PendingDupPill({ t }: { t: (key: string) => string }) {
+    const go = () => {
+        // Already on #pendientes: setting the same hash fires nothing, so say it ourselves.
+        if (window.location.hash === '#pendientes') window.dispatchEvent(new HashChangeEvent('hashchange'));
+        else window.location.hash = 'pendientes';
+    };
+    return (
+        <RowPill testId="row-pending-dup" onClick={go}
+            title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
+            icon={<Search className="w-3 h-3" strokeWidth={2} aria-hidden="true" />}>
+            {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
+        </RowPill>
     );
 }
 
@@ -273,50 +321,6 @@ function timeAgo(input: number | Date | string | null | undefined, isEs: boolean
     return isEs ? `hace ${years} año${years === 1 ? '' : 's'}` : `${years}y ago`;
 }
 
-// Alert badges: warnings only. v39+: verified_identity / verified_address
-// (positive signals) intentionally hidden from this column — the column now
-// reads "Alertas" and should only carry concerns. Verifications live on the
-// profile page; reviving them on the list belongs to a separate column if
-// we ever want them visible there again.
-function FlagBadges({ flags, t }: { flags: AdopterFlags; t: (key: string) => string }) {
-    const badges = [];
-
-    if (flags.inaccurate) {
-        badges.push(
-            <span key="inaccurate" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-rose-100 text-rose-700">
-                ⚠ {t('flags.inaccurate') || 'Inaccurate'}
-            </span>
-        );
-    }
-    if (flags.duplicate) {
-        badges.push(
-            <span key="duplicate" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-amber-100 text-amber-700">
-                📄 {t('flags.duplicate') || 'Duplicate'}
-            </span>
-        );
-    }
-    if (flags.tooManyAdoptions) {
-        badges.push(
-            <span key="too_many_adoptions" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-orange-100 text-orange-700">
-                ⚠ {flags.tooManyAdoptions.count} {t('stats.adoptions') || 'adoptions'} in {flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays}d
-            </span>
-        );
-    }
-    if (flags.tooManyRequests) {
-        badges.push(
-            <span key="too_many_requests" className="text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-purple-100 text-purple-700">
-                ⚠ {t('flags.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
-            </span>
-        );
-    }
-
-    if (badges.length === 0) {
-        return <span className="text-xs text-stone-300">—</span>;
-    }
-
-    return <div className="flex flex-wrap gap-1">{badges}</div>;
-}
-
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
@@ -433,10 +437,9 @@ export default function MyAdoptersPage() {
 
                 {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section
                     that existed before Phase 1 auto-created adopters at submit time).
-                    Anchor target for the per-row "🔍 Posible duplicado" pill (v38). */}
-                <div id="pending-dedup" className="scroll-mt-20">
-                    <PendingDedup />
-                </div>
+                    The section carries its own #pendientes anchor (the per-row
+                    "🔍 Posible duplicado" pill and the notifications link there). */}
+                <PendingDedup />
 
                 {adopters.length > 0 && (
                     <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
@@ -502,16 +505,18 @@ export default function MyAdoptersPage() {
                             {/* Table Rows */}
                             <div className="divide-y divide-stone-100">
                                 {visible.map((adopter, i) => (
-                                    <Link
+                                    <div
                                         key={`adopter-${adopter.id}-${i}`}
-                                        href={`/adopter/${adopter.id}?ref=my-adopters`}
-                                        prefetch={false}
+                                        data-testid="my-adopters-row"
                                         // v2.19.13: pending-duplicate rows get an amber left-border
                                         // so the actionable row jumps out without sacrificing
                                         // any name-cell space. Matches the severity-tint pattern
                                         // OrgActivityFeed (v2.18.14) and /admin/audit (v2.19.5)
                                         // already use across the app.
-                                        className={`grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.hasPendingDuplicate ? 'border-l-4 border-amber-400' : ''}`}
+                                        // The row is NOT a link (fix round 2, item 19): its one link is the name, stretched
+                                        // over the row (ROW_LINK), and the pills, the form line and the rating hint sit
+                                        // beside it (ROW_CONTROL) — never an <a>/<button> inside an <a>.
+                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.hasPendingDuplicate ? 'border-l-4 border-amber-400' : ''}`}
                                     >
                                         {/* Name + Thumbnail */}
                                         <div className="col-span-4 flex items-center gap-3 min-w-0">
@@ -526,24 +531,17 @@ export default function MyAdoptersPage() {
                                             </div>
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
+                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                        <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
+                                                    </Link>
                                                     {/* One decision, one pill: when the person's form is waiting
                                                         on "¿es la misma persona?", that is the pair the duplicate
                                                         pill would point at — and the form path also files the
                                                         request in the right history. */}
-                                                    {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
-                                                        <a
-                                                            href="#pending-dedup"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
-                                                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100 flex-shrink-0"
-                                                        >
-                                                            🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
-                                                        </a>
-                                                    )}
+                                                    {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
                                                     {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                                 </div>
-                                                <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
+                                                <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
                                                 {/* Inline addedBy was moved to its own column in v2.19.6 —
                                                     keeps the Name cell focused on identity, lets the
                                                     Creado-por col carry the resolved name + org chip. */}
@@ -555,15 +553,17 @@ export default function MyAdoptersPage() {
                                             severity signal and rating live together (a 5-star adopter with a
                                             density flag now reads in one glance instead of jumping to a
                                             separate column). Min-height pins both states to row height. */}
-                                        <div className="col-span-2 flex flex-col items-center gap-1 min-h-[2rem]">
+                                        {/* With a housemate chip (a link with a 44px touch area around its 22px pill), 12px under
+                                            the rating keeps that area off the rating's own hint (review fix 6). */}
+                                        <div className={`col-span-2 flex flex-col items-center ${hasHousemateChip(adopter.housemateAlert) ? 'gap-3' : 'gap-1'} min-h-[2rem] min-w-0`}>
                                             {adopter.avgRating !== null ? (
-                                                <RatingExplainer rating={adopter.avgRating}>
-                                                    <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
-                                                </RatingExplainer>
+                                                <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
+                                                    <RatingBadge rating={adopter.avgRating} />
+                                                </RatingExplainer></span>
                                             ) : (
-                                                <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
+                                                <RatingBadge rating={null} />
                                             )}
-                                            <FlagBadges flags={adopter.flags} t={t} />
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
                                         </div>
 
                                         {/* Actividad — stacked stats with labels (v38). Each line has its own word
@@ -614,7 +614,7 @@ export default function MyAdoptersPage() {
                                                 />
                                             )}
                                         </div>
-                                    </Link>
+                                    </div>
                                 ))}
                             </div>
                         </div>
@@ -622,13 +622,12 @@ export default function MyAdoptersPage() {
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
                             {visible.map((adopter, i) => (
-                                <Link
+                                <div
                                     key={`adopter-${adopter.id}-${i}`}
-                                    href={`/adopter/${adopter.id}?ref=my-adopters`}
-                                    prefetch={false}
+                                    data-testid="my-adopters-row"
                                     // v2.19.13: amber left-border for pending-dup cards,
-                                    // mirrors the desktop row treatment.
-                                    className={`block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.hasPendingDuplicate ? 'border-l-4 border-l-amber-400' : ''}`}
+                                    // mirrors the desktop row treatment. Not a link: see the desktop row (item 19).
+                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.hasPendingDuplicate ? 'border-l-4 border-l-amber-400' : ''}`}
                                 >
                                     {/* Top Row: Avatar + Name + Rating */}
                                     <div className="flex items-center gap-3 mb-3">
@@ -643,20 +642,13 @@ export default function MyAdoptersPage() {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                                <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
-                                                {adopter.hasPendingDuplicate && !adopter.formNeedsReview && (
-                                                    <a
-                                                        href="#pending-dedup"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        title={t('myAdopters.row_pending_dup_tooltip') || 'Hay un posible duplicado pendiente de revisar arriba'}
-                                                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap hover:bg-amber-100"
-                                                    >
-                                                        🔍 {t('myAdopters.row_pending_dup') || 'Posible duplicado'}
-                                                    </a>
-                                                )}
+                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                    <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
+                                                </Link>
+                                                {adopter.hasPendingDuplicate && !adopter.formNeedsReview && <PendingDupPill t={t} />}
                                                 {adopter.formNeedsReview && <NeedsReviewPill form={adopter.latestForm} onOpen={openForm} t={t} />}
                                             </div>
-                                            <div className="text-xs text-stone-500 truncate">{adopter.contactInfo || t('dashboard.no_contact')}</div>
+                                            <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
                                             {/* v2.19.13: inline addedBy + bottom dates row from
                                                 the mobile card are folded into the provenance lines
                                                 at the bottom of the card. SourcePill no longer
@@ -664,19 +656,20 @@ export default function MyAdoptersPage() {
                                                 "Creado por" provenance line where it belongs. */}
                                         </div>
                                         {adopter.avgRating !== null ? (
-                                            <RatingExplainer rating={adopter.avgRating}>
-                                                <RatingBadge rating={adopter.avgRating} size="sm" label="short" />
-                                            </RatingExplainer>
+                                            <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
+                                                <RatingBadge rating={adopter.avgRating} />
+                                            </RatingExplainer></span>
                                         ) : (
-                                            <span className="text-xs text-stone-300" title={t('myAdopters.rating_empty_hint') || 'Sin actividad calificada'}>—</span>
+                                            <RatingBadge rating={null} />
                                         )}
                                     </div>
 
                                     {/* Stats Row */}
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
-                                        <span>👁 {adopter.profileViews} {t('stats.views')}</span>
-                                        <span>📋 {adopter.requestCount} {t('stats.requests')}</span>
-                                        <span>🏠 {adopter.adoptionCount} {t('stats.adoptions')}</span>
+                                    {/* With a housemate chip, 12px between wrapped lines keeps its 44px touch area off the stats (review fix 6). */}
+                                    <div className={`flex flex-wrap items-center gap-x-3 ${hasHousemateChip(adopter.housemateAlert) ? 'gap-y-3' : 'gap-y-1'} text-xs text-stone-500`}>
+                                        <span>👁 {adopter.profileViews} {adopter.profileViews === 1 ? t('stats.view_one') : t('stats.views')}</span>
+                                        <span>📋 {adopter.requestCount} {adopter.requestCount === 1 ? t('stats.request_one') : t('stats.requests')}</span>
+                                        <span>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? t('stats.adoption_one') : t('stats.adoptions')}</span>
                                         {(adopter.formCount ?? 0) > 0 && (
                                             <span className="text-teal-600 font-medium">
                                                 📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
@@ -688,8 +681,8 @@ export default function MyAdoptersPage() {
                                             </span>
                                         )}
                                         {/* Flags on mobile */}
-                                        <div className="flex gap-1 ml-auto">
-                                            <FlagBadges flags={adopter.flags} t={t} />
+                                        <div className="flex gap-1 ml-auto max-w-full min-w-0">
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
                                         </div>
                                     </div>
 
@@ -717,7 +710,7 @@ export default function MyAdoptersPage() {
                                             />
                                         )}
                                     </div>
-                                </Link>
+                                </div>
                             ))}
                         </div>
                     </>

@@ -1030,6 +1030,10 @@ describe('maskMatchCardContact — form / contract match cards mask like discove
         expect(r.contactInfo).not.toContain('Secreta');
         expect(r.addressInfo).not.toContain('Secreta');
         expect(r.addressInfo).toContain('CABA');
+        // The typed entries (the field-by-field comparison reads these) hide exactly the same.
+        expect(r.contactEntries).toContain(PHONE);
+        expect(r.contactEntries).not.toContain(OTHER_EMAIL);
+        expect(r.contactEntries).not.toContain('Secreta');
     });
 
     it('stranger + nothing submitted that matches: no full value at all', () => {
@@ -1075,17 +1079,17 @@ describe('maskMatchCardContact — form / contract match cards mask like discove
 
     it('full access (owner / teammate / admin / all-contact grant): raw', () => {
         expect(maskMatchCardContact(profile, vis({ nothingMasked: true }), {}, []))
-            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+            .toEqual({ contactInfo: profile.contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo: profile.addressInfo });
     });
 
     it('public profile: raw', () => {
         expect(maskMatchCardContact(profile, stranger, { adopterIsPublic: true }, []))
-            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+            .toEqual({ contactInfo: profile.contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo: profile.addressInfo });
     });
 
     it('gating off (visibility null): raw, as on the profile page and in search', () => {
         expect(maskMatchCardContact(profile, null, {}, []))
-            .toEqual({ contactInfo: profile.contactInfo, addressInfo: profile.addressInfo });
+            .toEqual({ contactInfo: profile.contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo: profile.addressInfo });
     });
 });
 

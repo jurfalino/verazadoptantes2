@@ -7,13 +7,15 @@ import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
+import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     const errorId = generateErrorId();
-    const { id: adopterId } = await params;
+    const { id: requestedAdopterId } = await params;
+    let adopterId = requestedAdopterId;
 
     const session = await auth();
     if (!session?.user) {
@@ -42,7 +44,7 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid JSON body', errorId }, { status: 400 });
     }
 
-    const { sourceUrl, notes, contactInfo, adoption, images } = body;
+    const { sourceUrl, notes, adoption, images } = body;
 
     if (!adoption) {
         return NextResponse.json({ error: 'Missing adoption data', errorId }, { status: 400 });
@@ -60,20 +62,35 @@ export async function POST(
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        // Verify adopter exists
-        const existingAdopter = await db.select({ id: adopters.id, name: adopters.name })
+        // Verify adopter exists and is live. A profile merged away mid-import
+        // (a teammate merged it while the rescuer reviewed the post) would
+        // otherwise take the record onto a hidden row; it goes to the profile
+        // it was merged into instead, and the response names that profile.
+        let existingAdopter = await db.select({ id: adopters.id, name: adopters.name, deletedAt: adopters.deletedAt })
             .from(adopters)
             .where(eq(adopters.id, adopterId))
             .get();
+        if (existingAdopter?.deletedAt) {
+            const survivorId = await resolveMergedAdopterId(adopterId);
+            logger.info('add-record: target profile is deleted', { adopterId, survivorId, user: session.user.email });
+            existingAdopter = survivorId
+                ? await db.select({ id: adopters.id, name: adopters.name, deletedAt: adopters.deletedAt })
+                    .from(adopters).where(eq(adopters.id, survivorId)).get()
+                : undefined;
+            if (existingAdopter) adopterId = existingAdopter.id;
+        }
 
         if (!existingAdopter) {
             return NextResponse.json({ error: 'Adopter not found', errorId }, { status: 404 });
         }
 
-        // Pack all extracted info into details
+        // The note is the post text plus where it came from. Contacts are NOT
+        // copied in: the import wizard merges them into the profile's typed
+        // entries (appendToExistingAdopter), where visibility applies per entry.
+        // A plain-text copy in the activity note bypassed that, and is exactly
+        // the "PII in notes" the data-quality tool hunts for (audit 2026-10-21, D8).
         const detailsParts: string[] = [];
         if (notes) detailsParts.push(notes);
-        if (contactInfo) detailsParts.push(`Contact: ${contactInfo}`);
         if (sourceUrl) detailsParts.push(`Source: ${sourceUrl}`);
 
         // Create the adoption/observation/follow-up record
@@ -88,7 +105,8 @@ export async function POST(
             rating: adoption.rating || null,
             recordType: adoption.recordType || 'observation',
             animalId: adoption.animalId || null,
-            date: adoption.date ? new Date(adoption.date) : new Date(),
+            // NULL when unknown, as the create path does: "now" is not the date of a past event.
+            date: adoption.date ? new Date(adoption.date) : null,
             sourceUrl: sourceUrl || null,
             details: detailsParts.length > 0 ? detailsParts.join('\n') : null
         }, session.user.email || 'anonymous');

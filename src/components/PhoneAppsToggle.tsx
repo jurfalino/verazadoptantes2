@@ -26,7 +26,7 @@ export function PhoneAppsToggle({ value, onChange, size = 18 }: {
                         aria-pressed={on}
                         aria-label={app.label}
                         onClick={() => toggle(app.key)}
-                        className={`inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full border text-xs font-semibold transition-all ${on
+                        className={`relative inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full border text-xs font-semibold transition-all after:absolute after:-inset-y-2 after:inset-x-0 after:content-[''] ${on
                             ? 'border-teal-500 text-stone-800 bg-teal-50/60'
                             : 'border-stone-200 text-stone-500 hover:border-teal-300'}`}
                     >

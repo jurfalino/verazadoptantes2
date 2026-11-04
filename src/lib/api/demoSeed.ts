@@ -3,8 +3,9 @@
  * the exact-search scenarios need (src/lib/api/docScenarios.ts), registered the
  * way real ones are — adopter row + contact entries, records through
  * insertRecord (ratings, dates, the rescue that added each), marks in
- * adopter_flags, a pending duplicate candidate, and the search tokens
- * (tokenizeAdopter) — so each documented request returns the documented answer.
+ * adopter_flags (a duplicate report names the other profile, so it is open),
+ * a pending duplicate candidate, and the search tokens (tokenizeAdopter) — so
+ * each documented request returns the documented answer.
  *
  * Re-running resets them: the demo profiles (ids `demo-api-*`) and everything
  * on them are deleted and written again with dates relative to today (the
@@ -18,6 +19,8 @@ import { buildContactEntries, contactEntriesToBlob } from '@/lib/contactEntries'
 import { insertRecord } from '@/app/actions/_recordWrite';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { logger } from '@/lib/logger';
+import { FLAG_REASONS } from '@/domain/constants';
+import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 import { DEFAULT_RESCUE, demoCreatedAt, demoCreatedNames, demoProfiles, type Registered } from './docScenarios';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +40,7 @@ async function removeProfile(db: Db, id: string): Promise<void> {
     await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, id));
     await db.delete(adopterHistory).where(eq(adopterHistory.adopterId, id));
     await db.delete(adopters).where(eq(adopters.id, id));
+    await closeRequestsForDeletedAdopter(db, id, 'demo-seed');
 }
 
 async function createProfile(db: Db, p: Pick<Registered, 'id' | 'name' | 'email' | 'phone' | 'documentId'>, createdAt: Date = new Date()): Promise<void> {
@@ -101,6 +105,10 @@ export async function seedApiDemo(db: Db, now: Date = new Date()): Promise<DemoS
         }
         for (const reason of p.marks ?? []) {
             await db.insert(adopterFlags).values({ id: `${p.id}-flag-${reason}`, adopterId: p.id, flaggedBy: DEFAULT_RESCUE, reason });
+        }
+        if (p.duplicateOf) {
+            // An open duplicate report: it names the other profile and nobody has merged them or kept them separate.
+            await db.insert(adopterFlags).values({ id: `${p.id}-flag-duplicate`, adopterId: p.id, flaggedBy: DEFAULT_RESCUE, reason: FLAG_REASONS.DUPLICATE, targetAdopterId: p.duplicateOf });
         }
         if (p.possibleDuplicate) {
             // Another profile that may be the same person: a pending candidate, as the duplicate scan files them.

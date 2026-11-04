@@ -11,11 +11,13 @@ import { logger } from '@/lib/logger';
  * runs for *every* admin page view is worth collapsing.
  *
  * Deliberately narrow. A badge earns attention by being usually zero; a number
- * that is always present becomes wallpaper and stops being read. Two counters
+ * that is always present becomes wallpaper and stops being read. Three counters
  * qualify today:
  *
  *   - data requests   — legal response deadlines, and rare (3 ever in prod)
  *   - PII requests    — someone is blocked waiting on an approval
+ *   - merge requests  — PENDING only: a declined one is parked for the admin to
+ *                       revisit, not a to-do that appeared
  *
  * Two were considered and rejected:
  *
@@ -28,9 +30,10 @@ import { logger } from '@/lib/logger';
 export interface AdminCounts {
     dataRequests: number;
     piiRequests: number;
+    mergeRequests: number;
 }
 
-const EMPTY: AdminCounts = { dataRequests: 0, piiRequests: 0 };
+const EMPTY: AdminCounts = { dataRequests: 0, piiRequests: 0, mergeRequests: 0 };
 
 export async function getAdminCounts(): Promise<AdminCounts> {
     try {
@@ -40,12 +43,14 @@ export async function getAdminCounts(): Promise<AdminCounts> {
         const row = await db.get(sql`
             SELECT
               (SELECT COUNT(*) FROM data_requests WHERE status = 'pending') AS dr,
-              (SELECT COUNT(*) FROM pii_access_requests WHERE status = 'pending') AS pii
-        `) as { dr?: number; pii?: number } | undefined;
+              (SELECT COUNT(*) FROM pii_access_requests WHERE status = 'pending') AS pii,
+              (SELECT COUNT(*) FROM merge_requests WHERE status = 'pending') AS mr
+        `) as { dr?: number; pii?: number; mr?: number } | undefined;
 
         return {
             dataRequests: Number(row?.dr ?? 0),
             piiRequests: Number(row?.pii ?? 0),
+            mergeRequests: Number(row?.mr ?? 0),
         };
     } catch (e) {
         // A badge must never take down the admin console. Zero renders no badge,

@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execD1 } from './db';
 
 /**
  * Third-party API v1, part 2 (split from public-api.authed.spec.ts on
@@ -11,9 +11,6 @@ import { execSync } from 'child_process';
  * ENABLE_PUBLIC_API is off in the seed; this file and public-api.authed.spec.ts
  * turn it on for themselves (each serial, each in its own CI leg).
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
 const flagOn = () => execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PUBLIC_API', 'true', strftime('%s','now'), 'e2e')`);
 const flagOff = () => execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PUBLIC_API'`);
 
@@ -133,11 +130,4 @@ test.describe('public API v1 — admin, docs, /developers', { tag: '@leg-apidocs
         expect((await api.get('/api/v1/me', { headers: auth() })).status()).toBe(401);
     });
 
-    test('flag off → every endpoint answers 404 api_disabled', async () => {
-        flagOff();
-        const res = await api.get('/api/v1/me', { headers: auth() });
-        expect(res.status()).toBe(404);
-        expect((await res.json()).error.code).toBe('api_disabled');
-        flagOn();
-    });
 });

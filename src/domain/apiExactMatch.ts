@@ -9,13 +9,19 @@
  * index did find (Jon, 2026-10-09).
  */
 
+/**
+ * Which of a profile's names the input fits. `household_member` is never
+ * produced since households are profiles (2026-10-26): a housemate is a
+ * profile of its own, matched as `profile`. It stays in the type (and the API
+ * schema) so clients that switch on it keep compiling.
+ */
 export type NameMatchedAs = 'profile' | 'alias' | 'household_member';
 
 export type ExactOutcome =
     /** `otherProfileIds`: profiles the identifier ALSO hit under an unrelated name (shown, never chosen). */
     | { result: 'found'; profileId: string; nameMatchedAs: NameMatchedAs; otherProfileIds: string[] }
     | { result: 'not_found' }
-    /** `compatible`: the candidates whose name fits (2+, or none). The activity goes on the best of them (pickBestMatch); none → a new profile. */
+    /** `compatible`: the candidates that may take the activity (2+, or none) — name fits (and judged same, with `verdicts`). The activity goes on the best of them (pickBestMatch); none → a new profile. */
     | { result: 'ambiguous'; reason: 'multiple_profiles' | 'name_mismatch'; profileIds: string[]; compatible: Array<{ profileId: string; as: NameMatchedAs }> };
 
 /** Accent- and case-folded words of a name; punctuation splits words. */
@@ -87,28 +93,34 @@ export function namesCompatible(a: string | null | undefined, b: string | null |
     return true;
 }
 
+/** A profile's OWN names: its name and aliases («Conocido/a como», rename aliases included). Never a housemate's. */
 export interface CandidateNames {
     profileId: string;
     name: string;
     aliases: string[];
-    householdNames: string[];
 }
 
-/** Which of a profile's names the input name is consistent with, if any. */
+/** Which of a profile's own names the input name is consistent with, if any. */
 export function matchNameAgainstProfile(inputName: string, c: CandidateNames): NameMatchedAs | null {
     if (namesCompatible(inputName, c.name)) return 'profile';
     if (c.aliases.some(a => namesCompatible(inputName, a))) return 'alias';
-    if (c.householdNames.some(h => namesCompatible(inputName, h))) return 'household_member';
     return null;
 }
 
 /**
  * The decision table (plan §Exact mode). `candidates` are the distinct live
  * profiles the identifier hit.
+ *
+ * `verdicts` (the identity verdict per profile id, src/domain/identityVerdict.ts):
+ * the profiles that may take the activity are those judged `same` — a shared
+ * identifier (email, phone, DNI or social account) with a compatible name; junk
+ * identifiers never count. Without `verdicts`, a profile may take it when its
+ * name fits (the original rule).
  */
-export function decideExactOutcome(inputName: string, candidates: CandidateNames[]): ExactOutcome {
+export function decideExactOutcome(inputName: string, candidates: CandidateNames[], verdicts?: Map<string, 'same' | 'possible' | 'no'>): ExactOutcome {
     if (candidates.length === 0) return { result: 'not_found' };
     const compatible = candidates
+        .filter(c => !verdicts || verdicts.get(c.profileId) === 'same')
         .map(c => ({ profileId: c.profileId, as: matchNameAgainstProfile(inputName, c) }))
         .filter((c): c is { profileId: string; as: NameMatchedAs } => c.as !== null);
     const allIds = candidates.map(c => c.profileId);
@@ -123,11 +135,12 @@ export function decideExactOutcome(inputName: string, candidates: CandidateNames
 const NAME_RANK: Record<NameMatchedAs, number> = { profile: 3, alias: 2, household_member: 1 };
 
 /**
- * Ambiguous, but more than one name fits (Jon, 2026-10-13): the activity goes on
- * the profile that matches the request best — most identifiers matched (email,
- * phone, document), then the closest name (the profile's own over an alias over
- * a household member), then the most recent activity. Null when no name fits:
- * the identifier belongs to someone else, so the caller creates a new profile.
+ * Ambiguous, but several profiles may take the activity (Jon, 2026-10-13): it
+ * goes on the profile that matches the request best — most identifiers matched
+ * (email, phone, document, social), then the closest name (the profile's own over
+ * an alias over a household member), then the most recent activity. Null when
+ * none may take it (no name fits: the identifier belongs to someone else, or is
+ * junk): the caller creates a new profile.
  */
 export function pickBestMatch(
     compatible: Array<{ profileId: string; as: NameMatchedAs }>,

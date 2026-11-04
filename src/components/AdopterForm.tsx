@@ -6,18 +6,31 @@ import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useSetEditActions } from "@/context/EditActionsContext";
 import { InlineEditField } from "@/components/InlineEditField";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter } from "@/app/actions";
-import { buildMatchChips, hasStrongMatch, type MatchChip } from "@/lib/matchChips";
+import { saveAdopter, saveImage, findFormDuplicates, appendToExistingAdopter, changeProfileName } from "@/app/actions";
+import type { ProfileIdentityView } from "@/domain/profileIdentity";
+import { MinorTag } from "@/components/MinorTag";
+import { AnchoredMenu, AnchoredMenuItem, OverflowMenuButton } from "@/components/ui/AnchoredMenu";
+import { GitMerge, PencilLine, Phone, Share2, Trash2 } from "lucide-react";
+import { isSamePerson } from "@/lib/matchChips";
+import MatchCompare, { entriesAsShown } from '@/components/MatchCompare';
 import DuplicatePeek from "@/components/DuplicatePeek";
 import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
+import { Modal, ModalActions, ModalText } from "@/components/ui/Modal";
+import { ContinueMergeDialog } from "@/components/ContinueMergeDialog";
+import { MatchCard } from "@/components/MatchCardParts";
+import { AdopterName } from "@/components/AdopterName";
+import { isNamelessAdopter } from "@/lib/adopterDisplay";
+import { openAlertKinds } from "@/domain/flags";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
 import HouseholdSection from "@/components/HouseholdSection";
-import { deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
-import { deserializeHouseholdMembers } from "@/lib/householdMembers";
+import { KnownAsLine } from "@/components/household/KnownAsLine";
+import { EMPTY_PROFILE_HOUSEHOLDS, HOUSEHOLD_SECTION_HEADING_ID, HOUSEHOLD_SECTION_ID, type ProfileHouseholds } from "@/domain/profileHouseholds";
+import { followHouseholdSectionHash, goToHouseholdSection } from "@/lib/householdSectionNav";
+import { CONTACT_ENTRIES_FULL, deserializeContactEntries, parseBlobToContactEntries, contactEntriesToBlob, newContactsForProfile, type ContactEntry, type ContactEntryType } from "@/lib/contactEntries";
 import type { VisibilityBadge } from "@/domain/visibilityBadge";
 import { hasMinimumIdentifier } from "@/domain/adopterIdentity";
 import { adopterDisplayName, namelessSubIdentifier } from "@/lib/adopterDisplay";
@@ -27,6 +40,8 @@ import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
+import { Button } from '@/components/ui/Button';
+import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { extractErrorId } from '@/lib/errorUtils';
 import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 
@@ -40,7 +55,7 @@ import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
 import type { Adopter, AdopterImage, AdopterFlag, AdoptionRecord, AdoptionConfig } from '@/types/adopter';
 import type { FormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { parseContactsParam } from '@/lib/createPrefill';
-import { handledAsStale } from '@/lib/errorMessage';
+import { handledAsStale, userFacingMessage } from '@/lib/errorMessage';
 import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
 
@@ -103,31 +118,20 @@ interface AdopterFormProps {
     /** Opens the visibility/access explanatory modal when the badge is tapped.
      *  Provided by the profile; absent on the new-adopter form (no badge there). */
     onBadgeClick?: () => void;
+    /** Households as profiles: every household this profile is in (members masked for this viewer) and its gift forms. */
+    households?: ProfileHouseholds;
+    /** ENABLE_HOUSEHOLD_MEMBERS as the server read it (profile page); the create form reads /api/config. */
+    householdsEnabled?: boolean;
+    /** Admin or moderator (false in preview-as-stranger): changes every household member (D54). */
+    isModerator?: boolean;
+    /** «Ver como desconocido»: the household shows exactly what a stranger gets — no team controls, no own markers. */
+    previewAsStranger?: boolean;
+    /** Households as profiles: «Conocido/a como», age and «Menor de edad» (server-computed). */
+    identity?: ProfileIdentityView | null;
 }
 
-function MatchChipsRow({ chips }: { chips: MatchChip[] }) {
-    if (chips.length === 0) return null;
-    return (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-            {chips.map(chip => (
-                <span
-                    key={chip.key}
-                    className={
-                        chip.isStrong
-                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200"
-                            : "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200"
-                    }
-                    title={chip.label}
-                >
-                    <span aria-hidden="true">{chip.icon}</span>
-                    <span className="truncate max-w-[160px]">{chip.label}</span>
-                </span>
-            ))}
-        </div>
-    );
-}
 
-export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick }: AdopterFormProps) {
+export function AdopterForm({ origin = null, interviewEnabled = false, initialData, currentUser, images = [], adopterId, avgRating, profileViews, flags = [], adoptions = [], adoptionConfig, isAdmin = false, formPrefill = null, hasDuplicateBanner = false, attribution = null, isOrgMateOfOwner = false, isPrivileged = false, canEdit = true, onMaskedContactClick, onMaskedNameClick, visibilityBadge = null, onBadgeClick, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, isModerator = false, previewAsStranger = false, identity = null }: AdopterFormProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const intent = searchParams.get('intent');
@@ -138,6 +142,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const isNew = !initialData?.id;
     const id = adopterId || initialData?.id || '';
     const [showReportMenu, setShowReportMenu] = useState(false);
+    const overflowButtonRef = useRef<HTMLButtonElement>(null);
+    // Escape / outside tap / focus are AnchoredMenu's (one behaviour for every ⋯).
+    const closeReportMenu = useCallback(() => setShowReportMenu(false), []);
+    // «Cambiar edad» (households as profiles): anyone signed in; opened from the ⋯ menu.
     const flaggingRef = useRef<AdopterFlaggingHandle>(null);
     // Publishes edit state to the global nav so, on MOBILE, it shows Cancelar/Guardar
     // (keyboard-proof) while editing an existing profile. `formRef` lets the nav's
@@ -161,6 +169,15 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const canChangeProfilePhoto = !isNew && isAuthenticated
         && (isAdmin || isOrgMateOfOwner || (!!currentUser && currentUser === (initialData?.addedBy ?? '')));
 
+    // D54: who may change every household member and contact — owner ∨ admin ∨
+    // moderator ∨ org-mate. Everyone else signed in changes only what they added
+    // (the `own` markers); the server applies the same rules. Never in
+    // preview-as-stranger: a stranger is none of these.
+    const canEditAllHousehold = !isNew && !previewAsStranger && !!isAuthenticated && (
+        isAdmin || isModerator || isOrgMateOfOwner || isPrivileged
+        || (!!currentUser && !!initialData?.addedBy && currentUser.trim().toLowerCase() === initialData.addedBy.trim().toLowerCase())
+    );
+
     // Sliding window logic strictly memoized to avoid expensive sorting on every render
     const periodDays = adoptionConfig?.periodDays || 90;
     const threshold = adoptionConfig?.threshold || 5;
@@ -182,7 +199,11 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const [nameEditing, setNameEditing] = useState(false);
     // ENABLE_HOUSEHOLD_MEMBERS (public flag): swaps the free-text family field for
     // the structured HouseholdSection on saved profiles. Read once from /api/config.
-    const [enableHousehold, setEnableHousehold] = useState(false);
+    const [enableHousehold, setEnableHousehold] = useState(householdsEnabled);
+    // Arriving from a «Conviviente…» chip on /my-adopters (…#profile-household-section): the route streams in
+    // behind its loading screen, so the browser's own jump to the anchor misses — go there once mounted, and
+    // focus its heading (as the header's own chips do).
+    useEffect(() => followHouseholdSectionHash(window), []);
     useEffect(() => {
         let active = true;
         fetch('/api/config').then(r => r.json()).then((d) => {
@@ -208,6 +229,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // Duplicate detection (create only): while-typing results + save confirmation modal
     const [duplicateResults, setDuplicateResults] = useState<DiscoveryMatch[] | null>(null);
     const [duplicateSearching, setDuplicateSearching] = useState(false);
+    // D36: the duplicate search failed (errorId for support); saving is never blocked by it.
+    const [duplicateSearchErrorId, setDuplicateSearchErrorId] = useState<string | null>(null);
+    const [duplicateRetry, setDuplicateRetry] = useState(0);
     const [saveDuplicateModal, setSaveDuplicateModal] = useState<{ matches: DiscoveryMatch[] } | null>(null);
     // v2.19.65: gate the create-flow duplicate-detection on whether the
     // search-relevant content has actually changed from what the rescuer
@@ -248,8 +272,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         // can edit it.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    const saveDuplicateModalRef = useRef<HTMLDivElement>(null);
-    const createAnywayButtonRef = useRef<HTMLButtonElement>(null);
     const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Strong-match dismissal: ids the user explicitly ×-ed off the strong strip.
     // Save-time modal only fires for strong matches NOT in this set.
@@ -257,7 +279,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // "Continuar con este perfil" loading guard — one in-flight call at a time.
     const [continueBusyId, setContinueBusyId] = useState<string | null>(null);
     // Confirmation modal — pending append target until the user confirms.
-    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string } | null>(null);
+    const [pendingMerge, setPendingMerge] = useState<{ adopterId: string; adopterName: string; match: DiscoveryMatch } | null>(null);
 
     const DUPLICATE_DEBOUNCE_MS = 350;
 
@@ -330,13 +352,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         }
     };
 
-    // Focus "Create new profile anyway" when save duplicate modal opens (accessibility)
-    useEffect(() => {
-        if (saveDuplicateModal) {
-            const id = setTimeout(() => createAnywayButtonRef.current?.focus(), 100);
-            return () => clearTimeout(id);
-        }
-    }, [saveDuplicateModal]);
     const MIN_NAME_LENGTH_FOR_SEARCH = 2;
     const MAX_DUPLICATE_CARD_RESULTS = 5;
 
@@ -450,18 +465,37 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             phones: pick('phone'),
             emails: pick('email'),
             socials: pick('social'),
+            documentIds: pick('id'),
         };
     }, [data.name, contactEntries]);
+    // The rescuer's side of «Qué coincide y qué no» on every duplicate surface of this form.
+    const compareSource = useMemo(() => ({
+        kind: 'typed' as const,
+        name: data.name,
+        entries: contactEntries.map(e => ({ type: e.type, value: e.value })),
+    }), [data.name, contactEntries]);
 
     // "Continuar con este perfil" — open the confirmation modal first so the
     // user knows their in-progress data will be merged into the existing record.
     // The actual append fires only from confirmMerge() below.
-    const handleContinueWith = useCallback((targetId: string) => {
+    // `known`: the save check's own match (its fresh search may hold a profile the live list doesn't).
+    const handleContinueWith = useCallback((targetId: string, known?: DiscoveryMatch) => {
         if (continueBusyId) return;
-        const match = duplicateResults?.find(r => r.adopter.id === targetId);
+        const match = known ?? duplicateResults?.find(r => r.adopter.id === targetId);
         if (!match) return;
-        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name });
+        setPendingMerge({ adopterId: targetId, adopterName: match.adopter.name, match });
     }, [continueBusyId, duplicateResults]);
+
+    // «No es esta persona» on any match card of this form (the panel, the strip, the save check):
+    // off every list, and the save check won't ask about it again.
+    const dismissStrongMatch = useCallback((adopterId: string) => {
+        setDismissedStrongIds(prev => new Set(prev).add(adopterId));
+        setSaveDuplicateModal(prev => {
+            if (!prev) return prev;
+            const matches = prev.matches.filter(m => m.adopter.id !== adopterId);
+            return matches.length > 0 ? { matches } : null;
+        });
+    }, []);
 
     const confirmMerge = useCallback(async () => {
         if (!pendingMerge || continueBusyId) return;
@@ -476,19 +510,26 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
             if (result.success && result.adopterId) {
                 zarazTrack('adopter_updated', { source: 'append' });
                 router.push(`/adopter/${result.adopterId}`);
+            } else if (result.error === CONTACT_ENTRIES_FULL) {
+                // An expected rule (the profile holds the most contacts it can), not a failure: a warning, no Error ID.
+                toast.warning(t('adopter.ce_add_full'));
+                setContinueBusyId(null);
+                setPendingMerge(null);
             } else {
-                // eslint-disable-next-line no-alert
-                alert(result.error || 'No se pudo continuar con este perfil');
+                // The server's message may already carry its Error ID («…(Error ID: x)»): resolveErrorId reuses it.
+                toast.error(t('toast.save_error_title'), t('adopter.merge_continue_failed'),
+                    resolveErrorId(new Error(`appendToExistingAdopter ${targetId}: ${result.error || 'failed'}`), 'AdopterForm.confirmMerge'));
                 setContinueBusyId(null);
                 setPendingMerge(null);
             }
         } catch (e) {
-            // eslint-disable-next-line no-alert
-            if (!handledAsStale(e)) alert(e instanceof Error ? e.message : 'Error inesperado');
+            if (!handledAsStale(e)) {
+                toast.error(t('toast.save_error_title'), userFacingMessage(e, t('adopter.merge_continue_failed')), resolveErrorId(e, 'AdopterForm.confirmMerge'));
+            }
             setContinueBusyId(null);
             setPendingMerge(null);
         }
-    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router]);
+    }, [pendingMerge, continueBusyId, data.contactInfo, data.familyMembers, contactEntries, router, t, toast]);
 
     // Debounced duplicate search while typing (create only)
     useEffect(() => {
@@ -515,6 +556,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         duplicateDebounceRef.current = setTimeout(async () => {
             duplicateDebounceRef.current = null;
             setDuplicateSearching(true);
+            setDuplicateSearchErrorId(null);
             try {
                 const response = await findFormDuplicates(getDuplicateInput(), { minRelevance: 15 });
                 const confident = (response.results as DiscoveryMatch[]);
@@ -523,8 +565,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 } else {
                     setDuplicateResults(confident.slice(0, MAX_DUPLICATE_CARD_RESULTS));
                 }
-            } catch {
+            } catch (e) {
                 setDuplicateResults(null);
+                // A tab older than the deployment gets its own «new version» notice; nothing to retry.
+                if (!handledAsStale(e)) setDuplicateSearchErrorId(resolveErrorId(e, 'AdopterForm.duplicateSearch'));
             } finally {
                 setDuplicateSearching(false);
             }
@@ -532,7 +576,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         return () => {
             if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
         };
-    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, getDuplicateInput, normalizeDetectionQuery]);
+    }, [isNew, data.name, data.contactInfo, getDuplicateSearchQuery, getDuplicateInput, normalizeDetectionQuery, duplicateRetry]);
 
     // Perform the actual save (used after "Create new anyway" or when no duplicates)
     const performActualSave = useCallback(async () => {
@@ -661,6 +705,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     toast.error(t('toast.save_error_title'), t('collab.busy'), res.errorId);
                     return;
                 }
+                if (res.error === CONTACT_ENTRIES_FULL) {
+                    toast.error(t('toast.save_error_title'), t('adopter.ce_add_full'), res.errorId);
+                    return;
+                }
                 const errorId = await reportClientError({
                     message: `saveAdopter returned success=false${res && 'error' in res && res.error ? `: ${res.error}` : ''}`,
                     source: 'AdopterForm.performActualSave',
@@ -729,7 +777,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     // dismissed from the strong strip. Weak-only result sets save silently
                     // (the peek bar was enough). Per Phase D of the dedup-UX redesign.
                     const strongUndismissed = confident.filter(m =>
-                        hasStrongMatch(m.matchValues) && !dismissedStrongIds.has(m.adopter.id),
+                        isSamePerson(m) && !dismissedStrongIds.has(m.adopter.id),
                     );
                     if (strongUndismissed.length > 0) {
                         setSaveDuplicateModal({ matches: strongUndismissed });
@@ -775,7 +823,76 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     //
     // `force` = «Guardar la mía igual»: the editor has seen the teammate's
     // value, so that value becomes the one compared against.
+    // The NAME of an existing profile is open to anyone signed in (households as
+    // profiles, Jon 2026-10-27): it goes through changeProfileName — compare-and-set
+    // on the name this tab loaded, the old name kept as «Conocido/a como», the
+    // owner's team told with «Deshacer». Same conflict UX as every inline field.
+    const saveName = useCallback(async (next: string, opts?: { force?: boolean }): Promise<boolean> => {
+        const prevData = dataRef.current;
+        const seen = fieldConflictsRef.current.name;
+        const expectedName = opts?.force && seen ? (seen.value ?? '') : (baselineRef.current.name ?? '');
+        const optimistic = { ...prevData, name: next };
+        setData(optimistic);
+        dataRef.current = optimistic;
+        const revert = () => { setData(prevData); dataRef.current = prevData; };
+        let res: Awaited<ReturnType<typeof changeProfileName>>;
+        try {
+            const { familyMembers } = baselineRef.current;
+            res = await changeProfileName({ adopterId: prevData.id, name: next, expectedName, loaded: { familyMembers } });
+        } catch (e) {
+            revert();
+            if (!handledAsStale(e)) toast.error(t('toast.save_error_title'), t('adopter.rename_failed'), resolveErrorId(e, 'AdopterForm.saveName'));
+            return false;
+        }
+        if (!res.ok) {
+            if (res.error === 'conflict') {
+                // Nothing of theirs was overwritten: show their name, keep my text open beside «Guardar la mía igual».
+                baselineRef.current = { ...baselineRef.current, name: res.theirs };
+                const display = { ...prevData, name: res.theirs };
+                setData(display);
+                dataRef.current = display;
+                setFieldConflicts(c => ({ ...c, name: { by: res.by, value: res.theirs } }));
+                toast.warning(needsReviewMessage(t, 'name'));
+                return false;
+            }
+            revert();
+            if (res.error === 'busy') {
+                toast.error(t('toast.save_error_title'), t('collab.busy'), res.errorId);
+                return false;
+            }
+            if (res.error === 'rate_limited') {
+                toast.warning(t('adopter.rename_rate_limited'));
+                return false;
+            }
+            const errorId = res.errorId ?? await reportClientError({
+                message: `changeProfileName failed: ${res.error}`,
+                source: 'AdopterForm.saveName',
+                extra: { adopterId: prevData.id || null },
+            });
+            toast.error(t('toast.save_error_title'), t('adopter.rename_failed'), errorId);
+            return false;
+        }
+        // Fields a teammate changed that this editor didn't: show theirs («Actualizado por …»).
+        const others = (res.updatedByOthers ?? []).filter(o => o.field === 'familyMembers');
+        baselineRef.current = { ...baselineRef.current, name: res.name, ...Object.fromEntries(others.map(o => [o.field, o.value])) };
+        const display = { ...dataRef.current, name: res.name };
+        for (const o of others) display.familyMembers = o.value ?? '';
+        setData(display);
+        dataRef.current = display;
+        if (others.length) {
+            setFieldUpdatedBy(u => ({ ...u, ...Object.fromEntries(others.map(o => [o.field, o.by])) }));
+            for (const o of others) toast.info(updatedByOtherMessage(t, o.field, o.by));
+        }
+        setFieldConflicts(c => { const n = { ...c }; delete n.name; return n; });
+        setFieldUpdatedBy(u => { const n = { ...u }; delete n.name; return n; });
+        zarazTrack('adopter_updated', { source: 'inline', field: 'name' });
+        // «Conocido/a como» and the history come from the server.
+        router.refresh();
+        return true;
+    }, [toast, t, router]);
+
     const saveField = useCallback(async (field: 'name' | 'familyMembers', next: string, opts?: { force?: boolean }): Promise<boolean> => {
+        if (field === 'name') return saveName(next, opts);
         const prevData = dataRef.current;
         const updated = { ...prevData, [field]: next };
         setData(updated);
@@ -845,7 +962,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         setFieldUpdatedBy(u => { const n = { ...u }; delete n[field]; return n; });
         zarazTrack('adopter_updated', { source: 'inline', field });
         return true;
-    }, [toast, t]);
+    }, [toast, t, saveName]);
 
     // «Quedarme con la de <Nombre>»: their value is already stored — just show it.
     const keepTheirs = useCallback((field: 'name' | 'familyMembers') => {
@@ -918,7 +1035,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     const hasLegacyFamilyText = !!data.familyMembers?.trim();
 
     return (
-        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-hidden ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
+        // `overflow-x-clip`, not `overflow-hidden`: still nothing wider than the card on a phone, but a menu
+        // opened near the bottom («¿En qué hogar?», a household row's ⋯) may hang below the card instead of
+        // being cut off by it — with `overflow-hidden` «¿En qué hogar?» was invisible.
+        <div className={`bg-white rounded-2xl shadow-sm border border-stone-200 relative group transition-all duration-300 overflow-x-clip ${isEditing ? 'ring-4 ring-teal-50/50' : ''}`}>
 
             {/* Hoisted hidden file input — triggered by both the empty-state camera button
                 AND the "Cambiar foto" action inside the profile-photo lightbox. Single ref,
@@ -952,20 +1072,35 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     keeps its inline header buttons below. */}
                 {isNew && isEditing && (
                     <>
+                        {duplicateSearchErrorId && (
+                            <div role="status" data-testid="dup-search-failed" className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                                <span>{t('adopter.dup_search_failed')}</span>
+                                <span aria-hidden>·</span>
+                                <button
+                                    type="button"
+                                    data-testid="dup-search-retry"
+                                    onClick={() => { setDuplicateSearchErrorId(null); setDuplicateRetry(n => n + 1); }}
+                                    className="min-h-[44px] px-2 font-semibold underline underline-offset-2"
+                                >
+                                    {t('adopter.dup_search_retry')}
+                                </button>
+                                <span className="text-xs text-amber-800">#{duplicateSearchErrorId}</span>
+                            </div>
+                        )}
                         <DuplicatePeek
+                            compareSource={compareSource}
                             results={duplicateResults}
                             searching={duplicateSearching}
                             onContinueWith={handleContinueWith}
                             busyAdopterId={continueBusyId}
+                            dismissedIds={dismissedStrongIds}
+                            onNotThis={dismissStrongMatch}
                         />
                         <StrongMatchStrip
+                            compareSource={compareSource}
                             results={duplicateResults}
                             dismissedIds={dismissedStrongIds}
-                            onDismiss={(id) => setDismissedStrongIds(prev => {
-                                const next = new Set(prev);
-                                next.add(id);
-                                return next;
-                            })}
+                            onDismiss={dismissStrongMatch}
                             onContinueWith={handleContinueWith}
                             busyAdopterId={continueBusyId}
                         />
@@ -1096,6 +1231,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                 if (e.target.value.trim()) { setDontKnowName(false); setNameHint(false); }
                                             }}
                                             placeholder={t('adopter.placeholder_name_aliases')}
+                                            data-testid="adopter-name-input"
                                             autoFocus
                                         />
                                         {(nameHint || dontKnowName) && (
@@ -1158,7 +1294,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         return (
                                             <InlineEditField
                                                 value={data.name}
-                                                canEdit={canEdit}
+                                                canEdit={!!isAuthenticated}
                                                 required
                                                 ariaLabel={displayName}
                                                 editButtonTestId="name-edit-btn"
@@ -1221,6 +1357,15 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                             );
                                         })()}
                                       </div>
+                                      {/* Anyone signed in can rename: say what happens to the old name (not to the owner's team — it's theirs). */}
+                                      {nameEditing && !isPrivileged && (
+                                          <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }} data-testid="rename-hint">{t('adopter.rename_hint')}</p>
+                                      )}
+                                      {/* Previous names a rename kept: still found by search, never listed with the contacts. */}
+                                      {/* The team (and admins/moderators) may take out a junk one. */}
+                                      {!isNew && !!identity?.knownAsEntries.length && initialData?.id && (
+                                          <KnownAsLine adopterId={initialData.id} entries={identity.knownAsEntries} canRemove={canEditAllHousehold} />
+                                      )}
                                       {/* Sub-identifier for a nameless adopter — only when the
                                           contact reaching this form is unmasked for the viewer
                                           (isPrivileged); a masked contact would be useless noise. */}
@@ -1242,21 +1387,13 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         // are hidden so the name input gets the full row width; the
                                         // sticky bottom bar (below, md:hidden) carries the actions there.
                                         <div className="hidden md:flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={handleCancel}
-                                                className="px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors"
-                                            >
+                                            {/* The button matrix (Secondary «Cancelar» + Primary «Guardar»), as in every dialog and inline editor. */}
+                                            <Button type="button" variant="secondary" size="compact" onClick={handleCancel}>
                                                 {t('common.cancel')}
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                disabled={loading}
-                                                data-testid="adopter-form-submit"
-                                                className="px-4 py-1.5 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 focus:ring-4 focus:ring-teal-200 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg shadow-teal-700/30 transform active:scale-95"
-                                            >
+                                            </Button>
+                                            <Button type="submit" variant="primary" size="compact" disabled={loading} data-testid="adopter-form-submit">
                                                 {loading ? t('common.loading') : t('common.save')}
-                                            </button>
+                                            </Button>
                                         </div>
                                     ) : (
                                         <>
@@ -1264,127 +1401,86 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                                 profile is directly editable inline (see InlineEditField). */}
                                             {/* Overflow menu */}
                                             {!isNew && initialData && (
-                                                <div className="relative">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowReportMenu(!showReportMenu)}
-                                                        data-testid="profile-overflow"
-                                                        className="flex items-center gap-1 p-1.5 rounded-lg text-stone-500 bg-stone-50 hover:text-stone-600 hover:bg-stone-100 transition-all duration-150"
-                                                        title={t('flagging.report_actions') || 'Report'}
-                                                    >
-                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                                            <circle cx="5" cy="12" r="2" />
-                                                            <circle cx="12" cy="12" r="2" />
-                                                            <circle cx="19" cy="12" r="2" />
-                                                        </svg>
-                                                    </button>
-                                                    {showReportMenu && (
-                                                        <>
-                                                            <div className="fixed inset-0 z-40" onClick={() => setShowReportMenu(false)} />
-                                                            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                                                                {interviewEnabled && initialData?.id && (
-                                                                    <a href={`/interview?adopterId=${encodeURIComponent(initialData.id)}`} data-testid="profile-interview"
-                                                                        onClick={() => setShowReportMenu(false)}
-                                                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left">
-                                                                        <svg className="w-5 h-5 mt-0.5 text-teal-700" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
-                                                                            <path d="M5.5 3h2l1 4-1.5 1a9 9 0 004.5 4.5l1-1.5 4 1v2a2 2 0 01-2 2A13 13 0 013.5 5a2 2 0 012-2z" strokeLinejoin="round" />
-                                                                        </svg>
-                                                                        <div>
-                                                                            <div className="text-sm font-semibold text-stone-900">{t('interview.start_from_profile')}</div>
-                                                                            <div className="text-xs text-stone-500 mt-0.5">{t('interview.start_from_profile_desc')}</div>
-                                                                        </div>
-                                                                    </a>
-                                                                )}
-                                                                {/* Share Profile */}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={async () => {
-                                                                        const url = `${window.location.origin}/adopter/${id}`;
-                                                                        if (navigator.share) {
-                                                                            try { await navigator.share({ title: initialData?.name || '', url }); } catch { /* cancelled */ }
-                                                                        } else {
-                                                                            try { await navigator.clipboard.writeText(url); } catch {
-                                                                                const ta = document.createElement('textarea'); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-                                                                            }
-                                                                        }
-                                                                        setShowReportMenu(false);
-                                                                    }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">🔗</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-stone-900">{t('common.share') || 'Share Profile'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('common.copy_link') || 'Copy link or share'}</div>
-                                                                    </div>
-                                                                </button>
-                                                                <div className="border-t border-stone-100" />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        if (!session?.user) { openLogin(); setShowReportMenu(false); return; }
-                                                                        setShowReportMenu(false);
-                                                                        flaggingRef.current?.openAction('duplicate');
-                                                                    }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">🔀</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_duplicate') || 'Report Duplicate'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'}</div>
-                                                                    </div>
-                                                                </button>
-                                                                <div className="border-t border-stone-100" />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('inaccuracy'); }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">✏️</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-stone-900">{t('flagging.menu_inaccuracy') || 'Report Inaccuracy'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_inaccuracy_desc') || 'Information about me is wrong'}</div>
-                                                                    </div>
-                                                                </button>
-                                                                <div className="border-t border-stone-100" />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => { setShowReportMenu(false); flaggingRef.current?.openAction('deletion'); }}
-                                                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-stone-50 transition-colors text-left"
-                                                                >
-                                                                    <span className="text-lg mt-0.5">🗑️</span>
-                                                                    <div>
-                                                                        <div className="text-sm font-semibold text-rose-700">{t('flagging.menu_deletion') || 'Request Removal'}</div>
-                                                                        <div className="text-xs text-stone-500 mt-0.5">{t('flagging.menu_deletion_desc') || 'Remove my data from this platform'}</div>
-                                                                    </div>
-                                                                </button>
-                                                            </div>
-                                                        </>
-                                                    )}
+                                                <div className="relative -my-2 -mr-2">
+                                                    {/* The same «⋯» and menu as a household row (audit B3): 44px, on <body>, lucide items. */}
+                                                    <OverflowMenuButton ref={overflowButtonRef} open={showReportMenu} onClick={() => setShowReportMenu(o => !o)}
+                                                        label={t('flagging.report_actions') || 'Report'} title={t('flagging.report_actions') || 'Report'} testId="profile-overflow" />
+                                                    <AnchoredMenu open={showReportMenu} anchorRef={overflowButtonRef} onClose={closeReportMenu} testId="profile-overflow-panel">
+                                                        {interviewEnabled && initialData?.id && (
+                                                            <AnchoredMenuItem icon={Phone} href={`/interview?adopterId=${encodeURIComponent(initialData.id)}`} testId="profile-interview"
+                                                                onClick={() => setShowReportMenu(false)}
+                                                                title={t('interview.start_from_profile')} desc={t('interview.start_from_profile_desc')} />
+                                                        )}
+                                                        <AnchoredMenuItem icon={Share2} testId="profile-share"
+                                                            onClick={async () => {
+                                                                const url = `${window.location.origin}/adopter/${id}`;
+                                                                if (navigator.share) {
+                                                                    try { await navigator.share({ title: initialData?.name || '', url }); } catch { /* cancelled */ }
+                                                                } else {
+                                                                    try { await navigator.clipboard.writeText(url); } catch {
+                                                                        const ta = document.createElement('textarea'); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+                                                                    }
+                                                                }
+                                                                setShowReportMenu(false);
+                                                            }}
+                                                            title={t('common.share') || 'Share profile'} desc={t('common.copy_link') || 'Copy link or share'} />
+                                                        <AnchoredMenuItem icon={GitMerge} testId="profile-report-duplicate"
+                                                            onClick={() => {
+                                                                setShowReportMenu(false);
+                                                                if (!session?.user) { openLogin(); return; }
+                                                                flaggingRef.current?.openAction('duplicate');
+                                                            }}
+                                                            title={t('flagging.menu_duplicate') || 'Report duplicate'} desc={t('flagging.menu_duplicate_desc') || 'Flag as duplicate of another profile'} />
+                                                        {/* Only for people who can't fix it themselves (Jon 2026-10-31): whoever can edit
+                                                            every detail — owner, their team, admins — just edits it. */}
+                                                        {!canEditAllHousehold && (
+                                                            <AnchoredMenuItem icon={PencilLine} testId="profile-report-inaccuracy"
+                                                                onClick={() => {
+                                                                    setShowReportMenu(false);
+                                                                    if (!session?.user) { openLogin(); return; }
+                                                                    flaggingRef.current?.openAction('inaccuracy');
+                                                                }}
+                                                                title={t('flagging.menu_inaccuracy') || 'Report inaccuracy'} desc={t('flagging.menu_inaccuracy_desc') || 'The information is wrong'} />
+                                                        )}
+                                                        <AnchoredMenuItem icon={Trash2} danger testId="profile-request-removal"
+                                                            onClick={() => {
+                                                                setShowReportMenu(false);
+                                                                if (!session?.user) { openLogin(); return; }
+                                                                flaggingRef.current?.openAction('deletion');
+                                                            }}
+                                                            title={t('flagging.menu_deletion') || 'Request removal'} desc={t('flagging.menu_deletion_desc') || 'Remove my data from this platform'} />
+                                                    </AnchoredMenu>
                                                 </div>
                                             )}
                                         </>
                                     )}
                                 </div>
                             </div>
-                            {/* Verdict — the rating is the single most important at-a-glance
-                                signal on a vetting tool, so it's promoted (md, with label) to its
-                                own prominent row right under the name, not buried in the meta row. */}
-                            {!isNew && avgRating !== null && avgRating !== undefined && (
-                                <div className="mt-2">
-                                    <div
-                                        role="button"
-                                        tabIndex={0}
-                                        data-testid="rating-badge"
-                                        onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
-                                        className="inline-block cursor-pointer hover:shadow-md transition-shadow rounded-full"
-                                    >
-                                        <RatingBadge rating={avgRating} size="md" label="short" />
-                                    </div>
+                            {/* Verdict — the rating, right under the name: the one rating pill, the same size as on a
+                                household row or a card (Jon, 2026-10-28), «Sin calificación» when unrated. A minor's tag
+                                sits before it (audit B5) — an informational marker only (Jon, 2026-10-28). */}
+                            {!isNew && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="profile-rating-row">
+                                    {identity?.isMinor && <MinorTag />}
+                                    {avgRating !== null && avgRating !== undefined ? (
+                                        <span
+                                            role="button"
+                                            tabIndex={0}
+                                            data-testid="rating-badge"
+                                            onClick={() => document.getElementById('adoptions-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                            className={`inline-flex cursor-pointer hover:opacity-90 transition-opacity rounded-full ${TAP_TARGET_44}`}
+                                        >
+                                            <RatingBadge rating={avgRating} />
+                                        </span>
+                                    ) : <RatingBadge rating={null} />}
                                 </div>
                             )}
                             {/* Metadata row */}
                             {!isNew && (
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs">
+                                    {identity?.age != null && (
+                                        <span className="font-semibold text-stone-600" data-testid="profile-age">{t('adopter.hh_years').replace('{n}', String(identity.age))}</span>
+                                    )}
                                     {/* Creator byline (v2.18.15). First item in the meta
                                         row because "who created this" is the most
                                         identifying piece of record metadata. Privileged
@@ -1438,6 +1534,15 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             tooManyAdoptions={adoptionsDensity.count >= threshold ? { count: adoptionsDensity.count, actualSpanDays: adoptionsDensity.timeSpanDays, periodDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate } : undefined}
                             tooManyRequests={requestsDensity.count >= requestsThreshold ? { count: requestsDensity.count, actualSpanDays: requestsDensity.timeSpanDays, periodDays: requestsPeriodDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate } : undefined}
                             hasDuplicateBanner={hasDuplicateBanner}
+                            compareSource={{ ...compareSource, kind: 'profile' }}
+                            // The housemate alerts (Jon 2026-11-01): here a tap goes to the section that lists everyone.
+                            housemateAlert={enableHousehold ? households.housemateAlert : undefined}
+                            // A link to the section (review fix 7): smooth there, clear of the sticky nav (scroll-mt-20), and
+                            // focus lands on its heading, so a keyboard or screen-reader user arrives too.
+                            onHousemateAlert={(e) => {
+                                // No section on the page: the link's own jump.
+                                if (goToHouseholdSection(document, { smooth: true })) e.preventDefault();
+                            }}
                         />
                     </div>
                 )}
@@ -1501,15 +1606,20 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     </div>
 
 
-                    {/* Family Members (Full Width) */}
-                    <div className="md:col-span-2">
-                        <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.family_members')}</h3>
+                    {/* Family Members (Full Width). The header's housemate alerts scroll here (clear of the h-16 sticky nav). */}
+                    <div id={HOUSEHOLD_SECTION_ID} className="md:col-span-2 min-w-0 scroll-mt-20">
+                        <h3 id={HOUSEHOLD_SECTION_HEADING_ID} tabIndex={-1} className="text-sm font-semibold text-teal-800 mb-2 uppercase tracking-wider focus:outline-none">{t('adopter.family_members')}</h3>
                         {!isNew && enableHousehold && adopterId ? (
                             <div className="space-y-3">
                                 <HouseholdSection
                                     adopterId={adopterId}
-                                    initialMembers={deserializeHouseholdMembers(initialData?.householdMembers)}
-                                    canEdit={canEdit}
+                                    hostName={initialData?.name ?? ''}
+                                    data={households}
+                                    // Anyone signed in adds (a stranger too, so also in the preview).
+                                    signedIn={!!isAuthenticated}
+                                    currentUser={previewAsStranger ? undefined : currentUser}
+                                    isAdmin={isAdmin && !previewAsStranger}
+                                    preview={previewAsStranger}
                                     hasLegacyText={hasLegacyFamilyText}
                                 />
                                 {hasLegacyFamilyText && (
@@ -1538,150 +1648,67 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 </div>
             </form>
 
-            {/* Save confirmation modal when possible duplicates found */}
+            {/* Save check: strong matches still on the strip when «Guardar» is pressed. The shared dialog
+                (audit B8) with the shared match cards (audit B6) — the same header, order and actions as
+                the «Posibles coincidencias» panel. */}
             {saveDuplicateModal && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200"
-                    onClick={() => setSaveDuplicateModal(null)}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="save-duplicate-modal-title"
-                    aria-describedby="save-duplicate-modal-desc"
-                >
-                    <div
-                        ref={saveDuplicateModalRef}
-                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md max-h-[90svh] overflow-y-auto animate-in zoom-in-95 duration-200"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h2 id="save-duplicate-modal-title" className="text-lg font-semibold text-stone-900 p-5 pb-2">
-                            {t('import.saveModal_title') || 'Possible duplicate profiles'}
-                        </h2>
-                        <p id="save-duplicate-modal-desc" className="text-sm text-stone-600 px-5 pb-4">
-                            {t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}
-                        </p>
-                        <ul className="px-5 space-y-2 max-h-48 overflow-y-auto">
-                            {saveDuplicateModal.matches.map((result) => (
-                                <li key={result.adopter.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-stone-50 border border-stone-200">
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                        {result.thumbnail ? (
-                                            <img src={result.thumbnail} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                                        ) : (
-                                            <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-semibold flex-shrink-0">
-                                                {result.adopter.name?.charAt(0)?.toUpperCase() || '?'}
-                                            </div>
-                                        )}
-                                        <div className="min-w-0">
-                                            <p className="font-semibold text-stone-800 truncate">{result.adopter.name}</p>
-                                            {result.adopter.contactInfo && (
-                                                <p className="text-xs text-stone-500 truncate">{result.adopter.contactInfo}</p>
-                                            )}
-                                            <MatchChipsRow chips={buildMatchChips(result.matchValues, t)} />
-                                        </div>
-                                    </div>
-                                    <a
-                                        href={`/adopter/${result.adopter.id}`}
-                                        className="px-3 py-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex-shrink-0"
-                                    >
-                                        {t('import.saveModal_use_existing') || 'Use existing profile'}
-                                    </a>
-                                </li>
-                            ))}
-                        </ul>
-                        <div className="p-5 pt-4 flex flex-col sm:flex-row gap-2 sm:justify-end border-t border-stone-100">
-                            <button
-                                type="button"
-                                ref={createAnywayButtonRef}
-                                onClick={async () => {
-                                    setSaveDuplicateModal(null);
-                                    await performActualSave();
-                                }}
-                                className="px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors"
-                            >
-                                {t('import.saveModal_create_anyway') || 'Create new profile anyway'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSaveDuplicateModal(null)}
-                                className="px-4 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors"
-                            >
-                                {t('common.cancel')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <Modal title={t('import.saveModal_title') || 'Possible duplicate profiles'} onClose={() => setSaveDuplicateModal(null)} testId="save-duplicate-modal" size="lg">
+                    <ModalText>{t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}</ModalText>
+                    <ul className="space-y-2">
+                        {saveDuplicateModal.matches.map((result) => (
+                            <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                                <MatchCard newTab thumbnail={result.thumbnail} headTestId="save-dup-head"
+                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
+                                    nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
+                                    compare={(
+                                        <MatchCompare
+                                            adopterId={result.adopter.id}
+                                            matchTypes={result.matchTypes}
+                                            profileName={result.adopter.name ?? ''}
+                                            source={compareSource}
+                                            profileEntries={entriesAsShown(result.adopter)}
+                                            score={result.relevancePercent}
+                                            defaultOpen={saveDuplicateModal.matches.length === 1}
+                                            t={t}
+                                        />
+                                    )}
+                                    actions={{
+                                        busy: continueBusyId === result.adopter.id,
+                                        // The same step as the panel: the typed data goes into that profile, after its confirm.
+                                        onSame: () => { setSaveDuplicateModal(null); handleContinueWith(result.adopter.id, result); },
+                                        sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
+                                        onNotThis: () => dismissStrongMatch(result.adopter.id),
+                                        notThisTestId: 'save-dup-not-this',
+                                    }} />
+                            </li>
+                        ))}
+                    </ul>
+                    <ModalActions
+                        onCancel={() => setSaveDuplicateModal(null)}
+                        confirm={{
+                            label: t('import.saveModal_create_anyway') || 'Create new profile anyway',
+                            tone: 'primary',
+                            testId: 'save-dup-create-anyway',
+                            onClick: async () => { setSaveDuplicateModal(null); await performActualSave(); },
+                        }}
+                    />
+                </Modal>
             )}
 
-            {/* Confirmation: "Continuar con este perfil" merges typed data into target */}
+            {/* «Continuar con este perfil»: the typed data goes into that profile — the shared dialog (audit B8). */}
             {pendingMerge && (
-                <div
-                    className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm animate-in fade-in duration-200"
-                    onClick={() => continueBusyId ? undefined : setPendingMerge(null)}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="continue-merge-title"
-                >
-                    <div
-                        className="relative bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-md animate-in zoom-in-95 duration-200"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="p-5 pb-3 border-b border-stone-100">
-                            <h2 id="continue-merge-title" className="text-lg font-semibold text-stone-900">
-                                {(t('adopter.merge_confirm_title') || '¿Continuar con el perfil de {name}?').replace('{name}', pendingMerge.adopterName)}
-                            </h2>
-                            <p className="text-sm text-stone-600 mt-2">
-                                {t('adopter.merge_confirm_body') || 'La información que ingresaste se agregará a este perfil. Los datos que ya existan en el perfil no se duplicarán.'}
-                            </p>
-                        </div>
-                        {(data.contactInfo?.trim() || data.familyMembers?.trim()) ? (
-                            <div className="px-5 py-3 bg-amber-50 border-y border-amber-100">
-                                <p className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2">
-                                    {t('adopter.merge_confirm_preview') || 'Se agregará:'}
-                                </p>
-                                <ul className="space-y-1.5 text-sm text-stone-800">
-                                    {data.contactInfo?.trim() && (
-                                        <li>
-                                            <span className="text-xs font-medium text-stone-500">{t('adopter.contact') || 'Contacto'}: </span>
-                                            <span className="break-words">{data.contactInfo.trim()}</span>
-                                        </li>
-                                    )}
-                                    {data.familyMembers?.trim() && (
-                                        <li>
-                                            <span className="text-xs font-medium text-stone-500">{t('adopter.family_members') || 'Familia'}: </span>
-                                            <span className="break-words">{data.familyMembers.trim()}</span>
-                                        </li>
-                                    )}
-                                </ul>
-                            </div>
-                        ) : (
-                            <div className="px-5 py-3 bg-stone-50 border-y border-stone-100">
-                                <p className="text-sm text-stone-600">
-                                    {t('adopter.merge_confirm_no_new') || 'No hay información nueva para agregar. Solo abriremos el perfil existente.'}
-                                </p>
-                            </div>
-                        )}
-                        <div className="p-5 pt-4 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
-                            <button
-                                type="button"
-                                onClick={() => setPendingMerge(null)}
-                                disabled={!!continueBusyId}
-                                className="px-4 py-2.5 text-sm font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 rounded-xl transition-colors"
-                            >
-                                {t('common.cancel') || 'Cancelar'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={confirmMerge}
-                                disabled={!!continueBusyId}
-                                autoFocus
-                                className="px-4 py-2.5 text-sm font-semibold text-white bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-xl transition-colors shadow-lg shadow-teal-700/30"
-                            >
-                                {continueBusyId
-                                    ? (t('common.processing') || 'Procesando...')
-                                    : (t('adopter.merge_confirm_action') || 'Sí, continuar')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ContinueMergeDialog
+                    name={pendingMerge.adopterName}
+                    // What the typed data would ADD to that profile (fix round 2, item 20): the typed contacts
+                    // it doesn't already show (newContactsForProfile mirrors the server's merge), else — no
+                    // contact chips — the typed text; plus the household text.
+                    newContacts={contactEntries.length ? newContactsForProfile(contactEntries, pendingMerge.match.adopter, pendingMerge.match.matchValues) : []}
+                    typedText={contactEntries.length ? '' : (data.contactInfo?.trim() ?? '')}
+                    family={data.familyMembers?.trim() ?? ''}
+                    busy={!!continueBusyId}
+                    onCancel={() => setPendingMerge(null)}
+                    onConfirm={() => { void confirmMerge(); }}
+                />
             )}
 
         </div>

@@ -10,6 +10,8 @@ interface StarRatingProps {
     onChange?: (value: number) => void;
     size?: 'sm' | 'md' | 'lg';
     showLabel?: boolean;
+    /** The «Quitar» control. Re-tapping the current star still clears either way. */
+    clearable?: boolean;
 }
 
 const sizeConfig = {
@@ -18,7 +20,7 @@ const sizeConfig = {
     lg: { star: 'w-8 h-8', gap: 'gap-1.5', text: 'text-base' },
 };
 
-export function StarRating({ value, onChange, size = 'md', showLabel = false }: StarRatingProps) {
+export function StarRating({ value, onChange, size = 'md', showLabel = false, clearable = true }: StarRatingProps) {
     const { t } = useLanguage();
     const interactive = !!onChange;
     // 0 = not rated yet: five empty stars, no label (never clamp up to level 1).
@@ -66,7 +68,7 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false }: 
                     {t('ratings.none')}
                 </span>
             )}
-            {interactive && level > 0 && (
+            {interactive && clearable && level > 0 && (
                 <button
                     type="button"
                     onClick={() => onChange?.(0)}

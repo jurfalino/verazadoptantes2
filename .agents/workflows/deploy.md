@@ -31,15 +31,18 @@ description: How to commit, tag, and deploy changes. MUST be followed for ANY gi
 Pipeline jobs on push to `staging` or `master`:
 
 ```
-build-and-lint  →  migrate-{staging|production}  →  e2e (Playwright)  →  deploy-{staging|production}
+build-and-lint  →  migrate-{staging|production}  ─┐
+build-cf  →  e2e-cf (Playwright on the Cloudflare build, blocking)  ─┴→  deploy-{staging|production}
+e2e (Playwright on next dev) — one-week fallback, not a gate, staging only (until ~2026-11-11)
 ```
 
 - **`build-and-lint`** must pass (tsc, lint, `npm run build`).
 - **`migrate-*`** applies D1 migrations via wrangler.
-- **`e2e`** runs the full Playwright suite. **It is a blocking dependency for the deploy job** — failing tests will prevent the deploy. (The comment in the YAML claims tests are "non-blocking", but `deploy-staging`/`deploy-production` both list `e2e` in `needs:`, so it gates the deploy.)
+- **`e2e-cf`** runs the full Playwright suite against the Cloudflare build (`playwright.cf.config.ts`). **It is the blocking dependency for the deploy job** — `deploy-staging`/`deploy-production` list `e2e-cf` in `needs:`, so any red leg prevents the deploy.
+- **`e2e`** (next dev) is a one-week fallback since v2.58.19: not a gate, staging only. A red fallback leg turns the run red after a successful deploy — read the deploy job's result, not the run's.
 - **`deploy-*`** runs `npx @cloudflare/next-on-pages` then `npx wrangler pages deploy ... --branch="<staging|master>"`.
 
-End-to-end pipeline takes **~8–15 minutes**. Watch progress at:
+End-to-end pipeline takes **~16 minutes**. Watch progress at:
 - `gh run list --branch <staging|master> --limit 3`
 - `gh run watch <run-id>`
 - Or the GitHub Actions tab on the repo.
@@ -142,7 +145,7 @@ git push origin HEAD:staging
 Staging URL: https://staging.verazadoptantes2.pages.dev
 GitHub Actions run: https://github.com/jurfalino/verazadoptantes2/actions
 ```
-The full pipeline (build-and-lint → migrate-staging → e2e → deploy-staging) takes **~8–15 min**. The new build only goes live after `deploy-staging` finishes — not when the push lands on the branch. Check progress with:
+The full pipeline (build-and-lint → migrate-staging, build-cf → e2e-cf → deploy-staging) takes **~16 min**. The new build only goes live after `deploy-staging` finishes — not when the push lands on the branch. Check progress with:
 ```
 gh run list --branch staging --limit 3
 gh run watch <run-id>   # to follow live
@@ -176,6 +179,78 @@ git push origin v<version>
 ```
 
 
+
+## 🏠 Households release (v2.58) — runbook
+
+Households-as-profiles turns every inline household member into a profile with a membership. These steps are for the
+**production** release; staging was converted the same way. **Every write below (bulk conversion, Scan Now) needs Jon's
+OK first** — the steps only say how to run them.
+
+**1. What the deploy itself does — nothing at once.** There is no feature gate: a host's inline members are converted
+the first time that profile's household is read after the deploy (its profile view, or someone adding a person to it),
+one host at a time (`ensureProfileConverted` in `src/lib/householdConversion.ts`, run by `getHouseholds`' pre-read hook). Profiles nobody opens stay unconverted until the bulk
+run (step 3).
+
+**2. D1 Time Travel bookmark — before the prod merge, and again before the bulk run.** Write each one down in the
+release notes; it is the only way back to the data as it was:
+```bash
+npx wrangler d1 time-travel info pet-adoption-db          # prints the current bookmark — copy it
+# only if the data has to go back (destroys everything written after it):
+# npx wrangler d1 time-travel restore pet-adoption-db --bookmark=<bookmark>
+```
+
+**3. Bulk conversion** — `POST /api/admin/households/convert` (admin session; from the browser console of a freshly
+loaded admin tab on buenadoptante.org). One page per call: `budget` = members actually converted (default 10, max 25;
+a host is never split), `limit` = hosts read (default 25). The report carries ids and reasons only.
+```js
+// a) dry run — writes nothing; follow `next` until it is null and read `skipped` / `failed` / `deletedHostsSkipped`
+// The loop STOPS on any error answer (non-2xx, or a body without `next`) and says so — never a silent half run.
+async function convertAll(dryRun) {
+  let next = null, page = 0;
+  do {
+    const res = await fetch(`/api/admin/households/convert?${dryRun ? 'dryRun=1&' : ''}${next ? `cursor=${encodeURIComponent(next)}` : ''}`, { method: 'POST' });
+    const r = await res.json().catch(() => null);
+    if (!res.ok || !r || !('next' in r)) {
+      console.error(`STOPPED at page ${page + 1}: HTTP ${res.status}`, r);
+      throw new Error(`convert stopped at page ${page + 1} (HTTP ${res.status})`);
+    }
+    console.log(++page, { hosts: r.hosts, members: r.members, created: r.createdProfiles, reused: r.reusedProfiles,
+      already: r.alreadyConverted, updated: r.updatedMembers, skipped: r.skipped.length, failed: r.failed, deletedHosts: r.deletedHostsSkipped });
+    if (r.skipped.length) console.table(r.skipped);
+    next = r.next;
+  } while (next);
+  console.log(`DONE: ${page} pages`);
+}
+await convertAll(true);
+// b) the real run — `await convertAll(false)` (Jon's OK first)
+// c) run `await convertAll(false)` once more: no page may convert anything new or fail —
+//    createdProfiles 0, reusedProfiles 0, failed 0 on every page. The same `skipped` members
+//    may come back each time (a member that can't be converted is skipped on every run): that
+//    is fine as long as the list doesn't grow.
+```
+The run is idempotent; members an old tab added since are converted on the re-run.
+
+**4. Scan Now** — Admin → Duplicates → «Scan Now», once the bulk run is done. The new profiles make ~6,000 records stale
+(~239 batches of 25). The panel asks for 100 per batch (~60 batches) and reads the gift forms once per scan, so **one
+click finishes**; wait for «✅ Scan complete». If it stops (stall or retries exhausted), click it again — work already
+done is kept.
+- **Watch the batch duration on the first staging Scan Now.** If a batch of 100 takes more than ~45 s, a dropped
+  connection's retry can reclaim the same admin's lock after 60 s (`SCAN_LOCK_SAME_USER_STALE_MS`) while that batch is
+  still running. In that case lower `SCAN_PAGE_LIMIT` (src/domain/scanResilience.ts) to 50 before the production run.
+
+**5. +1 day and +14 days** — old tabs are served by their own build for up to 14 days (deploy skew), and an old build's
+merge doesn't know memberships:
+```bash
+node scripts/list-old-build-merges.mjs --since <release date YYYY-MM-DD>   # read-only; look at each listed merge
+```
+Then run **Scan Now** again (an old tab's edits leave records stale).
+
+**6. Rollback consequences** — read before choosing Cloudflare's «Rollback to this deployment»:
+- the old build still reads the inline household JSON **and** shows the converted people as ordinary profiles, so
+  **every converted person appears twice** on their host's profile;
+- **households added on 2.58** (memberships only, no inline JSON) are **invisible** on the old build;
+- the data is not rolled back by a deploy rollback — only the Time Travel bookmark (step 2) does that, and it also
+  drops everything written since.
 
 ## 🗃️ Database Migrations
 
@@ -214,7 +289,7 @@ git pull
 git revert HEAD
 git push origin master   # ← only via PR, see Forbidden Commands
 ```
-This kicks off the full ~10–15 min pipeline. Only use when you also want CI/migrations to run on the rollback (e.g. the bad commit added a migration that needs reverting too).
+This kicks off the full 17–34 min pipeline. Only use when you also want CI/migrations to run on the rollback (e.g. the bad commit added a migration that needs reverting too).
 
 ## ⛔ Forbidden Commands
 These commands must NEVER be run without explicit user approval:

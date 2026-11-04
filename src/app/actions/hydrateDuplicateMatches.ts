@@ -27,6 +27,7 @@ import { toGuestMatch } from '@/lib/guestMatch';
 import { NO_ACCESS_VISIBILITY } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
+import { withHouseholdLines } from '@/lib/households';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
 const DEFAULT_STATS = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
@@ -60,9 +61,10 @@ export async function hydrateDuplicateMatches(
 
     const ids = matches.map(m => m.adopterId);
     const rows = (await Promise.all(ids.map(id =>
-        db.select().from(adopters)
+        // Wrapped so a synchronous driver (better-sqlite3: local dev, tests) gets a promise too.
+        (async () => db.select().from(adopters)
             .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
-            .get()
+            .get())()
             .catch((e: unknown) => {
                 logger.warn('hydrateDuplicateMatches: adopter row lookup fallback', {
                     adopterId: id, error: e instanceof Error ? e.message : String(e),
@@ -118,5 +120,10 @@ export async function hydrateDuplicateMatches(
     }
 
     results.sort((a, b) => b.relevancePercent - a.relevancePercent);
+    // «¿Es este perfil?»: each candidate's household line (housemates' live rating,
+    // alerts, minor tag), one batched read — signed-in viewers only (it names people).
+    if (!opts.isUnauthenticated && opts.viewer && opts.viewer !== 'unknown') {
+        return withHouseholdLines(db, opts.viewer, results);
+    }
     return results;
 }

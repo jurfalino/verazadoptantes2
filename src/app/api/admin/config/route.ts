@@ -98,6 +98,8 @@ export async function GET() {
             ENABLE_ORIGIN_LABELS: config['ENABLE_ORIGIN_LABELS'] || 'false',
             ENABLE_INTERVIEW_GUIDE: config['ENABLE_INTERVIEW_GUIDE'] || 'false',
             ENABLE_PUBLIC_API: config['ENABLE_PUBLIC_API'] || 'false',
+            // Default ON (features.ts): an absent row means emails go out.
+            ENABLE_NOTIFICATION_EMAIL: config['ENABLE_NOTIFICATION_EMAIL'] || 'true',
             // Telegram support chat — chat_id is non-sensitive and returned
             // verbatim. The bot token and webhook secret are sensitive: never
             // returned to the client. Instead we expose a *_SET indicator so

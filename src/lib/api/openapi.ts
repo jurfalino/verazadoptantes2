@@ -43,7 +43,7 @@ ${post('/api/v1/search', { mode: 'fuzzy', person: { fullName: 'María Pérez' } 
 ${post('/api/v1/search', { mode: 'exact', person: maria, activity: { activityType: 'adoption_request', externalId: 'mi-formulario-1234' } }, live ? [] : ['X-Dry-Run: 1'])}
 
 ## Autenticación
-**Cómo conseguir una clave:** creala vos en [${origin}/developers](${origin}/developers) — iniciá sesión, aceptá las condiciones de uso y creá la clave; se muestra una sola vez (si la perdés, la regenerás ahí). Allí también ves tus llamadas y podés revocarla. ${live ? 'Para probar, creá también una clave en staging.' : 'Acá en staging te da una clave de prueba (`ba_test_…`).'} Cada clave tiene un cupo de 100 búsquedas exactas y 50 fuzzy por día; si necesitás más, escribinos.
+**Cómo conseguir una clave:** creala vos en [${origin}/developers](${origin}/developers) — iniciá sesión, aceptá las condiciones de uso y creá la clave; se muestra una sola vez (si la perdés, la regenerás ahí). Allí también ves tus llamadas y podés revocarla. ${live ? 'Para probar, creá también una clave en staging.' : 'Acá en staging te da una clave de prueba (`ba_test_…`).'} La clave funciona enseguida, con un cupo inicial de 25 búsquedas exactas y 10 fuzzy por día (entre todas tus claves). Tu primera clave le pide la aprobación a un administrador de BuenAdoptante; cuando la aprueba, el cupo sube a 100 exactas y 50 fuzzy por día. Si necesitás más, escribinos.
 
 Cada clave pertenece a un rescatista. Enviala en cada llamada: \`Authorization: Bearer ba_live_…\` en producción, \`Bearer ba_test_…\` en staging (cada ambiente tiene sus propias claves). Si la clave no sirve, \`401 unauthorized\` dice por qué: que falta, que está mal escrita, que es de otro ambiente, o que no existe o fue revocada.
 
@@ -51,7 +51,7 @@ Cada clave pertenece a un rescatista. Enviala en cada llamada: \`Authorization: 
 | \`mode\` | Para qué | ¿Guarda algo? |
 |---|---|---|
 | \`fuzzy\` | **Buscar** a alguien con cualquier dato, como la página de inicio. Devuelve una lista ordenada por relevancia, cada una con su calificación, marcas y alertas. | **Nunca.** |
-| \`exact\` | **Registrar** algo de una persona (una solicitud, una adopción…): con nombre y apellido **más** email, teléfono o documento, la identifica y guarda la actividad. | **Siempre.** |
+| \`exact\` | **Registrar** algo de una persona (una solicitud, una adopción…): con nombre y apellido **más** email, teléfono, documento o una cuenta de red social, la identifica y guarda la actividad. | **Siempre.** |
 
 Datos de la persona que podés mandar:
 
@@ -62,7 +62,7 @@ Datos de la persona que podés mandar:
 | \`phone\` | +54 9 11 5550-3101 (cualquier formato) |
 | \`documentId.value\` | 99.555.310 (DNI, CI, CPF, RUT…) |
 | \`address\` | Av. Siempreviva 742, CABA (solo la usa fuzzy) |
-| \`socials\` | [{ "platform": "instagram", "handle": "@mariajose.demo" }] (solo la usa fuzzy) |
+| \`socials\` | [{ "platform": "instagram", "handle": "@mariajose.demo" }] (una cuenta identifica como un email o un teléfono; un nombre con espacios, como "Ana Perez", no) |
 
 ## Búsqueda exacta: registrar una actividad
 Mandá \`activity\` con su tipo (\`activityType\`: \`adoption_request\`, \`adoption\`, \`foster\`, \`follow_up\`, \`returned_pet\` u \`observation\`) y **\`externalId\`: tu propio id de ese registro** (el número de respuesta de tu formulario, la fila de tu planilla…). Lo demás es opcional: el animal (\`animalName\`, \`species\`), la fecha, notas y la calificación (si no la tenés, no la mandes: nunca se infiere).
@@ -74,8 +74,8 @@ Mandá \`activity\` con su tipo (\`activityType\`: \`adoption_request\`, \`adopt
 La respuesta dice dos cosas por separado:
 
 **\`match\`: qué había en BuenAdoptante antes de tu llamada**
-- \`found\`: una persona conocida; viene en \`profile\` (calificación, marcas, alertas, link a su perfil).
-- \`not_found\`: nadie tiene ese email, teléfono o documento.
+- \`found\`: una persona conocida; viene en \`profile\` (calificación, marcas, alertas, link a su perfil). \`profile.matchedOn\` dice qué datos coincidieron: \`email\`, \`phone\`, \`documentId\` o \`social\` (una de las cuentas de \`socials\`).
+- \`not_found\`: nadie tiene ese email, teléfono, documento o cuenta.
 - \`ambiguous\`: el dato es de más de un perfil, o de alguien con otro nombre (por ejemplo un teléfono familiar); vienen en \`candidates\`.
 
 **\`saved.action\`: qué hizo tu llamada** (siempre viene)
@@ -84,7 +84,7 @@ La respuesta dice dos cosas por separado:
 | \`found\` | \`added_to_profile\` | La actividad se sumó al perfil de esa persona. |
 | \`not_found\` | \`created_profile\` | Se creó su perfil, con esta actividad. |
 | \`ambiguous\` | \`added_to_best_match\` | Varios perfiles encajan con el nombre: se sumó al que mejor coincide. |
-| \`ambiguous\` | \`created_profile_for_review\` | El dato es de alguien con otro nombre: se creó un perfil nuevo que un admin revisa como posible duplicado. |
+| \`ambiguous\` | \`created_profile_for_review\` | El dato es de alguien con otro nombre, o es un dato de relleno o compartido por muchos (un documento 00000000, un email de más de 3 personas distintas), que no identifica a nadie: se creó un perfil nuevo. Si BuenAdoptante encuentra un perfil que puede ser la misma persona, se marca el par para que un admin lo revise como posible duplicado; un dato de relleno solo no empareja a nadie. |
 
 \`saved\` trae además \`activityId\` (para adjuntar el contrato o anularla), los links al perfil y \`contactsAdded\` (los datos de contacto que mandaste y la persona no tenía, que se agregaron a su perfil).
 
@@ -109,7 +109,7 @@ La respuesta dice dos cosas por separado:
 | Marca | Qué significa |
 |---|---|
 | \`inaccurate\` | Alguien marcó que los datos de esa persona no son confiables. |
-| \`duplicate\` | Un rescatista marcó el perfil como duplicado de otro. |
+| \`duplicate\` | Un rescatista marcó el perfil como duplicado de otro y todavía no se resolvió. Cuando se combinan los dos perfiles o se decide mantenerlos separados, la marca deja de aparecer: es lo mismo que muestra BuenAdoptante en el perfil. |
 | \`possible_duplicate\` | BuenAdoptante detectó que puede ser la misma persona que otro perfil. |
 
 \`profile.flags\` puede traer además \`verified_identity\` y \`verified_address\` (identidad o domicilio verificados): son buenas señales y por eso no aparecen en \`risk\`.
@@ -152,20 +152,20 @@ Mientras armás tu integración, agregá \`X-Dry-Run: 1\` a una búsqueda exacta
 Cada clave tiene un cupo diario de búsquedas exactas y otro de fuzzy, que se reinician a las 00:00 UTC. Solo cuentan las búsquedas que se hicieron: una llamada rechazada (4xx) o un reintento que devuelve la respuesta original no cuentan. **Cada respuesta de búsqueda trae lo que te queda**: \`RateLimit-Limit\`, \`RateLimit-Remaining\` y \`RateLimit-Reset\` (segundos hasta que se reinicia). Al llegar al cupo: \`429 daily_cap_reached\` con \`Retry-After\`. Además hay un techo de llamadas de cualquier tipo por día (\`429 daily_call_ceiling_reached\`), para cortar un programa que quedó en un bucle. \`GET /api/v1/me\` muestra los dos.
 
 ## Errores
-**Avisos (\`warnings\`).** Un dato que no sirve ya no rechaza toda la llamada si queda otro email, teléfono o documento que sí sirva: se deja afuera, se guarda el resto, y la respuesta (\`200\`) trae \`warnings\` con el campo y el motivo — \`value_dropped\` (\`not_an_email\`, \`not_a_phone\`, \`no_account\` para redes como «no tengo») o \`value_cleaned\` (se guardó solo la parte usable: el primer email válido, o los números de teléfono sin la nota). Corregilo en tu formulario. Un nombre que no es nombre y apellido (un email, un teléfono, una sola palabra) sigue siendo \`422 full_name_required\`.
+**Avisos (\`warnings\`).** Un dato que no sirve ya no rechaza toda la llamada si queda otro email, teléfono o documento que sí sirva: se deja afuera, se guarda el resto, y la respuesta (\`200\`) trae \`warnings\` con el campo y el motivo — \`value_dropped\` (\`not_an_email\`, \`not_a_phone\`, \`no_account\` para redes como «no tengo», \`not_a_social_profile\` para un sitio web en lugar de una red social) o \`value_cleaned\` (se guardó solo la parte usable: el primer email válido, o los números de teléfono sin la nota). Corregilo en tu formulario. Un nombre que no es nombre y apellido (un email, un teléfono, una sola palabra) sigue siendo \`422 full_name_required\`.
 
 Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir según él), \`error.message\` (en inglés, para vos), \`error.docUrl\` (esta sección), y cuando aplica \`error.field\` (el campo con el problema) y \`error.details\` (**todos** los problemas que encontramos, no solo el primero). Los conflictos (\`409\`) traen además \`originalRequestId\`, \`activityId\` y \`profileId\` de lo que ya se guardó.
 
 | \`code\` | Qué pasó | Qué hacer |
 |---|---|---|
 | \`invalid_json\` | El cuerpo no es JSON válido. | Revisá comillas y comas. |
+| \`body_unreadable\` | El cuerpo no llegó completo (por ejemplo, se cortó la conexión). | Volvé a enviar la llamada. |
 | \`invalid_request\` | Un campo no tiene el formato esperado. | Mirá \`error.details\`: cada problema con su campo. |
 | \`unauthorized\` | Falta la clave, está mal escrita, es de otro ambiente, o no existe o fue revocada. | El mensaje dice cuál. |
 | \`access_blocked\` | La persona dueña de la clave fue bloqueada de la API. | Escribinos si creés que es un error. |
-| \`access_not_approved\` | El acceso a la API de la persona dueña de la clave no está aprobado. | Pedí acceso en /developers. |
 | \`forbidden\` | La clave no tiene el permiso para eso. | Pedile a BuenAdoptante el permiso (\`search\`, \`search:fuzzy\`, \`record:write\`). |
 | \`not_found\` | Ese id no existe para tu clave. | Revisá el id. |
-| \`exact_requires_name_and_identifier\` | \`exact\` necesita nombre y apellido más email, teléfono o documento. | Completá los datos, o usá \`fuzzy\`. |
+| \`exact_requires_name_and_identifier\` | \`exact\` necesita nombre y apellido más email, teléfono, documento o una cuenta de red social. | Completá los datos, o usá \`fuzzy\`. |
 | \`full_name_required\` | \`fullName\` no tiene nombre y apellido. | Mandá el nombre completo. |
 | \`invalid_email\` | El email no se puede leer. | Corregilo o no lo mandes. |
 | \`invalid_phone\` | El teléfono no se puede leer. | Corregilo o no lo mandes. |
@@ -189,7 +189,7 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 | \`request_in_progress\` | La misma llamada todavía se está procesando. | Reintentá en unos segundos (\`Retry-After\`). |
 | \`partially_saved\` | Una llamada anterior con ese \`externalId\` se cortó a mitad. | Anulá \`error.activityId\` (o avisá a un admin) y reenviá. |
 | \`record_changed\` | Al anular: el animal se volvió a entregar después. | Avisá a un admin. |
-| \`daily_cap_reached\` | Llegaste al cupo de búsquedas del día. | Esperá al reinicio (\`Retry-After\`); \`RateLimit-Remaining\` te avisa antes. |
+| \`daily_cap_reached\` | Llegaste al cupo de búsquedas del día. | Esperá al reinicio (\`Retry-After\`); \`RateLimit-Remaining\` te avisa antes. Si tu acceso todavía no fue aprobado, el cupo es el inicial (25 exactas y 10 fuzzy) hasta que un administrador lo apruebe. |
 | \`daily_call_ceiling_reached\` | Demasiadas llamadas de cualquier tipo hoy. | Revisá que tu programa no esté en un bucle. |
 | \`temporarily_unavailable\` | No pudimos leer las calificaciones; no se guardó nada. | Reintentá (\`Retry-After\`). |
 | \`api_disabled\` | La API no está habilitada en este ambiente. | Consultá a BuenAdoptante. |
@@ -197,6 +197,11 @@ Toda respuesta de error trae \`error.code\` (estable: tu código puede decidir s
 
 ## Cambios y versiones
 Esta es la versión 1 (\`/api/v1\`). **Sin aviso** pueden aparecer campos nuevos en las respuestas y valores nuevos en las listas (\`code\`, \`saved.action\`, \`flags\`, \`alerts\`…): tu código tiene que tolerarlos. Un cambio que rompa algo existente va a \`/api/v2\`, con aviso previo. La documentación usa el español para explicar y el inglés para los nombres de campos y los mensajes de error, a propósito: los nombres no cambian con el idioma.
+
+**2026-11-02: cómo se decide si es la misma persona** (las respuestas a un mismo pedido pueden cambiar)
+- La búsqueda exacta acepta una cuenta de \`person.socials\` como dato identificador, como un email o un teléfono (\`profile.matchedOn: "social"\`). Las cuentas que ya mandabas junto al email o al teléfono ahora también cuentan, así que una respuesta puede cambiar (por ejemplo, de \`found\` a \`ambiguous\`). Un nombre visible ("Ana Perez") o un valor de relleno ("no", "-") no es una cuenta.
+- Un dato de relleno o compartido por muchos (un documento 00000000, o un dato que tienen más de 3 personas con nombres distintos) no vincula a nadie.
+- En la búsqueda fuzzy, un perfil al que identifican el email, el teléfono, el documento o la cuenta que mandaste aparece primero.
 `.trim();
 }
 

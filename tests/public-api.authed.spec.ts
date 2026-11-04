@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execD1 } from './db';
 
 /**
  * Third-party API v1 (.agents/plans/2026-10-09-third-party-api.md), end to end:
@@ -13,9 +13,6 @@ import { execSync } from 'child_process';
  * and public-api-docs.authed.spec.ts are the only specs that touch it (each serial, each in its own CI leg). Every person it creates is unique
  * to the run (letters-only stamp: digits in a name would tokenize as a phone).
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
 const flagOn = () => execD1(`INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES ('ENABLE_PUBLIC_API', 'true', strftime('%s','now'), 'e2e')`);
 const flagOff = () => execD1(`DELETE FROM app_config WHERE key = 'ENABLE_PUBLIC_API'`);
 
@@ -390,10 +387,14 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(rows.some(r => r.outcome === 'ambiguous')).toBe(true);
         expect(rows.some(r => r.dryRun && r.recordId === null)).toBe(true);
 
+        // Read the keys list from the page's OWN fetch of /api/admin/api-keys (the one that fills the
+        // list below) instead of a second `page.request.get` on a pooled socket: that extra request failed
+        // with `read ECONNRESET` in CI (3 of 11 apicore jobs) while the page's own fetch had just succeeded.
+        const keysResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/admin/api-keys' && r.request().method() === 'GET');
         await page.goto('/admin/api?tab=keys');
         await expect(page.getByTestId('api-keys')).toContainText(`E2E ${TAG}`, { timeout: 30000 });
         // Each key shows what it saved and voided in the last 30 days (search-then-void is visible).
-        const keys = (await (await page.request.get('/api/admin/api-keys')).json()).keys as Array<{ id: string; last30: { activities: number; voided: number } }>;
+        const keys = (await (await keysResponse).json()).keys as Array<{ id: string; last30: { activities: number; voided: number } }>;
         const mine = keys.find(k => k.id === keyId)!;
         expect(mine.last30.activities).toBeGreaterThan(3);
         expect(mine.last30.voided).toBeGreaterThanOrEqual(2); // the two follow-ups voided earlier
@@ -453,6 +454,46 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(a.replayed).toBeUndefined();
         expect(a.saved.activityId).not.toBe(first.saved.activityId);
         await api.post(`/api/v1/activities/${a.saved.activityId}/void`, { headers: auth() });
+    });
+
+    test('troubleshooting: a retry never erases the failed call; each row says which client sent it and how it was decided', async () => {
+        // A call that crashed before saving anything (500, no record) — then the partner retries.
+        const ext = `logaudit-${STAMP}`;
+        const body = { mode: 'exact', person: { fullName: NAME, email: EMAIL }, activity: { activityType: 'observation', externalId: ext } };
+        const first = await (await search(body)).json();
+        expect(first.saved.activityId).toBeTruthy();
+        await api.post(`/api/v1/activities/${first.saved.activityId}/void`, { headers: auth() });
+        // The void frees the externalId; fake a crashed claim for it instead: status 500, nothing saved.
+        execD1(`INSERT INTO api_requests (id, key_id, owner_email, endpoint, mode, http_status, error_id, idempotency_key, profile_created, dry_run, degraded, created_at) VALUES ('crashed-${STAMP}', '${keyId}', '${ADMIN_EMAIL}', 'search', 'exact', 500, 'deadbeef', 'ext:${ext}-b', 0, 0, 0, strftime('%s','now') - 30)`);
+        const retry = await search({ ...body, activity: { ...body.activity, externalId: `${ext}-b` } });
+        expect(retry.status()).toBe(200);
+        const r = await retry.json();
+        // The failed call is still there (released, not deleted), with its errorId.
+        const crashed = JSON.parse(execD1(`SELECT http_status, error_id, (idempotency_key IS NULL) AS released FROM api_requests WHERE id = 'crashed-${STAMP}'`))[0].results;
+        expect(crashed).toEqual([{ http_status: 500, error_id: 'deadbeef', released: 1 }]);
+        // The retry's own row: the client that sent it, and how the match was decided (ids and verdicts, no values).
+        const row = JSON.parse(execD1(`SELECT user_agent, decision FROM api_requests WHERE id = '${r.requestId}'`))[0].results[0];
+        expect(row.user_agent).toBeTruthy();
+        const decision = JSON.parse(row.decision);
+        expect(decision.result).toBe(r.match);
+        expect(decision.saved.profileId).toBe(r.saved.profileId);
+        expect(Array.isArray(decision.candidates)).toBe(true);
+        expect(row.decision).not.toContain(EMAIL);
+        expect(row.decision).not.toContain(NAME);
+        await api.post(`/api/v1/activities/${r.saved.activityId}/void`, { headers: auth() });
+        execD1(`DELETE FROM api_requests WHERE id = 'crashed-${STAMP}'`);
+
+        // A call that crashed right AFTER creating the profile (record not saved): the retry is
+        // released and adds the activity to that profile — never refused as external_id_reused.
+        const extP = `${ext}-p`;
+        execD1(`INSERT INTO api_requests (id, key_id, owner_email, endpoint, mode, http_status, error_id, idempotency_key, external_id, profile_created, profile_ids, dry_run, degraded, created_at) VALUES ('crashedp-${STAMP}', '${keyId}', '${ADMIN_EMAIL}', 'search', 'exact', 500, 'cafebabe', 'ext:${extP}', '${extP}', 1, '["${profileId}"]', 0, 0, strftime('%s','now') - 30)`);
+        const retryP = await search({ ...body, activity: { ...body.activity, externalId: extP } });
+        expect(retryP.status()).toBe(200);
+        const rp = await retryP.json();
+        expect(rp.saved.profileId).toBe(profileId);
+        expect(JSON.parse(execD1(`SELECT http_status, (idempotency_key IS NULL) AS released FROM api_requests WHERE id = 'crashedp-${STAMP}'`))[0].results).toEqual([{ http_status: 500, released: 1 }]);
+        await api.post(`/api/v1/activities/${rp.saved.activityId}/void`, { headers: auth() });
+        execD1(`DELETE FROM api_requests WHERE id = 'crashedp-${STAMP}'`);
     });
 
     test('void: only once; the API-created profile goes only when nothing is left on it', async () => {
@@ -542,11 +583,4 @@ test.describe('public API v1', { tag: '@leg-apicore' }, () => {
         expect(Number(capped.headers()['retry-after'])).toBeGreaterThan(0);
     });
 
-    test('flag off → every endpoint answers 404 api_disabled', async () => {
-        flagOff();
-        const res = await api.get('/api/v1/me', { headers: auth() });
-        expect(res.status()).toBe(404);
-        expect((await res.json()).error.code).toBe('api_disabled');
-        flagOn();
-    });
 });

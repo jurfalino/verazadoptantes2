@@ -1,19 +1,21 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import type { OpenAlertKind } from '@/domain/flags';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
 import FormPhotos from '@/components/FormPhotos';
-import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, householdPeopleRow, giftRecipientRow, fieldLabel, ADOPTER_INFO_FIELDS, OTHER_PETS_FIELDS } from '@/components/FormAnswersPanel';
+import FormAnswersPanel, { renderFormAnswerValue, AnswerValue, AnswerRow, emailWithBreaks, householdPeopleRow, giftRecipientRow, fieldLabel, ADOPTER_INFO_FIELDS, OTHER_PETS_FIELDS } from '@/components/FormAnswersPanel';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import LocationMap from '@/components/LocationMap';
 import { buttonClasses } from '@/components/ui/Button';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import { en } from '@/i18n/locales/en';
-import { ChevronDown, ChevronRight, CheckCircle2, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, CheckCircle2, ClipboardList, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
 import { formResultsView, type FormLinkKind, type FormResultsAction, type FormResultsBanner } from '@/domain/formLink';
+import type { CardHousehold } from '@/domain/households';
 
 // Single source of truth: fallbacks come from English locale so labels always render
 const formResultsFallbacks = en.formResults as Record<string, string>;
@@ -63,15 +65,22 @@ interface MatchedAdopter {
     id: string;
     name: string;
     matchTypes: string[];
+    /** Search score; stored on notifications since 2026-10-25, admins only. */
+    score?: number;
 }
 
 interface MatchedProfile {
     id: string;
     name: string;
     contactInfo: string | null;
+    contactEntries?: string | null;
     addressInfo: string | null;
     status: string | null;
     profileImageUrl?: string | null;
+    isMinor?: boolean;
+    households?: CardHousehold;
+    rating?: number | null;
+    openAlerts?: OpenAlertKind[];
 }
 
 interface FormResultsContentProps {
@@ -206,8 +215,9 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                 <Link href="/my-animals" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
                     ← {L('back_to_animals')}
                 </Link>
-                <h1 className="text-xl font-semibold text-stone-800 mt-2">
-                    📋 {L('title')}
+                <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-800 mt-2">
+                    <ClipboardList className="w-5 h-5 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />
+                    {L('title')}
                 </h1>
                 <div className="text-sm text-stone-500 mt-1 space-y-0.5">
                     {submitted?.name && (
@@ -271,28 +281,16 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                             <div className="space-y-1">
                                 {giftRecipientRow(fullAnswers, t)}
                                 {submitted?.name && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('name_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.name}</span>
-                                    </div>
+                                    <AnswerRow label={L('name_label')}>{submitted.name}</AnswerRow>
                                 )}
                                 {submitted?.email && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('email_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.email}</span>
-                                    </div>
+                                    <AnswerRow label={L('email_label')} kind="email">{emailWithBreaks(submitted.email)}</AnswerRow>
                                 )}
                                 {submitted?.phone && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('phone_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.phone}</span>
-                                    </div>
+                                    <AnswerRow label={L('phone_label')}>{submitted.phone}</AnswerRow>
                                 )}
                                 {submitted?.address && (
-                                    <div className="flex items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-stone-600 min-w-[140px]">{L('address_label')}:</span>
-                                        <span className="text-stone-800 min-w-0 [overflow-wrap:anywhere]">{submitted.address}</span>
-                                    </div>
+                                    <AnswerRow label={L('address_label')}>{submitted.address}</AnswerRow>
                                 )}
                                 {ADOPTER_INFO_FIELDS.map((field) => {
                                     if (field === 'children') {
@@ -303,12 +301,9 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     const display = renderFormAnswerValue(field, raw, t);
                                     if (!display) return null;
                                     return (
-                                        <div key={field} className="flex items-baseline gap-2 text-xs">
-                                            <span className="font-semibold text-stone-600 min-w-[140px]">
-                                                {fieldLabel(field, fullAnswers, t)}:
-                                            </span>
+                                        <AnswerRow key={field} label={fieldLabel(field, fullAnswers, t)}>
                                             <AnswerValue field={field} raw={raw} display={display} />
-                                        </div>
+                                        </AnswerRow>
                                     );
                                 })}
                                 {householdItems.length > 0 && (
@@ -338,12 +333,9 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                         const display = renderFormAnswerValue(field, raw, t);
                                         if (!display) return null;
                                         return (
-                                            <div key={field} className="flex items-baseline gap-2 text-xs">
-                                                <span className="font-semibold text-stone-600 min-w-[140px]">
-                                                    {fieldLabel(field, fullAnswers, t)}:
-                                                </span>
+                                            <AnswerRow key={field} label={fieldLabel(field, fullAnswers, t)}>
                                                 <AnswerValue field={field} raw={raw} display={display} />
-                                            </div>
+                                            </AnswerRow>
                                         );
                                     })}
                                 </div>
@@ -386,6 +378,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     profile={profile}
                                     applicantSelfieUrl={submission.selfieUrl}
                                     matchTypes={match.matchTypes ?? []}
+                                    score={match.score}
                                     submissionId={submission.id}
                                     canLink={view.canLinkMatches}
                                     linked={linkKind === 'linked_existing' && match.id === linkedId}
@@ -451,6 +444,7 @@ function StatusBanner({
     L: (key: string) => string;
     actions: React.ReactNode;
 }) {
+    const { t } = useLanguage();
     const tone = BANNER_TONE[banner];
     const reviewTitle = count === 1 ? L('banner_review_title_one') : L('banner_review_title').replace('{count}', String(count));
     const newProfileName = applicantName || linkedProfile?.name;
@@ -525,12 +519,11 @@ function StatusBanner({
                         <div className="mt-2 flex items-center gap-2">
                             {linkedProfile.avgRating != null ? (
                                 <RatingExplainer rating={linkedProfile.avgRating}>
-                                    <RatingBadge rating={linkedProfile.avgRating} size="sm" label="short" />
+                                    <RatingBadge rating={linkedProfile.avgRating} />
                                 </RatingExplainer>
                             ) : (
-                                <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                                    {L('linked_no_rating')}
-                                </span>
+                                // The same pill as every other unrated person.
+                                <RatingBadge rating={null} />
                             )}
                         </div>
                     )}

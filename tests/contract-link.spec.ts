@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1, parseD1Rows } from './db';
 
 /**
  * Test-isolated fixture adopter — created here, mutated only by this test.
@@ -10,31 +10,6 @@ import { dismissCountryBanner } from './helpers';
  */
 const FIXTURE_ADOPTER_ID = 'test-contract-fixture-target';
 const FIXTURE_ADOPTER_NAME = 'ContractFixturePerson Sintética';
-
-/**
- * Execute a single SQL statement against the local D1 dev DB via wrangler.
- * Used here to seed an "available" animal fixture and assert orphan soft-deletion
- * after the merge — neither operation has a public app endpoint we can hit from a
- * browser context. Slow (~5s per call) but acceptable for the small number of
- * setup/assertion calls this test makes.
- */
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-
-/** Parse `[{ results: [...] }]`-style wrangler JSON output. */
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
 test.describe('Contract-results merge — "Es la misma persona"', () => {
     test('signing a contract for a fuzzy-matched person and confirming the merge attaches the adoption to the existing profile and soft-deletes the orphan', async ({ browser }) => {
@@ -124,7 +99,7 @@ test.describe('Contract-results merge — "Es la misma persona"', () => {
         await sameButton.click();
 
         // 6. Confirm in modal.
-        const confirmButton = pageA.getByRole('button', { name: /Confirmar atribución|Confirm attachment/i });
+        const confirmButton = pageA.getByTestId('contract-link-confirm-confirm');
         await expect(confirmButton).toBeVisible({ timeout: 10000 });
         await confirmButton.click();
 

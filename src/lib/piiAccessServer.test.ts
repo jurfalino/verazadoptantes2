@@ -121,22 +121,27 @@ describe('maskMatchCardsForViewer — B\'s form matching A\'s protected profile'
     it('gating ON, another rescuer: only the phone B\'s applicant typed is shown in full', async () => {
         getDbMock.mockResolvedValue(fakeDb('true'));
         const r = (await maskMatchCardsForViewer('rescuer-b@example.com', [row], submitted)).get('adopter-a')!;
-        expect(Object.keys(r).sort()).toEqual(['addressInfo', 'contactInfo']);
+        expect(Object.keys(r).sort()).toEqual(['addressInfo', 'contactEntries', 'contactInfo']);
         expect(r.contactInfo).toContain(PHONE);
         expect(r.contactInfo).not.toContain(OTHER_EMAIL);
         expect(r.addressInfo).not.toContain('Secreta');
+        // The typed entries are masked exactly like the text: same reveal, same secrets kept.
+        expect(r.contactEntries).toContain(PHONE);
+        expect(r.contactEntries).not.toContain(OTHER_EMAIL);
+        expect(r.contactEntries).not.toContain('Secreta');
     });
 
     it('gating ON, the owner: everything', async () => {
         getDbMock.mockResolvedValue(fakeDb('true'));
         const r = (await maskMatchCardsForViewer('rescuer-a@example.com', [row], submitted)).get('adopter-a')!;
-        expect(r).toEqual({ contactInfo: row.contactInfo, addressInfo: row.addressInfo });
+        expect(r).toEqual({ contactInfo: row.contactInfo, contactEntries: row.contactEntries, addressInfo: row.addressInfo });
     });
 
     it('gating flag unreadable: treated as ON, still masked', async () => {
         getDbMock.mockResolvedValue(fakeDb(new Error('D1_ERROR: network')));
         const r = (await maskMatchCardsForViewer('rescuer-b@example.com', [row], submitted)).get('adopter-a')!;
         expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.contactEntries ?? '').not.toContain(OTHER_EMAIL);
         expect(r.addressInfo).not.toContain('Secreta');
     });
 
@@ -145,12 +150,13 @@ describe('maskMatchCardsForViewer — B\'s form matching A\'s protected profile'
         orgMatesMock.mockRejectedValue(new Error('D1_ERROR: org lookup'));
         const r = (await maskMatchCardsForViewer('rescuer-a@example.com', [row], submitted)).get('adopter-a')!;
         expect(r.contactInfo).not.toContain(OTHER_EMAIL);
+        expect(r.contactEntries ?? '').not.toContain(OTHER_EMAIL);
         expect(r.addressInfo).not.toContain('Secreta');
     });
 
     it('gating OFF: raw, as on the profile page and in search', async () => {
         getDbMock.mockResolvedValue(fakeDb('false'));
         const r = (await maskMatchCardsForViewer('rescuer-b@example.com', [row], submitted)).get('adopter-a')!;
-        expect(r).toEqual({ contactInfo: row.contactInfo, addressInfo: row.addressInfo });
+        expect(r).toEqual({ contactInfo: row.contactInfo, contactEntries: row.contactEntries, addressInfo: row.addressInfo });
     });
 });

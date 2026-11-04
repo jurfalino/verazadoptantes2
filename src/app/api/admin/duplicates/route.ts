@@ -7,10 +7,14 @@ import { eq, sql, isNull, or, and } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { logger } from '@/lib/logger';
-import { extractTokens, computeTokenHash } from '@/lib/tokenizer';
+import { extractTokens, computeTokenHash, type TokenEntry } from '@/lib/tokenizer';
 import { tokenInputsFor } from '@/lib/adopterTokenize';
+import { giftPhoneEntriesByGiver } from '@/lib/giftRecipients';
+import { housematePairKeys } from '@/lib/households';
+import { sharesPersonalIdentifier } from '@/domain/households';
 import { pairsOnSharedToken, scorePair, confidenceOf } from '@/domain/duplicatePairing';
-import { lockWaitMs } from '@/domain/scanResilience';
+import { lockWaitMs, SCAN_BATCH_MAX, validScanId } from '@/domain/scanResilience';
+import { scanScopedMemo } from '@/lib/scanMemo';
 import { computeAvgRating } from '@/domain/ratings';
 import { getRequestContext } from '@/lib/requestContext';
 
@@ -120,11 +124,11 @@ export async function GET(request: Request) {
         const userFlaggedEnriched = await Promise.all(
             userFlagged.map(async (flag: typeof userFlagged[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                         .from(adopters).where(eq(adopters.id, flag.adopterId)).get()
                         .catch(logFallback('flag adopter fetch', { flagId: flag.flagId, adopterId: flag.adopterId }, undefined)),
                     flag.targetAdopterId
-                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                        ? db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                             .from(adopters).where(eq(adopters.id, flag.targetAdopterId)).get()
                             .catch(logFallback('flag target fetch', { flagId: flag.flagId, adopterId: flag.targetAdopterId }, undefined))
                         : null,
@@ -138,10 +142,12 @@ export async function GET(request: Request) {
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
                     adopter1AddedBy: adopter1?.addedBy ?? null,
+                    adopter1CreatedAt: adopter1?.createdAt ? new Date(adopter1.createdAt).getTime() : null,
                     adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
                     adopter2AddedBy: adopter2?.addedBy ?? null,
+                    adopter2CreatedAt: adopter2?.createdAt ? new Date(adopter2.createdAt).getTime() : null,
                 };
             })
         );
@@ -166,10 +172,10 @@ export async function GET(request: Request) {
         const candidatesEnriched = await Promise.all(
             candidates.map(async (c: typeof candidates[number]) => {
                 const [adopter1, adopter2, avg1, avg2] = await Promise.all([
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                         .from(adopters).where(eq(adopters.id, c.adopter1Id)).get()
                         .catch(logFallback('candidate adopter1 fetch', { candidateId: c.id, adopterId: c.adopter1Id }, undefined)),
-                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy })
+                    db.select({ name: adopters.name, contactInfo: adopters.contactInfo, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
                         .from(adopters).where(eq(adopters.id, c.adopter2Id)).get()
                         .catch(logFallback('candidate adopter2 fetch', { candidateId: c.id, adopterId: c.adopter2Id }, undefined)),
                     avgRatingFor(db, c.adopter1Id).catch(logFallback('candidate avgRating1', { candidateId: c.id, adopterId: c.adopter1Id }, null)),
@@ -182,10 +188,12 @@ export async function GET(request: Request) {
                     adopter1Contact: adopter1?.contactInfo,
                     adopter1AvgRating: avg1,
                     adopter1AddedBy: adopter1?.addedBy ?? null,
+                    adopter1CreatedAt: adopter1?.createdAt ? new Date(adopter1.createdAt).getTime() : null,
                     adopter2Name: nameOf(adopter2),
                     adopter2Contact: adopter2?.contactInfo,
                     adopter2AvgRating: avg2,
                     adopter2AddedBy: adopter2?.addedBy ?? null,
+                    adopter2CreatedAt: adopter2?.createdAt ? new Date(adopter2.createdAt).getTime() : null,
                 };
             })
         );
@@ -215,7 +223,6 @@ export async function GET(request: Request) {
                 contactInfo: adopters.contactInfo,
                 addressInfo: adopters.addressInfo,
                 familyMembers: adopters.familyMembers,
-                householdMembers: adopters.householdMembers,
                 sourceUrl: adopters.sourceUrl,
                 contactEntries: adopters.contactEntries,
                 country: adopters.country,
@@ -303,7 +310,12 @@ export async function GET(request: Request) {
  * How many stale records one Scan call re-tokenizes.
  *
  * A Worker has a hard subrequest ceiling (~1000), and a tokenizer-version bump
- * makes EVERY record stale at once — 1,146 in production as of v2.49.
+ * makes EVERY record stale at once — 1,146 in production as of v2.49, ~6,000
+ * for the households release (v2.58). The admin page asks for SCAN_PAGE_LIMIT
+ * (100) per call (src/domain/scanResilience.ts), so that is ~60 batches; this
+ * default (25) is for any other caller. A batch of 100 must stay well under the
+ * 60 s same-admin lock reclaim (SCAN_LOCK_SAME_USER_STALE_MS) — the release
+ * runbook (.agents/workflows/deploy.md, step 4) says what to watch.
  *
  * Writes go out as one atomic D1 batch per SCAN_WRITE_GROUP records (a batch
  * is one subrequest), so a batch of 25 costs ~3 write subrequests plus a
@@ -311,15 +323,18 @@ export async function GET(request: Request) {
  * `2 + tokenCount`, and v2.49.3's batch of 100 was hard-killed on production
  * data with the scan lock wedged at `running` (see lockWaitMs); then 3
  * sequential calls per record (~30 s per batch of 50), where one dropped call
- * left a record half-written (2026-10-10). The loop is automatic, so the batch
- * stays modest: a smaller batch loses less to a failure. Callers that want
- * fewer round trips can pass `?limit=` up to SCAN_BATCH_MAX.
+ * left a record half-written (2026-10-10). Writes are grouped now
+ * (SCAN_WRITE_GROUP records per D1 batch), which is why the admin page can ask
+ * for 100 at once. Callers that want fewer round trips pass `?limit=` up to
+ * SCAN_BATCH_MAX.
  */
-// 25 since 2.56.159: a batch of 50 took ~30 s, and a dropped browser
-// connection cancels the batch in flight — a shorter one loses less and lets
-// the page retry sooner (see src/domain/scanResilience.ts).
+// 25 since 2.56.159 (for callers without `?limit=`): a batch of 50 took ~30 s
+// with per-record writes, and a dropped browser connection cancels the batch in
+// flight — a shorter one loses less (see src/domain/scanResilience.ts).
 const SCAN_BATCH_DEFAULT = 25;
-const SCAN_BATCH_MAX = 200;
+
+/** The gift forms, read once per «Scan Now» (the page's `?scan=` id), not once per batch — src/lib/scanMemo.ts. */
+const giftPhonesForScan = scanScopedMemo<Map<string, TokenEntry[]>>();
 
 /**
  * Rows per multi-row token insert.
@@ -425,7 +440,6 @@ export async function POST(request: Request) {
                 contactEntries: adopters.contactEntries,
                 addressInfo: adopters.addressInfo,
                 familyMembers: adopters.familyMembers,
-                householdMembers: adopters.householdMembers,
                 sourceUrl: adopters.sourceUrl,
                 country: adopters.country,
                 tokenHash: adopters.tokenHash,
@@ -437,7 +451,9 @@ export async function POST(request: Request) {
 
             // Batch size for this call. Clamped so a bad query string can't
             // reinstate the unbounded behaviour this exists to prevent.
-            const requestedLimit = Number(new URL(request.url).searchParams.get('limit'));
+            const params = new URL(request.url).searchParams;
+            const scanId = validScanId(params.get('scan'));
+            const requestedLimit = Number(params.get('limit'));
             const batchLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
                 ? Math.min(Math.floor(requestedLimit), SCAN_BATCH_MAX)
                 : SCAN_BATCH_DEFAULT;
@@ -487,19 +503,24 @@ export async function POST(request: Request) {
             // trip, atomic (a failed group writes nothing, so it is simply
             // retried once, then the page's own retry takes over).
             type Planned = { id: string; hash: string; tokens: ReturnType<typeof extractTokens> };
+            type StaleRow = (typeof staleAdopters)[number];
+            const toTokenize: StaleRow[] = staleAdopters.filter((a: StaleRow) => batchIds.has(a.id) && a.tokenHash !== computeTokenHash(a));
+            // The gift recipients' phones its gift forms named (src/lib/giftRecipients.ts) — the
+            // same inputs save-time tokenizing reads, in ONE query per scan when the page sends its
+            // scan id (else one per batch). A failed read fails the batch (retried), never a token
+            // set written without them.
+            const giftPhones: Map<string, TokenEntry[]> = toTokenize.length ? await giftPhonesForScan(scanId, () => giftPhoneEntriesByGiver(db)) : new Map();
             const planned: Planned[] = [];
-            for (const adopter of staleAdopters) {
-                if (!batchIds.has(adopter.id)) continue;
+            for (const adopter of toTokenize) {
                 const newHash = computeTokenHash(adopter);
-                if (adopter.tokenHash === newHash) continue; // Fresh, skip
 
                 // Fetch adoptions for onBehalfOf
                 const adopterAdoptions = adoptionsByAdopter.get(adopter.id) ?? [];
 
-                // Typed entries only (titular + each household member) — the same
-                // inputs save-time tokenizing uses (tokenInputsFor).
-                const { entries, household } = tokenInputsFor(adopter);
-                planned.push({ id: adopter.id, hash: newHash, tokens: extractTokens(adopter, adopterAdoptions, entries, household) });
+                // Typed entries only, the record's own — the same inputs
+                // save-time tokenizing uses (tokenInputsFor).
+                const { entries } = tokenInputsFor(adopter, giftPhones.get(adopter.id) ?? []);
+                planned.push({ id: adopter.id, hash: newHash, tokens: extractTokens(adopter, adopterAdoptions, entries) });
             }
 
             let rawD1: D1Database | undefined;
@@ -634,6 +655,19 @@ export async function POST(request: Request) {
 
             const dismissedKeys = new Set(existingPairs.map((p: typeof existingPairs[number]) => `${p.adopter1Id}|${p.adopter2Id}`));
 
+            // Housemates are never a duplicate pair («alguien de su hogar» is already a
+            // recorded answer). ONE query for every household, not one per pair. If it
+            // fails the scan goes on and «Pendientes de revisar» drops such pairs at read.
+            let housemates = new Set<string>();
+            try {
+                housemates = await housematePairKeys(db);
+            } catch (e) {
+                logger.warn('Duplicate scan: housemate pairs unavailable, the feed filters them instead', {
+                    user: session.user.email, error: e instanceof Error ? e.message : String(e),
+                });
+            }
+            let skippedHousemates = 0;
+
             // Build the new candidate set under a staging status, then swap it in
             // at the end (see the swap below). Previously this deleted `pending`
             // up front and re-inserted over the following ~1,150 statements — so
@@ -654,6 +688,8 @@ export async function POST(request: Request) {
 
             for (const [pairKey, signal] of pairSignals) {
                 if (dismissedKeys.has(pairKey)) continue;
+                // Housemates sharing an email or an ID number still pair (final fix S3).
+                if (housemates.has(pairKey) && !sharesPersonalIdentifier(signal.types)) { skippedHousemates++; continue; }
 
                 // Weights and the address rule live in scorePair
                 // (src/domain/duplicatePairing.ts).
@@ -752,6 +788,7 @@ export async function POST(request: Request) {
                 sharedTokenGroups: sharedTokens.length,
                 newCandidates,
                 skippedSharedHandles, // high-count social handles excluded (shared/rescuer contacts)
+                skippedHousemates,
                 user: session.user.email,
             });
 

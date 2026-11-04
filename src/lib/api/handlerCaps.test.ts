@@ -27,3 +27,23 @@ describe('importModeOn — import mode ends by itself', () => {
         expect(importModeOn({ importMode: 1 }, now)).toBe(false); // the old boolean "on" is off
     });
 });
+
+describe('withPendingCaps — a key before approval', () => {
+    it('lowers the caps to 25 exact / 10 fuzzy, never raises them', async () => {
+        const { withPendingCaps, PENDING_APPROVAL_CAPS } = await import('./access');
+        expect(PENDING_APPROVAL_CAPS).toEqual({ exact: 25, fuzzy: 10 });
+        expect(withPendingCaps({ id: 'k', dailyCapExact: 100, dailyCapFuzzy: 50 })).toEqual({ id: 'k', dailyCapExact: 25, dailyCapFuzzy: 10 });
+        expect(withPendingCaps({ dailyCapExact: 5, dailyCapFuzzy: 0 })).toEqual({ dailyCapExact: 5, dailyCapFuzzy: 0 });
+    });
+});
+
+describe('clientInfoOf — who sent a call (never the IP)', () => {
+    it('reads user agent (capped), ray and country', async () => {
+        const { clientInfoOf } = await import('./handler');
+        const req = new Request('https://x.test/api/v1/me', { headers: { 'user-agent': 'a'.repeat(300), 'cf-ray': 'abc-EZE', 'cf-ipcountry': 'AR', 'cf-connecting-ip': '1.2.3.4' } });
+        const c = clientInfoOf(req);
+        expect(c.userAgent).toHaveLength(200);
+        expect(c).toMatchObject({ cfRay: 'abc-EZE', country: 'AR' });
+        expect(JSON.stringify(c)).not.toContain('1.2.3.4');
+    });
+});

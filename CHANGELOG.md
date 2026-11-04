@@ -2,6 +2,891 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.21] - 2026-11-04
+
+### Fixed — profile notes from a form showed free-text answers as code
+
+Opening a profile from an application pre-fills its notes with the applicant's
+answers. Free-text answers came out as `rental: {"open":"…"}`; they now read as
+the applicant wrote them (`rental: Alquilo, el dueño acepta gatos`). Other answers
+are listed as before. Rules: `src/domain/formNotes.test.ts`.
+
+## [2.58.20] - 2026-11-04
+
+### Changed — CI: final-review fixes for the Cloudflare-build gate
+- Each e2e run signs its test sessions with a fresh random AUTH_SECRET (masked) instead of the repository secret:
+  the test servers are localhost-only, and Playwright traces uploaded to this public repo's artifacts carry
+  session cookies signed with it.
+- The `next dev` fallback legs run on staging pushes and dispatches only, not on master: there they could hold a
+  finished release run open and queue the next one behind tests that no longer gate anything.
+- CLAUDE.md, `.agents/workflows/deploy.md` and ci.yml comments describe the new gate (`e2e-cf`), the ~16-min
+  pipeline, "read the deploy job's result during the fallback week", and the service-worker trap for `page.route`
+  stubs of `/api/` reads.
+
+## [2.58.19] - 2026-11-04
+
+### Changed — CI: the e2e tests that gate a release now run on the real Cloudflare build
+- Both deploys now wait for `e2e-cf` (the same 17 legs on the production bundle) instead of the `next dev` legs.
+  Switched after 3 green runs in a row with identical test counts (41766750080, 41771292017, 41773157707): no
+  memory restarts and no flaky tests on the Cloudflare build, against 2 restarts and 3–4 flaky tests per run on
+  `next dev`.
+- The `next dev` legs keep running for one week as a fallback (no longer a gate, still red when they fail), then
+  are removed in their own version.
+
+## [2.58.18] - 2026-11-04
+
+### Changed — CI: e2e also runs on the real Cloudflare build (audit 2026-11-03, phases C + D)
+- New jobs `build-cf` + `e2e-cf`: the same 17 legs run against the production bundle served by
+  `wrangler pages dev`. Not a deploy gate yet: after 3 green runs in a row with equal test counts it replaces the
+  `next dev` legs. First runs: every test passes, no memory restarts, legs 1–6 min instead of 1–13.
+- The CF test copy of the build answers the email service with a stub (dummy key, cannot send); it is never deployed.
+  No app code changed for it.
+- The import-wizard duplicate tests block the service worker (the production build's `sw.js` answers `/api/` reads,
+  so the test's stubs were bypassed). No check removed.
+- Memory log: every e2e leg uploads `e2e-heap.log` (heap peak every 10 s). Measured: the restarts come from the two
+  biggest legs crossing ~6.4 GB; `--disable-source-maps` did not help and is not used.
+- Manual experiment runs (`workflow_dispatch`) run build and tests only — never migrations or deploys.
+- The partition check also fails the build if the Cloudflare matrix drifts from the e2e one or its config selects
+  different tests. Today: 362 tests, both paths identical.
+
+## [2.58.17] - 2026-11-04
+
+### Fixed — logging can never crash a request (re-review of 2.58.16)
+
+- The log scrubber never throws: circular data, BigInts and a self-returning toJSON become
+  `[unserializable]` instead of turning a handled error into a crash.
+- Class instances in log data are named (`[URLSearchParams]`), never printed — their text can
+  hold a search query.
+- After `params:` only real stack frames (`at fn (file.js:12:3)`) are kept: a value line that
+  merely starts with "at" is cut too.
+
+## [2.58.16] - 2026-11-04
+
+### Fixed — independent review of 2.58.15 (before production)
+
+- A call that crashed right after creating a profile, once released for a retry, no longer
+  holds its externalId: the retry adds the activity to that profile instead of being refused
+  forever as `external_id_reused` (blocker, with an e2e test).
+- Error scrubbing cuts everything after `params:`, not just its first line: a pretty-printed
+  request body or a multi-line note no longer leaks its later lines; an Error placed in log
+  data is reduced to its scrubbed message; Dates and URLs keep their value.
+- A released abandoned call becomes `504 abandoned` instead of counting as a call that ran
+  (daily limits, usage), and shows as such in Admin → API.
+- The partner's externalId (free text that could be a document or an email) stays out of
+  Axiom; «api: call started» is logged after the key check, so keyless scanners don't double
+  the log.
+
+## [2.58.15] - 2026-11-04
+
+### Fixed — API troubleshooting: every call leaves a trace; no personal data in error logs
+
+From the 2026-11-04 logging audit (Jon: "implement the fixes and the next steps").
+- **A retry no longer erases the failed call**: a crashed or abandoned claim is released
+  (its externalId freed), never deleted — its errorId, bodies and any profile it made stay.
+- **Nothing escapes without a trace**: a failed key lookup is a logged 503 (was a bare 500
+  with no log), an unexpected throw anywhere is logged and answered as JSON with CORS, a D1
+  blip reading the API switch is a logged 503 (was a wrong 404 «not enabled»), and every call
+  logs `api: call started` first — so one the worker never finishes still leaves a line.
+- **Privacy, app-wide**: Drizzle's `params:` (a person's name and contacts) are cut from every
+  logged error message, stack, cause and warn field before Axiom or the console.
+- **Groupable failures in Axiom**: `api: call` carries errorCode, dryRun, externalId,
+  recordId, profileCreated, degraded and the client; a refused key logs why and its 12-char
+  prefix; internal 503s now give the partner their errorId (and keep it on the row);
+  Cloudflare's ray is kept next to the API's requestId.
+- **Each call's row** (migration 0101) records which client sent it (user agent, ray,
+  country — never the IP), how an exact match was decided (candidate ids, identifier kinds,
+  verdicts, phone country — no values; kept past the 90-day body purge), and whether a fuzzy
+  answer was degraded by a D1 fallback.
+- Admin → API → Llamadas: «Sin terminar» and «Respuesta parcial» badges, and the call detail
+  shows who sent it and how it was decided. An unreadable body is `body_unreadable`, not
+  `invalid_json`.
+
+## [2.58.14] - 2026-11-03
+
+### Changed — CI: faster, steadier e2e tests (audit 2026-11-03, phase B)
+- Test data is prepared and cleaned in one database call per step instead of one per statement (`tests/db.ts`,
+  replacing 34 private copies). Locally the households tests take 2.6 min instead of 6.1. A failed test-data step
+  now fails loudly instead of returning nothing, and shared settings are always reset after a test group.
+- Two chronic flakes fixed: the page smoke tests no longer wait for the network to go quiet (avatar images never
+  finish), and the API-keys check reads the page's own response instead of a second request that was cut off.
+- Tests that never ran now run (the /funcionalidades logged-out tests); silent skips in the custom-form and
+  language tests now fail loudly; the mobile test runs once instead of twice.
+- Removed by Jon's decision (flags stay ON for good): the "Public API off" tests (2) and the "custom forms off"
+  test (1). An old duplicate-banner test points at today's «Posible duplicado» line; its dismiss test is gone (no
+  such button exists). Five database checks moved into unit tests; each click's on-screen result is still checked.
+- Count: 361 tests in 17 legs; every difference from 367 is mapped in `.agents/audits/2026-11-03-e2e-coverage-ledger.md`.
+
+## [2.58.13] - 2026-11-03
+
+### Changed — CI: releases stop getting stuck in the e2e tests (audit 2026-11-03)
+- The households tests (13 that run in order) have their own e2e leg, `user-households`. They had pushed the `user-1`
+  leg to 95% of its 30-minute limit, so 3 of the last 6 releases timed out and needed a manual re-run.
+- The automatic re-run after a test-server memory restart only starts when it can finish (attempt 1 ≤ 12 min); the
+  test step stops at 25 minutes so its report is still uploaded; a leg that runs over 15 minutes prints a warning.
+- A build check (`scripts/e2e-partition-check.mjs`) fails the pipeline if any e2e test runs in no leg or in two.
+  Today: 367 tests in 17 legs, nothing lost.
+
+## [2.58.12] - 2026-11-02
+
+### Changed — sheet import: the document Id joins rows like a phone
+- Rows of one sheet with the same document Id and agreeing names become one profile with several activities
+  («🔗 N actividades · mismo documento»). Same document Id with another name stays separate. Placeholder values
+  («00000000», «12345678»), values too short to be a document, and a document Id written by more than 3 different
+  names join nobody. «Separar» still undoes any group.
+
+### Fixed
+- The «Revisar» screen listed a joined row's document Id twice when the rows wrote it differently («35.111.222» and
+  «35111222»). It now shows it once, as first written (the profile already saved it once).
+
+## [2.58.11] - 2026-11-02
+
+### Changed — every screen uses the same "is this the same person?" rule
+- A DNI now counts exactly like a phone: same DNI and the names agree → same person; same DNI with another name (or
+  no name) → «posible», for a person to review. In the sheet import such a row now goes to «Revisar», not
+  «Actualizar». Placeholder DNIs and DNIs on more than 3 differently-named profiles still link nobody.
+- «Nuevo adoptante», «Agregar conviviente» and the phone interview also check the DNI. The «Posible coincidencia
+  exacta» box shows only for the same person; a shared phone or email with another name is listed as «posible».
+  Someone with the same full name but other contacts is now listed too. The same person always comes first.
+- Social-post import: contacts are matched as typed (an Instagram account without @ now finds the profile); only
+  the same person is pre-selected; the hint and the match screen list the same people.
+- «Pendientes de revisar»: a public form, contract or API profile now leaves a pair for every «same» or «posible»
+  match, including people who only share the full name (shown with a low percentage). Pairs are never made from
+  placeholder or widely shared data, and the new profile no longer counts against that limit.
+- Search box: an email, DNI or @account typed in the search puts the person it identifies first, among the results
+  already shown. Not for visitors who aren't logged in.
+- API v1: `person.socials` is accepted as an identifier in exact mode (`matchedOn: 'social'`); socials already sent
+  now count, so some answers can change. Placeholder or widely shared data (e.g. Facebook «no», an account on more
+  than 3 different names) links nobody. Fuzzy mode puts a profile the identifiers identify first. Documented under
+  «Cambios y versiones».
+- What is typed in a social field is kept exactly as written (a visible name is never turned into «Conocido/a como»).
+
+## [2.58.10] - 2026-11-02
+
+### Changed — the sheet import decides who is the same person with one rule
+- A row with the same DNI as a profile is the same person, even if the name is written differently. Placeholder DNIs
+  (one digit repeated, «12345678») and a DNI found on more than 3 differently-named profiles don't count.
+- A row sharing a phone, email or social account with a profile is the same person only when the names agree. When
+  they don't (e.g. a partner's phone), the row goes to «Revisar» instead of «Actualizar».
+- A row with the same full name as a profile but different contacts now goes to «Revisar» (before, it was silently
+  created as a new profile).
+- A row that matches two different people (e.g. «Gómez» with a phone shared by Ana and Juan Gómez) goes to «Revisar».
+- A row with no name that shares a contact goes to «Revisar».
+- Rows inside the same sheet are only grouped as one person when all their names agree.
+- On an identical-copy row, picking a «También coincide con» profile shows «Posible duplicado de» and is left out of
+  «aplicar a todos los exactos».
+
+## [2.58.9] - 2026-11-01
+
+### Changed — joining two profiles of the same person
+- One word everywhere: «Unir». «Unir con este perfil» in «¿Es este perfil?», «Unir perfiles» / «Pedir unir» in
+  Pendientes, «Unir» in the admin Duplicados panel («Se conserva» / «Se suma al otro»), «Pedidos para unir».
+- When the profile you are editing joins another, the confirmation says so: «¿Unir el perfil de … con el de …?»,
+  «El perfil de … deja de existir: sus datos y registros pasan al de …», «Sí, unirlos».
+- Every link that opens a profile in a new tab reads «Abrir perfil ↗».
+- «¿Es este perfil?» names the profile someone else loaded, lets you pick the social network right there, and only
+  joins two profiles that share the same full phone, email, document or account on the same network.
+
+### Changed — the home on person cards
+- The «Vive con…» line is replaced by alerts: «Conviviente con calificación 1.0» (someone in their home is rated 1★
+  or 2★) and «Conviviente con alertas» (someone in their home has alerts of their own). Tapping one lists everyone in
+  the home with their rating and alerts.
+- They show on search cards, match cards, Pendientes, «Mis Adoptantes» and the profile header. On the profile and in
+  «Mis Adoptantes» a tap opens «Familiares / Convivientes». The «Ya está en otro perfil» notice shows nothing about
+  the home.
+- The profile section is called «Familiares / Convivientes» again, and shows each person's alerts.
+- Pendientes cards show each person's own rating.
+
+### Changed — reports are not alerts
+- A rescuer's report shows as a grey chip with its name («Duplicado»), never counted as an alert. «Inexacto» is shown
+  only in the admin pages.
+
+### Fixed
+- «Revisar» on a «posible duplicado» notice always lands on the pair in Pendientes.
+- Spreadsheet import: rows identical to a profile check «También coincide con» by email, phone or document number,
+  the same way the API does, and much faster on big sheets.
+- Nobody can set a person's age anymore, by any route.
+
+## [2.58.8] - 2026-10-31
+
+### Fixed — possible duplicates
+- «Pendientes de revisar» and the admin «Fusionar perfiles» window propose keeping the same profile: the one loaded
+  first. The admin window used to propose whichever the system stored first. Either can still be switched.
+- «⋯ Reportar duplicado» never lists the profile you are on. A failed search now says so, with its error id, instead
+  of looking like «no results».
+- Spreadsheet import: a row that matches more than one profile lists the others under the first — «También coincide
+  con …», with «Abrir ↗» and «Actualizar este» to update that one instead. Rows identical to a profile are checked
+  for other matches too.
+
+### Changed
+- «Reportar inexactitud»: the notice quotes what the person wrote (up to 280 characters), so whoever can fix the
+  profile knows what to fix.
+
+## [2.58.7] - 2026-10-31
+
+### Changed — «Ya está en otro perfil» (typing a contact that another profile already has)
+- A compact box under the field: each match's name and rating, and «Ver perfil». «Ver perfil» opens a window over
+  the page, so what you were typing stays. The box no longer shows the person's home.
+- In the window, what you can do depends on who loaded the profile you are editing:
+  - You, your team or an admin: «Continuar con este perfil». The profile you were editing joins the match, you land on
+    the match with «Listo», and the number you typed is kept on it.
+  - Someone else: «Marcar como posible duplicado» (the people who loaded each profile and the admins are told),
+    «Abrir perfil para agregar datos» or «No es esta persona».
+  - Already marked, already said to be two people, or recorded as living together: the window says so instead of
+    asking again. Where someone already said no, your team can ask the admins to review it.
+- Every duplicate report (this window and «⋯ Reportar duplicado») now also tells the people who loaded the profiles,
+  not only the admins.
+
+### Changed — home on person cards
+- Cards show the home folded: «Vive con N personas» with the lowest rating or alert, opened with a tap. It shows only
+  when someone in the home has a low rating or an alert, and not at all while households are switched off.
+- Copy: «Agregar alguien al hogar», «N datos de contacto».
+
+### Changed — «⋯ Reportar inexactitud»
+- Reads «La información es incorrecta» and is offered only to people who can't edit the profile; guests are asked to
+  sign in. The form no longer asks for name or email: we know who you are.
+- Whoever loaded the profile, their team and the admins are told. A repeat report from the same person tells no one
+  again.
+
+### Changed — age
+- Adding or changing a person's age, and the «Es menor de edad» box, are removed until there is a better design.
+  Ages already saved still show and still go up each year; the applicants' form still asks for ages.
+
+### Fixed
+- The same phone written two ways («+54 9 11 …» and «11 …») is kept once when profiles are joined or a contact is
+  added, instead of twice.
+
+## [2.58.6] - 2026-10-28
+
+### Changed — profile duplicate banner
+- One line for everyone: «Posible duplicado de <nombre>», the name opening that profile («y N más» when there are
+  several). The long «el responsable del registro puede revisarlo» sentence is gone.
+- «Revisar» shows only when the pair is on your own «Pendientes de revisar» list, and opens that list on the pair:
+  the right page, expanded, outlined, just below the top bar.
+- Profiles already merged away are no longer offered as possible duplicates.
+
+## [2.58.5] - 2026-10-28
+
+### Changed — one rating look, minors simplified
+- Rating: one pill everywhere a rating is shown («★ 4.0 · Bueno», same size and colour on every screen). A person
+  with no rating shows «Sin calificación» in the same pill shape. In Actividad, a record's rating sits under its
+  description instead of in a narrow left column.
+- «Menor de edad» uses the same pill shape, in purple. Minors are an informational marker only: they can be rated,
+  have records, be flagged and be picked like anyone else.
+- Public API: flags follow the app's rule — `duplicate` means an open duplicate report only.
+
+### Fixed
+- The rating average ignores empty ratings (an empty rating is saved as empty, never 0), so the header and
+  Actividad always show the same average.
+- The duplicate check never shows a regular user a profile that was merged away.
+- Dialogs: one Escape closes one layer; focus returns to the button that opened it.
+
+## [2.58.4] - 2026-10-28
+
+### Fixed — final consistency round
+- Alerts: one rule everywhere (the profile header's). A single alert shows its own label («Inexacto» red,
+  «Duplicado» amber) instead of «1 alerta»; resolved duplicate reports no longer show in the app (the public
+  API is unchanged). The applicants list uses the same alert pill.
+- Search cards say «Conocido/a como» for another name.
+- /my-adopters: no hydration error on load (no link inside a link); long names no longer push the phone screen wide.
+- «¿Continuar con el perfil de X?» lists what the typed data really adds (no false «No hay información nueva»);
+  its failures are toasts with an Error ID, not a browser alert.
+- Dialogs keep the keyboard inside and give focus back to what opened them.
+- Pendientes and admin merge buttons use the same button styles as everywhere else.
+- Edit/delete controls are always visible (name and contact rows alike); remaining small tap targets are 44px.
+- Header «⋯» items in sentence case; merge notices use the «se conserva / se suma al otro» wording;
+  «Login bloqueado» notices have a label and icon; result-page headings use icons, not emoji.
+- The duplicate check never reveals more than the duplicate search to the same person.
+
+## [2.58.3] - 2026-10-28
+
+### Fixed — audit of the household and merge pages
+- The «⋯» menu of the last household member (and «¿En qué hogar?») opened under the «¿Qué pasó con …?» card,
+  so «Eliminar perfil» couldn't be tapped. Menus now open above everything, flip upward when there's no room,
+  and work with the keyboard (arrows, Home/End, Escape).
+- Dark mode: hovered/focused options no longer turn white-on-white.
+- Minors: tagged «Menor de edad» and not selectable when picking an adopter or matching an import; the rule
+  shows as a plain explanation instead of a red error with an Error ID, on every path.
+- Admin merge requests and questioned merges: each row shows «Qué coincide y qué no», the two cases are named
+  «Revisión pedida» / «Combinación cuestionada», and every decision asks for confirmation (stating the
+  consequence) and confirms with a toast. No false padlock for admins.
+- One name per person in notices (no emails); «Carla Ruiz → Carla Ruiz» shown once; no English
+  «--- Merged from ---» notes; plurals («1 vista», «1 observación»); «Le di», «Fotos», «Para sí» / «Es un regalo».
+- «✓ Combinados» rows get their own «Recién combinados» section.
+
+### Changed — one look for one concept
+- One rating, alerts and «Menor de edad» rendering on profile header, household rows, search cards and match cards.
+- One «⋯» menu, one dialog style (title, ×, Cancelar with a visible border in dark mode), one «Deshacer» and one
+  profile banner style.
+- One «Qué coincide y qué no» card on form results, contract results, «Posibles coincidencias», the save check
+  and the import; every one has «Ver perfil completo» and «No es esta persona». The save check's «Usar perfil
+  existente» (which lost what was typed) is now «Continuar con este perfil».
+- Notifications: every type has a label and an icon; filter chips and buttons are 44px; no sideways scroll on phones.
+- 44px tap targets on household rows, contact rows, the name pencil and the header «⋯».
+- «Hogar» / «convive con» wording everywhere; settings «Avisos por email» names renames and household notices.
+
+### Admin
+- «Escanear ahora» (duplicates) finishes in one run.
+- Release runbook for households added to the deploy workflow.
+
+## [2.58.2] - 2026-10-27
+
+### Fixed — household section consistency
+- Adding a household member: the «¿En qué hogar?» list and the ⋯ menu were cut off by the card; a phone still
+  being typed was lost on «Guardar» / «Sí, es esta persona» (those are now disabled while typing); the form now
+  looks like the rest of the profile.
+- One «Agregar dato de contacto» everywhere (no more «Agregar dato» / «0 datos»).
+- Household contacts use the profile's own contact list (same font, icons, padlock, edit/delete), with that
+  person's own permissions.
+- A person's rating, alerts and activity read the same on household rows, «¿Es este perfil?» and card
+  household lines («★ 4.0 Bueno», «Sin calificación», «1 observación»).
+- Contact buttons are at least 44px tall on phones; ⋯ menus close with Escape and return focus.
+
+## [2.58.1] - 2026-10-27
+
+### Changed — compact «Familiares / Convivientes»
+- One compact row per person: name (opens their profile), rating, alerts or «Menor de edad», and their activity
+  counted exactly like their own «Actividad» (transits and returns included). Contact details open with «N datos».
+- One attribution line per person («agregado por vos» / «según …»); «Perfil cargado por» is gone from the rows.
+- No «Hogar con …» titles; a small divider appears only when someone lives in two homes, and «Agregar» asks
+  «¿En qué hogar?» only then. The section takes about half the height, so «Actividad» is no longer buried.
+
+### Fixed
+- «Actividad» says «1 observación» (singular) instead of «1 observaciones».
+
+## [2.58.0] - 2026-10-27
+
+### Changed — every person in a household is a profile
+- Anyone named in a household is now their own profile: searchable, rateable, with their contact details stored
+  once. A household is a group of profiles that live together; a person can be in more than one.
+- Searching a person shows only that person's card, with a «Convive con …» line showing each housemate's
+  rating and alerts. Housemates are never flagged as duplicates of each other (unless they share an email
+  or ID number).
+- Adding someone to a household checks «¿Es este perfil?» first. The person's name is the link to their
+  profile, and a «⋯» menu offers «Editar», «Quitar del hogar» (by mistake / doesn't live here) and
+  «Eliminar perfil» or «Pedir eliminación» under today's deletion rules.
+- Forms, imports, the API and interviews reuse an existing profile only on the API's exact match (phone,
+  email or ID number, plus a fitting name); otherwise they create the person and let the duplicate review
+  decide. Re-sending the same form never creates anyone twice.
+- A gift recipient stays as the form gave it on the giver's profile, with «Crear perfil de …».
+
+### Added
+- Anyone signed in can change a profile's name or age. The old name is kept as «Conocido/a como» so search
+  still finds it, and the owner's team is told in the app and by email with «Deshacer».
+- Children: a profile under 18 (or marked «Es menor de edad») is tagged «Menor de edad». It gets no rating,
+  alerts or adoption records; those go on the adults in the household.
+- Owners can now see their own profile's change history (needed to reach «Deshacer»).
+
+### Notes for release
+- Names of people who were household members become fully visible to signed-in rescuers once they are
+  profiles (before, other rescuers saw initials).
+- After deploy: run the household conversion (admin), then Admin → Duplicates → Scan Now (tokenizer v8).
+  Checked on a copy of production: 19 homes, 29 people, nobody gains or loses sight of any contact detail.
+
+## [2.57.3] - 2026-10-26
+
+### Fixed
+- «Convive con» is listed with the household members, above «Agregar familiar / conviviente».
+- A linked conviviente's card looks like any member's: summary under the name, contacts in the same rows,
+  «Agregar dato de contacto» on its own line, then «Ver perfil completo» and «No convive». The extra
+  «Se agrega al perfil de…» label is gone.
+
+## [2.57.2] - 2026-10-26
+
+### Added — anyone can add to a household
+- Any signed-in rescuer can add a household member, or a contact to a member, on any profile, credited to
+  them, the same way contact details work. They can edit or delete only what they added; the owner's team,
+  admins and moderators can change everything. The contacts they add stay protected for everyone else, the
+  owner's team is notified, and access is requested for them.
+- A linked conviviente's card («Convive con» and the host's household) has «Agregar dato de contacto»: it
+  saves on that person's own profile («Se agrega al perfil de …»), so their details are stored once.
+- Adding a contact that was already there says so («Ese dato ya estaba cargado») instead of doing nothing.
+
+### Security
+- Only the owner, their team, admins and moderators can approve or revoke access to a profile's contact
+  details, or see its pending requests. Before, flagging a profile, logging a record on it or deleting one
+  of its photos counted as "editing" it and gave that power. Not used in production (no requests on record).
+- What a rescuer does on someone else's profile is recorded as a contribution, never as an edit.
+
+### Fixed
+- «Ver como otro usuario» no longer shows household edit and delete buttons to the owner.
+- Approvals and access notices no longer depend on the capitalisation of the owner's email.
+
+## [2.57.1] - 2026-10-26
+
+### Added — one shared reality for households and merges
+- A conviviente added from another profile links both ways: the host shows the person's profile, and the
+  person's profile shows «Convive con» the host (with name, rating and a link), for every rescuer.
+- «No convive»: the linked person's rescuer can correct the household for everyone. The member leaves the
+  host's household, both profiles get a history line, and the host's owner is notified. Adding the person
+  back later notifies admins.
+- Disputes go to admins, never around the other rescuer: after someone said «no es la misma persona»,
+  keeping the other profile becomes «Pedir revisión a un administrador». After an immediate merge
+  (Pendientes, contract or form), the absorbed profile's owner sees «¿No es la misma persona? Avisar a un
+  administrador»; admins «Deshacer combinación» or «Mantener» in «Pedidos de combinación», and both sides
+  are told.
+- After combining in «Pendientes de revisar», the row stays as «Combinado» with «Ver perfil» until reload,
+  and the success notice links to the resulting profile.
+
+### Changed
+- Household links and corrections follow merges and undos.
+- When a host removes a linked member, the linked profile's history says so.
+- Confirmation dialogs open above the page, so they're never dimmed by the section behind them.
+
+### Fixed
+- Two rescuers combining the same pair in opposite directions at the same moment can no longer delete both
+  profiles.
+- Local development no longer sends notification emails.
+- Contract and form notices no longer carry the attaching rescuer's email.
+
+## [2.57.0] - 2026-10-25
+
+### Added — combining duplicate profiles between rescuers
+- «Pendientes de revisar» is rebuilt as an inbox: rows grouped as Necesitan tu respuesta → Enviados →
+  Rechazados → Posibles duplicados, each with «Coinciden: … · Distinto: …»; admins also see the match %
+  behind the gauge icon. Opening a row shows the «Qué coincide y qué no» comparison.
+- The rescuer chooses which profile stays («¿Cuál se conserva?»). Keeping the other rescuer's profile
+  combines right away after a confirmation; keeping yours sends «Pedir combinar» to its owner, who can
+  accept, keep their own instead, or reject. Admins decide any request at any time
+  («Pedidos de combinación» in the admin panel).
+- Different names with the same phone/email/address ask «¿Es la misma persona?»; «alguien de su hogar»
+  keeps both profiles and links the person as a conviviente.
+- Rejected pairs stay listed with «Escribirle» (a message whose reply goes to the sender) and «Quitar de la
+  lista».
+- «Qué coincide y qué no» on every same-person screen (post import, form and contract results, new adopter,
+  Reportar duplicado, spreadsheet import); match scores shown only to admins.
+- Every notification is also emailed, in each person's language, with per-category switches in
+  Configuración («Avisos por email»), a one-click «dejar de recibir» link, an admin off switch
+  (ENABLE_NOTIFICATION_EMAIL) and a «[Staging]» label on staging.
+
+### Changed
+- An old link to a merged profile opens the profile it was merged into, with a note.
+- After your profile folds into another rescuer's, you keep seeing the details you entered (the whole
+  profile when its owner agreed or an admin merged).
+- Dark theme: duplicate chips, warnings, hints, placeholders and admin pages are readable.
+
+### Fixed
+- «Revisar →» and «Posible duplicado» links open «Pendientes de revisar».
+- A failed duplicate search on the new-adopter form says so and can be retried.
+
+## [2.56.235] - 2026-10-23
+
+### Changed — the post-deploy environment check, tightened after its review
+
+Independent review of 2.56.234 (verdict: OK for staging and production) suggested:
+- The deploy-skew check now runs even if the API environment check before it failed, so one red
+  check can't hide the other.
+- In production, an `api_disabled` answer fails the check: the API is on there, so it means the
+  flag couldn't be read, not that all is well. Each probe gives up after 20 seconds.
+- `openapi.test.ts` clears `APP_ENVIRONMENT` so its hostname-based expectations hold even if a
+  build's stamp ever leaks into the test run.
+
+## [2.56.234] - 2026-10-23
+
+### Fixed — the API knows it is production on every address production answers on
+
+Found by the independent review of 2.56.232: the API decided "production or staging" from the
+address it was called on, and production also answers on `buenadoptante.org.` (trailing dot),
+Cloudflare's other HTTPS ports and `verazadoptantes2.pages.dev`. There it acted as staging: new keys
+came out as `ba_test_`, dry runs ran on production data, and the docs' example people were not
+refused. Checked 2026-10-23 (read-only): production has 1 key (live), 0 dry runs, 0 example profiles
+— it was never used.
+- **CI stamps each build** with `APP_ENVIRONMENT` (`staging` / `production`), inlined by
+  `next.config.ts`; a production build is live on every address. Each build step refuses to run
+  with the wrong stamp.
+- The address check stays as a fallback (local dev) and now ignores a trailing dot, a port and case.
+- **After every deploy, CI calls the new deployment's own pages.dev address** with a made-up
+  `ba_live_` key: production must answer as production, staging as staging. Pinned in
+  `src/lib/api/keys.test.ts`.
+
+## [2.56.233] - 2026-10-23
+
+### Fixed — browser access to the API is limited to the staging hosts by name
+
+The independent review of 2.56.232 found production also answers on `buenadoptante.org.` (trailing
+dot), Cloudflare's other HTTPS ports and `verazadoptantes2.pages.dev`, and those read as "not
+production". CORS is now an allow-list: only `staging.buenadoptante.org`,
+`staging.verazadoptantes2.pages.dev` and localhost. Tests pin every production name to "no CORS".
+
+## [2.56.232] - 2026-10-23
+
+### Changed — the API answers browsers on staging (for the shared Hoppscotch collection)
+
+Jon, 2026-10-23: the shared Hoppscotch test collection runs in the browser (hoppscotch.io), and the
+browser refused every call because the API never said other sites may call it ("Error de red").
+- On **staging and preview hosts only**, every `/api/v1` answer (errors included) and
+  `openapi.json` now say any site may call (`Access-Control-Allow-Origin: *`), and expose the
+  `RateLimit-*`, `Retry-After` and `x-request-id` headers. The browser's preflight (OPTIONS) is
+  answered with the key, JSON and `X-Dry-Run` headers allowed. No cookies are involved: the key
+  travels in `Authorization`.
+- **Production is unchanged**: it sends none of these headers, so browsers stay refused there — a
+  key pasted into a public web page could be copied by anyone; partners call from their server.
+  Pinned in `src/lib/api/cors.test.ts`.
+
+## [2.56.231] - 2026-10-22
+
+### Changed — /developers: a key at once, admin approval raises the limit
+
+Jon, 2026-10-22: instead of waiting for an admin, a person gets their API key right after
+accepting the terms, with a starting limit, and is told an admin will raise it.
+- Before approval their own keys allow **25 exact and 10 fuzzy searches a day, across all of
+  them**; approved, 100 and 50 (unchanged). A deny keeps them at 25/10; only a block turns keys
+  off. Admins and admin-issued keys are unaffected.
+- The **first key files the approval request** (its name is the tool; an optional "what for"
+  field), and the admins are notified as before. /developers says where the request stands, and
+  the box with the new secret says the key is on the starting limit.
+- The 429 says the limit is the starting one and how it goes up; `access_not_approved` is gone
+  (documented limits updated). Admin → API: keys on the starting limit are marked, and a
+  person's page says what approving changes. Approve/deny notifications speak of limits.
+
+## [2.56.230] - 2026-10-22
+
+### Fixed — fewer `next dev` restarts in CI e2e
+
+2.56.229 (first run inside the Playwright container: setup ~1 min, 15/16 legs green, 11 min total) failed
+the view-as leg when `next dev` restarted mid-test — 3 restarts in that leg, same as every recent run. The
+old reason not to raise the heap ("7 GB runner") no longer holds: the repo is public, runners have 16 GB.
+CI now sizes the test server's heap to half the runner's RAM, capped at 8 GB (was 4 GB); local stays 4 GB.
+
+## [2.56.229] - 2026-10-22
+
+### Fixed — e2e container: no sqlite3 CLI dependency; --init
+
+From the review of 2.56.227: the Playwright image has no `sqlite3` command, which the email-OTP test used
+to plant a known code — it now writes through better-sqlite3 (CI's Node 20), falling back to the CLI
+locally where better-sqlite3 won't load. The container also runs with `--init`, so exited browser and
+`next dev` processes are reaped between the test run and its one automatic re-run.
+
+## [2.56.228] - 2026-10-22
+
+### Fixed — e2e container steps run in bash
+
+2.56.227 failed every leg in 46 seconds: inside a container GitHub's default shell is `sh`, which rejects
+`set -o pipefail`. The e2e job now defaults to bash.
+
+## [2.56.227] - 2026-10-22
+
+### Changed — e2e runs inside Playwright's CI image (no downloads at setup)
+
+The 2.56.226 run took 19 minutes: one leg spent 10 minutes installing system packages from the crawling
+Ubuntu mirror (two attempts killed at the limit, each restarting from zero), and the deploy waits for the
+slowest leg. The e2e job now runs in `mcr.microsoft.com/playwright:v1.58.0-noble`, which has the browsers
+and their system packages preinstalled — no browser download, no apt. A step fails the job if the image
+tag and @playwright/test drift apart. node_modules stays cached on a version-bump-proof fingerprint.
+
+## [2.56.226] - 2026-10-22
+
+### Fixed — the CI install retry actually retries (review of 2.56.225)
+
+2.56.225's retry loop failed 4 legs: `timeout` killed `npx` but not the `apt-get` that Playwright runs via
+`sudo` (its own session), which kept the dpkg lock, so retries 2 and 3 died in a second.
+- Browser binaries download without `--with-deps` (user-owned, killable), retried.
+- System packages install as root so apt runs inside timeout's process group; apt retries downloads, times out
+  stalled mirror connections and waits for the lock; a failed attempt kills leftovers and repairs dpkg.
+- Only the `rest` leg (the iPhone/webkit tests) installs webkit and its ~120 MB of packages — the download
+  that crawled on the Ubuntu mirror; the other 15 legs install chromium only.
+- The fingerprint fails loudly instead of collapsing to a constant cache key; cache keys include the runner
+  image and .npmrc; the e2e job drops the npm cache that filled the 10 GB quota on every version bump.
+
+## [2.56.225] - 2026-10-22
+
+### Fixed — CI e2e setup no longer hangs a deploy
+
+Four staging runs on 2026-10-21/22 failed before any test ran: the browser download or the apt system
+packages hung until the 30-minute job cap, or `next dev` overran the 2-minute readiness wait.
+- Cache keys survive a version bump: they hashed the whole package-lock.json, which every deploy rewrites,
+  so nearly every run missed both caches (full `npm ci` + browser download per shard). Now keyed on the
+  dependency set (lockfile without its version fields) and on the Playwright version.
+- Browser and system-package installs are bounded (6 / 4 minutes per attempt) and retried 3 times.
+- CI's server readiness wait is 4 minutes (local stays at 2).
+
+## [2.56.224] - 2026-10-22
+
+### Fixed — every problem the rescuer meets in the import is logged (Jon, 2026-10-22)
+
+Principle: ANY issue affecting the user experience is logged, not only hard failures. Axiom now gets
+(codes and counts only — never names, contacts or post text):
+- **Server:** «Facebook post text unavailable» (caption missing / not extractable, with whether the source
+  is non-public or a video); «AI extraction completed with issues» with the AI's extraction issues, a failed
+  read, and phone/email/account/other-people counts.
+- **Wizard (warn):** the extraction problems shown on review (and whether the profile cannot be saved yet);
+  problems still open when the rescuer saves anyway; a video over 50 MB refused; shared images or a shared
+  contact lost or unreadable; a failed same-post or name/contact duplicate check; an alias not kept on
+  another team's profile; video thumbnails that failed; the «¿Por qué?» panel failing to load.
+- PostHog `import_completed` carries the extraction quality and the problems still open.
+
+## [2.56.223] - 2026-10-22
+
+### Changed — extraction quality: what we couldn't extract, and how to fix it (Jon, 2026-10-22)
+
+- **Confidence now means "how well we extracted the data"**, from two sources: what happened during the
+  import (Facebook hid the text, a video with no text, the AI call failed, a name with no phone/email/
+  account) and the AI's own report of what it could not read (blurry image, cut-off text, unsure digits
+  or spelling, unclear which detail is whose) — defined in the prompt, and never about what the post means
+  (that is the rating). Before, it was the AI's undefined impression.
+- **The review screen shows only real problems, each with its fix** («Facebook no mostró el texto del
+  post. Pegalo o subí una captura» → «Agregar» goes back to add it; a failed read → «Reintentar»). The
+  generic «AI-extracted data may contain errors» banner is gone; hints disappear as the rescuer fixes them.
+- **No more `import_high/medium/low` flags on profiles.** They counted in admin «Active Flags» and showed
+  in the reported-content panel. (The 105 already in production are untouched — Jon's call.)
+- A failed AI read no longer copies its «Extraction failed: …» diagnostic into the record's note.
+
+## [2.56.222] - 2026-10-22
+
+### Changed — a terser rating, the shared date picker (Jon, 2026-10-22)
+
+- The rating shows only the stars, pre-filled with the AI's suggestion when the post gives grounds —
+  no «Sugerido por la IA: …» caption, no «Quitar» (re-tapping the star still clears it).
+- «Cuándo pasó» uses the app's shared DatePicker (the adoption form's, with «No sé el día exacto»
+  for month and year) instead of a one-off month field. A date the AI read opens on month and year.
+- The «Alta/Media/Baja confianza» pill is gone from the review screen.
+
+## [2.56.221] - 2026-10-22
+
+### Changed — people named together in a post become relatives (Jon, 2026-10-22)
+
+- **«Es otra persona del post…» is gone.** It showed on every «Ya importaste este post» screen,
+  even for posts about one person, where it would have made someone their own relative.
+- **A post that names several people is handled in the first import.** The AI reads the main
+  person and the others («cuidado con Juan y su pareja Ana»); the review screen lists the others
+  («Otras personas del post», removable) and they are saved as relatives of the profile, with the
+  phones/accounts the post gives them, in the same save. When merging into an existing profile,
+  they are added to that profile's relatives.
+- **Matched on phone/email/address but not the name?** Before adding to that profile, the rescuer
+  says who the post's person is: «la misma persona, con otro nombre» (kept as an alias) or «un
+  familiar o alguien que vive con esa persona» (added as a relative with the post's contacts).
+  When the name matched, the post's spelling is still kept as an alias automatically.
+
+## [2.56.220] - 2026-10-22
+
+### Fixed — «Continuar» stuck disabled after the page reloaded with a saved draft
+
+Jon, on his phone: back to step 1, the link was still in the field, but «Continuar» stayed
+disabled even after editing it. The tab had reloaded (PostHog shows the reload). The wizard
+restores its draft from sessionStorage while rendering; the server cannot, so it sent an empty
+field and a disabled button, and React does not repair attribute mismatches on hydration — the
+button kept `disabled` forever. The wizard now waits until it is mounted before rendering, so the
+draft applies on a clean client render. This bug predates this audit (draft restore since v2.16).
+
+## [2.56.219] - 2026-10-22
+
+### Changed — a social post is a report; the rating is what matters (Jon, 2026-10-22)
+
+- **No activity type to choose.** Social-post imports are almost always call-outs (abuse, abandonment,
+  torture, killing…), so the record is always a report. The animal name/species fields are gone too.
+- **Rating up front**, right after the name. The AI **suggests** one from the conduct the post describes —
+  1★ for harm (abuse, torture, killing, poisoning, abandonment…), 2★ for neglect or broken commitments,
+  nothing when the post gives no grounds — shown with a «Sugerido por la IA: <motivo>» tag until the
+  rescuer changes it. Never saved silently; the rescuer can clear it. A 1★ shows that it stops the
+  person from adopting.
+  Before this, call-out posts got no rating at all, and since 2.56.212 the rating field didn't even show.
+- **When it happened: month and year, optional.** No day is invented; with no month the record has no
+  date (it used to get today's).
+- The AI no longer defaults adoption posts to 2★ without grounds.
+
+## [2.56.218] - 2026-10-21
+
+### Fixed — from the quick review of 2.56.217
+
+- `fb.watch/<code>` links keep their case (the code is case-sensitive; two videos could merge).
+- A share link that Facebook answers with a login wall stores the post it guards, not the login page.
+
+## [2.56.217] - 2026-10-21
+
+### Added — «¿No es el mismo post? Crear un perfil nuevo» (Jon, 2026-10-21)
+
+- The «Ya importaste este post» screen gets a way out: when the rescuer knows it is a different
+  post or person, they create a new profile. The name/contact duplicate check still runs.
+
+### Fixed — from the review of 2.56.216
+
+- Mobile `login.php` and `checkpoint` walls count as the post they guard (they had merged
+  different posts into one).
+- Older video links (`/videos/vb.<page>/<id>/`, `/videos/<title>/<id>/`) key by the video id;
+  `video.php?v=`, `groups/…?view=permalink&id=`, `/photos/<id>/` and `/people/<name>/<id>/` match
+  their usual forms.
+- Profile, page and group names match regardless of letter case; `es-la.`, `touch.` and `fb.com`
+  count as facebook.com.
+- The same-post lookup also checks the animal's own link on a placement (as the old view did).
+
+## [2.56.216] - 2026-10-21
+
+### Fixed — from the final review of 2.56.215
+
+- **Different Facebook/Instagram pages stay apart again**: parameters that identify a page are kept
+  wherever they appear (`?id=`, `?v=`, `?set=`, `?album_id=`, `?q=`, `?event_time_id=`, `?u=`),
+  so old group-permalink links, `video.php?v=` and album links no longer collapse into one.
+- A login-wall link (`/login?next=…`) counts as the page it guards.
+- A page named like an object built-in (`/constructor`) no longer breaks the lookup.
+- The lookup is case-insensitive and its search text is found inside stored redirect links too.
+- Activity records are looked up in the event and placement tables directly (newest first), so links
+  on ended placements are found.
+
+## [2.56.215] - 2026-10-21
+
+### Fixed — from the re-review of 2.56.214
+
+- **Profile and page links with harmless extras match again** (`?_rdc=1`, `?hl=es`, `&sk=photos`,
+  `refid`, `locale`…). 2.56.214 kept those parameters and split one page into many keys — on
+  Facebook/Instagram only identifying parameters (`profile.php?id`, `set`) count now. Checked
+  against every stored production link: nothing that matched in 2.56.213 stops matching.
+- Photos inside an album key by the photo id; `l.php` redirect links unwrapped on any Facebook host.
+- The lookup finds links stored encoded or as typed (accents, spaces), and newest profiles come first.
+- **«Agregar a este perfil» keeps the chosen profile** even when a check fails, and the
+  «No se pudo verificar…» warning also shows on the match screen.
+- Adding a relative records which kinds of contact came with them (types only) in the history.
+- `fb.com/share` links start from facebook.com so they can resolve; the shared link survives a refresh.
+
+## [2.56.214] - 2026-10-21
+
+### Fixed — from the independent review of 2.56.213
+
+- **Long post links no longer slip past the «ya importado» check.** Facebook `pfbid…` ids (60–70
+  characters) made the database reject the lookup («pattern too complex»), the error read as «not
+  imported», and a re-paste created a duplicate profile silently. The lookup uses `instr` now, and a
+  failed check says so («No se pudo verificar…») instead of saving as new.
+- **Old share links are still recognised**: the link as shared and the one Facebook resolved it to
+  are both checked.
+- **Different posts no longer share a key**: query strings that identify a page (?v=, ?set=) are kept,
+  tracking parameters dropped; group `?multi_permalinks=` links read as that post; Facebook/Instagram
+  redirect wrappers unwrapped; reels keyed by their path; `fb.com/share` links resolved too.
+- **«Agregar a este perfil» on the review screen runs the same checks as «Guardar»**, same-post first.
+- **«Agregar como familiar»** is offered only on profiles you can edit, and saves the person with all
+  their contacts in one write (no half-filled relative, no duplicate on retry).
+- Merging into another team's profile no longer shows a raw «Not authorized» after the record saved;
+  when contacts could not be added it says why, in the rescuer's language.
+- The same-post lookup returns only id, name and whether you can edit — not the full profile row.
+- Keyboard: Enter on «Ver» inside a match card opens the profile instead of toggling the card.
+
+## [2.56.213] - 2026-10-21
+
+### Changed — duplicate handling in the post import (audit 2026-10-21, batch 2b)
+
+- **The same post is recognised however its link looks**: www/m./web., tracking parameters,
+  `/posts/<id>` vs `permalink.php?story_fbid=<id>`, Instagram `/p/` and `/reel/`. Facebook
+  `/share/…` links (18% of stored links) are resolved to the post's own link when Facebook allows.
+- **Posts merged into an existing profile are remembered** — the check now also looks at activity
+  records, and lists every profile the post was saved to.
+- **«Ya importaste este post»**: «Ver perfil» leads (decision B9); «Agregar una nueva interacción»
+  is secondary; **«Es otra persona del post»** saves this person as a relative (household member,
+  with their contacts) of that profile (decision B6).
+- **Possible matches**: a weak match is no longer pre-selected; «Agregar al perfil elegido» is the
+  main button only for a strong match, otherwise «Crear un perfil nuevo» leads (B5). Each match has a
+  «¿Por qué?» panel — what the existing profile has (presence only), and a warning when only the
+  name matched with nothing to compare (same idea as the spreadsheet import).
+- **Review screen names the likely match** with «Agregar a este perfil» instead of a bare count (B7).
+- **Merging keeps the post's name as an alias** when it differs (B8), and **honours the «público»
+  switch** (merged contacts used to land protected whatever it said).
+- Duplicate screens use theme colours (no purple/blue) and pinned buttons on phones.
+
+## [2.56.212] - 2026-10-21
+
+### Changed — import wizard on phones, fewer steps (audit 2026-10-21, batch 2)
+
+- **Buttons stay pinned to the bottom on phones** for every step; the chat bubble moves above them.
+- **Pasted text or screenshots go straight to the AI read** — the step that only repeated the
+  paste («Revisar Contenido», labelled «Texto Extraído») now shows only for fetched links.
+- **The record type is always shown**, pre-selected from the AI, so a miss can be corrected
+  (a request used to save as one without the rescuer ever seeing it). Pills and save share one default.
+- **No «¿Crear nuevo perfil?» screen when there are no duplicates** — it saves straight away.
+- **Saving without a name** works when there is a phone, email, social account or ID; otherwise
+  a line says what is missing (it used to be a silently disabled button).
+- **«Cancelar»** at the top (to home) — only the bottom «Volver» goes back a step.
+- **Step name under the numbers on phones** instead of bare «1 2 3».
+- **Public switch**: the whole row is the switch (44px), with a line on what «public» means.
+- **One photo box** on both steps: drag-and-drop, paste a screenshot (Ctrl/Cmd+V), video thumbnails.
+  Step 2's raw «Choose Files» input (16px sideways scroll at 390px) is gone.
+- **Videos over 50 MB** are refused with a message instead of silently.
+- **Language**: every wizard string in es/en/pt (Portuguese got Spanish); page title in Spanish.
+  Themed colours replace blue/green/red in the wizard
+  (Azul Noche); tile controls have 44px targets.
+
+### Fixed — from the independent review of 2.56.211
+
+- **New profiles no longer copy the contact list into the activity note** either (2.56.210 fixed
+  only the merge path).
+- **One Error ID** per failure — the server's id is reused instead of a second one being minted.
+- Error banners show the translated sentence; the raw message goes to the report.
+- A link shared in both share fields is still fetched.
+- The shared link and caption are removed from the address once read (analytics recorded it).
+- A sign-in refused for an outdated session version now opens the sign-in prompt.
+- The saving screen stays up until the profile opens, so nothing can be tapped twice.
+
+## [2.56.211] - 2026-10-21
+
+### Fixed — importing a post no longer dead-ends (audit 2026-10-21, batch 1)
+
+- **Signed-out visitors** are asked to sign in before the import wizard opens and come back
+  to the post they shared. They used to fill everything in and get a raw «Unauthorized».
+- **A shared post that can't be read** returns to step 1 with the link (and any shared text)
+  still in the field and a working «Reintentar». It used to leave an empty step 2, and «Volver»
+  lost the link.
+- **«Reintentar» retries what failed**: a failed AI read runs the AI read again (it used to do nothing).
+- **A link pasted with words around it** («Mirá este post https://…») is opened; the words are kept
+  below the post's text. Before, only a bare link was fetched.
+- **After saving or adding to a profile, the rescuer lands on that profile** (decision B1), not on home.
+- **Failures show an Error ID** in the wizard and are logged under it.
+- **Merges no longer copy the contact list into the activity note** — contacts go only to the
+  profile's contact entries, where protected/public applies.
+- **Tracking**: link-fetch failures, AI read started/succeeded/failed, the duplicate screen
+  (url/person, band) and the choice made, all tagged with the entry point (share/paste/contacts).
+## [2.56.210] - 2026-10-21
+
+### Changed — /funcionalidades: «La herramienta que tu refugio necesita»
+
+/funcionalidades is the page the homepage's WhatsApp referral banner shares, so it is an
+invited colleague's first look at the product (anonymous, on a phone). Redesigned for them:
+
+- **Heading and copy** around one tool for the whole adoption, in es/en/pt. Seven features
+  with fresh phone screenshots (fictional data): adopter history, protected contact
+  details, online form and contract, customizable form and contract, animals and
+  catalogue, follow-ups and notifications, teams. Every claim was checked against the
+  code; privacy copy is scoped to protected profiles.
+- **Trust right after the hero** (free, protected contact details, who we are) instead of
+  a strip at the end.
+- **"Abrir" on each feature for everyone**: search opens directly (name searches need no
+  account); the rest open sign-in and land on that feature.
+- **WhatsApp/social preview** now has its own 1200×630 image and title. The page used to
+  drop the site's preview image entirely.
+- **Referral share link** carries `utm_source=whatsapp&utm_medium=referral&utm_campaign=invite`
+  (WhatsApp hides the referrer).
+- **Events** `features_feature_opened`, `features_signup_clicked`, `features_guide_opened`.
+- Accessibility: AA contrast on buttons and labels in both themes, 44px tap targets,
+  visible focus, reduced motion respected.
+
+### Fixed
+
+- The phone-width menu said «Log in» in English on every page; it now follows the language
+  («Entrar»).
+
+### Notes
+
+- Screenshots: `scripts/capture-feature-screenshots.mjs` (fictional data on a fresh local DB;
+  refuses to run over uncommitted local DBs, restores them on Ctrl-C). Preview image:
+  `scripts/render-features-og.mjs`.
+- The old `/images/features/*.png` stay for one release so pages opened before the deploy
+  don't lose their images; remove them in a later release.
+
+## [2.56.209] - 2026-10-20
+
+### Fixed — form answers and animal cards read cleanly on phones
+
+- **Form answers** (/form-results and the applicant panel): every answer lines up in
+  one column, long questions wrap in their own column, and short answers never break
+  («No» used to split into «N / o» next to «Compromiso de castración/esterilización»).
+  Emails break after «@», never inside the domain.
+- **Animal cards** (Mis Animales) and **Mis Adopciones**: «Actualizado por <nombre> ·
+  hace N días» / «Agregado por …» wrap instead of being cut off.
+
+## [2.56.208] - 2026-10-19
+
+### Fixed — a website is never a social account
+
+Jon found "https://adopciones.catpuccino.org" (the rescue's own site, typed in an applicant's
+Facebook field) saved as a social contact by the Catpuccino import. A link or bare domain of a
+website that isn't a social network is now: left out by the API (`warnings`, reason
+`not_a_social_profile`), and never a social matching key anywhere (forms, imports, duplicate
+detection). A typo in the network's domain ("Instagram.con/…") still counts as the network.
+
 ## [2.56.207] - 2026-10-19
 
 ### Added — Admin → duplicates: who registered each profile, optional owner notice, merges in the profile history

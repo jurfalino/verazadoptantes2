@@ -224,10 +224,10 @@ export async function loadApplicantsForAnimal(
                     .from(adoptions)
                     .where(eq(adoptions.adopterId, row.linkedAdopterId))
                     .all() as Promise<Array<{ rating: number | null; recordType: string | null }>>,
-                db.select({ reason: adopterFlags.reason })
+                db.select({ reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                     .from(adopterFlags)
                     .where(eq(adopterFlags.adopterId, row.linkedAdopterId))
-                    .all() as Promise<Array<{ reason: string | null }>>,
+                    .all() as Promise<Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }>>,
             ]);
             if (adopter) {
                 adopterName = adopter.name;
@@ -243,12 +243,11 @@ export async function loadApplicantsForAnimal(
                 if (r.recordType === 'adoption') adoptionCount++;
                 else if (r.recordType === 'adoption_request') requestCount++;
             }
-            const reasons = flagRows.map(f => f.reason).filter((r): r is string => !!r);
             // systemDuplicateCount=0 here — looking up duplicate_candidates per
             // applicant would add another N queries with no UI consumer (panel
             // surfaces flag pills, not the system-duplicate badge). If we ever
             // surface it, add a third parallel query above.
-            flags = buildFlags(reasons, 0);
+            flags = buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0);
         }
 
         // Already signed? — the animal is adopted by this specific adopter.

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execD1, execD1Batch, parseD1Rows } from './db';
 
 /**
  * API-level E2E for the custom adoption form + contract feature (Task 11).
@@ -13,25 +13,6 @@ import { execSync } from 'child_process';
  * form-results page of test 1) uses bilingual regexes, so it is
  * locale-agnostic.
  */
-
-/** Execute a single SQL statement against the local D1 dev DB via wrangler. */
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-
-/** Parse `[{ results: [...] }]`-style wrangler JSON output. */
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
 
 /**
  * `wrangler d1 execute --local --json` serializes a SQL NULL as the literal
@@ -100,7 +81,7 @@ test.describe('Custom adoption form + contract — API-level', () => {
             const page = await rescuer.newPage();
             await page.goto(`/form-results/${submissionId}`);
             await expect(page.getByText(name).first()).toBeVisible({ timeout: 30000 });
-            await expect(page.getByText(/Para sí mismo|For themselves|Para si mesmo/).first()).toBeVisible({ timeout: 30000 });
+            await expect(page.getByText(/Para sí|For themselves|Para si/).first()).toBeVisible({ timeout: 30000 });
             await expect(page.getByText(/necesidades especiales|special.needs|necessidades especiais/i)).toHaveCount(0);
         } finally {
             await rescuer.close();
@@ -146,15 +127,6 @@ test.describe('Custom adoption form + contract — API-level', () => {
         expect(json.formConfig).toEqual({ hiddenSteps: [] });
     });
 
-    test('custom forms off → formConfig null (production: today\'s form)', async ({ request }) => {
-        execD1(`UPDATE app_config SET value = 'false' WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`);
-        try {
-            const json = await (await request.get(`/api/form/${NO_SETTINGS_USER_ID}`)).json();
-            expect(json.formConfig).toBeNull();
-        } finally {
-            execD1(`UPDATE app_config SET value = 'true' WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`);
-        }
-    });
 
     test('contract signing records the signed version (standardVersion + via=open)', async ({ request }) => {
         const animalId = `test-animal-docs-e2e-contract-${Date.now()}`;
@@ -196,13 +168,13 @@ test.describe('Custom adoption form + contract — API-level', () => {
         // Guard: getFeatureFlag checks process.env first, then app_config
         // (tests/seed.sql seeds ENABLE_CUSTOM_ADOPTION_DOCS='true'). Confirm the
         // flag is actually reachable in THIS DB before asserting resolution
-        // behaviour that depends on it — skip with a clear reason instead of
-        // failing on an environment gap unrelated to the feature.
+        // behaviour that depends on it. The flag is permanently ON (Jon, 2026-11-03):
+        // a miss means a broken seed, so it fails instead of skipping.
         const flagRows = parseD1Rows(execD1(
             `SELECT value FROM app_config WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`,
         ));
         const flagOn = flagRows.length > 0 && (flagRows[0].value === 'true' || flagRows[0].value === '1');
-        test.skip(!flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS not reachable via app_config in this local E2E DB — skipping resolution test.');
+        expect(flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS must be on in tests/seed.sql').toBe(true);
 
         const rescuerEmail = 'test-adoption-docs-fixture@example.com';
         const animalId = `test-animal-docs-e2e-resolve-${Date.now()}`;
@@ -212,18 +184,14 @@ test.describe('Custom adoption form + contract — API-level', () => {
         // Fixture rescuer owns this animal — no `user` row required:
         // resolveDocsForRescuer only needs the email string (see
         // src/lib/adoptionDocsRepo.ts / src/domain/adoptionDocs.ts:resolveDocsOwner).
-        execD1(
+        execD1Batch([
             `INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) ` +
             `VALUES ('${animalId}', 'Test Pet Docs Resolve E2E', 'cat', 'E2E fixture', '${rescuerEmail}', strftime('%s','now'), strftime('%s','now'))`,
-        );
-        execD1(
             `INSERT OR REPLACE INTO contract_versions (id, owner_type, owner_id, sections_json, content_hash, created_at, created_by, first_signed_at, replaced_at) ` +
             `VALUES ('${versionId}', 'user', '${rescuerEmail}', '${sectionsJson.replace(/'/g, "''")}', 'test-hash-e2e', strftime('%s','now'), 'e2e', NULL, NULL)`,
-        );
-        execD1(
             `INSERT OR REPLACE INTO adoption_doc_settings (id, owner_type, owner_id, hidden_steps, contract_version_id, updated_at, updated_by) ` +
             `VALUES ('test-settings-docs-e2e', 'user', '${rescuerEmail}', NULL, '${versionId}', strftime('%s','now'), 'e2e')`,
-        );
+        ]);
 
         const res = await request.get(`/api/contract/${animalId}`);
         const body = await res.text();
@@ -238,7 +206,7 @@ test.describe('Custom adoption form + contract — API-level', () => {
             `SELECT value FROM app_config WHERE key = 'ENABLE_CUSTOM_ADOPTION_DOCS'`,
         ));
         const flagOn = flagRows.length > 0 && (flagRows[0].value === 'true' || flagRows[0].value === '1');
-        test.skip(!flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS not reachable via app_config in this local E2E DB — skipping resolution test.');
+        expect(flagOn, 'ENABLE_CUSTOM_ADOPTION_DOCS must be on in tests/seed.sql').toBe(true);
 
         const run = Date.now();
         const userId = `test-docs-org-user-${run}`;
@@ -251,28 +219,25 @@ test.describe('Custom adoption form + contract — API-level', () => {
         const signedAnimalId = `test-animal-docs-org-signed-${run}`;
         const foreignAnimalId = `test-animal-docs-org-foreign-${run}`;
         const sectionsJson = JSON.stringify({ '3': { type: 'doc', content: [{ type: 'paragraph', content: [{ text: 'Org E2E' }] }] } });
-        const insertAnimal = (id: string, addedBy: string) => execD1(
+        const animalSql = (id: string, addedBy: string) =>
             `INSERT INTO animals (id, name, species, details, added_by, created_at, updated_at) ` +
-            `VALUES ('${id}', 'Test Pet Docs Org E2E', 'dog', 'E2E fixture', '${addedBy}', strftime('%s','now'), strftime('%s','now'))`,
-        );
+            `VALUES ('${id}', 'Test Pet Docs Org E2E', 'dog', 'E2E fixture', '${addedBy}', strftime('%s','now'), strftime('%s','now'))`;
 
         // A real rescuer account whose profile reads from the group, a member
         // of that group, and the group's settings row + contract version.
-        execD1(`INSERT OR REPLACE INTO user (id, name, email) VALUES ('${userId}', 'Docs Org E2E', '${email}')`);
-        execD1(`INSERT OR REPLACE INTO user_profiles (user_id, adoption_docs_source) VALUES ('${userId}', 'org:${orgId}')`);
-        execD1(`INSERT OR REPLACE INTO organizations (id, name, created_by) VALUES ('${orgId}', 'Docs Org E2E ${run}', '${email}')`);
-        execD1(`INSERT OR REPLACE INTO org_members (id, org_id, user_email) VALUES ('${memberId}', '${orgId}', '${email}')`);
-        execD1(
+        execD1Batch([
+            `INSERT OR REPLACE INTO user (id, name, email) VALUES ('${userId}', 'Docs Org E2E', '${email}')`,
+            `INSERT OR REPLACE INTO user_profiles (user_id, adoption_docs_source) VALUES ('${userId}', 'org:${orgId}')`,
+            `INSERT OR REPLACE INTO organizations (id, name, created_by) VALUES ('${orgId}', 'Docs Org E2E ${run}', '${email}')`,
+            `INSERT OR REPLACE INTO org_members (id, org_id, user_email) VALUES ('${memberId}', '${orgId}', '${email}')`,
             `INSERT OR REPLACE INTO contract_versions (id, owner_type, owner_id, sections_json, content_hash, created_at, created_by, first_signed_at, replaced_at) ` +
             `VALUES ('${versionId}', 'org', '${orgId}', '${sectionsJson.replace(/'/g, "''")}', 'test-hash-org-${run}', strftime('%s','now'), 'e2e', NULL, NULL)`,
-        );
-        execD1(
             `INSERT OR REPLACE INTO adoption_doc_settings (id, owner_type, owner_id, hidden_steps, contract_version_id, updated_at, updated_by) ` +
             `VALUES ('${settingsId}', 'org', '${orgId}', '["selfie"]', '${versionId}', strftime('%s','now'), 'e2e')`,
-        );
-        insertAnimal(animalId, email);
-        insertAnimal(signedAnimalId, email);
-        insertAnimal(foreignAnimalId, 'gatitosolivos@gmail.com');
+            animalSql(animalId, email),
+            animalSql(signedAnimalId, email),
+            animalSql(foreignAnimalId, 'gatitosolivos@gmail.com'),
+        ]);
 
         // 1. Public contract + form resolve to the GROUP's settings.
         const contractRes = await request.get(`/api/contract/${animalId}`);

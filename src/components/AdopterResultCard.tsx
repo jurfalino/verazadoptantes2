@@ -14,6 +14,14 @@ import { AdopterName } from './AdopterName';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
+import { MinorTag } from './MinorTag';
+import { HousemateAlertChips, HousemateList, hasHousemateAlert, useHousemateList } from './HousemateAlert';
+import { useMinWidth } from '@/hooks/useMinWidth';
+import { AlertSummary, PeriodAlertPills } from './AlertPill';
+import { openAlertKinds } from '@/domain/flags';
+import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
+import { PersonActivity } from './PersonStanding';
+import { contactBlobForDisplay } from '@/lib/contactEntries';
 
 const SNIPPET_ICONS: Record<SnippetField, string> = {
     name: '👤', contact: '📞', address: '📍',
@@ -102,7 +110,10 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const nameRanges = tokenHighlightRanges(res.adopter.name, query);
-    const contactRanges = tokenHighlightRanges(res.adopter.contactInfo || '', query);
+    // The contact line as people read it (alias as «Conocido/a como», no legacy merge separators);
+    // highlights are computed on this text, not the stored blob, so their offsets match what is shown.
+    const contactText = contactBlobForDisplay(res.adopter.contactInfo, t('adopter.ce_type_alias'));
+    const contactRanges = tokenHighlightRanges(contactText, query);
 
     const addedDate = res.adopter.createdAt ? formatShortDate(res.adopter.createdAt) : null;
     const updatedDate = res.adopter.updatedAt ? formatShortDate(res.adopter.updatedAt) : null;
@@ -110,22 +121,25 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     // Extracted so each element renders in ONE source of truth but lands in a
     // different slot per breakpoint (desktop = today's [name/contact][rating];
     // mobile = [name/rating] with risk flags + contact promoted full-width below).
-    const ratingBadge = res.avgRating !== null ? (
+    const rating = res.avgRating !== null ? (
         <RatingExplainer rating={res.avgRating}>
-            <RatingBadge rating={res.avgRating} size="sm" label="search" />
+            <RatingBadge rating={res.avgRating} />
         </RatingExplainer>
-    ) : null;
+    ) : <RatingBadge rating={null} />;
+    // A minor's «Menor de edad» sits in the rating's slot, before the rating (audit B5): one place, as on the
+    // profile header and a household row — an informational marker only (Jon, 2026-10-28).
+    const ratingBadge = res.isMinor ? <span className="inline-flex flex-wrap items-center gap-2"><MinorTag />{rating}</span> : rating;
 
     // Contact line content (highlighted contactInfo + login nudge), reused in the
     // desktop middle-column slot and the mobile full-width slot.
     const contactNode = (
         <>
-            {res.adopter.contactInfo
+            {contactText
                 ? (contactRanges.length > 0
-                    ? (renderHighlightedSnippet(res.adopter.contactInfo, contactRanges) || res.adopter.contactInfo)
-                    : res.adopter.contactInfo)
+                    ? (renderHighlightedSnippet(contactText, contactRanges) || contactText)
+                    : contactText)
                 : t('common.no_contact')}
-            {!isAuthenticated && res.adopter.contactInfo && (
+            {!isAuthenticated && contactText && (
                 <span className="ml-1 text-teal-700 font-medium">• {t('search.login_to_view')}</span>
             )}
         </>
@@ -133,17 +147,21 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
 
     // The two "too many …" risk chips. Promoted on mobile to sit right under the
     // rating (C layout); on desktop they stay inline in the stats band below.
-    const riskFlagChips = (
-        <>
-            {res.flags.tooManyAdoptions && (
-                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-100 text-orange-700">⚠ {t('flags.too_many_adoptions').replace('{count}', res.flags.tooManyAdoptions.count.toString()).replace('{days}', Math.round(res.flags.tooManyAdoptions.actualSpanDays || res.flags.tooManyAdoptions.periodDays).toString())}</span>
-            )}
-            {res.flags.tooManyRequests && (
-                <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">⚠ {t('flags.too_many_requests').replace('{count}', res.flags.tooManyRequests.count.toString()).replace('{days}', Math.max(1, Math.round(res.flags.tooManyRequests.actualSpanDays || res.flags.tooManyRequests.periodDays)).toString())}</span>
-            )}
-        </>
+    // …then the housemate alerts («Conviviente con calificación 2.0», «Conviviente con alertas» — Jon
+    // 2026-11-01): alerts like them, so they ride in the same row on both layouts. The row is drawn twice
+    // (mobile / desktop, CSS-hidden), so the open state lives here (kept per person, M3) and each copy has
+    // its own test id. The list they open is MOUNTED once, directly under the visible row (review fix 5):
+    // under the mobile row on a phone, under the stats band on desktop — one id for both chips' aria-controls.
+    const housemates = useHousemateList(res.adopter.id);
+    const hasHousemate = hasHousemateAlert(res.households);
+    const desktop = useMinWidth(768);
+    const housemateChips = (testId: string) => (
+        <HousemateAlertChips household={res.households} open={housemates.open} onToggle={housemates.toggle} listId={housemates.listId} testId={testId} />
     );
-    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests);
+    const housemateList = (className: string) => (housemates.open && hasHousemate
+        ? <HousemateList household={res.households} id={housemates.listId} className={className} />
+        : null);
+    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests || hasHousemate);
 
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
@@ -226,7 +244,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     {/* Desktop: contact stays in the middle column under the name.
                         Full string, always wrapped (never truncated), matched tokens
                         highlighted in place — nothing hidden behind a "…". */}
-                    <div className="hidden md:block text-xs text-stone-500 break-words" title={res.adopter.contactInfo || undefined}>
+                    <div className="hidden md:block text-xs text-stone-500 break-words" title={contactText || undefined}>
                         {contactNode}
                     </div>
                 </div>
@@ -243,10 +261,13 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {/* Mobile C layout: risk flags right after the rating, then contact
                 full-width. Both hidden on desktop (rating flags live in the stats
                 band; contact lives in the middle column). */}
+            {/* A housemate chip is a button with a 44px touch area around a 22px pill (11px each side,
+                review fix 6): 12px between wrapped lines and under the row keep it off the «Tel:» line. */}
             {hasRiskFlags && (
-                <div className="md:hidden flex flex-wrap gap-1.5 mb-2">{riskFlagChips}</div>
+                <div className={`md:hidden flex flex-wrap gap-x-1.5 ${hasHousemate ? 'gap-y-3 mb-3' : 'gap-y-1.5 mb-2'}`}><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert-m')}</div>
             )}
-            <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={res.adopter.contactInfo || undefined}>
+            {!desktop && housemateList('mb-3')}
+            <div className="md:hidden text-xs text-stone-500 break-words mb-3" title={contactText || undefined}>
                 {contactNode}
             </div>
 
@@ -260,26 +281,33 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 </div>
             )}
 
-            {/* Stats Row */}
-            <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
+            {/* Stats Row. With a housemate chip in it (desktop), 4px above and below plus the 8px around
+                keep the chip's 44px touch area off the rows next to it (review fix 6). */}
+            <div className={`flex flex-wrap items-center gap-3 text-xs text-stone-500 ${hasHousemate ? 'md:py-1' : ''}`}>
+                {/* Views, then the activity counted as a household row and the «Actividad» header count it
+                    (PersonActivity — singulars, «sin actividad» when none) — audit B12. */}
                 {showMetadata && (
-                    <span>👁 {res.stats.profileViews} {t('stats.views')}</span>
+                    <span className="inline-flex items-center gap-1" data-testid="search-card-views">
+                        <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                        {res.stats.profileViews} {t(res.stats.profileViews === 1 ? 'stats.view_one' : 'stats.views')}
+                    </span>
                 )}
-                <span>📋 {res.stats.requests} {t('stats.requests')}</span>
-                <span>🏠 {res.stats.adoptions} {t('stats.adoptions')}</span>
-                <div className="flex flex-wrap gap-1 ml-auto">
-                    {res.flags.inaccurate && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-rose-100 text-rose-700">⚠ {t('flags.inaccurate') || 'Inaccurate'}</span>
-                    )}
-                    {res.flags.duplicate && (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">📄 {t('flags.duplicate') || 'Duplicate'}</span>
-                    )}
+                <PersonActivity
+                    activity={res.stats.activity ?? { adoption: res.stats.adoptions || undefined, adoption_request: res.stats.requests || undefined }}
+                    testId="search-card-activity" />
+                <div className={`flex flex-wrap gap-x-1 ml-auto ${hasHousemate ? 'gap-y-1 md:gap-y-3' : 'gap-y-1'}`}>
+                    {/* Desktop: the alerts (risk chips) first, inline in the stats band. On mobile
+                        they're promoted above (right after the rating), so hidden here —
+                        `md:contents` lets them flow into this flex cluster on ≥md. */}
+                    <span className="hidden md:contents"><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert')}</span>
+                    {/* Then the flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01). */}
+                    <AlertSummary kinds={openAlertKinds(res.flags)} />
                     {res.flags.systemDuplicate && !res.flags.duplicate && (
                         <span
                             title={t('search.possible_duplicate_tooltip') || 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.'}
                             className="text-xs px-1.5 py-0.5 rounded font-medium bg-stone-100 text-stone-600 cursor-help"
                         >
-                            🔍 {t('flags.possible_duplicate') || 'Possible duplicate'}
+                            <Search className="inline w-3 h-3 -mt-px mr-0.5" aria-hidden="true" />{t('flags.possible_duplicate') || 'Possible duplicate'}
                         </span>
                     )}
                     {res.flags.verified_identity && (
@@ -288,12 +316,9 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                     {res.flags.verified_address && (
                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">✓ {t('flags.verified_address') || 'Verified address'}</span>
                     )}
-                    {/* Desktop: risk chips inline in the stats band. On mobile they're
-                        promoted above (right after the rating), so hide them here —
-                        `md:contents` lets them flow into this flex cluster on ≥md. */}
-                    <span className="hidden md:contents">{riskFlagChips}</span>
                 </div>
             </div>
+            {desktop && housemateList('mt-2')}
 
             {/* Match Snippet — shows why this result appeared */}
             {res.matchSnippet && (() => {
@@ -309,7 +334,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 // the value on the line, so "empty snippet" alone would wrongly show
                 // "protegida" on a record whose contact you can actually see.
                 if (s.field === 'contact') {
-                    const cinfo = normForOffsets(res.adopter.contactInfo || '');
+                    const cinfo = normForOffsets(contactText);
                     const matchVisible = query.trim().split(/\s+/)
                         .map(normForOffsets).filter(tk => tk.length >= 2)
                         .some(tk => cinfo.includes(tk));
@@ -369,8 +394,8 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
             {/* Dates Row - bottom right */}
             {showMetadata && (addedDate || updatedDate) && (
                 <div className="flex justify-end gap-3 mt-2 pt-2 border-t border-stone-100 text-xs text-stone-500">
-                    {addedDate && (<span>📅 {addedDate}</span>)}
-                    {updatedDate && (<span>✏️ {updatedDate}</span>)}
+                    {addedDate && (<span className="inline-flex items-center gap-1"><CalendarPlus className="w-3.5 h-3.5" aria-hidden="true" />{addedDate}</span>)}
+                    {updatedDate && (<span className="inline-flex items-center gap-1"><Pencil className="w-3.5 h-3.5" aria-hidden="true" />{updatedDate}</span>)}
                 </div>
             )}
         </div>

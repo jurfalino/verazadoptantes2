@@ -23,21 +23,32 @@ import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
+import { displayNameFor } from '@/lib/userDisplay';
+import { runAfterResponse } from '@/lib/background';
+import { sendNotificationEmail } from '@/lib/notificationEmail';
+import { renderNotification, type NotificationTemplate } from '@/domain/notificationTemplates';
+import type { NotificationType } from '@/domain/constants';
 
 /**
  * Create a notification for a user.
  * This is the single entry point for all notification creation — 
- * future escalation (Web Push, email) hooks go here.
+ * the email twin (and future Web Push) hooks go here.
+ *
+ * `template` (D38) is stored in `metadata.template` so the bell and the email
+ * render the text in the reader's language; the row's title/body are its
+ * Spanish render (callers build all three with `notificationContent`). A
+ * template that does not render keeps the passed title/body and logs a warn.
  */
 export async function createNotification(data: {
     id?: string;
     userId: string;
-    type?: string;
+    type?: NotificationType;
     title: string;
     body: string;
     url?: string;
     icon?: string;
     metadata?: Record<string, unknown>;
+    template?: NotificationTemplate;
 }): Promise<string | null> {
     try {
         const db = await getDb();
@@ -65,23 +76,31 @@ export async function createNotification(data: {
         }
 
         const id = data.id || crypto.randomUUID();
+        let { title, body } = data;
+        if (data.template) {
+            const es = renderNotification(data.template, 'es');
+            if (es) ({ title, body } = es);
+            else logger.warn('createNotification: template did not render, stored text kept', { id, type, key: data.template.key });
+        }
+        const metadata = data.template ? { ...data.metadata, template: data.template } : data.metadata;
         await db.insert(notifications).values({
             id,
             userId: data.userId,
             type,
-            title: data.title,
-            body: data.body,
+            title,
+            body,
             url: data.url || null,
             icon: data.icon || '📋',
-            metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+            metadata: metadata ? JSON.stringify(metadata) : null,
             createdAt: new Date(),
         });
 
         logger.info('Notification created', { id, userId: data.userId, type });
 
-        // ── Escalation hooks (Phase 2) ──
-        // await sendPushNotification(data.userId, { title: data.title, body: data.body, url: data.url });
-        // await sendEmailNotification(data.userId, { title: data.title, body: data.body, url: data.url });
+        // Email twin (per-category switches apply). Never affects the bell's result.
+        await runAfterResponse('notification.email', () => sendNotificationEmail({
+            id, userId: data.userId, type, title, body, url: data.url ?? null, metadata: metadata ?? null,
+        }), { type, notificationId: id });
 
         return id;
     } catch (error) {
@@ -307,64 +326,48 @@ export async function dismissAllNotifications(userId: string): Promise<boolean> 
 // ── Fan-out Helpers ──────────────────────────────────────────────
 
 /**
- * Resolve a display name for an email from the `user` table.
- * Falls back to the email prefix if lookup fails.
+ * Resolve a display name for an email from the `user` table: the account name,
+ * else the email handle (displayNameFor — the same rule as resolveUserNames, so
+ * one person is named one way in every notice; audit C2).
  */
 export async function resolveDisplayName(email: string): Promise<string> {
-    try {
-        const { getRequestContext } = await import('@/lib/requestContext');
-        const { env } = getRequestContext();
-        if (env?.DB) {
-            const row = await env.DB.prepare(
-                `SELECT name FROM user WHERE email = ? LIMIT 1`
-            ).bind(email).first<{ name: string | null }>();
-            if (row?.name) return row.name;
-        }
-    } catch (e) {
-        logger.warn('resolveDisplayName: DB lookup failed', { error: e instanceof Error ? e.message : String(e) });
-    }
-    return email.split('@')[0];
+    const key = email.toLowerCase().trim();
+    return (await resolveDisplayNames([email])).get(key) ?? displayNameFor(email, null);
 }
 
 /**
  * v2.19.45: batched form of `resolveDisplayName`. One D1 subrequest instead
  * of N when the caller has multiple emails — critical on hot paths like
  * `getAdopterPiiContext` where a privileged viewer with many grantees and
- * org-mates was racking up 30-50 subrequests just for name resolution and
- * was a likely cause of the prod "exceeded resource limit" exceptions we
- * saw at ~1/day in Cloudflare Analytics over 2026-06-12 to 06-18.
+ * org-mates was racking up 30-50 subrequests just for name resolution.
  *
- * Returns a `Map<emailLower, displayName>` with the email-prefix fallback
- * baked in for any address that didn't have a `user` row, so callers can
- * always read out a non-empty string. Empty input → empty map.
+ * Returns a `Map<emailLower, displayName>` with the email-handle fallback
+ * baked in for any address that didn't have a `user` row (or whose name
+ * carries an email), so callers can always read out a non-empty string.
+ * Empty input → empty map.
  *
- * `inArray()` is broken on D1 (see `docs/D1_COMPATIBILITY.md`), but raw
- * `IN (?, ?, ?)` with explicitly-bound parameters works fine — we build
- * the placeholders ourselves and pass each email as its own bind.
+ * Reads through the canonical getDb() (audit C2: the raw request-context
+ * binding could read a different database than every other name lookup in
+ * dev). `inArray()` is broken on D1 (see `docs/D1_COMPATIBILITY.md`): the
+ * `IN (?, ?, …)` is built with one bind per email, ≤90 per statement (D1 caps
+ * a statement at 100 bound parameters).
  */
 export async function resolveDisplayNames(emails: string[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     const lower = [...new Set(emails.map(e => e.toLowerCase().trim()).filter(Boolean))];
     if (lower.length === 0) return out;
-    // Seed fallback so every caller gets a string out, even for emails that
-    // don't resolve to a `user` row.
-    for (const e of lower) out.set(e, e.split('@')[0]);
+    for (const e of lower) out.set(e, displayNameFor(e, null));
     try {
-        const { getRequestContext } = await import('@/lib/requestContext');
-        const { env } = getRequestContext();
-        if (env?.DB) {
-            // D1 caps a statement at 100 bound parameters. The admin notifications
-            // page can ask for more recipients than that; past the cap the whole
-            // lookup failed and every name silently fell back to the email handle.
+        const db = await getDb();
+        if (db) {
+            const { users } = await import('@/db/schema');
             const CHUNK = 90;
             for (let i = 0; i < lower.length; i += CHUNK) {
                 const chunk = lower.slice(i, i + CHUNK);
-                const placeholders = chunk.map(() => '?').join(', ');
-                const rows = await env.DB.prepare(
-                    `SELECT email, name FROM user WHERE email IN (${placeholders})`,
-                ).bind(...chunk).all<{ email: string; name: string | null }>();
-                for (const r of rows.results ?? []) {
-                    if (r.name) out.set(r.email.toLowerCase(), r.name);
+                const rows = await db.select({ email: users.email, name: users.name }).from(users)
+                    .where(sql`lower(${users.email}) IN (${sql.join(chunk.map(e => sql`${e}`), sql`, `)})`);
+                for (const r of rows) {
+                    if (r.email) out.set(r.email.toLowerCase(), displayNameFor(r.email, r.name));
                 }
             }
         }
@@ -383,12 +386,15 @@ export async function resolveDisplayNames(emails: string[]): Promise<Map<string,
  */
 export async function notifyAdmins(opts: {
     actorEmail: string;
-    type: string;
+    type: NotificationType;
     title: string;
     body: string;
     url?: string;
     icon?: string;
     metadata?: Record<string, unknown>;
+    template?: NotificationTemplate;
+    /** People already told some other way (e.g. as an owner of a flagged profile): never sent this one. Normalized here. */
+    skip?: readonly string[];
 }): Promise<void> {
     try {
         const adminEmails = new Set<string>();
@@ -421,8 +427,12 @@ export async function notifyAdmins(opts: {
             });
         }
 
-        // Exclude the actor
+        // Exclude the actor, and anyone told some other way.
         adminEmails.delete(opts.actorEmail);
+        if (opts.skip?.length) {
+            const skip = new Set(opts.skip.map(e => e.trim().toLowerCase()));
+            for (const email of [...adminEmails]) if (skip.has(email.trim().toLowerCase())) adminEmails.delete(email);
+        }
 
         if (adminEmails.size === 0) return;
 
@@ -435,6 +445,7 @@ export async function notifyAdmins(opts: {
                 url: opts.url,
                 icon: opts.icon,
                 metadata: opts.metadata,
+                template: opts.template,
             })
         ));
 
@@ -450,12 +461,13 @@ export async function notifyAdmins(opts: {
  */
 export async function notifyOrgMembers(opts: {
     actorEmail: string;
-    type: string;
+    type: NotificationType;
     title: string;
     body: string;
     url?: string;
     icon?: string;
     metadata?: Record<string, unknown>;
+    template?: NotificationTemplate;
 }): Promise<void> {
     try {
         const { getOrgMemberEmailsFor } = await import('@/lib/orgMembership');
@@ -474,6 +486,7 @@ export async function notifyOrgMembers(opts: {
                 url: opts.url,
                 icon: opts.icon,
                 metadata: opts.metadata,
+                template: opts.template,
             })
         ));
 

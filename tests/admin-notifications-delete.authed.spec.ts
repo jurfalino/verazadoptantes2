@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * Admins can delete a triggered notification from /admin/notifications.
@@ -10,12 +10,6 @@ const KEEP = 'test-notif-delete-fixture-keep';
 const DROP = 'test-notif-delete-fixture-drop';
 const TYPE = 'e2e_delete_fixture';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
 const ids = () => (JSON.parse(execD1(`SELECT id FROM notifications WHERE type='${TYPE}' ORDER BY id`))[0].results as Array<{ id: string }>).map(r => r.id);
 
 test.describe('admin deletes a notification', () => {

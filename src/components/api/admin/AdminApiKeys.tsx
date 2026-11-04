@@ -21,6 +21,8 @@ export interface KeyView {
     selfService?: boolean;
     canRegenerate?: boolean;
     importModeUntil?: string | null;
+    /** Self-created key whose owner is not approved yet: the limits it really has. */
+    pendingLimits?: { exact: number; fuzzy: number } | null;
 }
 
 export const card = 'bg-white dark:bg-stone-800 rounded-2xl border border-stone-200 dark:border-stone-700 p-6';
@@ -55,6 +57,11 @@ function KeyRow({ k, onPatch, onRegenerate }: { k: KeyView; onPatch: (id: string
                     {t('apiReview.used_today')}: {k.usedToday.exact}/{k.dailyCapExact} exact · {k.usedToday.fuzzy}/{k.dailyCapFuzzy} fuzzy
                     {k.lastUsedAt ? ` · ${t('apiReview.last_used')} ${new Date(k.lastUsedAt).toLocaleString()}` : ''}
                 </p>
+                {k.pendingLimits && (
+                    <p className="text-xs font-semibold" style={{ color: 'var(--status-warning-text)' }} data-testid="api-key-pending-limits">
+                        {t('apiAdmin.pending_limits').replace('{exact}', String(k.pendingLimits.exact)).replace('{fuzzy}', String(k.pendingLimits.fuzzy))}
+                    </p>
+                )}
                 {k.importModeUntil && !k.revokedAt && (
                     <p className="text-xs font-semibold" style={{ color: 'var(--status-warning-text)' }} data-testid="api-key-import-mode">
                         {t('apiAdmin.import_mode_until').replace('{when}', new Date(k.importModeUntil).toLocaleString())}

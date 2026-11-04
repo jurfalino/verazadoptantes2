@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1, execD1Batch, isDbNull, parseD1Rows } from './db';
 
 /**
  * Mass-merge + undo round-trip (v2.55.x). Exercises the dangerous server path
@@ -25,42 +25,26 @@ const NAME_A = 'MassMergeFixture Alpha';
 const NAME_B = 'MassMergeFixture Beta';
 const NAME_C = 'MassMergeFixture Gamma';
 const CAND_AB = 'test-cand-massmerge-ab';
+const T = 'test-massmerge-fixture-tomas';
+const M = 'test-massmerge-fixture-marta';
+const L = 'test-massmerge-fixture-laura';
+const HH_B = 'test-hh-massmerge-b';
+const HH_M = 'test-hh-massmerge-m';
 const CAND_BC = 'test-cand-massmerge-bc';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-
-function parseD1Rows(output: string): Array<Record<string, unknown>> {
-    try {
-        const wrapped = JSON.parse(output);
-        const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-        return first?.results ?? [];
-    } catch {
-        return [];
-    }
-}
-
-/** Wrangler's --json renders SQL NULL as the string "null" in CI — normalize. */
-function isDbNull(v: unknown): boolean {
-    return v === null || v === undefined || v === 'null';
-}
-
-function seedAdopter(id: string, name: string, contact: string, entriesJson: string | null = null, createdAtExpr = `strftime('%s','now')`) {
+// Seed helpers return SQL; call sites run a whole scenario's seed as ONE execD1Batch.
+function adopterSql(id: string, name: string, contact: string, entriesJson: string | null = null, createdAtExpr = `strftime('%s','now')`): string {
     const entries = entriesJson === null ? 'NULL' : `'${entriesJson}'`;
-    execD1(
+    return (
         `INSERT OR REPLACE INTO adopters (id, name, contact_info, contact_entries, country, status, added_by, deleted_at, token_hash, created_at, updated_at) ` +
-        `VALUES ('${id}', '${name}', '${contact}', ${entries}, 'AR', '5', 'gatitosolivos@gmail.com', NULL, NULL, ${createdAtExpr}, strftime('%s','now'))`,
+        `VALUES ('${id}', '${name}', '${contact}', ${entries}, 'AR', '5', 'gatitosolivos@gmail.com', NULL, NULL, ${createdAtExpr}, strftime('%s','now'))`
     );
 }
 
-function seedCandidate(candId: string, id1: string, id2: string) {
-    execD1(
+function candidateSql(candId: string, id1: string, id2: string): string {
+    return (
         `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) ` +
-        `VALUES ('${candId}', '${id1}', '${id2}', '["name_full"]', '{}', 50, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
+        `VALUES ('${candId}', '${id1}', '${id2}', '["name_full"]', '{}', 50, 'high', 'pending', strftime('%s','now'), NULL, NULL)`
     );
 }
 
@@ -68,21 +52,42 @@ test.describe('Duplicate mass-merge and undo', () => {
     test('mass-merge absorbs B and C into A (aliases, ghost pair) and undo restores everything', async ({ page }) => {
         // ── Seed: three clean fixture adopters + two pending pairs (A↔B, B↔C).
         // B↔C is the "ghost" case: it names B, which the first merge absorbs.
-        seedAdopter(A, NAME_A, 'alpha-contact-original');
-        seedAdopter(B, NAME_B, 'beta-contact 1111-2222');
-        seedAdopter(C, NAME_C, 'gamma-contact 3333-4444');
-        seedCandidate(CAND_AB, A, B);
-        seedCandidate(CAND_BC, B, C);
-        // B is marked publicly known — the merge must carry the flag onto the
-        // survivor (public status travels with the absorbed evidence), and
-        // undo must take it back off.
-        execD1(`UPDATE adopters SET is_public = 1 WHERE id = '${B}'`);
-        // B lists a household member (e.g. from an adoption form): the merge
-        // must carry it onto A, and undo must take it back off.
-        // B also knows Marta (A has her too) as a gift recipient with a phone A
-        // lacks: the merge must add the mark and phone to A's Marta, undo remove them.
-        execD1(`UPDATE adopters SET household_members = '[{"id":"hm-b","name":"Tomás López","relationship":"child","contactEntries":[],"age":7,"ageAsOf":"2026-10-04"},{"id":"hm-b2","name":"Marta Gil","relationship":"sibling","giftRecipient":true,"contactEntries":[{"id":"ce-marta-b","type":"phone","value":"11 5555 9876"}]}]' WHERE id = '${B}'`);
-        execD1(`UPDATE adopters SET household_members = '[{"id":"hm-a-marta","name":"Marta Gil","relationship":"sibling","contactEntries":[]}]' WHERE id = '${A}'`);
+        execD1Batch([
+            adopterSql(A, NAME_A, 'alpha-contact-original'),
+            adopterSql(B, NAME_B, 'beta-contact 1111-2222'),
+            adopterSql(C, NAME_C, 'gamma-contact 3333-4444'),
+            candidateSql(CAND_AB, A, B),
+            candidateSql(CAND_BC, B, C),
+            // B is marked publicly known — the merge must carry the flag onto the
+            // survivor (public status travels with the absorbed evidence), and
+            // undo must take it back off.
+            `UPDATE adopters SET is_public = 1 WHERE id = '${B}'`,
+            // Households as profiles: B's own household holds Tomás (his son, a
+            // profile). The merge must move B's membership onto A (Tomás now «hijo
+            // de A»), and undo must give it back to B.
+            // A and B both live in Marta's household (B's row carries a form's
+            // source key): they collapse into A's one row, which keeps the key; undo
+            // puts B's row back exactly.
+            adopterSql(T, 'MassMergeFixture Tomas', 'tomas-contact'),
+            adopterSql(M, 'MassMergeFixture Marta', 'marta-contact'),
+            adopterSql(L, 'MassMergeFixture Laura', 'laura-contact'),
+            `DELETE FROM household_memberships WHERE household_id IN ('${HH_B}', '${HH_M}')`,
+            `INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('${HH_B}', NULL, 1000), ('${HH_M}', NULL, 1000)`,
+            `INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at, source_key) VALUES ` +
+            `('test-hm-mm-b', '${HH_B}', '${B}', 'unknown', NULL, 0, NULL, 1000, NULL), ` +
+            `('test-hm-mm-t', '${HH_B}', '${T}', 'child', '${B}', 0, 'gatitosolivos@gmail.com', 1001, NULL), ` +
+            `('test-hm-mm-m', '${HH_M}', '${M}', 'unknown', NULL, 0, NULL, 1000, NULL), ` +
+            `('test-hm-mm-ma', '${HH_M}', '${A}', 'sibling', '${M}', 0, 'gatitosolivos@gmail.com', 1001, NULL), ` +
+            `('test-hm-mm-mb', '${HH_M}', '${B}', 'sibling', '${M}', 0, 'gatitosolivos@gmail.com', 1002, 'test-massmerge-key')`,
+        ]);
+        const membershipRows = () => parseD1Rows(execD1(
+            `SELECT id, household_id, adopter_id, relative_to_adopter_id, source_key FROM household_memberships WHERE household_id IN ('${HH_B}', '${HH_M}') ORDER BY id`,
+        )).map(r => ({
+            id: String(r.id), household_id: String(r.household_id), adopter_id: String(r.adopter_id),
+            relative_to_adopter_id: isDbNull(r.relative_to_adopter_id) ? null : String(r.relative_to_adopter_id),
+            source_key: isDbNull(r.source_key) ? null : String(r.source_key),
+        }));
+        const seededMemberships = membershipRows();
 
         // ── Mass-merge B and C into A through the real endpoint (admin session).
         const mergeRes = await page.request.post('/api/admin/duplicates/merge', {
@@ -109,12 +114,14 @@ test.describe('Duplicate mass-merge and undo', () => {
         }
 
         const survivor = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, deleted_at, is_public, household_members FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, deleted_at, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
-        expect(String(survivor.household_members), 'household members travel with the absorbed profile').toContain('Tomás López');
-        const martaAfterMerge = JSON.parse(String(survivor.household_members)).find((m: { name: string }) => m.name === 'Marta Gil');
-        expect(martaAfterMerge, "A's Marta gains B's gift mark").toMatchObject({ id: 'hm-a-marta', giftRecipient: true });
-        expect(JSON.stringify(martaAfterMerge.contactEntries), "…and B's phone for her").toContain('11 5555 9876');
+        expect(membershipRows(), "B's households move to A: one row per person, Tomás now next to A, the form's key kept").toEqual([
+            { id: 'test-hm-mm-b', household_id: HH_B, adopter_id: A, relative_to_adopter_id: null, source_key: null },
+            { id: 'test-hm-mm-m', household_id: HH_M, adopter_id: M, relative_to_adopter_id: null, source_key: null },
+            { id: 'test-hm-mm-ma', household_id: HH_M, adopter_id: A, relative_to_adopter_id: M, source_key: 'test-massmerge-key' },
+            { id: 'test-hm-mm-t', household_id: HH_B, adopter_id: T, relative_to_adopter_id: A, source_key: null },
+        ]);
         expect(isDbNull(survivor.deleted_at), 'survivor must stay live').toBe(true);
         expect(Number(survivor.is_public), 'public flag travels with absorbed B').toBe(1);
         // Absorbed contact blobs appended; absorbed names carried as aliases.
@@ -133,11 +140,15 @@ test.describe('Duplicate mass-merge and undo', () => {
             expect(row.status, `${row.id} should be resolved by the merge`).toBe('merged');
         }
 
-        // A teammate adds someone to the survivor after the merge: undo must
-        // take back only what the merge brought, never their later edit.
-        const withLaura = JSON.parse(String(parseD1Rows(execD1(`SELECT household_members FROM adopters WHERE id = '${A}'`))[0].household_members));
-        withLaura.push({ id: 'hm-laura', name: 'Laura Ruiz', relationship: 'partner', contactEntries: [] });
-        execD1(`UPDATE adopters SET household_members = '${JSON.stringify(withLaura)}' WHERE id = '${A}'`);
+        // A teammate adds someone to that household after the merge: undo must
+        // take back only what the merge moved, never their later add.
+        execD1(`INSERT INTO household_memberships (id, household_id, adopter_id, relationship, relative_to_adopter_id, gift_recipient, added_by, added_at) VALUES ('test-hm-mm-l', '${HH_B}', '${L}', 'partner', '${A}', 0, 'gatitosolivos@gmail.com', 2000)`);
+
+        // ── An absorbed profile's old link lands on the survivor, query kept.
+        const redirected = await page.goto(`/adopter/${B}?q=merge-redirect-check`);
+        expect(redirected?.status(), 'the survivor page renders, not a 404').toBe(200);
+        await expect(page).toHaveURL(new RegExp(`/adopter/${A}\\?q=merge-redirect-check&merged=${B}$`));
+        await expect(page.getByTestId('merged-profile-note')).toBeVisible();
 
         // ── Undo, newest-first (server refuses older-first for same survivor).
         const undoRes = await page.request.post('/api/admin/duplicates/unmerge', {
@@ -157,16 +168,18 @@ test.describe('Duplicate mass-merge and undo', () => {
             expect(isDbNull(row.deleted_at), `${row.id} should be revived by undo`).toBe(true);
         }
 
+        // Undone: B's own link opens B again (the redirect was temporary).
+        const revivedPage = await page.goto(`/adopter/${B}`);
+        expect(revivedPage?.status(), 'the revived profile renders, not a 404').toBe(200);
+        await expect(page).toHaveURL(new RegExp(`/adopter/${B}$`));
+
         const restored = parseD1Rows(execD1(
-            `SELECT contact_info, contact_entries, is_public, household_members FROM adopters WHERE id = '${A}'`,
+            `SELECT contact_info, contact_entries, is_public FROM adopters WHERE id = '${A}'`,
         ))[0];
         expect(restored.contact_info).toBe('alpha-contact-original');
-        expect(String(restored.household_members ?? ''), 'undo takes the absorbed members back off').not.toContain('Tomás López');
-        expect(String(restored.household_members ?? ''), "undo keeps a teammate's later household edit").toContain('Laura Ruiz');
-        const martaAfterUndo = JSON.parse(String(restored.household_members)).find((m: { name: string }) => m.name === 'Marta Gil');
-        expect(martaAfterUndo, "undo leaves A's own Marta").toBeTruthy();
-        expect(martaAfterUndo.giftRecipient, 'undo takes the gift mark back off').toBeUndefined();
-        expect(JSON.stringify(martaAfterUndo.contactEntries), '…and the phone').not.toContain('11 5555 9876');
+        // Every seeded membership exactly as it was; the teammate's later add stays.
+        expect(membershipRows().filter(r => r.id !== 'test-hm-mm-l'), 'undo restores the memberships exactly').toEqual(seededMemberships);
+        expect(membershipRows().find(r => r.id === 'test-hm-mm-l'), "undo keeps a teammate's later household add").toBeTruthy();
         expect(Number(restored.is_public), 'undo reverts the inherited public flag').toBe(0);
         // The auto-aliases came with the merge; undo must take them back out.
         expect(String(restored.contact_entries ?? '')).not.toContain(NAME_B);
@@ -200,14 +213,16 @@ test.describe('Duplicate mass-merge and undo', () => {
         const CAND_RS = 'test-cand-pairmerge-rs';
         const CAND_QE = 'test-cand-pairmerge-qe';
 
-        seedAdopter(P, 'PairMergeFixture Uno', 'p-contact', '[{"type":"phone","value":"555111"},{"type":"email","value":"p@fixture.test"}]');
-        seedAdopter(Q, 'PairMergeFixture Dos', 'q-contact');
-        seedAdopter(R, 'PairMergeFixture Tres', 'r-contact', null, `strftime('%s','now') - 5000`);
-        seedAdopter(S, 'PairMergeFixture Cuatro', 's-contact');
-        seedAdopter(E, 'PairMergeFixture Cinco', 'e-contact');
-        seedCandidate(CAND_PQ, P, Q);
-        seedCandidate(CAND_RS, R, S);
-        seedCandidate(CAND_QE, Q, E);
+        execD1Batch([
+            adopterSql(P, 'PairMergeFixture Uno', 'p-contact', '[{"type":"phone","value":"555111"},{"type":"email","value":"p@fixture.test"}]'),
+            adopterSql(Q, 'PairMergeFixture Dos', 'q-contact'),
+            adopterSql(R, 'PairMergeFixture Tres', 'r-contact', null, `strftime('%s','now') - 5000`),
+            adopterSql(S, 'PairMergeFixture Cuatro', 's-contact'),
+            adopterSql(E, 'PairMergeFixture Cinco', 'e-contact'),
+            candidateSql(CAND_PQ, P, Q),
+            candidateSql(CAND_RS, R, S),
+            candidateSql(CAND_QE, Q, E),
+        ]);
 
         const res = await page.request.post('/api/admin/duplicates/merge', {
             data: { candidateIds: [CAND_PQ, CAND_RS, CAND_QE] },
@@ -248,7 +263,6 @@ test.describe('Duplicate mass-merge and undo', () => {
         // expanding the weak tier is the assertion.
         const ACC = 'test-accent-fixture-1';
         const ACC_NAME = 'AccentFixture Vázquez Ramírez';
-        seedAdopter(ACC, ACC_NAME, 'accent-fixture-contact');
         // Name tokens exactly as tokenizeAdopter writes them (NFD-stripped) —
         // SQL-seeded fixtures never pass through the app's tokenizer.
         const toks: Array<[string, string, string]> = [
@@ -257,9 +271,10 @@ test.describe('Duplicate mass-merge and undo', () => {
             ['test-tok-accent-3', 'name_word', 'ramirez'],
             ['test-tok-accent-4', 'name_full', 'accentfixture vazquez ramirez'],
         ];
-        for (const [id, type, value] of toks) {
-            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${ACC}', '${type}', '${value}')`);
-        }
+        execD1Batch([
+            adopterSql(ACC, ACC_NAME, 'accent-fixture-contact'),
+            ...toks.map(([id, type, value]) => `INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${ACC}', '${type}', '${value}')`),
+        ]);
 
         await page.goto('/');
         await dismissCountryBanner(page);
@@ -270,51 +285,99 @@ test.describe('Duplicate mass-merge and undo', () => {
         await expect(page.getByText(ACC_NAME).first()).toBeVisible({ timeout: 30000 });
     });
 
-    test('searching a household member name surfaces the titular record in the MAIN list', async ({ page }) => {
-        // Regression for the recall/score source mismatch (v2.55.9): household
-        // member and onBehalfOf names emit recall tokens, but the scorer never
-        // read those fields — the record surfaced with no score, no match chip
-        // and no snippet, demoted to the weak tier. A perfect relative-name
-        // match must land in the main list, scored via the family branch.
+    test("searching a housemate's name shows only THEIR card; the housemate alert appears only when the other person is 1★/2★", async ({ page }) => {
+        // Households as profiles (Jon, 2026-10-26): a search returns only the
+        // people who match. The relative is a profile of their own. Option B
+        // (Jon, 2026-10-28): their card says nothing about the home unless a
+        // housemate is rated 1★/2★ (or has an alert of their own) — then the alert
+        // «Conviviente con calificación 1.0» (Jon 2026-11-01), and opening it names the housemate.
         const HH = 'test-household-fixture-1';
         const HH_NAME = 'HouseholdFixture Titular';
-        seedAdopter(HH, HH_NAME, 'household-fixture-contact');
-        execD1(
-            `UPDATE adopters SET household_members = '[{"id":"hm-test-0001","name":"RelativeFixture Ondina","relationship":"partner","contactEntries":[]}]' WHERE id = '${HH}'`,
-        );
-        // Tokens as extractTokens writes them: household names → name_words.
-        const toks: Array<[string, string]> = [
-            ['test-tok-hh-1', 'relativefixture'],
-            ['test-tok-hh-2', 'ondina'],
+        const REL = 'test-household-fixture-2';
+        const REL_NAME = 'RelativeFixture Ondina';
+        const toks: Array<[string, string, string]> = [
+            ['test-tok-hh-1', 'name_word', 'relativefixture'],
+            ['test-tok-hh-2', 'name_word', 'ondina'],
+            ['test-tok-hh-3', 'name_full', 'relativefixture ondina'],
         ];
-        for (const [id, value] of toks) {
-            execD1(`INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${HH}', 'name_word', '${value}')`);
-        }
+        execD1Batch([
+            adopterSql(HH, HH_NAME, 'household-fixture-contact'),
+            adopterSql(REL, REL_NAME, 'relative-fixture-contact'),
+            `DELETE FROM adopter_events WHERE id = 'test-hh-fixture-ev-1'`,
+            `INSERT OR REPLACE INTO households (id, created_by, created_at) VALUES ('test-hh-fixture-1', NULL, strftime('%s','now'))`,
+            `INSERT OR REPLACE INTO household_memberships (id, household_id, adopter_id, relationship, gift_recipient, added_by, added_at) VALUES ` +
+            `('test-hm-fixture-1', 'test-hh-fixture-1', '${HH}', 'unknown', 0, NULL, strftime('%s','now')), ` +
+            `('test-hm-fixture-2', 'test-hh-fixture-1', '${REL}', 'partner', 0, NULL, strftime('%s','now'))`,
+            // Tokens as extractTokens writes them: the relative's own name, on the relative.
+            ...toks.map(([id, type, value]) => `INSERT OR REPLACE INTO duplicate_tokens (id, adopter_id, token_type, token_value) VALUES ('${id}', '${REL}', '${type}', '${value}')`),
+        ]);
 
-        await page.goto('/');
-        await dismissCountryBanner(page);
-        await page.fill('input#search', 'relativefixture ondina');
-        await page.getByRole('button', { name: /search records|buscar registros/i }).click();
-        await expect(page.getByText(/found \d+ match|resultados encontrados/i)).toBeVisible({ timeout: 30000 });
-        // The titular's card in the MAIN list (no expander click) ...
-        await expect(page.getByText(HH_NAME).first()).toBeVisible({ timeout: 30000 });
-        // ... and the card explains WHY: family-circle match, relative visible.
-        await expect(page.getByText(/RelativeFixture Ondina/).first()).toBeVisible({ timeout: 30000 });
+        const search = async () => {
+            await page.goto('/');
+            await dismissCountryBanner(page);
+            await page.fill('input#search', 'relativefixture ondina');
+            await page.getByRole('button', { name: /search records|buscar registros/i }).click();
+            await expect(page.getByText(/found \d+ match|resultados encontrados/i)).toBeVisible({ timeout: 30000 });
+            const card = page.locator(`a[href^="/adopter/${REL}"]`).first();
+            // The relative's card in the MAIN list.
+            await expect(card).toBeVisible({ timeout: 30000 });
+            return card;
+        };
+
+        // The titular is unrated, no alerts: nothing about the home.
+        let card = await search();
+        await expect(card.locator('[data-alert^="housemate_"]')).toHaveCount(0);
+
+        // Rated 1★: the alert, closed — then opened, naming the titular, without leaving the results.
+        execD1(`INSERT OR REPLACE INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-hh-fixture-ev-1', '${HH}', 'observation', 1, 'gatitosolivos@gmail.com', strftime('%s','now'))`);
+        card = await search();
+        const chip = card.locator('[data-alert="housemate_low_rating"]').filter({ visible: true });
+        await expect(chip).toHaveCount(1, { timeout: 30000 });
+        await expect(chip).toContainText('1.0');
+        await expect(card).not.toContainText(HH_NAME);
+        const before = page.url();
+        await chip.click();
+        await expect(card.getByTestId('card-household-list')).toContainText(HH_NAME);
+        expect(page.url()).toBe(before);
+        execD1(`DELETE FROM adopter_events WHERE id = 'test-hh-fixture-ev-1'`);
     });
+    test("a record added to a merged-away profile (import wizard) lands on the profile it was merged into", async ({ page }) => {
+        const P = 'test-addrec-fixture-survivor';
+        const S = 'test-addrec-fixture-absorbed';
+        execD1Batch([
+            adopterSql(P, 'AddRecFixture Survivor', 'ar-contact 2222-0001'),
+            adopterSql(S, 'AddRecFixture Absorbed', 'ar-contact 2222-0002'),
+        ]);
+        const mergeRes = await page.request.post('/api/admin/duplicates/merge', { data: { primaryId: P, secondaryIds: [S] } });
+        expect(mergeRes.ok()).toBeTruthy();
+
+        const res = await page.request.post(`/api/adopters/${S}/add-record`, {
+            data: { adoption: { recordType: 'observation', animalName: 'AddRecFixture Pet' } },
+        });
+        expect(res.ok()).toBeTruthy();
+        const body = await res.json() as { adoptionId: string; adopterId: string; adopterName: string };
+        expect(body.adopterId, 'the response names the survivor, so the wizard follows up there').toBe(P);
+        expect(body.adopterName).toBe('AddRecFixture Survivor');
+        const owner = parseD1Rows(execD1(
+            `SELECT adopter_id FROM adopter_events WHERE id = '${body.adoptionId}' UNION ALL SELECT adopter_id FROM placements WHERE id = '${body.adoptionId}'`,
+        ));
+        expect(owner.map(r => r.adopter_id)).toEqual([P]);
+    });
+
     test('admin merge: the panel shows who registered each profile; owners are told only when asked; both histories record it', async ({ page }) => {
         const M1 = 'test-mergeowner-fixture-1';
         const M2 = 'test-mergeowner-fixture-2';
         const CAND = 'test-cand-mergeowner-12';
-        seedAdopter(M1, 'MergeOwnerFixture Milagros', 'mo-contact 1111-0001');
-        seedAdopter(M2, 'MergeOwnerFixture Mili', 'mo-contact 1111-0002');
-        // M2 was registered by another rescuer (the seed's regular test user).
-        execD1(`UPDATE adopters SET added_by = 'testuser@example.com' WHERE id = '${M2}'`);
-        execD1(`DELETE FROM notifications WHERE type = 'adopter_merged'`);
-        execD1(`DELETE FROM adopter_history WHERE adopter_id = '${M1}' OR adopter_id = '${M2}'`);
-        execD1(
+        execD1Batch([
+            adopterSql(M1, 'MergeOwnerFixture Milagros', 'mo-contact 1111-0001'),
+            adopterSql(M2, 'MergeOwnerFixture Mili', 'mo-contact 1111-0002'),
+            // M2 was registered by another rescuer (the seed's regular test user).
+            `UPDATE adopters SET added_by = 'testuser@example.com' WHERE id = '${M2}'`,
+            `DELETE FROM notifications WHERE type = 'adopter_merged'`,
+            `DELETE FROM adopter_history WHERE adopter_id = '${M1}' OR adopter_id = '${M2}'`,
             `INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at, resolved_at, resolved_by) ` +
             `VALUES ('${CAND}', '${M1}', '${M2}', '["phone"]', '{}', 999, 'high', 'pending', strftime('%s','now'), NULL, NULL)`,
-        );
+        ]);
 
         // The pair card says who registered each side.
         await page.goto('/admin/data-quality');
@@ -323,7 +386,7 @@ test.describe('Duplicate mass-merge and undo', () => {
         await expect(card.getByTestId('dup-created-by').first()).toBeVisible({ timeout: 30000 });
         await expect(card).toContainText('testuser@example.com');
         // The merge window offers to notify (checked by default).
-        await card.getByRole('button', { name: /^Merge$/ }).click();
+        await card.getByRole('button', { name: /^(Unir|Merge)$/ }).click();
         await expect(page.getByTestId('dmm-notify').locator('input')).toBeChecked();
         await page.keyboard.press('Escape');
 
@@ -333,7 +396,8 @@ test.describe('Duplicate mass-merge and undo', () => {
         const auditId = (await res.json() as { results: Array<{ auditId: string }> }).results[0].auditId;
         const notes = parseD1Rows(execD1(`SELECT user_id, url FROM notifications WHERE type = 'adopter_merged'`));
         expect(notes.map(n => n.user_id)).toEqual(['testuser@example.com']);
-        expect(String(notes[0].url)).toBe(`/adopter/${M1}`);
+        // The notice opens «¿No es la misma persona?» for this merge (D50).
+        expect(String(notes[0].url)).toBe(`/adopter/${M1}?dispute=${encodeURIComponent(auditId)}`);
 
         // The survivor's history records the merge, and the profile shows it.
         const merged = parseD1Rows(execD1(`SELECT changes FROM adopter_history WHERE adopter_id = '${M1}' AND changes LIKE '%profiles_merged%'`));

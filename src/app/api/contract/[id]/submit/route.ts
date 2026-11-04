@@ -165,7 +165,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         //    (Phase 1) to create a fresh row with source='contract' and run
         //    dedup detection.
         let adopterId: string;
-        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[] }> = [];
+        let matches: Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent?: number }> = [];
         if (invitation) {
             // The profile is written back AFTER the adoption lands (below), so a
             // signature that loses the animal to a concurrent adoption changes
@@ -195,6 +195,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 adopterId: c.adopterId,
                 adopterName: c.adopterName,
                 matchTypes: c.matchTypes,
+                relevancePercent: c.relevancePercent,
             }));
         }
 
@@ -263,26 +264,46 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 socials: socialNetworks ? [socialNetworks] : [],
                 addresses: address ? [address] : [],
             });
+            // A new name is a rename (households as profiles): the old name is kept as a
+            // rename alias, and the list's rename aliases always survive the overwrite.
             const written = await casAdopterLists(db, adopterId, (row) => {
                 const update = contactUpdateOnSign(
-                    { contactInfo: row.contactInfo, contactEntries: row.contactEntries, addressInfo: row.addressInfo },
-                    { entries: contactEntries, address: address || null },
+                    { name: row.name, contactInfo: row.contactInfo, contactEntries: row.contactEntries, addressInfo: row.addressInfo },
+                    { entries: contactEntries, address: address || null, name: fullName },
                     signOverwrite,
+                    'contract-signed-via-invitation',
                 );
                 return {
                     write: {
-                        ...(update.replaceName ? { name: fullName } : {}),
+                        ...(update.name !== undefined ? { name: update.name } : {}),
                         contactInfo: update.contactInfo,
                         contactEntries: update.contactEntries,
                         addressInfo: update.addressInfo,
                     },
-                    result: null,
+                    result: update.nameChange ?? null,
                 };
             }, { op: 'contractSubmit', animalId });
             if (written.status !== 'done') {
                 // The adoption is recorded; only the contact write-back failed.
                 // Logged with an id rather than failing a signature the adopter completed.
                 logger.error('Contract submit: contact write-back did not land', new Error(written.status), { animalId, adopterId });
+            } else if (written.result) {
+                // The rename's history row (as every rename writes): «Deshacer» for the owner's team,
+                // and the same notice as any rename (final fix S7). Never fails the signature.
+                try {
+                    const { recordSignerRename } = await import('@/lib/profileIdentity');
+                    const change = written.result;
+                    await recordSignerRename(db, { adopterId, ownerEmail: written.row.addedBy ?? null, from: change.from || null, to: change.to, aliasKept: change.aliasKept });
+                } catch (e) {
+                    logger.error('Contract submit: rename history or notice failed (the name and its alias landed)', e, { animalId, adopterId });
+                }
+                // Its own try: a failed history row must not leave the new name unindexed.
+                try {
+                    const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+                    await tokenizeAdopter(adopterId);
+                } catch (e) {
+                    logger.error('Contract submit: re-index after the rename failed', e, { animalId, adopterId });
+                }
             }
 
             await db.insert(adopterHistory).values({
@@ -337,7 +358,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             const rescuerEmail = animal.addedBy;
             if (rescuerEmail && rescuerEmail !== 'anonymous' && rescuerEmail !== 'contract') {
                 const { createNotification } = await import('@/app/actions/notifications');
+                const { notificationContent } = await import('@/domain/notificationTemplates');
                 const matchCount = matches.length;
+                const animalParam = animal.animalName ? { animalName: animal.animalName } : {};
                 const animalName = animal.animalName || 'Animal';
                 const notificationId = crypto.randomUUID();
 
@@ -346,8 +369,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         id: notificationId,
                         userId: rescuerEmail,
                         type: 'contract_result',
-                        title: `${matchCount} coincidencia${matchCount > 1 ? 's' : ''} para ${fullName}`,
-                        body: `${animalName} fue adoptado por ${fullName}. Se encontraron posibles registros previos. Tocá para revisar.`,
+                        ...notificationContent({ key: 'contract_result_matches', params: { adopterName: fullName, matchCount: String(matchCount), ...animalParam } }),
                         url: `/contract-results/${notificationId}`,
                         icon: '⚠️',
                         metadata: {
@@ -361,6 +383,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                                 id: m.adopterId,
                                 name: m.adopterName,
                                 matchTypes: m.matchTypes,
+                                // The search score, shown to admins only (Jon, 2026-10-25).
+                                score: m.relevancePercent,
                             })),
                             submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
                         },
@@ -370,8 +394,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         id: notificationId,
                         userId: rescuerEmail,
                         type: 'contract_result',
-                        title: `${animalName} adoptado por ${fullName}`,
-                        body: `No se encontraron registros previos para ${fullName}. Todo en orden.`,
+                        ...notificationContent({ key: 'contract_result_clear', params: { adopterName: fullName, ...animalParam } }),
                         icon: '✅',
                         metadata: {
                             animalId,
@@ -392,8 +415,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     await notifyOrgMembers({
                         actorEmail: rescuerEmail,
                         type: 'contract_result',
-                        title: `Contrato firmado: ${animal.animalName || 'Animal'}`,
-                        body: `${fullName} firmó el contrato de adopción de ${animal.animalName || 'un animal'}.`,
+                        ...notificationContent({ key: 'contract_result_teammate', params: { adopterName: fullName, ...animalParam } }),
                         url: `/adopter/${adopterId}`,
                         icon: '📝',
                         metadata: { adopterId, adopterName: fullName, animalName: animal.animalName },

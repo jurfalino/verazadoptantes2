@@ -5,8 +5,11 @@ import { users } from '@/db/schema';
 import { callCeilingOf, callsToday, handleApiCall, searchesToday } from '@/lib/api/handler';
 import { scopesOf } from '@/lib/api/keys';
 import type { MeResponse } from '@/lib/api/schemas';
+import { apiPreflight } from '@/lib/api/cors';
 
 export const runtime = 'edge';
+
+export const OPTIONS = apiPreflight;
 
 export async function GET(request: Request) {
     return handleApiCall(request, 'me', async (ctx) => {

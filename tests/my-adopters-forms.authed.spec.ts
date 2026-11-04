@@ -41,7 +41,8 @@ test.describe('/my-adopters — people who filled a form', () => {
         const formsChip = page.getByRole('button', { name: /Via form|Por formulario|Por formulário/ });
         await expect(formsChip).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 });
 
-        const rows = page.locator('a[href*="?ref=my-adopters"]:visible');
+        // Each row is a container whose one link is the name (no link inside a link — fix round 2, item 19).
+        const rows = page.locator('[data-testid="my-adopters-row"]:visible');
         const all = await chipCount(page, /^(All|Todos)/);
         const withForms = await chipCount(page, /Via form|Por formulario|Por formulário/);
         expect(withForms).toBeLessThan(all); // seed people without forms are filtered out

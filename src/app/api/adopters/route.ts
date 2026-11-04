@@ -2,15 +2,17 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { adopters, adopterFlags, adopterImages } from '@/db/schema';
-import { eq, like, or, and, isNull, type InferSelectModel } from 'drizzle-orm';
+import { adopters, adopterFlags, adopterImages, adopterEvents, placements, animals } from '@/db/schema';
+import { postKey, samePost } from '@/domain/postKey';
+import { eq, like, or, and, isNull, sql, desc, type InferSelectModel } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { processImageForStorage, uploadToR2 } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
-import { deserializeContactEntries, contactEntriesToBlob } from '@/lib/contactEntries';
+import { deserializeContactEntries, contactEntriesToBlob, contactEntriesJsonCount, stripRenameMarks, stripClientRenameMarksJson, stripClientRenameMarksHouseholdJson, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
+import { deserializeHouseholdMembers, withoutProfileLinks } from '@/lib/householdMembers';
 import { maskAdopterRow } from '@/lib/piiAccess';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 
@@ -37,14 +39,16 @@ async function maskMatchesForViewer<T extends MaskableRow>(
     rows: T[],
     viewerEmail: string | null | undefined,
 ): Promise<T[]> {
-    if (rows.length === 0 || !(await isPiiGatingEnabled())) return rows;
+    // Households as profiles (Task 8): the old household JSON never leaves the server.
+    const withoutHousehold = (r: T): T => ({ ...r, householdMembers: null });
+    if (rows.length === 0 || !(await isPiiGatingEnabled())) return rows.map(withoutHousehold);
     const visMap = await resolveAdoptersVisibility(viewerEmail, rows.map(r => ({ id: r.id, addedBy: r.addedBy })));
     const publicProfilesFlag = await isPublicProfilesEnabled();
     return rows.map(r => {
         const vis = visMap.get(r.id);
         const maskOpts = maskOptionsFor(publicProfilesFlag, r);
-        if (!vis || vis.nothingMasked || maskOpts.adopterIsPublic) return r;
-        return maskAdopterRow(r, vis, maskOpts);
+        if (!vis || vis.nothingMasked || maskOpts.adopterIsPublic) return withoutHousehold(r);
+        return withoutHousehold(maskAdopterRow(r, vis, maskOpts));
     });
 }
 
@@ -68,15 +72,86 @@ export async function GET(request: Request) {
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        // Mode 1: Exact URL match (same-post duplicate detection)
+        // Mode 1: same-post detection. Matched by the POST the link names, not the
+        // link's exact text (www/m., tracking parameters, permalink vs /posts/ —
+        // audit 2026-10-21, D1), and against activity records too: a post merged
+        // into an existing profile is stored on the activity only (D2). Every
+        // profile that post was saved to is returned, not just the first.
+        //
+        // Several `sourceUrl` values may be sent (the link as shared and the one
+        // Facebook resolved it to); a profile matching any of them counts.
+        //
+        // instr(), not LIKE: D1 rejects LIKE patterns over ~50 bytes ("pattern too
+        // complex"), and Facebook pfbid ids are 60–70 chars — the check threw, the
+        // catch below answered "no matches", and a re-paste created a duplicate
+        // (review of 2.56.213, item 1). instr has no length cap and no wildcards.
+        //
+        // Only id, name and whether the viewer may edit the profile go back: the
+        // full row carried notes and the other rescuer's email (review item 10).
         if (sourceUrl) {
-            const matches = await db.select()
-                .from(adopters)
-                .where(and(isNull(adopters.deletedAt), eq(adopters.sourceUrl, sourceUrl)));
-            return NextResponse.json({
-                matches: await maskMatchesForViewer(matches, session.user.email),
-                matchType: 'url',
-            });
+            const links = [...new Set(searchParams.getAll('sourceUrl').map(u => u.trim()).filter(Boolean))].slice(0, 3);
+            const keys = links.map(postKey).filter((k): k is NonNullable<typeof k> => !!k);
+            if (!keys.length) return NextResponse.json({ matches: [], matchType: 'url' });
+            const matchesAny = (stored: string | null) => !!stored && links.some(l => samePost(stored, l));
+            type AdopterRow = InferSelectModel<typeof adopters>;
+            const needles = [...new Set(keys.map(k => k.needle))];
+            const perNeedle = await Promise.all(needles.map(needle => Promise.all([
+                // A generic needle can hit many rows; newest first and a roomy cap so
+                // the right one is not cut before samePost() decides.
+                db.select().from(adopters)
+                    // lower() on both sides: instr is case-sensitive, stored hosts and
+                    // vanity names are not (final review of 2.56.215, item 2).
+                    .where(and(isNull(adopters.deletedAt), sql`instr(lower(${adopters.sourceUrl}), lower(${needle})) > 0`))
+                    .orderBy(desc(adopters.createdAt))
+                    .limit(200) as Promise<AdopterRow[]>,
+                // The tables behind the `adoptions` view, not the view: it has no
+                // created_at to order by, and it hides links on ended placements.
+                db.select({ adopterId: adopterEvents.adopterId, sourceUrl: adopterEvents.sourceUrl }).from(adopterEvents)
+                    .where(sql`instr(lower(${adopterEvents.sourceUrl}), lower(${needle})) > 0`)
+                    .orderBy(desc(adopterEvents.createdAt))
+                    .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
+                db.select({ adopterId: placements.adopterId, sourceUrl: placements.sourceUrl }).from(placements)
+                    .where(sql`instr(lower(${placements.sourceUrl}), lower(${needle})) > 0`)
+                    .orderBy(desc(placements.createdAt))
+                    .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
+                // The view fell back to the animal's own link (COALESCE) when the
+                // placement had none; keep that (review of 2.56.216, item 5).
+                db.select({ adopterId: placements.adopterId, sourceUrl: animals.sourceUrl }).from(placements)
+                    .innerJoin(animals, eq(placements.animalId, animals.id))
+                    .where(and(isNull(animals.deletedAt), sql`instr(lower(${animals.sourceUrl}), lower(${needle})) > 0`))
+                    .orderBy(desc(placements.createdAt))
+                    .limit(200) as Promise<Array<{ adopterId: string | null; sourceUrl: string | null }>>,
+            ])));
+            const byId = new Map<string, AdopterRow>();
+            for (const [direct] of perNeedle) for (const r of direct) if (matchesAny(r.sourceUrl)) byId.set(r.id, r);
+            const recordAdopterIds = [...new Set(perNeedle.flatMap(([, events, placed, viaAnimal]) => [...events, ...placed, ...viaAnimal])
+                .filter(r => matchesAny(r.sourceUrl))
+                .map(r => r.adopterId)
+                .filter((id): id is string => !!id && !byId.has(id)))];
+            // One query per id: D1 does not expand arrays in IN (CLAUDE.md).
+            const viaRecordRows: Array<AdopterRow | undefined> = await Promise.all(recordAdopterIds.map(id =>
+                db.select().from(adopters).where(and(eq(adopters.id, id), isNull(adopters.deletedAt))).get()
+                    .catch((e: unknown) => {
+                        logger.warn('Adopter duplicate check: record-adopter lookup failed', { adopterId: id, error: e instanceof Error ? e.message : String(e) });
+                        return undefined;
+                    })));
+            for (const r of viaRecordRows) if (r) byId.set(r.id, r);
+
+            // canEdit drives the wizard's "add as a relative" (household writes are
+            // owner / admin / org-mate only — review item 5).
+            const viewer = session.user.email ?? '';
+            const { isAdminAsync } = await import('@/config/admins');
+            const { isOrgMate } = await import('@/lib/orgMembership');
+            const viewerIsAdmin = await isAdminAsync(viewer);
+            const matches = await Promise.all([...byId.values()].map(async r => ({
+                id: r.id,
+                name: r.name,
+                canEdit: viewerIsAdmin || r.addedBy === viewer || await isOrgMate(viewer, r.addedBy).catch((e: unknown) => {
+                    logger.warn('Adopter duplicate check: org lookup failed', { adopterId: r.id, error: e instanceof Error ? e.message : String(e) });
+                    return false;
+                }),
+            })));
+            return NextResponse.json({ matches, matchType: 'url' });
         }
 
         // Mode 2: Multi-field person matching (different post, same person)
@@ -177,8 +252,13 @@ export async function GET(request: Request) {
             confidence: scoredMatches[0]?.confidence || 'none'
         });
     } catch (error) {
-        logger.error('Adopter duplicate check failed', error, { sourceUrl: sourceUrl || undefined, matchName: matchName || undefined });
-        return NextResponse.json({ matches: [], matchType: sourceUrl ? 'url' : 'person', confidence: 'none' });
+        // No names or links in the log (privacy); the mode is enough to triage.
+        const errorId = logger.error('Adopter duplicate check failed', error, { mode: sourceUrl ? 'url' : 'person', user: session.user.email });
+        // The same-post check must fail LOUDLY: an empty 200 read as "not imported
+        // yet" and let a re-paste create a duplicate. The wizard shows its
+        // "couldn't verify" warning on a non-OK answer.
+        if (sourceUrl) return NextResponse.json({ error: 'Duplicate check failed', errorId }, { status: 500 });
+        return NextResponse.json({ matches: [], matchType: 'person', confidence: 'none' });
     }
 }
 
@@ -251,7 +331,30 @@ export async function POST(request: Request) {
         }, { status: 400 });
     }
 
-    const { name, contactInfo, contactEntries, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic } = parsed.data;
+    const { name, contactInfo, notes, sourceUrl, flags, images, adoption, source, isPublic: callerIsPublic } = parsed.data;
+    // Client JSON: rename marks off FIRST — on the profile's entries and every relative's —
+    // so no forged mark is counted or read as exempt from the cap.
+    const contactEntries = stripClientRenameMarksJson(parsed.data.contactEntries);
+    const householdJson = stripClientRenameMarksHouseholdJson(parsed.data.householdMembers);
+    // Final fix S1: more contacts than a profile holds is refused, never stored for a later read to truncate.
+    if (contactEntriesJsonCount(contactEntries ?? null) > MAX_CONTACT_ENTRIES) {
+        logger.info('Adopter create: refused — more contact entries than a profile holds', { errorId, user: session.user.email });
+        return NextResponse.json({ error: `At most ${MAX_CONTACT_ENTRIES} contact entries`, code: CONTACT_ENTRIES_FULL, errorId }, { status: 422 });
+    }
+    // Relatives named in the same post (Jon, 2026-10-22): sanitized, their
+    // contacts credited to the contributor. They become profiles + memberships
+    // after the profile is saved (households as profiles: attachHouseholdPeople,
+    // the exact match) — never adopters.household_members, never a planted profileId.
+    const relatives = withoutProfileLinks(deserializeHouseholdMembers(householdJson ?? null))
+        .map(m => ({
+            name: m.name,
+            relationship: m.relationship,
+            // Age is never set from here (Jon 2026-10-29: no age editing until a new design;
+            // review 2026-11-01): only the public adoption form records an age.
+            age: null,
+            // Final fix S6: only the server's rename code marks a rename alias.
+            contactEntries: stripRenameMarks(m.contactEntries).map(({ own: _own, ...e }) => ({ ...e, id: crypto.randomUUID(), addedBy: session.user?.email || undefined })),
+        }));
 
     // Log the incoming request (without image data for size)
     logger.info('Adopter create: start', {
@@ -294,7 +397,8 @@ export async function POST(request: Request) {
         // NOT have their addition flagged public.
         let contactEntriesJson: string | null = null;
         if (contactEntries) {
-            const entries = deserializeContactEntries(contactEntries);
+            // Client JSON (S6): only the server's rename code marks a rename alias.
+            const entries = stripRenameMarks(deserializeContactEntries(contactEntries));
             if (entries.length) {
                 // v2.19.11: stampPublic only fires for SOCIAL imports
                 // (ImportWizard with a sourceUrl — Facebook, Instagram, etc.),
@@ -478,16 +582,18 @@ export async function POST(request: Request) {
         // Create interaction record if adoption data provided
         let adoptionId: string | null = null;
         if (adoption) {
-            // Pack notes (only if this adoption IS the observation) and contact info into
-            // details for searchability. If recordType !== 'observation', notes is handled
-            // separately below as its own observation record.
+            // Pack notes (only if this adoption IS the observation) into details. If
+            // recordType !== 'observation', notes is handled separately below as its
+            // own observation record. Contacts are NOT copied in any more: they live
+            // in the profile's contact entries (tokenized, so still searchable), where
+            // protected/public applies per entry — a plain-text copy in the note
+            // bypassed that (audit 2026-10-21, D8; same change as add-record).
             const detailsParts: string[] = [];
             const adoptionRecordType = adoption.recordType || 'adoption';
             // v2.24.6: an explicit per-record `details` (spreadsheet import) is
             // part of the record itself, regardless of type.
             if (adoption.details?.trim()) detailsParts.push(adoption.details.trim());
             if (notes && adoptionRecordType === 'observation') detailsParts.push(notes);
-            if (contactInfoStr) detailsParts.push(`Contact: ${contactInfoStr}`);
 
             const { insertRecord } = await import('@/app/actions/_recordWrite');
             adoptionId = await insertRecord(db, {
@@ -570,6 +676,22 @@ export async function POST(request: Request) {
         // acceptable on submit). Tokenize is idempotent and try/catches
         // internally — await is safe.
         await tokenizeAdopter(newId);
+
+        // The post's relatives as profiles in this person's household (exact match, else new).
+        // After the profile's own tokens, so its own scan never sees them. A failure keeps the profile.
+        if (relatives.length && session.user.email) {
+            try {
+                // Same visibility as before, when they were JSON of this record: the record's
+                // «público» covered them (maskHouseholdMembers), their entries were never stamped.
+                const { attachHouseholdPeople } = await import('@/lib/householdPeople');
+                await attachHouseholdPeople(db, {
+                    anchorAdopterId: newId, people: relatives, actor: session.user.email, ownerEmail: session.user.email,
+                    sourceKey: `import:${newId}`, requestId: errorId, isPublic: stampRecordPublic,
+                });
+            } catch (e) {
+                logger.error('Adopter create: relatives not attached (the profile is saved)', e, { errorId, adopterId: newId, user: session.user.email });
+            }
+        }
 
         // v2.19.73: audit creates from this API/import path. Previously only the
         // saveAdopter server action logged adopter_created/adoption_created, so

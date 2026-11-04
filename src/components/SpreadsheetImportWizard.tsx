@@ -2,18 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
+import MatchCompare from '@/components/MatchCompare';
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { parseSpreadsheetFile, type ParsedSheet } from '@/lib/spreadsheetParse';
-import { mapImportColumns, interpretRows, aiCleanRowContacts, findAdopters, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, getMatchContext, type DuplicateMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun, type MatchContext } from '@/app/actions';
-import { isExactIdentifierMatch } from '@/domain/importMerge';
+import { mapImportColumns, interpretRows, aiCleanRowContacts, matchImportRow, startImportRun, finishImportRun, importAdoptersBatch, getMyImportRuns, getMyImportRunItems, matchFingerprints, findIdenticalRowsOtherMatches, type DuplicateMatch, type JudgedMatch, type ImportBatchRow, type ImportBatchResult, type EnrichedImportRun } from '@/app/actions';
+import { defaultImportAction } from '@/domain/importMerge';
+import type { IdenticalRowIdentifiers } from '@/app/actions/importOtherMatches';
 import { computeContentFingerprint } from '@/domain/contentFingerprint';
-import { groupSamePerson, groupName, unionValues, phoneDigitsKey, type GroupReason } from '@/domain/importGrouping';
+import { groupSamePerson, groupName, unionValues, phoneDigitsKey, documentIdKey, type GroupReason } from '@/domain/importGrouping';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { buildImportBody } from '@/lib/importRow';
 import { inferDateOrder } from '@/domain/importRow';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { normalizeSpecies, normalizeImportDate, normalizeRating, normalizeRecordType, normalizeNeutered, recognizedRecordType } from '@/domain/importRow';
 import { userFacingMessage } from '@/lib/errorMessage';
-import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { zarazTrack } from '@/lib/zaraz';
 import { importRunState } from '@/domain/importRunState';
 import {
@@ -57,12 +60,12 @@ function mergedGroupContacts(effs: MappedRow[]): Pick<MappedRow, 'name' | 'phone
         emails: unionValues(effs.map(e => e.emails)),
         socials: unionValues(effs.map(e => e.socials)),
         addresses: unionValues(effs.map(e => e.addresses)),
-        dnis: unionValues(effs.map(e => e.dnis)),
+        dnis: unionValues(effs.map(e => e.dnis), documentIdKey),
         combinedContacts: unionValues(effs.map(e => e.combinedContacts)),
     };
 }
 
-const GROUP_REASON_LABEL: Record<GroupReason, string> = { identical: 'mismos datos', email: 'mismo email', phone: 'mismo teléfono' };
+const GROUP_REASON_LABEL: Record<GroupReason, string> = { identical: 'mismos datos', email: 'mismo email', phone: 'mismo teléfono', document: 'mismo documento' };
 
 // 'grouped' = an intra-batch twin whose activity was folded into another row's
 // adopter (same person on multiple rows). It IS imported — just not as its own
@@ -242,13 +245,14 @@ export default function SpreadsheetImportWizard() {
     }, [step, importDone]);
     // Duplicate-aware import: top existing match per row index (null = checked, no
     // match; absent = not checked yet), and the per-row create/upsert/skip choice.
-    const [matches, setMatches] = useState<Record<number, DuplicateMatch | null>>({});
+    const [matches, setMatches] = useState<Record<number, RowMatch | null>>({});
+    // Every OTHER profile a row also matches (Jon 2026-10-31: a row matching two
+    // profiles showed only one, so «Actualizar» left the other a silent duplicate).
+    const [otherMatches, setOtherMatches] = useState<Record<number, RowMatch[]>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
     // "Por qué" expansion on the Duplicados triage row: which row (by index) is
-    // expanded, and a per-adopterId cache of the presence-only match context so
-    // re-expanding a row (or two rows matching the same adopter) never refetches.
+    // expanded. The comparison card loads the profile's details itself.
     const [expandedMatchRow, setExpandedMatchRow] = useState<number | null>(null);
-    const [matchContexts, setMatchContexts] = useState<Record<string, MatchContext | 'loading' | 'error'>>({});
     // Which row's "detalles / más campos" expand (Motivo + secondary animal/adoption
     // fields) is open — same one-row-at-a-time pattern as expandedMatchRow above.
     const [expandedFieldsRow, setExpandedFieldsRow] = useState<number | null>(null);
@@ -626,11 +630,13 @@ export default function SpreadsheetImportWizard() {
         return { create, update, review, skipCount: (records.filter(x => x.selected).length - importable.length) + skipByAction };
     }, [importable, rowAction, records]);
 
-    // Look for an existing adopter that matches each selected row, reusing the
-    // same duplicate engine the manual form uses (findAdopters, mode 'duplicate').
-    // Opt-in (a button), like AI interpretation — 1 lightweight lookup per row,
-    // bounded concurrency. Keys on name/phone/email/social (the engine's inputs);
-    // address-only / DNI-only rows won't match here and default to "crear".
+    // Look for an existing adopter that matches each selected row: Phase 1 finds
+    // identical copies; every other row gets the identity verdict (matchImportRow —
+    // same / possible, spec 2026-11-02-identity-verdict-design §3; the manual form
+    // moves to it in a later rollout step). Opt-in (a button), like AI
+    // interpretation — 1 lookup per row, bounded concurrency. Keys on
+    // name/phone/email/social/DNI, so a DNI-only row does match; an address-only
+    // row matches only as an identical copy (Phase 1) and otherwise defaults to "crear".
     const detectGenRef = useRef(0);
     const runDetection = async () => {
         const targets = records.filter(r => r.selected);
@@ -642,13 +648,17 @@ export default function SpreadsheetImportWizard() {
         setDetectionDegraded(false); setDetectFailedRows(new Set());
         let detectionHadError = false;
         const failedIdx: number[] = [];
-        const found: Record<number, DuplicateMatch | null> = {};
+        const found: Record<number, RowMatch | null> = {};
+        const others: Record<number, RowMatch[]> = {};
         const actions: Record<number, RowAction> = {};
 
         // Phase 1 — EXACT identical-record match. One server scan fingerprints all
         // existing records and returns which import rows are byte-for-byte the same
         // person (any field combo, incl. address-only). An identical row defaults to
-        // "actualizar" — never a duplicate — and skips the fuzzy call below.
+        // "actualizar" — never a duplicate, and it skips the fuzzy call below. The other
+        // profiles it also matches («también coincide») come from the API's exact-mode
+        // lookup (email / phone / document only, Jon 2026-11-01): a few token reads per
+        // row instead of the fuzzy engine's ~110–200 (EM review I3).
         const fpByIndex: Record<number, string> = {};
         for (const t of targets) {
             const g = splitGroupedContacts(t.eff);
@@ -663,6 +673,43 @@ export default function SpreadsheetImportWizard() {
             else setDetectionDegraded(true); // surfaced in the UI; do NOT treat as "no matches"
         }
 
+        // Phase 1b — «también coincide» for the identical rows, one lookup per distinct
+        // fingerprint. The action checks what fits its query budget and hands the rest
+        // back as `deferred`, which goes into the next call.
+        const otherByFp: Record<string, RowMatch[]> = {};
+        const identical = new Map<string, IdenticalRowIdentifiers>();
+        for (const t of targets) {
+            const fp = fpByIndex[t.index];
+            const hit = idMap[fp];
+            if (!hit || identical.has(fp)) continue;
+            const g = splitGroupedContacts(t.eff);
+            identical.set(fp, { key: fp, identicalId: hit.adopterId, phones: g.phones, emails: g.emails, ids: g.ids });
+        }
+        let pending = [...identical.values()];
+        let unchecked = 0;
+        while (pending.length > 0) {
+            const batch = pending.slice(0, 50);
+            const res = await findIdenticalRowsOtherMatches(batch).catch((e: unknown) => ({ ok: false as const, errorId: resolveErrorId(e, 'SpreadsheetImportWizard.otherMatches') }));
+            if (!live()) return;
+            if (!res.ok) {
+                // The identical matches stand; only their «también coincide» lists are missing.
+                unchecked += batch.length;
+                pending = pending.slice(batch.length);
+                void reportClientError({ message: 'sheet import: other matches of identical rows not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { rows: batch.length, errorId: res.errorId } });
+                continue;
+            }
+            Object.assign(otherByFp, res.others);
+            unchecked += res.failed.length;
+            const deferred = new Set(res.deferred);
+            // Always progresses: the action checks at least one row per call.
+            pending = [...batch.filter(r => deferred.has(r.key)), ...pending.slice(batch.length)];
+            if (deferred.size === batch.length) { unchecked += pending.length; break; }
+        }
+        if (unchecked > 0) {
+            setDetectionDegraded(true); // surfaced in the UI: a match list may be missing
+            void reportClientError({ message: 'sheet import: other matches of identical rows not checked', source: 'SpreadsheetImportWizard', level: 'warn', extra: { rows: unchecked } });
+        }
+
         let done = 0, cursor = 0;
         const worker = async () => {
             for (let k = cursor++; k < targets.length; k = cursor++) {
@@ -670,47 +717,48 @@ export default function SpreadsheetImportWizard() {
                 const { index, eff } = targets[k];
                 const idHit = idMap[fpByIndex[index]];
                 if (idHit) {
+                    // Byte-for-byte the same person: that profile comes first and defaults
+                    // to "actualizar"; any other profile the row also matches is listed under it.
                     found[index] = { adopterId: idHit.adopterId, adopterName: idHit.adopterName ?? '', relevancePercent: 100, matchTypes: ['identical'], matchValues: [], source: 'token' };
+                    others[index] = otherByFp[fpByIndex[index]] ?? [];
                     actions[index] = 'upsert';
                     done++; setDetectProgress({ done, total: targets.length });
                     continue;
                 }
-                // DNIs go via contactInfo, LABELED ("DNI 12345678"), because
-                // findAdopters extracts id_number tokens from contactInfo (there's
-                // no structured `dnis` input) — without this a same-DNI record only
-                // matches on name (~50%) and never counts as an exact identifier.
                 const g = splitGroupedContacts(eff);
-                // Retry with backoff: the per-row lookup runs heavy full-scan LIKE
-                // queries and D1 rejects some under the import's concurrent burst
-                // (intermittent "Failed query"). A couple of spaced retries clear
-                // the transient ones so the row isn't dropped from comparison.
-                let compared = false;
-                for (let attempt = 0; attempt < 3 && !compared; attempt++) {
+                // Retry with backoff: the per-row lookup runs heavy queries and D1
+                // rejects some under the import's concurrent burst (intermittent
+                // "Failed query"). A couple of spaced retries clear the transient
+                // ones so the row isn't dropped from comparison. `{ ok: false }`
+                // (the server action caught its own failure) counts as a failed attempt.
+                let dup: JudgedMatch[] | null = null;
+                let lastError: unknown = null;
+                for (let attempt = 0; attempt < 3 && dup === null; attempt++) {
                     if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
                     try {
-                        const res = await findAdopters(
-                            {
-                                name: eff.name || undefined, phones: g.phones, emails: g.emails, socials: g.socials,
-                                contactInfo: g.ids.length ? g.ids.map(d => `DNI ${d}`).join('\n') : undefined,
-                            },
-                            { mode: 'duplicate', limit: 1, minRelevance: 5 },
-                        );
-                        const dup = (res.results as DuplicateMatch[]) ?? [];
-                        const top = dup[0] ?? null;
-                        found[index] = top;
-                        // High confidence (exact identifier) defaults to "actualizar"; a
-                        // weaker match (e.g. name-only) defaults to 'review' — unresolved,
-                        // NOT 'create' — so it can't be silently imported as a duplicate.
-                        // No match at all (top === null) isn't shown in triage and imports
-                        // as new, so 'create' here is inert.
-                        actions[index] = top ? (isExactIdentifierMatch(top.matchTypes) ? 'upsert' : 'review') : 'create';
-                        compared = true;
-                    } catch {
-                        // fall through to the next attempt
+                        const res = await matchImportRow({
+                            name: eff.name || '', phones: g.phones, emails: g.emails, socials: g.socials, documentIds: g.ids,
+                        });
+                        if (res.ok) dup = res.matches;
+                        else lastError = new Error(`matchImportRow failed (${res.errorId})`);
+                    } catch (e) {
+                        lastError = e; // fall through to the next attempt
                     }
                 }
                 if (!live()) return;
+                const compared = dup !== null;
+                if (dup !== null) {
+                    const top = dup[0] ?? null;
+                    found[index] = top;
+                    others[index] = dup.slice(1);
+                    // The same person defaults to "actualizar"; a possible one to 'review'
+                    // — unresolved, NOT 'create' — so it can't be silently imported as a
+                    // duplicate. No match at all isn't shown in triage and imports as
+                    // new, so 'create' here is inert.
+                    actions[index] = defaultImportAction(dup);
+                }
                 if (!compared) {
+                    void reportClientError({ message: 'sheet import: row not compared after 3 attempts', source: 'SpreadsheetImportWizard', level: 'warn', extra: { row: index, error: lastError instanceof Error ? lastError.message : String(lastError) } });
                     // Fail CLOSED: this row was never compared. Do NOT default to
                     // 'create' (that would import a possible duplicate unseen) — mark
                     // it failed so import is blocked until a re-scan compares it.
@@ -729,6 +777,7 @@ export default function SpreadsheetImportWizard() {
         if (detectionHadError) setDetectionDegraded(true);
         setDetectFailedRows(new Set(failedIdx));
         setMatches(found);
+        setOtherMatches(others);
         // Seed default actions, but never clobber a choice the user already made.
         setRowAction(prev => { const next = { ...actions }; for (const k of Object.keys(prev)) next[+k] = prev[+k]; return next; });
         setDetecting(false); setDetectionDone(true);
@@ -1031,7 +1080,15 @@ export default function SpreadsheetImportWizard() {
     const etaMs = (importDone || cancelling) ? null : etaMsFrom(progress.done, progress.total, importStartRef.current, importStartDoneRef.current);
     const interpretEtaMs = etaMsFrom(interpretProgress.done, interpretProgress.total, interpretStartRef.current);
     const detectEtaMs = etaMsFrom(detectProgress.done, detectProgress.total, detectStartRef.current);
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setMatchContexts({}); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
+    // «Actualizar este»: another profile the row matches becomes the one it updates.
+    const chooseMatch = (index: number, chosen: RowMatch) => {
+        const current = matches[index];
+        setMatches(prev => ({ ...prev, [index]: chosen }));
+        setOtherMatches(prev => ({ ...prev, [index]: [...(current ? [current] : []), ...(prev[index] ?? []).filter(m => m.adopterId !== chosen.adopterId)] }));
+        setRowAction(prev => ({ ...prev, [index]: 'upsert' }));
+    };
+
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setOtherMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -1049,7 +1106,7 @@ export default function SpreadsheetImportWizard() {
             const next = { ...prev };
             for (const row of matchedRows) {
                 const m = matches[row.index];
-                if (m && (m.matchTypes?.includes('identical') || isExactIdentifierMatch(m.matchTypes))) next[row.index] = a;
+                if (m && (m.matchTypes?.includes('identical') || m.verdict === 'same')) next[row.index] = a;
             }
             return next;
         });
@@ -1084,14 +1141,8 @@ export default function SpreadsheetImportWizard() {
     // Expand/collapse a triage row's "por qué" panel; fetch the presence-only
     // match context lazily on first expand, cached per adopterId.
     const toggleFieldsExpand = (rowIndex: number) => setExpandedFieldsRow(prev => prev === rowIndex ? null : rowIndex);
-    const toggleMatchExpand = (rowIndex: number, adopterId: string) => {
+    const toggleMatchExpand = (rowIndex: number) => {
         setExpandedMatchRow(prev => prev === rowIndex ? null : rowIndex);
-        if (!(adopterId in matchContexts)) {
-            setMatchContexts(prev => ({ ...prev, [adopterId]: 'loading' }));
-            getMatchContext(adopterId)
-                .then(ctx => setMatchContexts(prev => ({ ...prev, [adopterId]: ctx })))
-                .catch(() => setMatchContexts(prev => ({ ...prev, [adopterId]: 'error' })));
-        }
     };
 
     return (
@@ -1396,9 +1447,9 @@ export default function SpreadsheetImportWizard() {
                     {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
                     <RecordGrid rows={filtered} groupOf={reviewGroups} onSplitGroup={key => setSplitGroups(s => { const n = new Set(s); for (const i of reviewGroups.get(key)?.members ?? [key]) n.add(i); return n; })}
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
-                        matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
+                        matches={matches} otherMatches={otherMatches} onChooseMatch={chooseMatch} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
-                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                        expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
 
@@ -1504,9 +1555,9 @@ export default function SpreadsheetImportWizard() {
                                         RowView, so a matched record shows identically here and in Revisar. */}
                                     <RecordGrid rows={dedupVisibleRows}
                                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
-                                        matches={matches} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
+                                        matches={matches} otherMatches={otherMatches} onChooseMatch={chooseMatch} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
                                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
-                                        expandedMatchRow={expandedMatchRow} matchContexts={matchContexts} onToggleWhy={toggleMatchExpand}
+                                        expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
                                         onRatingAll={setRatingAll} onVisibilityAll={setVisibilityAll} onRecordTypeAll={setRecordTypeAll} />
                                 </>
@@ -1613,7 +1664,7 @@ export default function SpreadsheetImportWizard() {
                                             </span>
                                             <span className="font-medium text-stone-700 flex-1 truncate">{/^Fila \d+$/.test(r.name) ? <span className="italic text-stone-400">Sin nombre</span> : r.name}{r.status === 'updated' && r.message && <span className="text-stone-400 font-normal"> · {r.message}</span>}</span>
                                             {r.id
-                                                ? <a href={`/adopter/${r.id}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-teal-600 hover:underline">Ver perfil →</a>
+                                                ? <OpenProfileLink href={`/adopter/${encodeURIComponent(r.id)}`} className="flex-shrink-0" />
                                                 : <span className="flex-shrink-0 text-stone-400">{r.status === 'updated' ? 'actualizado' : 'creado'}</span>}
                                         </div>
                                         {sourceRowText(r.index) && <div className="text-[11px] text-stone-400 truncate pl-12" title={sourceRowText(r.index)}>{sourceRowText(r.index)}</div>}
@@ -1627,7 +1678,7 @@ export default function SpreadsheetImportWizard() {
                             <p className="text-xs text-stone-400">
                                 {cancelled
                                     ? 'Cancelaste la importación. Lo ya creado quedó guardado — reanudá para crear las filas restantes (no duplica lo ya creado).'
-                                    : 'Los posibles duplicados con registros existentes quedan marcados para revisar/fusionar en cada perfil. Reimportar la misma planilla vuelve a crear registros.'}
+                                    : 'Los posibles duplicados con registros existentes quedan marcados para revisar/unir en cada perfil. Reimportar la misma planilla vuelve a crear registros.'}
                             </p>
                             <div className="flex-shrink-0 flex items-center gap-2">
                                 {cancelled && resumable && (
@@ -1657,60 +1708,25 @@ function matchTypeLabels(types: string[]): string {
     const labels = [...new Set(types.map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
     return labels.length ? labels.join(', ') : 'datos';
 }
-// Signal-type groups used by explainMatchOneLiner below (same token vocabulary
-// isExactIdentifierMatch checks, plus the name-ish family it's compared against).
-const NAME_SIGNAL_TYPES = new Set(['name_full', 'name_word', 'name_phonetic', 'name_word_fuzzy', 'like_fallback_name']);
-const STRONG_SIGNAL_TYPES = new Set(['phone', 'phone_suffix', 'like_fallback_contact', 'email', 'id_number', 'social', 'social_handle']);
 
-// One-line, derived explanation of WHY a row matched — composed from the matched
-// signal types plus the existing record's presence-only context (never its values).
-function explainMatchOneLiner(match: DuplicateMatch, ctx: MatchContext | undefined): string {
-    const pct = match.relevancePercent;
-    if (match.matchTypes?.includes('identical')) return 'Coincide en todos los datos — prácticamente seguro que es la misma persona.';
-    const nameOnly = match.matchTypes.length > 0 && match.matchTypes.every(t => NAME_SIGNAL_TYPES.has(t));
-    if (nameOnly) {
-        if (ctx?.ok && !ctx.has.phone && !ctx.has.email) {
-            return `Coincide solo en el nombre (${pct}%). El registro existente no tiene teléfono ni email para comparar — podría ser otra persona con el mismo nombre.`;
-        }
-        return `Coincide solo en el nombre (${pct}%) — revisá el contacto antes de decidir.`;
-    }
-    const strongLabels = [...new Set(match.matchTypes.filter(t => STRONG_SIGNAL_TYPES.has(t)).map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
-    if (strongLabels.length) {
-        const hasName = match.matchTypes.some(t => NAME_SIGNAL_TYPES.has(t));
-        return hasName
-            ? `Coincide en nombre y ${strongLabels.join(', ')} (${pct}%).`
-            : `Coincide en ${strongLabels.join(', ')} (${pct}%).`;
-    }
-    return `Coincide en ${matchTypeLabels(match.matchTypes)} (${pct}%).`;
-}
 
-// Presence-only badges for the EXISTING record — never renders the actual value,
-// only whether that contact TYPE is present (the record may be protected/another
-// org's). Themed colors only: sky = present, stone = absent.
-function PresenceBadges({ has }: { has: MatchContext['has'] }) {
-    const items: Array<[boolean, string]> = [
-        [has.phone, 'teléfono'], [has.email, 'email'], [has.id, 'DNI'], [has.social, 'red'], [has.address, 'dirección'],
-    ];
-    return (
-        <div className="flex flex-wrap gap-1">
-            {items.map(([present, label]) => (
-                <span key={label} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${present ? 'bg-sky-50 text-sky-700' : 'bg-stone-100 text-stone-400'}`}>
-                    {present ? '✓' : '·'} {label}
-                </span>
-            ))}
-        </div>
-    );
-}
+
+/**
+ * A match shown on a row. «verdict» comes only from matchImportRow; it is absent on
+ * every Phase 1 / 1b match (the identical copy and its «también coincide» list).
+ * Of those, only the one with matchTypes ['identical'] counts as the same person.
+ */
+type RowMatch = DuplicateMatch & { verdict?: 'same' | 'possible' };
 
 // Shared match badge — used both in the confirm grid's inline sub-row (RowView)
 // and the Duplicados triage list, so the ● Idéntico/○ Posible copy never drifts.
-function MatchBadge({ match, isExact }: { match: DuplicateMatch; isExact: boolean }) {
+function MatchBadge({ match, isExact }: { match: RowMatch; isExact: boolean }) {
     const identical = match.matchTypes?.includes('identical');
     const strong = identical || isExact;
     return (
         <span className={strong ? 'text-sky-800' : 'text-stone-600'}>
             {identical ? '● Idéntico a' : isExact ? '● Duplicado de' : '○ Posible duplicado de'} <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
-            <span className="text-stone-500"> · {identical ? 'mismos datos' : `${match.relevancePercent}% · coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
+            <span className="text-stone-500"> · {identical ? 'mismos datos' : `coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
         </span>
     );
 }
@@ -1893,25 +1909,28 @@ function ActivityBlock({ r, editingField, onEditCell, onChange, fieldsExpanded, 
     );
 }
 
-function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, matchContext, expandedFieldsRow, onToggleFields }: {
+function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onChange, match, otherMatches, onChooseMatch, action, onAction, failureByIndex, onToggleGroup, expanded, onToggleWhy, expandedFieldsRow, onToggleFields }: {
     members: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     // Why these rows are one person, and how to undo it (Revisar only).
     groupReason?: GroupReason | null; onSplit?: () => void;
     editingCell: { index: number; field: string } | null; onEditCell: (index: number, field: string | null) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
-    match?: DuplicateMatch | null; action: RowAction; onAction: (a: RowAction) => void;
+    match?: RowMatch | null; action: RowAction; onAction: (a: RowAction) => void;
+    // The other profiles this row also matches: «También coincide con …», each one openable or choosable.
+    otherMatches?: RowMatch[]; onChooseMatch?: (m: RowMatch) => void;
     failureByIndex: Record<number, string>; onToggleGroup: () => void;
     // "Por qué" expansion on the match sub-row below (group-level, keyed to primary).
-    expanded?: boolean; onToggleWhy?: () => void; matchContext?: MatchContext | 'loading' | 'error';
+    expanded?: boolean; onToggleWhy?: () => void;
     // "Motivo / más campos" expand — per activity (keyed by each member's index).
     expandedFieldsRow: number | null; onToggleFields: (index: number) => void;
 }) {
+    const { t } = useLanguage();
     const primary = members[0];
     const grouped = members.length > 1;
     const { built, selected } = primary;
     // A group's profile carries every member's contacts — show what will be saved.
     const eff = grouped ? { ...primary.eff, ...mergedGroupContacts(members.map(m => m.eff)) } : primary.eff;
-    const isExact = match ? isExactIdentifierMatch(match.matchTypes) : false;
+    const isExact = match ? (match.matchTypes?.includes('identical') || match.verdict === 'same') : false;
     const contactChips: Array<{ t: string; v: string }> = [
         ...eff.phones.map(v => ({ t: 'Tel', v })),
         ...eff.emails.map(v => ({ t: 'Email', v })),
@@ -2025,8 +2044,22 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                                         className="text-stone-400 hover:text-stone-600 flex-shrink-0 w-4 text-center">{expanded ? '▾' : '▸'}</button>
                                 )}
                                 <MatchBadge match={match} isExact={isExact} />
-                                <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
+                                <OpenProfileLink href={`/adopter/${encodeURIComponent(match.adopterId)}`} />
                                 <div className="ml-auto"><ActionToggle action={action} onAction={onAction} /></div>
+                                {otherMatches && otherMatches.length > 0 && (
+                                    <div className="basis-full flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 mt-0.5 border-t border-stone-200" data-testid="sheet-also-matches">
+                                        <span className="text-stone-500">También coincide con</span>
+                                        {otherMatches.map(o => (
+                                            <span key={o.adopterId} className="inline-flex items-center gap-2" data-testid="sheet-also-match">
+                                                <span className="font-semibold text-stone-700">{o.adopterName?.trim() || 'Sin nombre'}</span>
+                                                <OpenProfileLink href={`/adopter/${encodeURIComponent(o.adopterId)}`} />
+                                                {onChooseMatch && (
+                                                    <button type="button" onClick={() => onChooseMatch(o)} className="text-teal-700 hover:underline" data-testid="sheet-also-match-choose">Actualizar este</button>
+                                                )}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </td>
                     </tr>
@@ -2034,41 +2067,24 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                         <tr className={!selected ? 'opacity-40' : ''}>
                             <td></td>
                             <td colSpan={4} className="px-3 pb-2">
-                                <div className="rounded-lg border border-stone-200 p-3 text-xs space-y-2.5" style={{ backgroundColor: 'var(--surface-muted)' }}>
-                                    <div>
-                                        <span className="text-stone-500">Coincidió en: </span>
-                                        <span className="font-medium text-stone-700">{matchTypeLabels(match.matchTypes)}</span>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div>
-                                            <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Tu registro (importado)</div>
-                                            <div className="font-medium text-stone-800 mb-1">{eff.name || <span className="italic text-stone-400">Sin nombre</span>}</div>
-                                            {contactChips.length > 0 ? (
-                                                <div className="flex flex-wrap gap-1">
-                                                    {contactChips.map((c, i) => (
-                                                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-stone-100 rounded px-1.5 py-0.5 max-w-full">
-                                                            <span className="uppercase font-semibold text-stone-400 flex-shrink-0">{c.t}</span>
-                                                            <span className="text-stone-700 truncate">{c.v}</span>
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            ) : <span className="text-stone-400">Sin contacto</span>}
-                                        </div>
-                                        <div>
-                                            <div className="text-stone-400 uppercase tracking-wider text-[10px] mb-1">Registro existente</div>
-                                            <div className="font-medium text-stone-800 mb-1">{match.adopterName?.trim() || 'Sin nombre'}</div>
-                                            {matchContext === undefined || matchContext === 'loading' ? (
-                                                <span className="text-stone-400">Cargando…</span>
-                                            ) : matchContext === 'error' || !matchContext.ok ? (
-                                                <button type="button" onClick={() => window.open(`/adopter/${match.adopterId}`, '_blank', 'noopener,noreferrer')} className="text-teal-700 hover:underline">Abrir ↗</button>
-                                            ) : (
-                                                <PresenceBadges has={matchContext.has} />
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="pt-1 border-t border-stone-200 text-stone-600">
-                                        {explainMatchOneLiner(match, matchContext === 'loading' || matchContext === 'error' ? undefined : matchContext)}
-                                    </div>
+                                {/* What matches and what doesn't, field by field (Jon,
+                                    2026-10-25) — the same card as every "same person?" screen. */}
+                                <div className="max-w-xl">
+                                    <MatchCompare
+                                        bare
+                                        adopterId={match.adopterId}
+                                        matchTypes={match.matchTypes}
+                                        profileName={match.adopterName ?? ''}
+                                        score={match.relevancePercent}
+                                        source={{ kind: 'sheet', name: eff.name, entries: [
+                                            ...eff.phones.map(value => ({ type: 'phone', value })),
+                                            ...eff.emails.map(value => ({ type: 'email', value })),
+                                            ...eff.socials.map(value => ({ type: 'social', value })),
+                                            ...eff.dnis.map(value => ({ type: 'id', value })),
+                                            ...eff.addresses.map(value => ({ type: 'address', value })),
+                                        ] }}
+                                        t={t}
+                                    />
                                 </div>
                             </td>
                         </tr>
@@ -2108,23 +2124,24 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
  *  a fresh function identity every render would remount every `RowView`/`InlineCell`
  *  underneath, dropping in-progress edits. */
 function RecordGrid({
-    rows, editingCell, onEditCell, matches, rowAction, onAction,
-    failureByIndex, onSetSelected, onChange, expandedMatchRow, matchContexts, onToggleWhy,
+    rows, editingCell, onEditCell, matches, otherMatches, onChooseMatch, rowAction, onAction,
+    failureByIndex, onSetSelected, onChange, expandedMatchRow, onToggleWhy,
     expandedFieldsRow, onToggleFields,
     onRatingAll, onVisibilityAll, onRecordTypeAll, groupOf, onSplitGroup,
 }: {
     rows: Array<{ index: number; eff: MappedRow; built: ReturnType<typeof buildImportBody>; selected: boolean }>;
     editingCell: { index: number; field: string } | null;
     onEditCell: (index: number, field: string | null) => void;
-    matches: Record<number, DuplicateMatch | null>;
+    matches: Record<number, RowMatch | null>;
+    otherMatches: Record<number, RowMatch[]>;
+    onChooseMatch: (index: number, m: RowMatch) => void;
     rowAction: Record<number, RowAction>;
     onAction: (index: number, a: RowAction) => void;
     failureByIndex: Record<number, string>;
     onSetSelected: (indices: number[], selected: boolean) => void;
     onChange: (index: number, p: Partial<MappedRow>) => void;
     expandedMatchRow: number | null;
-    matchContexts: Record<string, MatchContext | 'loading' | 'error'>;
-    onToggleWhy: (index: number, adopterId: string) => void;
+    onToggleWhy: (index: number) => void;
     // "Motivo / más campos" expand — same one-row-at-a-time pattern as the match
     // "por qué" expand above (expandedMatchRow/onToggleWhy).
     expandedFieldsRow: number | null;
@@ -2204,13 +2221,14 @@ function RecordGrid({
                                     onEditCell={onEditCell}
                                     onChange={onChange}
                                     match={match}
+                                    otherMatches={match ? otherMatches[primary.index] : undefined}
+                                    onChooseMatch={m => onChooseMatch(primary.index, m)}
                                     action={rowAction[primary.index] ?? 'create'}
                                     onAction={a => onAction(primary.index, a)}
                                     failureByIndex={failureByIndex}
                                     onToggleGroup={() => onSetSelected(members.map(m => m.index), !primary.selected)}
                                     expanded={expandedMatchRow === primary.index}
-                                    onToggleWhy={match ? () => onToggleWhy(primary.index, match.adopterId) : undefined}
-                                    matchContext={match ? matchContexts[match.adopterId] : undefined}
+                                    onToggleWhy={match ? () => onToggleWhy(primary.index) : undefined}
                                     expandedFieldsRow={expandedFieldsRow}
                                     onToggleFields={onToggleFields}
                                 />

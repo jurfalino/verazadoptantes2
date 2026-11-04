@@ -404,7 +404,7 @@ export interface ResolveVisibilityInput {
      *  read; admin still owns write actions like `setAdopterPublic`. */
     isModerator: boolean;
     /** Viewer shares at least one org with the adopter's owner (v2.18.11).
-     *  Org-mates get the same `privileged` tier as admin/moderator/editor —
+     *  Org-mates get the same `privileged` tier as owner/admin/moderator —
      *  unmask all contact, see "who has access", approve PII requests on
      *  teammate profiles. The audit log + owner notifications are the
      *  trust-but-verify backstop. */
@@ -432,7 +432,7 @@ export interface ResolveVisibilityInput {
 
 export interface Visibility {
     tier: VisibilityTier;
-    /** owner / editor / admin — gets the "who has access" UI, can approve, sees no banner. */
+    /** owner / org-mate / admin / moderator (never a mere editor since v2.19.51) — gets the "who has access" UI, can approve, sees no banner. */
     privileged: boolean;
     /** True ⇒ no contact field is masked for this viewer (privileged OR holds an all-contact grant). */
     nothingMasked: boolean;
@@ -685,6 +685,12 @@ export interface MaskContactOptions {
      * contributor-added entries are exposed too).
      */
     adopterIsPublic?: boolean;
+    /**
+     * The viewer's email (D54). A household member whose `addedBy` is this viewer
+     * (case-insensitive) keeps its name unmasked for them — they typed it. Its
+     * contacts still go through entry grants like every other entry.
+     */
+    viewerEmail?: string;
 }
 
 export function maskContactEntries(
@@ -918,6 +924,9 @@ export function submissionUnlockHashes(
 /** What a match card may render for an existing profile's contact. */
 export interface MatchCardContact {
     contactInfo: string | null;
+    /** The same contact as typed entries (JSON), masked exactly like contactInfo —
+     *  lets a match card compare field by field without re-parsing masked text. */
+    contactEntries: string | null;
     addressInfo: string | null;
 }
 
@@ -938,16 +947,18 @@ export function maskMatchCardContact(
 ): MatchCardContact {
     const contactInfo = profile.contactInfo ?? null;
     const addressInfo = profile.addressInfo ?? null;
-    if (!visibility || visibility.nothingMasked || options.adopterIsPublic) return { contactInfo, addressInfo };
+    if (!visibility || visibility.nothingMasked || options.adopterIsPublic) return { contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo };
     const parsed = deserializeContactEntries(profile.contactEntries ?? null);
     const source = parsed.length > 0 ? parsed : parseBlobToContactEntries(contactInfo);
     const unlockedEntryHashes = new Set([...visibility.unlockedEntryHashes, ...submissionUnlockHashes(source, submitted)]);
+    // A blob-only profile gets typed entries too (parsed above), so the masked
+    // result carries a typed list — a match card must never re-parse masked text.
     const masked = maskAdopterContact(
-        { contactInfo, contactEntries: profile.contactEntries ?? null, addressInfo, householdMembers: null },
+        { contactInfo, contactEntries: parsed.length > 0 ? (profile.contactEntries ?? null) : (source.length > 0 ? JSON.stringify(source) : null), addressInfo, householdMembers: null },
         { ...visibility, unlockedEntryHashes },
         options,
     );
-    return { contactInfo: masked.contactInfo, addressInfo: masked.addressInfo };
+    return { contactInfo: masked.contactInfo, contactEntries: masked.contactEntries, addressInfo: masked.addressInfo };
 }
 
 /**
@@ -990,6 +1001,7 @@ export interface HouseholdMask {
  * partial-revealed and each contact entry masked exactly like the titular's;
  * the relationship stays visible (metadata, not PII). Privileged viewers or an
  * admin-public record pass through unmasked. See the household redesign spec.
+ * With `options.viewerEmail`, members that viewer added keep their name (D54).
  */
 export function maskHouseholdMembers(
     json: string | null | undefined,
@@ -997,16 +1009,56 @@ export function maskHouseholdMembers(
     options: MaskContactOptions = {},
 ): HouseholdMask {
     const members = deserializeHouseholdMembers(json);
-    if (members.length === 0 || visibility.nothingMasked || options.adopterIsPublic) {
-        return { members, json: json ?? null, maskedFieldCount: 0 };
+    const viewer = viewerKey(options.viewerEmail);
+    if (members.length === 0) return { members, json: json ?? null, maskedFieldCount: 0 };
+    if (visibility.nothingMasked || options.adopterIsPublic) {
+        if (!viewer) return { members, json: json ?? null, maskedFieldCount: 0 };
+        const marked = members.map(m => withOwnMarks(m, m.contactEntries, viewer));
+        return { members: marked, json: serializeHouseholdMembers(marked, { view: true }), maskedFieldCount: 0 };
     }
     let maskedFieldCount = 0;
     const masked = members.map(m => {
         const { entries, maskedCount } = maskContactEntries(m.contactEntries, visibility, options);
         maskedFieldCount += maskedCount;
-        return { ...m, name: m.name ? partialRevealName(m.name) : m.name, contactEntries: entries };
+        const marked = withOwnMarks(m, entries, viewer);
+        // A member the viewer added keeps its name for them (D54).
+        return { ...marked, name: m.name && !marked.own ? partialRevealName(m.name) : m.name };
     });
-    return { members: masked, json: serializeHouseholdMembers(masked), maskedFieldCount };
+    return { members: masked, json: serializeHouseholdMembers(masked, { view: !!viewer }), maskedFieldCount };
+}
+
+/**
+ * Members and entries `viewerEmail` added, marked `own: true` for the profile
+ * page (D54), with every other stray marker cleared — for a viewer who sees
+ * the household unmasked (getAdopter's fully-visible path, gating off). No
+ * real viewer → the JSON as is.
+ */
+export function markViewerOwnHousehold(json: string | null | undefined, viewerEmail: string | null | undefined): string | null {
+    const viewer = viewerKey(viewerEmail);
+    if (!json || !viewer) return json ?? null;
+    const members = deserializeHouseholdMembers(json);
+    if (members.length === 0) return json;
+    return serializeHouseholdMembers(members.map(m => withOwnMarks(m, m.contactEntries, viewer)), { view: true });
+}
+
+/** The viewer's email, normalized — only a real actor (never the 'unknown' / 'anonymous' sentinels). */
+function viewerKey(email: string | null | undefined): string | undefined {
+    return isRealActorEmail(email) ? email!.trim().toLowerCase() : undefined;
+}
+
+/**
+ * `m` with `entries` (its own contacts, masked or not, index-aligned with
+ * `m.contactEntries`), each marked `own` exactly when `viewer` added it —
+ * read from the stored `addedBy`, since a masked entry no longer carries it.
+ */
+function withOwnMarks(m: HouseholdMember, entries: ContactEntry[], viewer: string | undefined): HouseholdMember {
+    const by = (who: string | undefined) => !!viewer && !!who && who.trim().toLowerCase() === viewer;
+    const { own: _own, ...member } = m;
+    const marked = entries.map((e, i) => {
+        const { own: _e, ...entry } = e;
+        return by(m.contactEntries[i]?.addedBy) ? { ...entry, own: true } : entry;
+    });
+    return { ...member, contactEntries: marked, ...(by(m.addedBy) ? { own: true } : {}) };
 }
 
 // ── History redaction ─────────────────────────────────────────────────────────
@@ -1063,6 +1115,8 @@ export function redactHistoryChanges(changesJson: string | null, visibility: Vis
 const SENTINEL_ACTORS = new Set([
     'unknown', 'anonymous', 'system',
     'form-submission', 'contract-submission', 'contract', 'contract-signed-via-invitation',
+    // Who a rename alias is credited to (contactEntries.ts RENAME_ALIAS_AUTHOR).
+    'system:rename',
 ]);
 
 /** True when `email` is a real user (not a sentinel / empty). */

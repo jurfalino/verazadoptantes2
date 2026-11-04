@@ -19,6 +19,7 @@ import { interpolate } from '@/lib/interpolate';
 import { actorLabel } from '@/lib/userDisplay';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import type { AnimalTimelineItem } from '@/app/actions/animalTimeline';
+import { RatingBadge } from '@/components/RatingBadge';
 
 // Literal Tailwind classes so the purger keeps them (same trick as AdoptionHistory).
 const STRIPE: Record<string, string> = {
@@ -330,9 +331,7 @@ export default function AnimalTimeline({ animalId, items, animalSex, userNameMap
                             <div className={`bg-white rounded-xl border border-stone-200 border-l-[3px] ${item.kind === 'placement_end' ? STRIPE.end : (STRIPE[item.type] || STRIPE.note)} px-4 py-3 shadow-sm`}>
                                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                                     <div className="text-sm font-medium text-stone-800 flex-1 min-w-0">{verbFor(item)}</div>
-                                    {item.rating != null && (
-                                        <span className="text-xs font-semibold text-amber-600 whitespace-nowrap">★ {item.rating}</span>
-                                    )}
+                                    {item.rating != null && item.rating > 0 && <RatingBadge rating={item.rating} />}
                                     <span className="text-xs text-stone-500 whitespace-nowrap ml-auto tabular-nums">
                                         {item.date ? formatShortDate(item.date) : '—'}
                                     </span>

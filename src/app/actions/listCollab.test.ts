@@ -29,7 +29,6 @@ import { updateContactEntry } from './updateContactEntry';
 import { removeContactEntry } from './removeContactEntry';
 import { appendToExistingAdopter } from './adopters';
 import { mergeAdopters } from '@/lib/adopterMerge';
-import { updateHouseholdMember, removeHouseholdMember, addMemberContactEntry, updateMemberContactEntry, removeMemberContactEntry } from './householdMembers';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -45,7 +44,6 @@ const MEMBERS = [
 ];
 
 const entries = () => JSON.parse((sqlite.prepare('SELECT contact_entries FROM adopters WHERE id = ?').get(ID)!.contact_entries as string) || '[]') as Array<{ id: string; value: string }>;
-const members = () => JSON.parse(sqlite.prepare('SELECT household_members FROM adopters WHERE id = ?').get(ID)!.household_members as string) as Array<{ id: string; name: string; contactEntries: Array<{ id: string; value: string }> }>;
 const valueOf = (id: string) => entries().find(e => e.id === id)?.value;
 const historyCount = () => sqlite.prepare('SELECT COUNT(*) AS n FROM adopter_history WHERE adopter_id = ?').get(ID)!.n as number;
 
@@ -55,7 +53,6 @@ function raceWith(fn: () => void, every = false) {
     state.raceEvery = every;
 }
 const setEntries = (list: unknown[]) => sqlite.prepare('UPDATE adopters SET contact_entries = ? WHERE id = ?').run(JSON.stringify(list), ID);
-const setMembers = (list: unknown[]) => sqlite.prepare('UPDATE adopters SET household_members = ? WHERE id = ?').run(JSON.stringify(list), ID);
 
 async function as<T>(user: string, fn: () => Promise<T>): Promise<T> {
     const before = session.user;
@@ -209,53 +206,6 @@ describe('contact entries — concurrent edits', () => {
         const res = await as('stranger@example.com', () => updateContactEntry({ adopterId: ID, entryId: 'e-phone', value: '1', expectedValue: '1155551111' }));
         expect(res.ok).toBe(false);
         expect(valueOf('e-phone')).toBe('1155551111');
-    });
-});
-
-describe('household members — concurrent edits', () => {
-    it('editing one person while a teammate edits another: both land', async () => {
-        raceWith(() => setMembers([MEMBERS[0], { ...MEMBERS[1], name: 'Lucía Gómez' }]));
-        const res = await updateHouseholdMember({ adopterId: ID, memberId: 'm-1', name: 'Juan Pablo', relationship: 'child', expected: { name: 'Juan', relationship: 'child' } });
-        expect(res.ok).toBe(true);
-        expect(members().map(m => m.name)).toEqual(['Juan Pablo', 'Lucía Gómez']);
-    });
-
-    it('a person a teammate renamed: refused with their name', async () => {
-        await as(MATE, () => updateHouseholdMember({ adopterId: ID, memberId: 'm-1', name: 'Juan Carlos', relationship: 'child', expected: { name: 'Juan', relationship: 'child' } }));
-        const res = await updateHouseholdMember({ adopterId: ID, memberId: 'm-1', name: 'Juanito', relationship: 'child', expected: { name: 'Juan', relationship: 'child' } });
-        expect(res).toEqual({ ok: false, error: 'conflict', conflict: { kind: 'changed', by: 'Marta Ruiz' } });
-        expect(members()[0].name).toBe('Juan Carlos');
-    });
-
-    it('a person a teammate removed: «ya no existe»', async () => {
-        await as(MATE, () => removeHouseholdMember({ adopterId: ID, memberId: 'm-2', expected: { name: 'Lucía', relationship: 'child' } }));
-        const res = await updateHouseholdMember({ adopterId: ID, memberId: 'm-2', name: 'Lu', relationship: 'child', expected: { name: 'Lucía', relationship: 'child' } });
-        expect(res).toEqual({ ok: false, error: 'conflict', conflict: { kind: 'deleted', by: 'Marta Ruiz' } });
-    });
-
-    it('a contact edit racing a contact add on another person: both land', async () => {
-        raceWith(() => setMembers([MEMBERS[0], { ...MEMBERS[1], contactEntries: [{ id: 'mc-new', type: 'phone', value: '1188884444' }] }]));
-        const res = await updateMemberContactEntry({ adopterId: ID, memberId: 'm-1', entryId: 'mc-1', value: '1166660000', expectedValue: '1166662222' });
-        expect(res.ok).toBe(true);
-        expect(members()[0].contactEntries[0].value).toBe('1166660000');
-        expect(members()[1].contactEntries.map(e => e.value)).toEqual(['1188884444']);
-    });
-
-    it('a contact a teammate changed or removed: refused', async () => {
-        await as(MATE, () => updateMemberContactEntry({ adopterId: ID, memberId: 'm-1', entryId: 'mc-1', value: '1166663333', expectedValue: '1166662222' }));
-        const upd = await updateMemberContactEntry({ adopterId: ID, memberId: 'm-1', entryId: 'mc-1', value: '1166664444', expectedValue: '1166662222' });
-        expect(upd).toEqual({ ok: false, error: 'conflict', conflict: { kind: 'changed', by: 'Marta Ruiz' } });
-        await as(MATE, () => removeMemberContactEntry({ adopterId: ID, memberId: 'm-1', entryId: 'mc-1', expectedValue: '1166663333' }));
-        const rem = await removeMemberContactEntry({ adopterId: ID, memberId: 'm-1', entryId: 'mc-1', expectedValue: '1166663333' });
-        expect(rem).toEqual({ ok: false, error: 'conflict', conflict: { kind: 'deleted', by: 'Marta Ruiz' } });
-    });
-
-    it('adds never lose a concurrent change', async () => {
-        raceWith(() => setMembers([{ ...MEMBERS[0], name: 'Juan C.' }, MEMBERS[1]]));
-        const res = await addMemberContactEntry({ adopterId: ID, memberId: 'm-2', type: 'email', value: 'lu@example.com' });
-        expect(res.ok).toBe(true);
-        expect(members()[0].name).toBe('Juan C.');
-        expect(members()[1].contactEntries.map(e => e.value)).toEqual(['lu@example.com']);
     });
 });
 

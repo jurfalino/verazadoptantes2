@@ -1,11 +1,13 @@
-import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
+import { test, expect, type Locator } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
+import { execD1, rows } from './db';
 
 /**
- * «Combinar perfiles» on /my-adopters goes through mergePendingDedupPair: the
+ * «Unir perfiles» on /my-adopters goes through mergePendingDedupPair: the
  * server takes the actor from the session and only merges a pair the feed
- * shows the caller (they created one side). Before, the page called the bare
+ * shows the caller (they created one side). When the absorbed side is someone
+ * else's, the button reads «Pedir unir» and the click files a merge
+ * request to its owner instead. Before, the page called the bare
  * mergeAdopters action with ids and an actor email of its own choosing — an
  * endpoint anyone could hit for any two profiles.
  *
@@ -15,17 +17,14 @@ import { dismissCountryBanner } from './helpers';
 
 const USER_EMAIL = 'testuser@example.com';
 
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-}
-const rows = (sql: string) => {
-    const w = JSON.parse(execD1(sql));
-    return ((Array.isArray(w) ? w[0] : w)?.results ?? []) as Array<Record<string, unknown>>;
-};
 const isNull = (v: unknown) => v === null || v === undefined || v === 'null';
+
+/** Layout D: rows open one at a time — open this one (its header is the first expandable button). */
+async function openRow(row: Locator) {
+    const header = row.locator('button[aria-expanded]').first();
+    if ((await header.getAttribute('aria-expanded')) !== 'true') await header.click();
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+}
 
 test('the owner merges a pending pair from /my-adopters; the older profile survives', async ({ page }) => {
     test.setTimeout(120_000);
@@ -43,9 +42,11 @@ test('the owner merges a pending pair from /my-adopters; the older profile survi
     const toggle = page.getByRole('button', { name: /Pending review|Pendientes de revisar|Pendentes de revisão/ });
     await expect(toggle).toBeVisible({ timeout: 30_000 });
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-    const card = page.locator('#pending-dedup-list > div').filter({ hasText: NAME });
+    const card = page.getByTestId('dedup-row').filter({ hasText: NAME });
     await expect(card).toHaveCount(1, { timeout: 30_000 });
-    await card.getByRole('button', { name: /^(Merge profiles|Combinar perfiles|Mesclar perfis|Combinar perfis)$/ }).click();
+    await openRow(card);
+    // Both profiles are hers: nothing moves to another list, so no confirmation.
+    await card.getByTestId('dedup-merge').filter({ hasText: /^(Join profiles|Unir perfiles|Unir perfis)$/ }).click();
     await expect(card).toHaveCount(0, { timeout: 30_000 });
 
     await expect.poll(() => isNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${NEW}'`)[0]?.deleted_at), { timeout: 30_000 })
@@ -53,7 +54,7 @@ test('the owner merges a pending pair from /my-adopters; the older profile survi
     expect(isNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${OLD}'`)[0]?.deleted_at), 'the older profile survives').toBe(true);
 });
 
-test('a foreign profile is never absorbed into hers: the merge is refused and both records stay', async ({ page }) => {
+test('a foreign profile is never absorbed into hers: the button asks its owner instead, and both records stay', async ({ page }) => {
     test.setTimeout(120_000);
     const stamp = Date.now();
     const MINE = `test-pdmerge-fixture-mine-${stamp}`;
@@ -70,11 +71,18 @@ test('a foreign profile is never absorbed into hers: the merge is refused and bo
     const toggle = page.getByRole('button', { name: /Pending review|Pendientes de revisar|Pendentes de revisão/ });
     await expect(toggle).toBeVisible({ timeout: 30_000 });
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-    const card = page.locator('#pending-dedup-list > div').filter({ hasText: NAME });
+    const card = page.getByTestId('dedup-row').filter({ hasText: NAME });
     await expect(card).toHaveCount(1, { timeout: 30_000 });
-    await card.getByRole('button', { name: /^(Merge profiles|Combinar perfiles|Mesclar perfis|Combinar perfis)$/ }).click();
-    await expect(page.getByText(/created by another rescuer|lo cargó otro rescatista|cadastrado por outro resgatista/).first()).toBeVisible({ timeout: 30_000 });
+    await openRow(card);
+    // Hers stays by default (the older one), so the click asks the other rescuer, and the button says so.
+    const button = card.getByTestId('dedup-merge');
+    await expect(button).toHaveText(/^(Ask to join|Pedir unir|Pedir para unir)$/);
+    await button.click();
+    await expect(page.getByText(/Request sent to|Pedido enviado a|Pedido enviado para/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByTestId('dedup-request-status')).toBeVisible({ timeout: 30_000 });
     await expect(card).toHaveCount(1);
+    await expect.poll(() => rows(`SELECT owner_email FROM merge_requests WHERE secondary_id = '${FOREIGN}' AND status = 'pending'`)[0]?.owner_email, { timeout: 30_000 })
+        .toBe('someone-else@example.com');
     for (const id of [MINE, FOREIGN]) {
         expect(isNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${id}'`)[0]?.deleted_at), `${id} untouched`).toBe(true);
     }

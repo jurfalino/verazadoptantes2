@@ -174,29 +174,25 @@ test.describe('i18n Language Switching', () => {
         // Language selector is a dropdown (EN / ES / PT). Open it, then pick a language.
         const langBtn = page.getByTestId('language-switcher');
 
-        if (await langBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            // The submit button draws only a magnifier since v2.56.52, so its name
-            // lives on `aria-label`. Assert that instead of its text, which is now
-            // empty in every language.
-            const submit = page.locator('button[type="submit"]');
+        await expect(langBtn, 'the language selector must be visible').toBeVisible({ timeout: 15000 });
+        // The submit button draws only a magnifier since v2.56.52, so its name
+        // lives on `aria-label`. Assert that instead of its text, which is now
+        // empty in every language.
+        const submit = page.locator('button[type="submit"]');
 
-            // Switch to English → the button is named "Search…"
-            await langBtn.click();
-            await page.getByTestId('lang-option-en').click();
-            await expect(submit).toHaveAttribute('aria-label', /Search/i, { timeout: 5000 });
+        // Switch to English → the button is named "Search…"
+        await langBtn.click();
+        await page.getByTestId('lang-option-en').click();
+        await expect(submit).toHaveAttribute('aria-label', /Search/i, { timeout: 5000 });
 
-            // Switch to Portuguese → "Buscar…"
-            await langBtn.click();
-            await page.getByTestId('lang-option-pt').click();
-            await expect(submit).toHaveAttribute('aria-label', /Buscar/i, { timeout: 5000 });
+        // Switch to Portuguese → "Buscar…"
+        await langBtn.click();
+        await page.getByTestId('lang-option-pt').click();
+        await expect(submit).toHaveAttribute('aria-label', /Buscar/i, { timeout: 5000 });
 
-            // Switch back to Spanish → also "Buscar…"
-            await langBtn.click();
-            await page.getByTestId('lang-option-es').click();
-            await expect(submit).toHaveAttribute('aria-label', /Buscar/i, { timeout: 5000 });
-        } else {
-            // Language selector not visible — skip gracefully
-            test.skip();
-        }
+        // Switch back to Spanish → also "Buscar…"
+        await langBtn.click();
+        await page.getByTestId('lang-option-es').click();
+        await expect(submit).toHaveAttribute('aria-label', /Buscar/i, { timeout: 5000 });
     });
 });

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+    contactBlobForDisplay,
+    newContactsForProfile,
+    sameContact,
+    foldContactEntries,
+    contactCoveredBy,
+    sameContactSet,
     categorizeContactText,
     contactEntriesToBlob,
     parseBlobToContactEntries,
@@ -354,9 +360,17 @@ describe('mergeContactEntries', () => {
 });
 
 describe('alias contact entries', () => {
-    it('writes an alias entry to the blob under the Otro nombre/identidad label', () => {
+    it('writes an alias entry to the blob under the stored Otro nombre/identidad label', () => {
         const blob = contactEntriesToBlob([{ type: 'alias', value: 'Juan Garcia' }]);
         expect(blob).toContain('Otro nombre/identidad: Juan Garcia');
+    });
+
+    it('a blob shown as text reads the alias as «Conocido/a como» (render time; the stored label is unchanged)', () => {
+        const blob = contactEntriesToBlob([{ type: 'phone', value: '11 2345-6789' }, { type: 'alias', value: 'Juan Garcia' }]);
+        expect(contactBlobForDisplay(blob, 'Conocido/a como')).toBe('Tel: 11 2345-6789\nConocido/a como: Juan Garcia');
+        // Only the label at the start of a line: a value that happens to say it is left alone.
+        expect(contactBlobForDisplay('Nota: Otro nombre/identidad: no sé', 'Also known as')).toBe('Nota: Otro nombre/identidad: no sé');
+        expect(contactBlobForDisplay('  Otro nombre/identidad:Juan', 'Also known as')).toBe('  Also known as: Juan');
     });
 
     it('round-trips an alias entry through deserialize', () => {
@@ -627,5 +641,143 @@ describe('address street/locality round-trip (regression: empty street)', () => 
         const [entry] = deserializeContactEntries(JSON.stringify([{ type: 'address', value: 'Cordoba 450, CABA' }]));
         expect(deriveStreet(entry)).toBe('Cordoba 450');
         expect(deriveLocality(entry)).toBe('CABA');
+    });
+});
+
+describe('own: a per-viewer view marker (D54)', () => {
+    const json = JSON.stringify([{ id: 'e1', type: 'phone', value: '+54 11 4444 1212', own: true }]);
+    it('is dropped on a plain read, so storage written from it never carries it', () => {
+        expect(deserializeContactEntries(json)[0]).not.toHaveProperty('own');
+    });
+    it('is kept only when reading a view payload', () => {
+        expect(deserializeContactEntries(json, { viewMarks: true })[0].own).toBe(true);
+    });
+});
+
+describe('legacy merge separators (audit C1)', () => {
+    it('«--- Merged from X ---» / «--- Merged ---» lines left in old blobs never become a «Nota»', () => {
+        const entries = parseBlobToContactEntries('Tel: 11 5121-1210\n--- Merged from Elena Vidal ---\nTel: 11 5121-1211\n  --- Merged ---  ');
+        expect(entries.map(e => e.type)).toEqual(['phone', 'phone']);
+        expect(entries.some(e => /Merged/.test(e.value))).toBe(false);
+    });
+    it('a list\'s one-line summary drops them too', () => {
+        expect(contactBlobForDisplay('Tel: 11 5110-110\n--- Merged from Diego Sosa ---\nTel: 11 5110-111', 'Conocido/a como')).toBe('Tel: 11 5110-110\nTel: 11 5110-111');
+        expect(contactBlobForDisplay(null, 'Conocido/a como')).toBe('');
+    });
+    it('ordinary prose with dashes is still kept', () => {
+        expect(parseBlobToContactEntries('--- llamar después de las 18 ---').map(e => e.value)).toEqual(['--- llamar después de las 18 ---']);
+    });
+});
+
+/**
+ * «¿Continuar con el perfil de X?» (fix round 2, item 20): what the typed data
+ * would ADD to that profile — the typed contacts the server's merge
+ * (mergeContactEntries, keyed on contactEntryKey) would not drop as already
+ * there. A masked contact can't be compared, so a typed one isn't assumed to be
+ * it; an email the duplicate engine matched on is the same normalized value.
+ */
+describe('newContactsForProfile', () => {
+    const profile = (entries: Array<Record<string, unknown>> | null, contactInfo: string | null = null) =>
+        ({ contactEntries: entries ? JSON.stringify(entries) : null, contactInfo });
+    it('a typed phone the profile does not have is new info (the dialog used to say «nothing new»)', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '11 5555-0001' }];
+        expect(newContactsForProfile(typed, profile([{ id: 'p1', type: 'email', value: 'ana@example.com' }])).map(e => e.value)).toEqual(['11 5555-0001']);
+        expect(newContactsForProfile(typed, profile(null)).map(e => e.value)).toEqual(['11 5555-0001']);
+    });
+    it('what the profile already shows, however it is written, is not new', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '(11) 5555 0001' }, { id: 't2', type: 'email' as const, value: ' Ana@Example.com ' }];
+        expect(newContactsForProfile(typed, profile([{ id: 'p1', type: 'phone', value: '1155550001' }, { id: 'p2', type: 'email', value: 'ana@example.com' }]))).toEqual([]);
+        // A legacy profile with only the text blob: read as the server reads it.
+        expect(newContactsForProfile(typed, profile(null, 'Tel: 11 5555-0001\nEmail: ana@example.com'))).toEqual([]);
+    });
+    it('a masked contact is not assumed to be the typed one; an email the engine matched on is', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '11 5555-0001' }, { id: 't2', type: 'email' as const, value: 'Ana@example.com' }];
+        const masked = profile([{ id: 'p1', type: 'phone', value: '•••• 0001', masked: true }, { id: 'p2', type: 'email', value: '••••@example.com', masked: true }]);
+        expect(newContactsForProfile(typed, masked).map(e => e.type)).toEqual(['phone', 'email']);
+        expect(newContactsForProfile(typed, masked, [{ type: 'email', value: 'ana@example.com' }]).map(e => e.type)).toEqual(['phone']);
+    });
+    it('blank and repeated typed entries count once', () => {
+        const typed = [{ id: 't1', type: 'phone' as const, value: '11 5555-0001' }, { id: 't2', type: 'phone' as const, value: '1155550001' }, { id: 't3', type: 'email' as const, value: '  ' }];
+        expect(newContactsForProfile(typed, profile([]))).toHaveLength(1);
+    });
+});
+
+describe('contactMatchKeys / sameContact / foldContactEntries — the duplicate matcher\'s own «same contact» (round 4)', () => {
+    it('«11 6312-0851» and «+54 9 11 6312-0851» are one phone; emails by case; a different number is not', () => {
+        expect(sameContact({ type: 'phone', value: '11 6312-0851' }, { type: 'phone', value: '+54 9 11 6312-0851' })).toBe(true);
+        expect(sameContact({ type: 'phone', value: '11 6312-0852' }, { type: 'phone', value: '+54 9 11 6312-0851' })).toBe(false);
+        expect(sameContact({ type: 'email', value: 'Ana@Mail.com' }, { type: 'email', value: 'ana@mail.com ' })).toBe(true);
+        expect(sameContact({ type: 'phone', value: '11 6312-0851' }, { type: 'id', value: '1163120851' })).toBe(false);
+    });
+
+    it('the new-profile form\'s preview (newContactsForProfile) does not list «11 6312-0851» against «+54 9 11 6312-0851»', () => {
+        const profile = { contactEntries: JSON.stringify([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851' }]), contactInfo: null };
+        expect(newContactsForProfile([{ id: 't1', type: 'phone', value: '11 6312-0851' }, { id: 't2', type: 'email', value: 'x@y.com' }], profile).map(e => e.value)).toEqual(['x@y.com']);
+    });
+
+    it('fold: the kept entry stays (its formatting), gains the other\'s phone apps; one copy', () => {
+        const base: ContactEntry[] = [{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851', apps: ['telegram'] }];
+        const incoming: ContactEntry[] = [{ id: 'q1', type: 'phone', value: '11 6312-0851', apps: ['whatsapp'] }, { id: 'q2', type: 'email', value: 'x@y.com' }];
+        const entries = foldContactEntries(base, incoming, { stricterVisibility: true });
+        expect(entries.filter(e => e.type === 'phone')).toEqual([{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851', apps: ['telegram', 'whatsapp'] }]);
+        expect(entries.map(e => e.value)).toContain('x@y.com');
+        // The input lists are not changed.
+        expect(base[0].apps).toEqual(['telegram']);
+    });
+
+    it('fold visibility in a MERGE: the kept entry stays public only when both copies were (the stricter rule)', () => {
+        const pub = (v: string, isPublic?: boolean): ContactEntry => ({ type: 'phone', value: v, ...(isPublic ? { isPublic } : {}) });
+        const merge = { stricterVisibility: true };
+        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851')], merge)[0].isPublic).toBeUndefined();
+        expect(foldContactEntries([pub('+54 9 11 6312-0851')], [pub('11 6312-0851', true)], merge)[0].isPublic).toBeUndefined();
+        expect(foldContactEntries([pub('+54 9 11 6312-0851', true)], [pub('11 6312-0851', true)], merge)[0].isPublic).toBe(true);
+    });
+
+    it('fold visibility for a third party\'s typed contact: never changes the existing entry (round 7, S2)', () => {
+        const kept: ContactEntry = { type: 'phone', value: '+54 9 11 6312-0851', isPublic: true };
+        expect(foldContactEntries([kept], [{ type: 'phone', value: '11 6312-0851' }], { stricterVisibility: false })).toEqual([kept]);
+        expect(foldContactEntries([kept], [{ type: 'phone', value: '+54 9 11 6312-0851' }], { stricterVisibility: false })).toEqual([kept]);
+    });
+
+    it('M1: a two-number entry is never folded into one of its numbers — nothing lost, and the preview lists it', () => {
+        const base: ContactEntry[] = [{ id: 'p1', type: 'phone', value: '+54 9 11 6312-0851' }];
+        const two: ContactEntry = { id: 'q1', type: 'phone', value: '11 6312-0851 / 11 4444-5555' };
+        expect(contactCoveredBy(two, base[0])).toBe(false);
+        expect(foldContactEntries(base, [two], { stricterVisibility: true }).map(e => e.value)).toEqual(['+54 9 11 6312-0851', '11 6312-0851 / 11 4444-5555']);
+        const profile = { contactEntries: JSON.stringify(base), contactInfo: null };
+        expect(newContactsForProfile([two], profile).map(e => e.value)).toEqual(['11 6312-0851 / 11 4444-5555']);
+        // The other way round: its number IS held by the two-number entry — but only an
+        // identical set is dropped (round 8), so the single number stays as its own entry.
+        expect(contactCoveredBy(base[0], two)).toBe(true);
+        expect(sameContactSet(base[0], two)).toBe(false);
+        expect(foldContactEntries([two], [base[0]], { stricterVisibility: true }).map(e => e.value)).toEqual(['11 6312-0851 / 11 4444-5555', '+54 9 11 6312-0851']);
+    });
+
+    it('round 8: survivor «A / B / C» + incoming «B / C» → both kept; the same set in other formats → one', () => {
+        const abc: ContactEntry = { type: 'phone', value: '11 6312-0851 / 11 4444-5555 / 11 7777-8888' };
+        expect(foldContactEntries([abc], [{ type: 'phone', value: '11 4444-5555 / 11 7777-8888' }], { stricterVisibility: true })).toHaveLength(2);
+        expect(foldContactEntries([abc], [{ type: 'phone', value: '+54 9 11 7777-8888, +54 9 11 6312-0851, 11 4444 5555' }], { stricterVisibility: true })).toHaveLength(1);
+        // The preview agrees: a typed single number against «A / B» is listed (it will be its own entry).
+        const profile = { contactEntries: JSON.stringify([{ id: 'p', type: 'phone', value: '11 6312-0851 / 11 4444-5555' }]), contactInfo: null };
+        expect(newContactsForProfile([{ type: 'phone', value: '6312-0851' }], profile).map(e => e.value)).toEqual(['6312-0851']);
+    });
+
+    it('round 8: «phones» with no digits are text — «ver notas» never dedupes against «llamar tarde»', () => {
+        const notes: ContactEntry = { type: 'phone', value: 'ver notas' };
+        expect(foldContactEntries([notes], [{ type: 'phone', value: 'llamar tarde' }], { stricterVisibility: true }).map(e => e.value)).toEqual(['ver notas', 'llamar tarde']);
+        expect(foldContactEntries([notes], [{ type: 'phone', value: ' Ver notas ' }], { stricterVisibility: true })).toHaveLength(1);
+        expect(mergeContactEntries([notes], [{ type: 'phone', value: 'llamar tarde' }])).toHaveLength(2);
+        expect(sameContact(notes, { type: 'phone', value: 'llamar tarde' })).toBe(false);
+    });
+
+    it('S1: the same handle on different networks, or with one side missing a network, are different contacts', () => {
+        const ig: ContactEntry = { type: 'social', value: 'ana.perez', platform: 'instagram' };
+        const fb: ContactEntry = { type: 'social', value: 'ana.perez', platform: 'facebook' };
+        const bare: ContactEntry = { type: 'social', value: '@ana.perez' };
+        expect(foldContactEntries([ig], [fb], { stricterVisibility: true })).toHaveLength(2);
+        expect(foldContactEntries([ig], [bare], { stricterVisibility: true })).toHaveLength(2);
+        expect(foldContactEntries([ig], [{ type: 'social', value: 'https://instagram.com/ana.perez', platform: 'instagram' }], { stricterVisibility: true })).toHaveLength(1);
+        // The hint's loose «coincide» still sees the same handle.
+        expect(sameContact(ig, fb)).toBe(true);
     });
 });

@@ -32,14 +32,16 @@
  */
 
 import { logger } from '@/lib/logger';
-import { serializeHouseholdMembers, type HouseholdMember } from '@/lib/householdMembers';
-import type { SocialPlatform } from '@/lib/contactEntries';
+import { redactedErrorFields } from '@/lib/redactedError';
+import type { ContactEntry, SocialPlatform } from '@/lib/contactEntries';
 
 export type AdopterSource = 'manual' | 'form' | 'contract' | 'imported' | 'api';
 
 export interface CreateAdopterInput {
-    /** Fully named people from "¿Quiénes viven en la casa?" (spec 2026-10-04 §3). Written before tokenizing so their names reach dedup. */
-    householdMembers?: HouseholdMember[];
+    // Household people are NOT written here any more (households as profiles):
+    // the caller attaches them as profiles + memberships afterwards
+    // (src/lib/householdPeople.ts attachHouseholdPeople). Nothing writes
+    // adopters.household_members.
     /** 'form', 'contract' or 'api' here; 'manual'/'imported' use their own paths. */
     source: Extract<AdopterSource, 'form' | 'contract' | 'api'>;
     /** source 'api' only: which key and call created the profile, for its history. */
@@ -77,10 +79,42 @@ export interface CreateAdopterResult {
     dupCandidates: DupCandidateSummary[];
 }
 
-function bucketConfidence(relevancePercent: number): 'high' | 'medium' | 'low' {
-    if (relevancePercent >= 70) return 'high';
-    if (relevancePercent >= 40) return 'medium';
-    return 'low';
+/**
+ * The country stamped on a new profile, the same way saveAdopter /
+ * /api/adopters do (v2.19.4 — before, the factory was a silent bypass:
+ * form-submission and contract-submit auto-creates landed with country=null,
+ * then got filtered out of the discovery search). Two-tier lookup: the
+ * owner's user_profiles.country, then CF-IPCountry on the inbound request.
+ * Best-effort; null is still tolerated and falls out to the residual the
+ * admin backfill can sweep later.
+ */
+async function ownerCountry(ownerEmail: string | null | undefined, op: string): Promise<string | null> {
+    let country: string | null = null;
+    try {
+        const { getRequestContext } = await import('@/lib/requestContext');
+        const { env } = getRequestContext();
+        const owner = (ownerEmail || '').trim();
+        if (env?.DB && owner && owner !== 'anonymous') {
+            const row = await env.DB.prepare(
+                `SELECT up.country FROM user_profiles up
+                 JOIN user u ON u.id = up.user_id
+                 WHERE u.email = ? LIMIT 1`
+            ).bind(owner).first<{ country: string | null }>();
+            country = row?.country?.trim() || null;
+        }
+    } catch (e) {
+        logger.warn(`${op}: country lookup failed (continuing)`, {
+            error: e instanceof Error ? e.message : String(e),
+        });
+    }
+    if (!country) {
+        try {
+            const { headers } = await import('next/headers');
+            const h = await headers();
+            country = h?.get?.('cf-ipcountry') || null;
+        } catch { /* headers() not always available — fine, leave null */ }
+    }
+    return country;
 }
 
 /**
@@ -98,8 +132,7 @@ export async function createAdopterFromSubmission(
     const db = await getDb();
     if (!db) throw new Error('createAdopterFromSubmission: database unavailable');
 
-    const { adopters, adopterHistory, duplicateCandidates } = await import('@/db/schema');
-    const { eq, and } = await import('drizzle-orm');
+    const { adopters, adopterHistory } = await import('@/db/schema');
 
     const adopterId = crypto.randomUUID();
     // Dynamic import to match this module's edge-route import convention.
@@ -116,38 +149,7 @@ export async function createAdopterFromSubmission(
     const contactInfo = contactEntriesToBlob(contactEntries);
     const now = new Date();
 
-    // v2.19.4: stamp country the same way saveAdopter / /api/adopters do.
-    // Before this fix the factory was a silent bypass — form-submission and
-    // contract-submit auto-creates landed with country=null, then got
-    // filtered out of the discovery search. Two-tier lookup: rescuer's
-    // user_profiles.country, then CF-IPCountry header on the inbound
-    // submission request. Best-effort; null is still tolerated and falls
-    // out to the residual the admin backfill can sweep later.
-    let country: string | null = null;
-    try {
-        const { getRequestContext } = await import('@/lib/requestContext');
-        const { env } = getRequestContext();
-        const owner = (input.addedBy || '').trim();
-        if (env?.DB && owner && owner !== 'anonymous') {
-            const row = await env.DB.prepare(
-                `SELECT up.country FROM user_profiles up
-                 JOIN user u ON u.id = up.user_id
-                 WHERE u.email = ? LIMIT 1`
-            ).bind(owner).first<{ country: string | null }>();
-            country = row?.country?.trim() || null;
-        }
-    } catch (e) {
-        logger.warn('createAdopterFromSubmission: country lookup failed (continuing)', {
-            error: e instanceof Error ? e.message : String(e),
-        });
-    }
-    if (!country) {
-        try {
-            const { headers } = await import('next/headers');
-            const h = await headers();
-            country = h?.get?.('cf-ipcountry') || null;
-        } catch { /* headers() not always available — fine, leave null */ }
-    }
+    const country = await ownerCountry(input.addedBy, 'createAdopterFromSubmission');
 
     // 1. Insert adopter
     await db.insert(adopters).values({
@@ -155,7 +157,6 @@ export async function createAdopterFromSubmission(
         name: trimmedName,
         contactInfo: contactInfo || null,
         contactEntries: contactEntries.length ? JSON.stringify(contactEntries) : null,
-        householdMembers: input.householdMembers?.length ? serializeHouseholdMembers(input.householdMembers) : null,
         addressInfo: input.address || null,
         addedBy: input.addedBy || 'anonymous',
         source: input.source,
@@ -217,49 +218,95 @@ export async function createAdopterFromSubmission(
     }
 
     // 4. Find duplicates + persist a filtered subset as `duplicate_candidates`
-    // pending rows so the pending-dedup section on /my-adopters has data.
-    //
-    // Two thresholds intentionally split:
-    //   • findAdopters minRelevance:0 — matches the existing form/contract
-    //     notification recall (the prior code paths use 0). Keeps the
-    //     notification banner honest about borderline matches and preserves
-    //     existing e2e behavior (notably contract-link.spec.ts which sets up
-    //     a low-confidence fixture and expects the "Es la misma persona"
-    //     merge button to render).
-    //   • PERSIST_THRESHOLD = 30 — only pairs with ≥30% relevance get
-    //     written to duplicate_candidates. Stops the pending-dedup table
-    //     from filling with noise that the rescuer would just dismiss.
-    const PERSIST_THRESHOLD = 30;
-    let dupCandidates: DupCandidateSummary[] = [];
+    // pending rows so the pending-dedup section on /my-adopters has data
+    // (every same/possible match: findAndPersistDuplicateCandidates).
+    const dupCandidates = await findAndPersistDuplicateCandidates(db, adopterId, {
+        name: trimmedName,
+        phone: input.phone,
+        documentId: input.documentId,
+        email: input.email,
+        socials: socialList.map(x => (typeof x === 'string' ? x : x.value)),
+    }, { skipLikeFallback: input.bulkImport === true });
+
+    logger.info('Adopter auto-created from submission', {
+        adopterId,
+        source: input.source,
+        addedBy: input.addedBy,
+        dupCount: dupCandidates.length,
+    });
+
+    return { adopterId, dupCandidates };
+}
+
+/** What a new profile is checked against the index with (findAdopters 'duplicate'). */
+export interface DuplicateProbe {
+    name: string;
+    phone?: string | null;
+    documentId?: string | null;
+    email?: string | null;
+    socials?: string[];
+}
+
+/**
+ * Step 4 of every unattended creation: ask the identity verdict who the new
+ * profile may be (same / possible) and persist a pending `duplicate_candidates`
+ * pair for EVERY such match («Pendientes de revisar»). `skipPair(otherId)` drops
+ * a pair before it is written (households: never pair housemates — spec
+ * anti-goal). Never throws: a failure is logged and gives [].
+ *
+ * The pair's `confidence` is the verdict ('same' → 'high', 'possible' → 'medium';
+ * never 'low', which some readers filter out) and `score` is the match's
+ * relevancePercent (shown as a percentage elsewhere, so unchanged). There is no
+ * persistence threshold any more: the verdict is the noise floor.
+ *
+ * `skipLikeFallback` (bulk imports) is passed down to the engine's retrieval.
+ * Phones are read without a country, as the previous findAdopters call did.
+ */
+export async function findAndPersistDuplicateCandidates(
+    db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
+    adopterId: string,
+    probe: DuplicateProbe,
+    opts: {
+        /** Bulk import: skip the engine's contact-text LIKE scan. */
+        skipLikeFallback?: boolean;
+        skipPair?: (otherId: string) => Promise<boolean>;
+        /** Candidates fetched (default 5); raise it when skipPair may drop some, so the real ones still fit. */
+        limit?: number;
+        /** Candidates kept after skipPair (default: all fetched). */
+        keep?: number;
+        ctx?: Record<string, unknown>;
+    } = {},
+): Promise<DupCandidateSummary[]> {
     try {
-        const { findAdopters } = await import('@/app/actions/findAdopters');
-        const { extractEmails, extractSocials } = await import('@/lib/tokenizer');
+        const { duplicateCandidates } = await import('@/db/schema');
+        const { eq, and } = await import('drizzle-orm');
+        const { findPersonMatches } = await import('@/lib/identityMatch');
+        const { extractEmails } = await import('@/lib/tokenizer');
+        const socials = (probe.socials ?? []).filter(Boolean);
+        const phone = probe.phone?.trim();
+        const documentId = probe.documentId?.trim();
 
-        const dupResult = await findAdopters(
-            {
-                name: trimmedName,
-                // The phone as typed — the matcher reads it by country, so a
-                // "+54 9 11 …" applicant finds a record saved as "11 …".
-                phones: input.phone?.trim() ? [input.phone.trim()] : [],
-                // The DNI is matched as an identity number. It used to be pushed
-                // into `phones`, so it was probed as a phone and never against
-                // the id index — a returning applicant's DNI found nobody.
-                ids: input.documentId?.trim() ? [input.documentId.trim()] : [],
-                emails: input.email ? extractEmails(input.email) : [],
-                // Entries may carry their network ({ value, platform }) — match on the value.
-                socials: socialList.length ? extractSocials(socialList.map(x => (typeof x === 'string' ? x : x.value)).join('\n')) : [],
-                excludeAdopterId: adopterId,
-            },
-            { mode: 'duplicate', minRelevance: 0, limit: 5, skipLikeFallback: input.bulkImport === true },
-        );
+        const found = await findPersonMatches(db, {
+            name: probe.name,
+            // The phone as typed — the matcher reads it by country, so a
+            // "+54 9 11 …" applicant finds a record saved as "11 …".
+            phones: phone ? [phone] : [],
+            documentIds: documentId ? [documentId] : [],
+            emails: probe.email ? extractEmails(probe.email) : [],
+            // Raw values (a visible name with spaces is not an account): never converted.
+            socials,
+        }, { country: null, excludeAdopterId: adopterId, limit: opts.limit ?? 5, skipLikeFallback: opts.skipLikeFallback === true, ctx: opts.ctx });
 
-        const matches = (dupResult.results as Array<{ adopterId: string; adopterName: string; matchTypes: string[]; relevancePercent: number }>) || [];
+        const matches: typeof found = [];
+        for (const m of found) {
+            if (opts.keep !== undefined && matches.length >= opts.keep) break;
+            if (opts.skipPair && await opts.skipPair(m.adopterId)) continue;
+            matches.push(m);
+        }
 
-        // Persist only matches above the noise floor. Skip pairs that are
-        // already recorded (dismissed / merged) — the admin reconciliation
-        // route owns that state transition and we shouldn't reopen its decisions.
+        // Skip pairs that are already recorded (dismissed / merged) — the admin
+        // reconciliation route owns that state transition and we shouldn't reopen its decisions.
         for (const match of matches) {
-            if (match.relevancePercent < PERSIST_THRESHOLD) continue;
             const [id1, id2] = adopterId < match.adopterId
                 ? [adopterId, match.adopterId]
                 : [match.adopterId, adopterId];
@@ -284,31 +331,116 @@ export async function createAdopterFromSubmission(
                 matchTypes: JSON.stringify(match.matchTypes),
                 matchValues: null,
                 score: match.relevancePercent,
-                confidence: bucketConfidence(match.relevancePercent),
+                confidence: match.verdict === 'same' ? 'high' : 'medium',
                 status: 'pending',
                 detectedAt: new Date(),
             });
         }
 
-        dupCandidates = matches.map(m => ({
+        return matches.map(m => ({
             adopterId: m.adopterId,
             adopterName: m.adopterName,
             matchTypes: m.matchTypes,
             relevancePercent: m.relevancePercent,
         }));
     } catch (e) {
-        logger.warn('createAdopterFromSubmission: duplicate detection failed (continuing)', {
+        logger.warn('findAndPersistDuplicateCandidates: duplicate detection failed (continuing)', {
+            ...opts.ctx,
             adopterId,
-            error: e instanceof Error ? e.message : String(e),
+            ...redactedErrorFields(e),
         });
+        return [];
     }
+}
 
-    logger.info('Adopter auto-created from submission', {
-        adopterId,
-        source: input.source,
-        addedBy: input.addedBy,
-        dupCount: dupCandidates.length,
+export interface CreateHouseholdProfileInput {
+    /** The anchor's owner (spec «Who owns the profile a household add creates»): owns the row. */
+    ownerEmail: string;
+    /** Who typed it: the history row's author. */
+    actor: string;
+    /** May be empty when a contact identifies the person (hasMinimumIdentifier). */
+    name: string;
+    /** Already built and credited (`addedBy` = the typist, src/lib/contactEntries contactEntryFromInput). */
+    contactEntries: ContactEntry[];
+    /** A whole 0–120, dated today so the profile shows the CURRENT age; null/undefined = unknown. */
+    age?: number | null;
+    /** «Es menor de edad» with no age known (an age decides by itself: <18 ⇒ minor). */
+    isMinor?: boolean;
+    /** Record-level «público» — only for people who arrive with a public host (a public social post); default protected. */
+    isPublic?: boolean;
+    /** The caller tokenizes later (the public form does it after the response). */
+    skipTokenize?: boolean;
+    /** A fixed id (the conversion derives it from the source key, so a crashed run never makes the person twice). */
+    id?: string;
+    /** The day the age was given (YYYY-MM-DD), when it isn't today (the conversion moves a member's dated age). */
+    ageAsOf?: string | null;
+    /** profilePrivilege on the new profile: 'edit' only when the typist is on the owner's team (or staff). */
+    historyKind: 'edit' | 'contribution';
+    /** The creation line of the new profile's history (never raw contact values). */
+    history: Record<string, unknown>;
+}
+
+/**
+ * Create the profile of a person added to someone's household (households as
+ * profiles, Task 2). Same steps as any new profile here: insert, one history
+ * row, tokenize synchronously (so the next duplicate check sees it). Owned by
+ * the anchor's owner, contacts credited to the typist, protected (is_public 0
+ * — a household add never unmasks anything). No duplicate_candidates rows:
+ * the person was just shown «¿Es este perfil?» and said no, exactly like the
+ * manual «Nuevo adoptante» save, which persists none either (and a pairing
+ * with the person they live with is the spec's anti-goal).
+ * Throws on a DB failure; the action logs it with an errorId.
+ */
+export async function createHouseholdProfile(
+    db: NonNullable<Awaited<ReturnType<typeof import('@/lib/db').getDb>>>,
+    input: CreateHouseholdProfileInput,
+): Promise<string> {
+    const name = (input.name ?? '').trim();
+    const { hasMinimumIdentifier } = await import('@/domain/adopterIdentity');
+    const entriesJson = input.contactEntries.length ? JSON.stringify(input.contactEntries) : null;
+    if (!hasMinimumIdentifier({ name, contactEntries: entriesJson })) {
+        throw new Error('createHouseholdProfile: a name or at least one contact is required');
+    }
+    const { adopters, adopterHistory } = await import('@/db/schema');
+    const { contactEntriesToBlob } = await import('@/lib/contactEntries');
+    const { MINOR_AGE_LIMIT } = await import('@/domain/households');
+    const age = typeof input.age === 'number' && Number.isInteger(input.age) && input.age >= 0 && input.age <= 120 ? input.age : null;
+    const country = await ownerCountry(input.ownerEmail, 'createHouseholdProfile');
+    const adopterId = input.id ?? crypto.randomUUID();
+    const now = new Date();
+    const ageAsOf = input.ageAsOf && /^\d{4}-\d{2}-\d{2}$/.test(input.ageAsOf) ? input.ageAsOf : now.toISOString().slice(0, 10);
+    await db.insert(adopters).values({
+        id: adopterId,
+        name,
+        contactInfo: contactEntriesToBlob(input.contactEntries) || null,
+        contactEntries: entriesJson,
+        addedBy: input.ownerEmail,
+        source: 'manual',
+        country,
+        isPublic: input.isPublic === true ? 1 : 0,
+        age,
+        ageAsOf: age === null ? null : ageAsOf,
+        // The «Es menor de edad» box turns on by itself under 18 (spec «Children»), by the age as given.
+        isMinor: (age !== null ? age < MINOR_AGE_LIMIT : input.isMinor === true) ? 1 : 0,
+        createdAt: now,
+        updatedAt: now,
     });
-
-    return { adopterId, dupCandidates };
+    await db.insert(adopterHistory).values({
+        id: crypto.randomUUID(),
+        adopterId,
+        changedBy: input.actor,
+        kind: input.historyKind,
+        changes: JSON.stringify(input.history),
+        changedAt: now,
+    });
+    if (!input.skipTokenize) {
+        try {
+            const { tokenizeAdopter } = await import('@/lib/adopterTokenize');
+            await tokenizeAdopter(adopterId);
+        } catch (e) {
+            logger.error('createHouseholdProfile: tokenize failed (continuing)', e, { adopterId, actor: input.actor });
+        }
+    }
+    logger.info('Adopter created from a household add', { adopterId, actor: input.actor, contacts: input.contactEntries.length });
+    return adopterId;
 }

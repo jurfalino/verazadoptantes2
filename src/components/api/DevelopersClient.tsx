@@ -3,7 +3,9 @@
 /**
  * /developers: what the API is for, the docs, and — for a signed-in user — the
  * API terms (once), their keys (create, regenerate, revoke; the secret shown
- * once) and their calls. Everything goes through /api/my-api/* (own keys only).
+ * once) and their calls. Keys work at once (Jon, 2026-10-22): until an admin
+ * approves the request their first key files, at the pending limits.
+ * Everything goes through /api/my-api/* (own keys only).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -18,10 +20,11 @@ interface MyKey {
     createdAt: string | null; lastUsedAt: string | null; revokedAt: string | null;
 }
 interface Access { status: 'none' | 'requested' | 'approved' | 'denied' | 'blocked'; tool: string | null; note: string | null }
+interface Caps { exact: number; fuzzy: number }
 interface DevState {
     termsAccepted: boolean; environment: 'live' | 'test';
-    access: Access; canCreateKeys: boolean;
-    caps: { exact: number; fuzzy: number }; maxActiveKeys: number; keys: MyKey[];
+    access: Access; canCreateKeys: boolean; limited: boolean;
+    caps: Caps; approvedCaps: Caps; pendingCaps: Caps; maxActiveKeys: number; keys: MyKey[];
 }
 
 const card = 'rounded-2xl border p-6';
@@ -37,6 +40,8 @@ export default function DevelopersClient() {
     const [name, setName] = useState('');
     const [busy, setBusy] = useState(false);
     const [secret, setSecret] = useState<string | null>(null);
+    // The key just created runs at the pending limits (shown with its secret).
+    const [secretLimited, setSecretLimited] = useState(false);
     const [confirm, setConfirm] = useState<{ id: string; action: 'revoke' | 'regenerate' } | null>(null);
     const [tool, setTool] = useState('');
     const [purpose, setPurpose] = useState('');
@@ -56,7 +61,8 @@ export default function DevelopersClient() {
     useEffect(() => { if (status === 'authenticated') void load(); }, [status, load]);
 
     const fill = (s: string) => s.replace('{max}', String(state?.maxActiveKeys ?? 3))
-        .replace('{exact}', String(state?.caps.exact ?? 100)).replace('{fuzzy}', String(state?.caps.fuzzy ?? 50));
+        .replace('{exact}', String(state?.approvedCaps?.exact ?? 100)).replace('{fuzzy}', String(state?.approvedCaps?.fuzzy ?? 50))
+        .replace('{pexact}', String(state?.pendingCaps?.exact ?? 25)).replace('{pfuzzy}', String(state?.pendingCaps?.fuzzy ?? 10));
 
     const acceptTerms = async () => {
         setBusy(true);
@@ -79,15 +85,17 @@ export default function DevelopersClient() {
     const createKey = async () => {
         setBusy(true);
         try {
-            const res = await fetch('/api/my-api/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+            const res = await fetch('/api/my-api/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, purpose }) });
             if (res.status === 409) {
                 const code = (await res.json().catch(() => ({})) as { error?: string }).error;
                 toast.error(t('developers.error'), code === 'too_many_today' ? t('developers.too_many_today') : fill(t('developers.too_many_keys')));
                 return;
             }
             if (!res.ok) throw await failure(res, 'my-api/keys create');
-            setSecret((await res.json() as { secret: string }).secret);
-            setName('');
+            const created = await res.json() as { secret: string; limited?: boolean };
+            setSecret(created.secret);
+            setSecretLimited(!!created.limited);
+            setName(''); setPurpose('');
             await load();
         } catch (e) { fail(e, 'create'); } finally { setBusy(false); }
     };
@@ -98,7 +106,7 @@ export default function DevelopersClient() {
         try {
             const res = await fetch(`/api/my-api/keys/${id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
             if (!res.ok) throw await failure(res, `my-api/keys ${action}`);
-            if (action === 'regenerate') setSecret((await res.json() as { secret: string }).secret);
+            if (action === 'regenerate') { setSecret((await res.json() as { secret: string }).secret); setSecretLimited(!!state?.limited); }
             await load();
         } catch (e) { fail(e, action); } finally { setBusy(false); }
     };
@@ -149,29 +157,29 @@ export default function DevelopersClient() {
                 </section>
             )}
 
-            {state?.termsAccepted && !state.canCreateKeys && state.access.status === 'requested' && (
-                <section className={card} style={cardStyle} data-testid="developers-access-pending">
-                    <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('developers.requested_title')}</h2>
-                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('developers.requested_body')}</p>
-                </section>
-            )}
-
-            {state?.termsAccepted && !state.canCreateKeys && state.access.status === 'blocked' && (
+            {state?.termsAccepted && state.access.status === 'blocked' && (
                 <section className={card} style={{ background: 'var(--status-error-bg)', borderColor: 'var(--status-error-border)' }} data-testid="developers-access-blocked">
                     <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--status-error-text)' }}>{t('developers.blocked_title')}</h2>
                     <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('developers.blocked_body')}</p>
                 </section>
             )}
 
-            {state?.termsAccepted && !state.canCreateKeys && (state.access.status === 'none' || state.access.status === 'denied') && (
+            {/* Before approval: keys work at the pending limits; this says where the request stands. */}
+            {state?.termsAccepted && state.canCreateKeys && state.limited && state.access.status === 'requested' && (
+                <p className="text-sm rounded-xl px-4 py-3 border" style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)', color: 'var(--text-primary)' }} data-testid="developers-access-pending">
+                    <strong>{t('developers.requested_title')}</strong> {fill(t('developers.requested_body'))}
+                </p>
+            )}
+
+            {state?.termsAccepted && state.canCreateKeys && state.limited && (state.access.status === 'denied' || (state.access.status === 'none' && state.keys.length > 0)) && (
                 <section className={card} style={cardStyle} data-testid="developers-access-request">
                     {state.access.status === 'denied' && (
                         <p className="text-sm rounded-xl px-4 py-3 border mb-4" style={{ background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)', color: 'var(--text-primary)' }} data-testid="developers-access-denied">
-                            {t('developers.denied_body')}{state.access.note ? ` «${state.access.note}»` : ''}
+                            {fill(t('developers.denied_body'))}{state.access.note ? ` «${state.access.note}»` : ''}
                         </p>
                     )}
-                    <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('developers.access_title')}</h2>
-                    <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>{t('developers.access_body')}</p>
+                    <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{fill(t('developers.access_title'))}</h2>
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>{fill(t('developers.access_body'))}</p>
                     <label className="block text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
                         {t('developers.tool_label')}
                         <input value={tool} onChange={e => setTool(e.target.value)} placeholder={t('developers.tool_placeholder')} maxLength={120}
@@ -192,6 +200,11 @@ export default function DevelopersClient() {
                 <section className={card} style={{ background: 'var(--status-success-bg)', borderColor: 'var(--status-success-border)' }} data-testid="developers-secret">
                     <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--status-success-text)' }}>{t('developers.secret_title')}</h2>
                     <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>{t('developers.secret_body')}</p>
+                    {secretLimited && (
+                        <p className="text-sm mb-3 rounded-xl px-3 py-2 border" style={{ background: 'var(--status-warning-bg)', borderColor: 'var(--status-warning-border)', color: 'var(--text-primary)' }} data-testid="developers-secret-limited">
+                            {fill(t('developers.secret_limited'))}
+                        </p>
+                    )}
                     <code className="block break-all text-sm font-mono rounded-lg px-3 py-2 mb-3" style={{ background: 'var(--surface-card)', color: 'var(--text-primary)' }} data-testid="developers-secret-value">{secret}</code>
                     <div className="flex flex-wrap gap-3">
                         <button type="button" className="text-sm font-semibold rounded-xl px-4 py-2" style={primary}
@@ -204,7 +217,7 @@ export default function DevelopersClient() {
             {state?.termsAccepted && state.canCreateKeys && (
                 <section className={card} style={cardStyle} data-testid="developers-keys">
                     <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('developers.keys_title')}</h2>
-                    <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>{fill(t('developers.limits'))}</p>
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }} data-testid="developers-limits">{fill(t(state.limited ? 'developers.limits_pending' : 'developers.limits'))}</p>
                     {state.keys.length === 0 && <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>{t('developers.none')}</p>}
                     <ul className="space-y-3 mb-5">
                         {state.keys.map(k => (
@@ -242,6 +255,14 @@ export default function DevelopersClient() {
                                 <input value={name} onChange={e => setName(e.target.value)} placeholder={t('developers.name_placeholder')} maxLength={80}
                                     className="mt-1 w-full text-sm rounded-xl border px-3 py-2" style={{ background: 'var(--surface-card)', borderColor: 'var(--border-default)' }} data-testid="developers-key-name" />
                             </label>
+                            {state.limited && state.access.status === 'none' && (
+                                <label className="w-full text-sm" style={{ color: 'var(--text-primary)' }}>
+                                    {t('developers.purpose_label')}
+                                    <textarea value={purpose} onChange={e => setPurpose(e.target.value)} placeholder={t('developers.purpose_placeholder')} maxLength={1000} rows={2}
+                                        className="mt-1 w-full text-sm rounded-xl border px-3 py-2" style={{ background: 'var(--surface-card)', borderColor: 'var(--border-default)' }} data-testid="developers-key-purpose" />
+                                    <span className="block text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{fill(t('developers.first_key_note'))}</span>
+                                </label>
+                            )}
                             <button type="button" disabled={busy || !name.trim()} onClick={createKey} className="text-sm font-semibold rounded-xl px-6 py-3 disabled:opacity-40" style={primary} data-testid="developers-create">
                                 {busy ? t('developers.creating') : t('developers.create')}
                             </button>

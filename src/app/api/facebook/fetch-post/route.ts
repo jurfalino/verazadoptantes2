@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { arrayBufferToBase64 } from '@/lib/base64';
 import { hasExtractableContent, hasPostText, imageIdentity, isPlaceholderAssetUrl, isSourceNotPublic, realImages, sanitizePostText } from '@/domain/facebookExtraction';
+import { postKey } from '@/domain/postKey';
 
 interface FacebookPostData {
     text: string;
@@ -53,6 +54,13 @@ export async function POST(request: NextRequest) {
         const desktopUrl = url.replace(/m\.facebook\.com/i, 'www.facebook.com');
 
         const userId = session?.user?.email || 'unknown';
+
+        // A /share/… link names the share, not the post: two shares of one post
+        // carry different codes, so "already imported" could never match them
+        // (audit 2026-10-21, D1 — 70 of 392 stored links). Ask Facebook where it
+        // points and hand that back; the wizard stores and matches the post's own
+        // link. Best effort: on any failure the original link is used as before.
+        const resolvedUrl = await resolveShareLink(desktopUrl, userId);
 
         // Detect video/reel URLs early — skip Playwright scraper for these
         // (Playwright can't extract video content and wastes ~8s returning empty data)
@@ -111,6 +119,7 @@ export async function POST(request: NextRequest) {
                                 },
                                 source: 'playwright',
                                 ...(isVideoUrl ? { isVideo: true as const } : {}),
+                                ...(resolvedUrl ? { resolvedUrl } : {}),
                             });
                         }
                     }
@@ -228,6 +237,10 @@ export async function POST(request: NextRequest) {
         // count on its own — this predicate used to include it, which made the guard
         // below unreachable and dead-ended the import on an empty success.
         if (!hasExtractableContent(postData, isVideoUrl)) {
+            // The rescuer is sent to paste the text by hand — a degraded import.
+            logger.warn('Facebook post text unavailable', {
+                reason: 'not_extractable', sourceNotPublic: isSourceNotPublic(postData), isVideo: !!postData.isVideo, user: userId,
+            });
             // Private group posts and some reels can't be scraped — 
             // tell the UI to skip to manual input instead of retrying
             return NextResponse.json({
@@ -240,6 +253,7 @@ export async function POST(request: NextRequest) {
                 // data was already public, and that premise fails here.
                 sourceNotPublic: isSourceNotPublic(postData),
                 error: 'Esta publicación es de un grupo privado o tiene restricciones. Pegá el texto y/o capturas de pantalla manualmente.',
+                ...(resolvedUrl ? { resolvedUrl } : {}),
             });
         }
 
@@ -250,6 +264,12 @@ export async function POST(request: NextRequest) {
         // the wizard has to say so rather than hand the AI a captionless photo.
         const missingPostText = !hasPostText(postData);
         const sourceNotPublic = isSourceNotPublic(postData);
+        if (missingPostText) {
+            // Photo and poster, no caption: the rescuer has to supply the text.
+            logger.warn('Facebook post text unavailable', {
+                reason: 'missing_caption', sourceNotPublic, isVideo: !!postData.isVideo, imageCount: postData.images?.length ?? 0, user: userId,
+            });
+        }
 
         // For video posts with minimal text, prepend the author/group name for context
         if (postData.isVideo && postData.author && (!postData.text || postData.text.length < 20)) {
@@ -264,6 +284,7 @@ export async function POST(request: NextRequest) {
             sourceNotPublic,
             data: postData,
             ...(postData.isVideo && { isVideo: true }),
+            ...(resolvedUrl ? { resolvedUrl } : {}),
         });
 
     } catch (error) {
@@ -460,4 +481,47 @@ function decodeHtmlEntities(text: string): string {
         .replace(/\\u003C/g, '<')
         .replace(/\\u003E/g, '>')
         .replace(/\\n/g, '\n');
+}
+
+/**
+ * Where a Facebook /share/… link points, or null. One manual-redirect request
+ * with Facebook's own crawler identity, capped at 5 s; only a Facebook link
+ * that names a post (not another share, not a login wall) is accepted.
+ */
+async function resolveShareLink(url: string, userId: string): Promise<string | null> {
+    if (!/^https?:\/\/([a-z]+\.)?(facebook|fb)\.com\/share\//i.test(url)) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+        // fb.com first redirects to facebook.com/share/…, which would read as
+        // unresolved after the single hop below; start from the canonical host.
+        const start = url.replace(/^https?:\/\/([a-z]+\.)?fb\.com\//i, 'https://www.facebook.com/');
+        const res = await fetch(start, {
+            method: 'GET',
+            redirect: 'manual',
+            headers: { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
+            signal: controller.signal,
+        });
+        const location = res.headers.get('location');
+        // Only the header is needed; release the body.
+        await res.body?.cancel().catch(() => undefined);
+        const target = location ? new URL(location, start).toString() : null;
+        const key = target ? postKey(target)?.key : null;
+        if (!target || !key || key.startsWith('fb:share:') || !key.startsWith('fb:')) {
+            logger.info('Facebook share link not resolved', { status: res.status, hasLocation: !!location, user: userId });
+            return null;
+        }
+        // A login wall (login.php?next=<post>) keys as the post it guards; store
+        // that post's link, not the wall.
+        const guarded = new URL(target).searchParams.get('next');
+        if (guarded && /\/(login(\.php)?|checkpoint)\b/.test(new URL(target).pathname)) {
+            try { return new URL(guarded, target).toString(); } catch { /* keep target */ }
+        }
+        return target;
+    } catch (e) {
+        logger.warn('Facebook share link resolve failed', { error: e instanceof Error ? e.message : String(e), user: userId });
+        return null;
+    } finally {
+        clearTimeout(timer);
+    }
 }

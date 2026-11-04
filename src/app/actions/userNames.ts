@@ -7,6 +7,7 @@ import { getDb } from './_db';
 import { users } from '@/db/schema';
 import { sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
+import { nameCarriesEmail } from '@/lib/userDisplay';
 
 /** D1 caps a statement at 100 bound parameters; stay well under it. */
 const CHUNK = 90;
@@ -56,7 +57,8 @@ export async function resolveUserNames(emails: string[]): Promise<Record<string,
                 return [] as Array<{ email: string | null; name: string | null }>;
             });
         for (const row of rows) {
-            if (row.name && row.email) map[row.email] = row.name;
+            // One name rule everywhere (displayNameFor): a «name» carrying an email is not a name.
+            if (row.name && row.email && !nameCarriesEmail(row.name)) map[row.email] = row.name.trim();
         }
     }
     return map;

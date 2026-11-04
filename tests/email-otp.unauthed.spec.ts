@@ -14,10 +14,11 @@ import { dismissCountryBanner } from './helpers';
  * setup already requires — so the test overwrites the stored hash with the
  * hash of a KNOWN code and types that. No prod-facing test hooks needed.
  *
- * DB writes go through the sqlite3 CLI, not better-sqlite3 (which doesn't
- * build on Node 26), against BOTH local DBs: next dev serves miniflare D1
- * (.wrangler state) when the dev platform is up and falls back to local.db
- * otherwise — the two drift independently.
+ * DB writes go to BOTH local DBs: next dev serves miniflare D1 (.wrangler
+ * state) when the dev platform is up and falls back to local.db otherwise —
+ * the two drift independently. They use better-sqlite3 (what CI's Node 20 has;
+ * the Playwright CI container ships no sqlite3 CLI) and fall back to the
+ * sqlite3 CLI where better-sqlite3 won't load (it doesn't build on Node 26).
  */
 
 const KNOWN_CODE = '123456';
@@ -37,12 +38,26 @@ function localDbPaths(): string[] {
     return paths.filter(p => fs.existsSync(p));
 }
 
-function overwriteCodeHash(email: string, code: string) {
+async function overwriteCodeHash(email: string, code: string) {
     const secret = process.env.AUTH_SECRET;
     if (!secret) throw new Error('AUTH_SECRET env var is required (see auth.setup.ts)');
     const hash = createHmac('sha256', secret).update(code).digest('hex');
+    let Database: typeof import('better-sqlite3') | null = null;
+    try {
+        const mod = await import('better-sqlite3');
+        Database = ((mod as unknown as { default?: typeof import('better-sqlite3') }).default ?? mod) as typeof import('better-sqlite3');
+    } catch { Database = null; }
     for (const db of localDbPaths()) {
-        execSync(`sqlite3 "${db}" "UPDATE email_otp_codes SET code_hash='${hash}' WHERE email='${email}';"`);
+        if (Database) {
+            const conn = new Database(db);
+            try {
+                conn.prepare('UPDATE email_otp_codes SET code_hash = ? WHERE email = ?').run(hash, email);
+            } finally {
+                conn.close();
+            }
+        } else {
+            execSync(`sqlite3 "${db}" "UPDATE email_otp_codes SET code_hash='${hash}' WHERE email='${email}';"`);
+        }
     }
 }
 
@@ -75,7 +90,7 @@ test.describe('Email OTP login', () => {
         await openLoginModal(page);
         await requestCode(page, email);
 
-        overwriteCodeHash(email, KNOWN_CODE);
+        await overwriteCodeHash(email, KNOWN_CODE);
         await page.getByTestId('otp-code-input').fill(KNOWN_CODE);
         await page.getByTestId('otp-verify-btn').click();
 
@@ -97,7 +112,7 @@ test.describe('Email OTP login', () => {
         await openLoginModal(page);
         await requestCode(page, email);
 
-        overwriteCodeHash(email, KNOWN_CODE);
+        await overwriteCodeHash(email, KNOWN_CODE);
         await page.getByTestId('otp-code-input').fill('654321');
         await page.getByTestId('otp-verify-btn').click();
 

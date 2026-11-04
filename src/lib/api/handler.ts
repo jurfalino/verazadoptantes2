@@ -12,9 +12,10 @@ import { apiKeys, apiRequests } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
-import { getFeatureFlag } from '@/config/features';
+import { readFeatureFlag } from '@/config/features';
 import { bearerSecret, environmentForHost, findActiveKey, importModeOn, IMPORT_CALL_CEILING, scopesOf, type ApiKeyRow } from './keys';
-import { keyRefusal } from './access';
+import { keyAccess, PENDING_APPROVAL_CAPS, withPendingCaps, type KeyAccess } from './access';
+import { withCors } from './cors';
 import type { ApiErrorCode, ApiScope } from './schemas';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -61,9 +62,24 @@ export interface ApiErrorExtra {
 }
 
 export class ApiError extends Error {
+    /** Set when the failure was logged as an error: the partner gets it, and the row keeps it (2026-11-04 audit). */
+    public errorId?: string;
     constructor(public status: number, public code: ApiErrorCode, message: string, public headers: Record<string, string> = {}, public extra: ApiErrorExtra = {}) {
         super(message);
     }
+    withErrorId(errorId: string): this { this.errorId = errorId; return this; }
+}
+
+/** Who sent a call, as far as the edge tells (never the IP in the row: it would outlive the log's 30 days). */
+export interface ClientInfo { userAgent: string | null; cfRay: string | null; country: string | null; colo: string | null }
+export function clientInfoOf(request: Request): ClientInfo {
+    const cf = (request as unknown as { cf?: { colo?: string } }).cf;
+    return {
+        userAgent: request.headers.get('user-agent')?.slice(0, 200) ?? null,
+        cfRay: request.headers.get('cf-ray'),
+        country: request.headers.get('cf-ipcountry'),
+        colo: cf?.colo ?? null,
+    };
 }
 
 /** Where the docs explain errors (the guide's «Errores» section). */
@@ -82,9 +98,15 @@ export interface LogFields {
     externalId?: string | null;
     /** Contacts this call added to a known profile (void takes them back). */
     contactsAdded?: Array<{ entryId: string; field: string }>;
+    /** How an exact match was decided: ids, field names, verdicts — never values (kept after the body purge). */
+    decision?: Record<string, unknown>;
+    /** D1 fallbacks that shrank this call's search results (0 = complete). */
+    degraded?: number;
 }
 
 export interface ApiCallContext {
+    /** Who sent the call (user agent, ray, country) — on its row and its log lines. */
+    client: ClientInfo;
     db: Db;
     key: ApiKeyRow;
     scopes: ApiScope[];
@@ -104,6 +126,8 @@ export interface ApiCallContext {
     dryRun: boolean;
     /** The request URL's query (GET endpoints). */
     query: URLSearchParams;
+    /** A self-created key whose owner is not approved yet: PENDING_APPROVAL_CAPS apply (key already lowered). */
+    limited: boolean;
     /** Today's counts as read by enforceDailyCap (this call not included), reused for the RateLimit headers. */
     caps?: CapSnapshot;
 }
@@ -183,16 +207,24 @@ export async function personSearchesToday(db: Db, ownerEmail: string, mode: 'exa
  * active keys (review 2026-10-17: revoke-and-recreate multiplied the per-key
  * limit without end). Admin-issued partner keys keep their own higher caps.
  */
-export async function personCap(db: Db, ownerEmail: string, mode: 'exact' | 'fuzzy'): Promise<number> {
+export async function personCap(db: Db, ownerEmail: string, mode: 'exact' | 'fuzzy', limited = false): Promise<number> {
     const col = mode === 'exact' ? apiKeys.dailyCapExact : apiKeys.dailyCapFuzzy;
-    const row = await db.select({ cap: max(col) }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, ownerEmail), isNull(apiKeys.revokedAt))).get();
-    return row?.cap ?? 0;
+    if (!limited) {
+        const row = await db.select({ cap: max(col) }).from(apiKeys).where(and(eq(apiKeys.ownerEmail, ownerEmail), isNull(apiKeys.revokedAt))).get();
+        return row?.cap ?? 0;
+    }
+    // Not approved yet: their own keys count at the pending limit, so several keys
+    // share one small allowance (an admin-issued key keeps its own cap).
+    const pending = PENDING_APPROVAL_CAPS[mode];
+    const rows = await db.select({ cap: col, createdBy: apiKeys.createdBy }).from(apiKeys)
+        .where(and(eq(apiKeys.ownerEmail, ownerEmail), isNull(apiKeys.revokedAt))).all() as Array<{ cap: number; createdBy: string | null }>;
+    return rows.reduce((m, r) => Math.max(m, r.createdBy === ownerEmail ? Math.min(r.cap, pending) : r.cap), 0);
 }
 
 /** What is left today for this key: the smaller of the key's and the person's remainder. */
-export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fuzzy'): Promise<{ limit: number; remaining: number }> {
+export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fuzzy', limited = false): Promise<{ limit: number; remaining: number }> {
     const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
-    const [byKey, byPerson, cap] = await Promise.all([searchesToday(db, key.id, mode), personSearchesToday(db, key.ownerEmail, mode), personCap(db, key.ownerEmail, mode)]);
+    const [byKey, byPerson, cap] = await Promise.all([searchesToday(db, key.id, mode), personSearchesToday(db, key.ownerEmail, mode), personCap(db, key.ownerEmail, mode, limited)]);
     // The limit that binds: the person's when their other keys used it up, else the key's own.
     return remainingFrom({ mode, byKey, byPerson, personCap: cap }, keyCap, false);
 }
@@ -205,15 +237,17 @@ export async function remainingToday(db: Db, key: ApiKeyRow, mode: 'exact' | 'fu
 export async function enforceDailyCap(ctx: ApiCallContext, mode: 'exact' | 'fuzzy') {
     const cap = mode === 'exact' ? ctx.key.dailyCapExact : ctx.key.dailyCapFuzzy;
     const [byKey, byPerson, ownerCap] = await Promise.all([
-        searchesToday(ctx.db, ctx.key.id, mode), personSearchesToday(ctx.db, ctx.key.ownerEmail, mode), personCap(ctx.db, ctx.key.ownerEmail, mode),
+        searchesToday(ctx.db, ctx.key.id, mode), personSearchesToday(ctx.db, ctx.key.ownerEmail, mode), personCap(ctx.db, ctx.key.ownerEmail, mode, ctx.limited),
     ]);
     ctx.caps = { mode, byKey, byPerson, personCap: ownerCap };
+    // Not approved yet: say why the limit is low and how it goes up.
+    const pendingNote = ctx.limited ? ' (limit until a BuenAdoptante admin approves your access request at /developers)' : '';
     if (byKey >= cap) {
-        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} cap of ${cap} reached; resets at 00:00 UTC`, retryAfterMidnight());
+        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} cap of ${cap} reached${pendingNote}; resets at 00:00 UTC`, retryAfterMidnight());
     }
     const perPerson = Math.max(ownerCap, cap);
     if (byPerson >= perPerson) {
-        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} limit of ${perPerson} reached across all your keys; resets at 00:00 UTC`, retryAfterMidnight());
+        throw new ApiError(429, 'daily_cap_reached', `daily ${mode} limit of ${perPerson} reached across all your keys${pendingNote}; resets at 00:00 UTC`, retryAfterMidnight());
     }
 }
 
@@ -289,7 +323,17 @@ export async function replayIdempotent(ctx: ApiCallContext, opts: { readOnly?: b
     // A claim nobody finished (the worker died mid-call) counts as a crash.
     const abandoned = prior.httpStatus === 0 && Date.now() - new Date(prior.createdAt).getTime() > ABANDONED_CLAIM_MS;
     if ((prior.httpStatus >= 500 || abandoned) && !partial) {
-        if (!opts.readOnly) await ctx.db.delete(apiRequests).where(eq(apiRequests.id, prior.id));
+        // Released, never deleted (2026-11-04 audit: a retry erased the failed call — its errorId,
+        // bodies and any profile it created — and the row was the only lasting trace).
+        if (!opts.readOnly) {
+            await ctx.db.update(apiRequests).set({
+                idempotencyKey: null,
+                // An abandoned claim (status 0) would still count as a call that ran (daily caps,
+                // usage): it becomes the timeout it was.
+                ...(abandoned && prior.httpStatus === 0 ? { httpStatus: 504, errorCode: 'abandoned', outcome: 'error' } : {}),
+            }).where(eq(apiRequests.id, prior.id));
+            logger.info('api: failed call released for a retry', { requestId: ctx.requestId, originalRequestId: prior.id, keyId: ctx.key.id, originalStatus: prior.httpStatus, originalErrorId: prior.errorId });
+        }
         return null;
     }
     if (prior.httpStatus >= 500 || abandoned) {
@@ -370,6 +414,11 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
         dryRun: ctx.dryRun ? 1 : 0,
         contactsAdded: ctx.log.contactsAdded?.length ? JSON.stringify(ctx.log.contactsAdded) : null,
         durationMs: Date.now() - startedAt,
+        userAgent: ctx.client.userAgent,
+        cfRay: ctx.client.cfRay,
+        clientCountry: ctx.client.country,
+        decision: ctx.log.decision ? JSON.stringify(ctx.log.decision).slice(0, 8000) : null,
+        degraded: ctx.log.degraded ? 1 : 0,
     };
     try {
         if (ctx.rowClaimed) {
@@ -380,7 +429,7 @@ async function writeLog(ctx: ApiCallContext, endpoint: ApiEndpoint, status: numb
     } catch (e) {
         // The client still gets its answer; the missing row is an alert, since
         // a record without its row can't be voided by its key.
-        logger.error('api: transaction log write failed', e, { requestId: ctx.requestId, keyId: ctx.key.id, endpoint, status, recordId: values.recordId });
+        logger.error('api: transaction log write failed', e, { requestId: ctx.requestId, keyId: ctx.key.id, endpoint, status, recordId: values.recordId, errorCode: values.errorCode, errorId });
     }
 }
 
@@ -391,10 +440,38 @@ export async function handleApiCall(
     opts: { binaryBodyMax?: number } = {},
 ): Promise<Response> {
     const requestId = crypto.randomUUID();
+    const client = clientInfoOf(request);
+    let response: Response;
+    try {
+        response = await answerApiCall(request, endpoint, run, opts, requestId, client);
+    } catch (e) {
+        // Nothing may escape as a bare 500 without a trace: logged, and the usual JSON error.
+        const errorId = logger.error('api: unhandled failure', e, { requestId, endpoint, ...client });
+        response = json(500, errorBody(requestId, new URL(request.url).origin, 'server_error', 'unexpected error', errorId), requestId);
+    }
+    // Every answer, errors included: a browser hides a refused call's body otherwise (src/lib/api/cors.ts).
+    return withCors(response, request);
+}
+
+async function answerApiCall(
+    request: Request,
+    endpoint: ApiEndpoint,
+    run: (ctx: ApiCallContext) => Promise<ApiResult>,
+    opts: { binaryBodyMax?: number },
+    requestId: string,
+    client: ClientInfo,
+): Promise<Response> {
     const startedAt = Date.now();
 
     const origin = new URL(request.url).origin;
-    if (!(await getFeatureFlag('ENABLE_PUBLIC_API'))) {
+    const enabled = await readFeatureFlag('ENABLE_PUBLIC_API');
+    if (enabled === 'unreadable') {
+        // A D1 blip is not "the API is off": say so, and leave a trace.
+        const errorId = logger.error('api: could not read the API switch', null, { requestId, endpoint });
+        return json(503, errorBody(requestId, origin, 'temporarily_unavailable', 'the API could not start this call right now; retry in a minute', errorId), requestId, { 'Retry-After': '60' });
+    }
+    if (!enabled) {
+        logger.info('api: disabled', { requestId, endpoint });
         return json(404, errorBody(requestId, origin, 'api_disabled', 'the BuenAdoptante API is not enabled'), requestId);
     }
     const db = await getDb();
@@ -404,31 +481,49 @@ export async function handleApiCall(
     }
     const header = request.headers.get('authorization');
     const secret = bearerSecret(header);
-    const key = secret ? await findActiveKey(db, secret) : null;
-    if (!key) {
-        logger.info('api: unauthorized', { requestId, endpoint, hadHeader: !!header });
+    let found: ApiKeyRow | null;
+    try {
+        found = secret ? await findActiveKey(db, secret) : null;
+    } catch (e) {
+        // Was a bare 500 with no trace at all (2026-11-04 audit).
+        const errorId = logger.error('api: key lookup failed', e, { requestId, endpoint });
+        return json(503, errorBody(requestId, origin, 'temporarily_unavailable', 'we could not check this key right now; retry in a minute', errorId), requestId, { 'Retry-After': '60' });
+    }
+    if (!found) {
+        // Why, and which key (its 12-character prefix is not secret, src/lib/api/keys.ts) — never the key.
+        logger.info('api: unauthorized', {
+            requestId, endpoint, hadHeader: !!header,
+            reason: !header ? 'no_key' : !secret ? 'malformed' : unauthorizedMessage(header, secret, new URL(request.url).host).startsWith('this is a') ? 'wrong_environment' : 'unknown_or_revoked',
+            keyPrefix: secret ? secret.slice(0, 12) : null,
+        });
         return json(401, errorBody(requestId, origin, 'unauthorized', unauthorizedMessage(header, secret, new URL(request.url).host)), requestId,
             { 'WWW-Authenticate': 'Bearer' });
     }
-    let refusal: Awaited<ReturnType<typeof keyRefusal>>;
+    let access: KeyAccess;
     try {
-        refusal = await keyRefusal(db, key);
+        access = await keyAccess(db, found);
     } catch (e) {
         // Fail closed, but as a proper API answer: never let a call through we could not check.
-        const errorId = logger.error('api: access check failed', e, { requestId, endpoint, keyId: key.id });
+        const errorId = logger.error('api: access check failed', e, { requestId, endpoint, keyId: found.id });
         return json(503, errorBody(requestId, origin, 'temporarily_unavailable', 'we could not check this key right now; retry in a minute', errorId), requestId, { 'Retry-After': '60' });
     }
-    if (refusal) {
-        logger.info('api: key refused by access status', { requestId, endpoint, keyId: key.id, refusal });
-        return json(403, errorBody(requestId, origin, refusal, refusal === 'access_blocked'
-            ? 'this key\'s owner is blocked from the API; write to us if you think this is a mistake'
-            : 'API access for this key\'s owner is not approved; ask for access at /developers'), requestId);
+    if (access.refusal) {
+        logger.info('api: key refused by access status', { requestId, endpoint, keyId: found.id, refusal: access.refusal });
+        return json(403, errorBody(requestId, origin, access.refusal, 'this key\'s owner is blocked from the API; write to us if you think this is a mistake'), requestId);
     }
+    // First line of every authenticated call: one the worker never finishes (time / CPU limit,
+    // a crash) still leaves this trace (2026-11-04 audit). After the key check, so scanners
+    // without a key don't double the log — their refusals are logged already.
+    logger.info('api: call started', { requestId, endpoint, method: request.method, keyId: found.id, ...client });
+    // Before approval a self-created key works with the pending limits: every cap below
+    // (key, person, call ceiling, /me, RateLimit headers) reads the lowered values.
+    const key = access.limited ? withPendingCaps(found) : found;
 
     let bodyText = '';
     let bodyBytes: ArrayBuffer | null = null;
     const maxBody = opts.binaryBodyMax ?? MAX_REQUEST_BODY;
     let tooLarge = Number(request.headers.get('content-length') || 0) > maxBody;
+    let bodyUnreadable = false;
     if (request.method !== 'GET' && !tooLarge) {
         try {
             const read = await readBodyLimited(request, maxBody);
@@ -436,10 +531,12 @@ export async function handleApiCall(
             else if (opts.binaryBodyMax) { bodyBytes = read.buffer as ArrayBuffer; bodyText = ''; }
             else bodyText = new TextDecoder().decode(read);
         } catch (e) {
+            bodyUnreadable = true;
             logger.warn('api: request body unreadable', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });
         }
     }
     const ctx: ApiCallContext = {
+        client,
         db, key, scopes: scopesOf(key), requestId,
         origin,
         bodyText,
@@ -448,6 +545,7 @@ export async function handleApiCall(
         log: {},
         rowClaimed: false,
         dryRun: false,
+        limited: access.limited,
         query: new URL(request.url).searchParams,
     };
 
@@ -457,6 +555,8 @@ export async function handleApiCall(
     let errorId: string | null = null;
     try {
         if (tooLarge) throw new ApiError(413, 'payload_too_large', `request bodies are limited to ${maxBody} bytes`);
+        // Not "invalid JSON": the body never arrived whole (a dropped connection, usually).
+        if (bodyUnreadable) throw new ApiError(400, 'body_unreadable', 'the request body could not be read (the connection may have dropped); send the call again');
         await enforceCallCeiling(db, key);
         if (wantsDryRun(request.headers.get(DRY_RUN_HEADER))) {
             if (endpoint === 'void') throw new ApiError(422, 'dry_run_not_allowed', 'a void cannot be a dry run');
@@ -473,10 +573,11 @@ export async function handleApiCall(
     } catch (e) {
         if (e instanceof ApiError) {
             status = e.status;
-            body = errorBody(requestId, origin, e.code, e.message, undefined, e.extra);
+            errorId = e.errorId ?? null;
+            body = errorBody(requestId, origin, e.code, e.message, e.errorId, e.extra);
             headers = { ...headers, ...e.headers };
         } else {
-            errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context });
+            errorId = logger.error('api: request failed', e, { requestId, keyId: key.id, owner: key.ownerEmail, endpoint, mode: ctx.log.mode, context: ctx.log.context, recordId: ctx.log.recordId, profileCreated: ctx.log.profileCreated });
             status = 500;
             body = errorBody(requestId, origin, 'server_error', 'unexpected error', errorId);
         }
@@ -490,13 +591,21 @@ export async function handleApiCall(
             const keyCap = mode === 'exact' ? key.dailyCapExact : key.dailyCapFuzzy;
             // Counted when it ran (not refused, not a replay) — the same rule as searchesToday.
             const counted = status < 400 && ctx.log.outcome !== 'replayed';
-            const { limit, remaining } = ctx.caps?.mode === mode ? remainingFrom(ctx.caps, keyCap, counted) : await remainingToday(db, key, mode);
+            const { limit, remaining } = ctx.caps?.mode === mode ? remainingFrom(ctx.caps, keyCap, counted) : await remainingToday(db, key, mode, access.limited);
             headers = { ...headers, 'RateLimit-Limit': String(limit), 'RateLimit-Remaining': String(remaining), 'RateLimit-Reset': String(secondsToUtcMidnight()) };
         } catch (e) {
             logger.warn('api: rate-limit headers skipped', { requestId, keyId: key.id, error: e instanceof Error ? e.message : String(e) });
         }
     }
-    logger.info('api: call', { requestId, keyId: key.id, endpoint, mode: ctx.log.mode, outcome: ctx.log.outcome, status, errorId, durationMs: Date.now() - startedAt });
+    // One line per finished call, groupable by what went wrong (2026-11-04 audit: errorCode lived only in D1).
+    logger.info('api: call', {
+        requestId, keyId: key.id, endpoint, mode: ctx.log.mode, outcome: ctx.log.outcome, status, errorId,
+        errorCode: status >= 400 ? ((body.error as { code?: string } | undefined)?.code ?? null) : null,
+        // Not the externalId: partner-chosen free text (it could be a DNI or an email) — it stays in D1.
+        dryRun: ctx.dryRun, recordId: ctx.log.recordId ?? null,
+        profileCreated: !!ctx.log.profileCreated, degraded: ctx.log.degraded ?? 0,
+        durationMs: Date.now() - startedAt, ...client,
+    });
 
     await runAfterResponse('api.touchKey', async () => {
         await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, key.id));

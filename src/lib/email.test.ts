@@ -5,8 +5,8 @@
  * duration to what's passed in, and pin the wording that renders it.
  */
 
-import { describe, it, expect } from 'vitest';
-import { buildOtpEmail, formatDuration } from './email';
+import { describe, it, expect, vi } from 'vitest';
+import { buildOtpEmail, formatDuration, sendEmailViaResend } from './email';
 import { OTP_TTL_MS } from './otp';
 
 const TTL_MINUTES = Math.round(OTP_TTL_MS / 60_000);
@@ -54,5 +54,20 @@ describe('buildOtpEmail', () => {
         const unknown = buildOtpEmail('123456', 'de' as 'es', 60);
         expect(unknown.subject).toBe(buildOtpEmail('123456', 'es', 60).subject);
         expect(unknown.text).toContain('1 hora');
+    });
+});
+
+describe('sendEmailViaResend reply_to', () => {
+    const base = { apiKey: 'k', from: 'a@b.c', to: 'x@y.z', subject: 's', html: 'h', text: 't' };
+    const sentBody = async (extra: { replyTo?: string }) => {
+        const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+        vi.stubGlobal('fetch', fetchMock);
+        await sendEmailViaResend({ ...base, ...extra });
+        vi.unstubAllGlobals();
+        return JSON.parse((fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body);
+    };
+    it('sends reply_to only when replyTo is given', async () => {
+        expect((await sentBody({ replyTo: 'me@x.org' })).reply_to).toBe('me@x.org');
+        expect(await sentBody({})).not.toHaveProperty('reply_to');
     });
 });

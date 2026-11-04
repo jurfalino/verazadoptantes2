@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminAsync } from "@/config/admins";
 import { deleteAdopterRecords } from "@/app/actions/_recordWrite";
+import { closeRequestsForDeletedAdopter } from "@/lib/mergeRequestClose";
 
 export async function POST(request: NextRequest) {
     let adopterId: string | undefined;
@@ -63,6 +64,15 @@ export async function POST(request: NextRequest) {
         await db.delete(duplicateCandidates).where(sql`${duplicateCandidates.adopter1Id} = ${adopterId} OR ${duplicateCandidates.adopter2Id} = ${adopterId}`);
         await db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId));
         await db.delete(adopters).where(eq(adopters.id, adopterId));
+        await closeRequestsForDeletedAdopter(db, adopterId, session.user.email);
+        // Households as profiles: once the row is gone, the person leaves the households they lived in
+        // (mirrors deleteOwnAdopter). A failure only leaves rows every reader already skips.
+        try {
+            const { dropMembershipsOfDeletedProfile } = await import('@/lib/households');
+            await dropMembershipsOfDeletedProfile(db, adopterId);
+        } catch (e) {
+            logger.warn('delete-adopter: household memberships of the deleted profile not removed (readers skip them)', { adopterId, actorEmail: session.user.email, error: e instanceof Error ? e.message : String(e) });
+        }
 
         logger.info('Adopter deleted successfully', { adopterId, deletedBy: session.user.email });
 

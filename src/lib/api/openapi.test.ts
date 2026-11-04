@@ -1,8 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect, vi } from 'vitest';
 import { buildOpenApi, examplesGuide, shownScenarios } from './openapi';
 import { exactScenarios, isExampleData, REQUEST_EXAMPLES } from './docScenarios';
 import { API_ERROR_CODES, checkSearchRules, exactResponseSchema, saveActionOf, searchRequestSchema } from './schemas';
 import { canonicalJson, dryRunAllowed, unauthorizedMessage } from './handler';
+
+// These tests pick staging or production by hostname, which is how an unstamped build decides
+// (src/lib/api/keys.ts environmentForHost). Never let a CI build's APP_ENVIRONMENT leak in —
+// at load time, since some documents below are built while the file is collected.
+vi.stubEnv('APP_ENVIRONMENT', '');
+afterAll(() => { vi.unstubAllEnvs(); });
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const STAGING = 'https://staging.buenadoptante.org';
@@ -59,6 +65,28 @@ describe('buildOpenApi', () => {
         // Distinct externalIds: pasting two examples is never a "reused" conflict.
         const ids = Object.values(examples).map(e => e.value.activity?.externalId).filter(Boolean);
         expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('exact answers may say matchedOn social (additive value, documented); nameMatchedAs has no document value', () => {
+        const exact = search.responses['200'].content['application/json'].schema.oneOf[0];
+        const profile = exact.properties.profile;
+        expect(profile.properties.matchedOn.items.enum).toEqual(['email', 'phone', 'documentId', 'social']);
+        expect(profile.properties.matchedOn.description).toMatch(/social/);
+        expect(profile.properties.nameMatchedAs.enum).toEqual(['profile', 'alias', 'household_member']);
+        expect(profile.properties.nameMatchedAs.description).not.toMatch(/document/);
+        const candidate = exact.properties.candidates.items.properties.nameMatchedAs;
+        expect(candidate.enum ?? candidate.anyOf?.[0]?.enum).toEqual(['profile', 'alias', 'household_member']);
+        expect(search.requestBody.content['application/json'].schema.properties.person.properties.socials.description).toMatch(/exact mode an account counts as an identifier/);
+        const guide: string = doc.info.description;
+        expect(guide).toContain('`social`');
+        expect(guide).not.toContain('"document"');
+        expect(guide).not.toMatch(/\| `socials` .*solo la usa fuzzy/);
+        expect(exactResponseSchema.safeParse({
+            requestId: 'r', mode: 'exact', match: 'found',
+            profile: { profileId: 'p', url: 'u', rating: null, ratingLevel: 0, ratingLabel: 'not_rated', matchedOn: ['social', 'documentId'], nameMatchedAs: 'profile', flags: [], alerts: [], records: {}, lastRecordAt: null, createdAt: null, registeredByYourRescue: false },
+            risk: { worstRating: { rating: null, ratingLevel: 0, ratingLabel: 'not_rated' }, flags: [], alerts: [], profilesMatched: 1 },
+            saved: { action: 'added_to_profile' },
+        }).success).toBe(true);
     });
 
     it('the dry-run header is not pre-filled into generated requests (no enum/const/example)', () => {
@@ -174,6 +202,15 @@ describe('checkSearchRules', () => {
         const problems = checkSearchRules(parsed);
         expect(problems.map(p => p.code)).toEqual(expect.arrayContaining(['invalid_email', 'invalid_phone', 'full_name_required', 'external_id_required', 'species_required']));
         expect(problems.find(p => p.code === 'invalid_email')!.field).toBe('person.email');
+    });
+    it('exact: a social account is an identifier; a display name is not', () => {
+        const rules = (socials: Array<{ platform: string; handle: string }>) => checkSearchRules(searchRequestSchema.parse({
+            mode: 'exact', person: { fullName: 'Ana Pérez', socials }, activity: { activityType: 'adoption_request', externalId: 'x' },
+        })).map(p => p.code);
+        expect(rules([{ platform: 'instagram', handle: '@ana.perez' }])).toEqual([]);
+        expect(rules([{ platform: 'other', handle: 'https://www.tiktok.com/@ana.perez' }])).toEqual([]);
+        expect(rules([{ platform: 'facebook', handle: 'Ana Perez' }])).toEqual(['exact_requires_name_and_identifier']);
+        expect(rules([])).toEqual(['exact_requires_name_and_identifier']);
     });
     it('an exact call without activity points to fuzzy', () => {
         const parsed = searchRequestSchema.parse({ mode: 'exact', person: { fullName: 'Ana Pérez', email: 'ana@x.com' } });

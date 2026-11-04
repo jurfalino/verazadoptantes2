@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type BrowserContext } from '@playwright/test';
-import { execSync } from 'child_process';
+import { rows as queryD1 } from './db';
 
 /**
  * 2026-09-30 product decision: applicants (form submissions) of a team
@@ -77,16 +77,6 @@ async function serverPayload(ctx: BrowserContext, path: string): Promise<string>
     return `${html}\n${rsc}`;
 }
 
-/** Read the local D1 dev DB the dev server writes to (same helper as adoption-docs.spec.ts). */
-function queryD1(sql: string): Array<Record<string, unknown>> {
-    const out = execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { cwd: process.cwd(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-    const wrapped = JSON.parse(out);
-    const first = Array.isArray(wrapped) ? wrapped[0] : wrapped;
-    return first?.results ?? [];
-}
 const isD1Null = (v: unknown) => v === null || v === 'null';
 
 test.describe('Team applicants: org-mates see the applicants of team animals', () => {

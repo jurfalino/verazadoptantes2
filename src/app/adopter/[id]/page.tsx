@@ -7,19 +7,25 @@ import { getFormSubmissionPrefill } from '@/app/actions/formSubmission';
 import { getAdopterPiiContext } from '@/app/actions/piiAccess';
 import { replaySearchMatchGrants } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
+import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 import { getFeatureFlag } from '@/config/features';
 import { AdopterProfileV2 } from '@/components/AdopterProfileV2';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
+import { readProfileHouseholds, EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/lib/profileHouseholds';
+import { profileIdentityView, undoableRenameId, type ProfileIdentityView } from '@/domain/profileIdentity';
+import { deserializeContactEntries } from '@/lib/contactEntries';
+import { profileReturnPath } from '@/domain/profileReturnPath';
 
 export default async function AdopterPage({
     params,
     searchParams,
 }: {
     params: Promise<{ id: string }>;
-    searchParams: Promise<{ fromForm?: string; q?: string }>;
+    searchParams: Promise<{ fromForm?: string; q?: string; [key: string]: string | string[] | undefined }>;
 }) {
     const { id } = await params;
-    const { fromForm, q } = await searchParams;
+    const allSearchParams = await searchParams;
+    const { fromForm, q } = allSearchParams;
     const isNew = id === 'create';
 
     // Batch 1a: Auth (mandatory — failure means redirect to login)
@@ -34,7 +40,7 @@ export default async function AdopterPage({
         ]);
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
-        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/adopter/${id}`)}`);
+        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(profileReturnPath(id, allSearchParams))}`);
     }
 
     // Batch 1a.5: Post-signin search-match replay. When a user arrives from
@@ -77,6 +83,9 @@ export default async function AdopterPage({
     let dupCandidates: any[] = [];
     let piiContext: AdopterPiiContext | null = null;
     let deletionRequested = false;
+    let households: ProfileHouseholds = EMPTY_PROFILE_HOUSEHOLDS;
+    // Known on the server, so the section never flashes the old free-text field first.
+    let householdsEnabled = false;
 
     if (!isNew) {
         // Per-fetch fallback: if any single query throws (e.g. transient D1 outage), the page
@@ -91,8 +100,15 @@ export default async function AdopterPage({
             });
             return def;
         };
-        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested] = await Promise.all([
-            getAdopter(id).catch(fallback('getAdopter', null)),
+        // One read of the adopter: the household read reuses it (the gift permission needs the owner).
+        const adopterRead = getAdopter(id).catch(fallback('getAdopter', null));
+        // Households as profiles: only while ENABLE_HOUSEHOLD_MEMBERS is on (the section is hidden otherwise).
+        const householdsFlag = getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS').catch(fallback<boolean>('ENABLE_HOUSEHOLD_MEMBERS', false));
+        const householdsRead = householdsFlag
+            .then(on => { householdsEnabled = on; return on ? readProfileHouseholds(currentUser, id, adopterRead) : EMPTY_PROFILE_HOUSEHOLDS; })
+            .catch(fallback<ProfileHouseholds>('readProfileHouseholds', EMPTY_PROFILE_HOUSEHOLDS));
+        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, households] = await Promise.all([
+            adopterRead,
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
             getImages(id).catch(fallback<any[]>('getImages', [])),
@@ -104,6 +120,8 @@ export default async function AdopterPage({
             getDuplicateCandidates(id).catch(fallback<any[]>('getDuplicateCandidates', [])),
             getAdopterPiiContext(id).catch(fallback<AdopterPiiContext | null>('getAdopterPiiContext', null)),
             hasPendingDeletionRequest(id).catch(fallback<boolean>('hasPendingDeletionRequest', false)),
+            // Every household this profile is in, each member's live summary masked for this viewer (D46).
+            householdsRead,
         ]);
     } else {
         availableAnimals = await getAvailableAnimals().catch(e => {
@@ -121,6 +139,34 @@ export default async function AdopterPage({
     // failure; a 404 is the correct, safe response for both (far better than
     // silently rendering a blank "create" page for a bogus URL).
     if (!isNew && !adopter) {
+        // A profile merged into another one sends its old link to the survivor
+        // (following chains, ignoring undone merges — src/domain/mergeRedirect.ts).
+        // A temporary redirect on purpose: a merge can be undone, and a cached
+        // permanent one would keep sending people away from the restored profile.
+        let survivorId: string | null = null;
+        try {
+            survivorId = await resolveMergedAdopterId(id);
+        } catch (e) {
+            logger.warn('adopter page: merge redirect lookup failed, serving 404', {
+                adopterId: id, userEmail: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+        if (survivorId) {
+            const qs = new URLSearchParams();
+            for (const [k, v] of Object.entries(allSearchParams)) {
+                // The edge runtime folds the route param into searchParams;
+                // carrying it over would append the OLD id as `?id=` to the survivor's URL.
+                if (k === 'id' && v === id) continue;
+                if (Array.isArray(v)) v.forEach(x => qs.append(k, x));
+                else if (v !== undefined) qs.append(k, v);
+            }
+            // D32: the survivor shows «Este perfil se combinó con otro» when it is reached through an absorbed id.
+            qs.set('merged', id);
+            const query = qs.toString();
+            logger.info('adopter page: redirecting merged profile to its survivor', { adopterId: id, survivorId, userEmail: currentUser });
+            redirect(`/adopter/${encodeURIComponent(survivorId)}${query ? `?${query}` : ''}`);
+        }
         notFound();
     }
 
@@ -176,7 +222,17 @@ export default async function AdopterPage({
             }
         })(),
     ]);
-    const canViewAudit = isModeratorOrAdmin || isOrgMateOfOwner;
+    const isOwnerViewer = !isNew && !!currentUser && !!adopter?.addedBy && adopter.addedBy.trim().toLowerCase() === currentUser.trim().toLowerCase();
+    // The owner sees their profile's history too: «Deshacer» on a rename lives there (households as profiles).
+    const canViewAudit = isModeratorOrAdmin || isOrgMateOfOwner || isOwnerViewer;
+    // Name / age / «Menor de edad» for the header, and the one rename «Deshacer» is offered on
+    // (owner team, admin or moderator — the server checks again).
+    const identity: ProfileIdentityView | null = !isNew && adopter
+        ? profileIdentityView(adopter, deserializeContactEntries(adopter.contactEntries))
+        : null;
+    const renameUndoId = !isNew && adopter && (isOwnerViewer || isOrgMateOfOwner || isModeratorOrAdmin)
+        ? undoableRenameId(history, adopter.name)
+        : null;
     // "Removal requested" banner: only the record owner + admins/moderators (the
     // people who act on it) see it — not unrelated viewers.
     const showDeletionRequested = deletionRequested && (isModeratorOrAdmin || (!!currentUser && adopter?.addedBy === currentUser));
@@ -223,6 +279,7 @@ export default async function AdopterPage({
             isAdmin={isAdmin}
             canViewAudit={canViewAudit}
             isOrgMateOfOwner={isOrgMateOfOwner}
+            isModeratorOrAdmin={isModeratorOrAdmin}
             attribution={attribution}
             adoptionConfig={adoptionConfig}
             duplicateCandidates={dupCandidates}
@@ -232,7 +289,12 @@ export default async function AdopterPage({
             showDeletionRequested={showDeletionRequested}
             pinnedVisitIntent={pinnedVisitIntent}
             originLabels={originLabels}
+            mergedFrom={typeof allSearchParams.merged === 'string' && allSearchParams.merged ? allSearchParams.merged : null}
             interviewEnabled={interviewEnabled}
+            households={households}
+            householdsEnabled={householdsEnabled}
+            identity={identity}
+            renameUndoId={renameUndoId}
         />
     );
 }

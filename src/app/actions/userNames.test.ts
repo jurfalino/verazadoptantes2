@@ -22,9 +22,11 @@ const USERS: Record<string, string | null> = {
     'beto@example.com': 'Beto',
     'caro@example.com': 'Caro',
     'noname@example.com': null,
+    'dev@example.com': 'Dev (dev@example.com)',
+    'ig@example.com': 'Patitas @refugio',
 };
 const many = (n: number) => Array.from({ length: n }, (_, i) => `user${i}@example.com`);
-for (const e of many(250)) USERS[e] = `Name ${e}`;
+many(250).forEach((e, i) => { USERS[e] = `Name ${i}`; });
 
 const dialect = new SQLiteSyncDialect();
 const statements: Array<{ sql: string; params: unknown[] }> = [];
@@ -66,6 +68,10 @@ describe('resolveUserNames (D1)', () => {
         expect(statements).toHaveLength(1);
         expect(statements[0].params).toEqual(['ana@example.com', 'beto@example.com']);
         expect(statements[0].sql).toMatch(/in \(\?, \?\)/i);
+    });
+
+    it('a «name» carrying an email address is not a name (audit C2): omitted, so callers show the handle', async () => {
+        expect(await resolveUserNames(['dev@example.com', 'beto@example.com', 'ig@example.com'])).toEqual({ 'beto@example.com': 'Beto', 'ig@example.com': 'Patitas @refugio' });
     });
 
     it('omits users without a name and unknown emails', async () => {

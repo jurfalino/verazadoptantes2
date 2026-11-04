@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
 import { dismissCountryBanner } from './helpers';
+import { execD1 } from './db';
 
 /**
  * ENABLE_PINNED_VISIT_INTENT pins the "¿Qué pasó con X?" card to the bottom of
@@ -12,13 +12,6 @@ import { dismissCountryBanner } from './helpers';
  */
 
 const PROFILE = '/adopter/test-adopter-1';
-
-function execD1(sql: string): string {
-    return execSync(
-        `npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`,
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-}
 
 async function cardBox(page: Page) {
     const card = page.locator('.visit-intent-card');

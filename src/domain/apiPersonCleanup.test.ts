@@ -90,6 +90,15 @@ describe('cleanApiPerson', () => {
         expect(r.dropped.map(d => d.reason)).toEqual(['no_account', 'no_account']);
     });
 
+    it('a website in a social field is not the person\'s account', () => {
+        const r = cleanApiPerson({ ...base, email: 'ana@example.com', socials: [
+            { platform: 'facebook', handle: 'https://adopciones.catpuccino.org' }, { platform: 'instagram', handle: 'www.mirefugio.org.ar' },
+            { platform: 'facebook', handle: 'https://facebook.com/ana.perez' },
+        ] });
+        expect(r.person.socials).toEqual([{ platform: 'facebook', handle: 'https://facebook.com/ana.perez' }]);
+        expect(r.dropped.map(d => d.reason)).toEqual(['not_a_social_profile', 'not_a_social_profile']);
+    });
+
     it('leaves a clean person untouched', () => {
         const person = { ...base, email: 'ana@example.com', phone: '+54 9 11 4455-6677' };
         const r = cleanApiPerson(person);

@@ -177,9 +177,9 @@ export default function RecordTypeGuidance({
                 Tailwind classes used here all have [data-theme="dark"] remaps in
                 globals.css — bg-amber-50 → status-warning-bg, border-amber-200 →
                 status-warning-border, text-amber-700/800 → readable on the dark
-                amber-tinted bg. text-amber-900 is intentionally avoided since
-                it has no dark-theme remap and renders as near-black on the
-                tinted bg (was the v2.14.9-4 contrast bug; fixed in v2.14.9-5). */}
+                amber-tinted bg. (text-amber-900 had no dark remap and rendered
+                near-black on the tinted bg — the v2.14.9-4 contrast bug. It is
+                remapped now, but only for use on amber surfaces.) */}
             {alerts.map((a, i) => (
                 <div
                     key={i}

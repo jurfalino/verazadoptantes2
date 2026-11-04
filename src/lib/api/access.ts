@@ -1,9 +1,10 @@
 /**
- * API access by admin approval (Jon, 2026-10-17). A person asks at /developers
- * (after accepting the terms) — with the tool and what it is for; an admin
- * approves, denies or blocks in Admin → API. Only an approved person (or an
- * admin) creates keys. Blocking revokes every key they hold and refuses new
- * ones, admin-issued included. Its own table, not a user role: a rescuer keeps
+ * API access by admin approval (Jon, 2026-10-17; 2026-10-22). A person creates
+ * keys at /developers right after accepting the terms; their first key files
+ * the request (tool and what it is for). Until an admin approves, their own
+ * keys run at PENDING_APPROVAL_CAPS; approval raises them to the self-service
+ * limits, a deny keeps them low. Blocking revokes every key they hold and
+ * refuses new ones, admin-issued included. Its own table, not a user role: a rescuer keeps
  * being a viewer / contributor / admin. Server-only.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -39,8 +40,14 @@ export async function getAccess(db: Db, email: string): Promise<AccessView> {
     };
 }
 
-/** May this person create keys? Admins always; otherwise an approved request. */
+/** May this person create keys? Anyone not blocked (Jon, 2026-10-22); until approved, with the pending limits. */
 export async function canCreateKeys(db: Db, email: string): Promise<boolean> {
+    if (await isAdminAsync(email)) return true;
+    return (await getAccess(db, email)).status !== 'blocked';
+}
+
+/** Are this person's own keys at the full self-service limits? Admins always; otherwise an approved request. */
+export async function hasFullLimits(db: Db, email: string): Promise<boolean> {
     if (await isAdminAsync(email)) return true;
     return (await getAccess(db, email)).status === 'approved';
 }
@@ -100,18 +107,35 @@ export async function isBlocked(db: Db, email: string): Promise<boolean> {
     return (await getAccess(db, email)).status === 'blocked';
 }
 
-export type KeyRefusal = 'access_blocked' | 'access_not_approved';
+/**
+ * Daily limits of a key its owner created at /developers while their access is
+ * not approved (Jon, 2026-10-22: get a key at once, an admin approval raises the
+ * limit). Across all their own keys, not per key. Approved → SELF_SERVICE_CAPS.
+ */
+export const PENDING_APPROVAL_CAPS = { exact: 25, fuzzy: 10 } as const;
+
+export interface KeyAccess {
+    /** A blocked person's keys stop at once (checked on every call). */
+    refusal: 'access_blocked' | null;
+    /** A self-created key whose owner is not approved (nor an admin): PENDING_APPROVAL_CAPS apply. */
+    limited: boolean;
+}
 
 /**
  * Checked on EVERY API call, not only when a key is made (review 2026-10-17):
  * a blocked person's keys stop at once, even one created in a race with the
- * block; a key the person made themselves needs their access still approved
- * (a later deny turns it off). Admin-issued keys answer only to a block.
+ * block. A key the person made themselves works before approval, with the
+ * pending limits (a deny keeps them there). Admin-issued keys answer only to a block.
  */
-export async function keyRefusal(db: Db, key: { ownerEmail: string; createdBy: string | null }): Promise<KeyRefusal | null> {
+export async function keyAccess(db: Db, key: { ownerEmail: string; createdBy: string | null }): Promise<KeyAccess> {
     const status = (await getAccess(db, key.ownerEmail)).status;
-    if (status === 'blocked') return 'access_blocked';
-    // Strict: a failed admin lookup throws (→ 503) instead of reading as "not admin" (→ a wrong 403).
-    if (key.createdBy === key.ownerEmail && status !== 'approved' && !(await isAdminAsyncStrict(key.ownerEmail))) return 'access_not_approved';
-    return null;
+    if (status === 'blocked') return { refusal: 'access_blocked', limited: false };
+    // Strict: a failed admin lookup throws (→ 503) instead of reading as "not admin" (→ wrongly limited).
+    const limited = key.createdBy === key.ownerEmail && status !== 'approved' && !(await isAdminAsyncStrict(key.ownerEmail));
+    return { refusal: null, limited };
+}
+
+/** The key as the limits see it: a limited key's daily caps lowered to the pending ones. Pure. */
+export function withPendingCaps<K extends { dailyCapExact: number; dailyCapFuzzy: number }>(key: K): K {
+    return { ...key, dailyCapExact: Math.min(key.dailyCapExact, PENDING_APPROVAL_CAPS.exact), dailyCapFuzzy: Math.min(key.dailyCapFuzzy, PENDING_APPROVAL_CAPS.fuzzy) };
 }

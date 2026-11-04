@@ -5,10 +5,9 @@ import { activityOrigin } from '@/domain/recordOrigin';
 import { contractHref } from '@/lib/contractLink';
 import FormAnswers from './FormAnswers';
 import { useState, useEffect, type ComponentType } from 'react';
+import { ClipboardList, Pencil } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
-import { StarIcon } from '@/components/StarIcon';
-import { getRatingColors } from '@/lib/ratingColors';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { getAdoptionDeleteImpact } from '@/app/actions/adoptions';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -22,6 +21,8 @@ import { actorLabel } from '@/lib/userDisplay';
 import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
+import { ActivityCountsLine } from '@/components/ActivityCountsLine';
+import { countActivity } from '@/domain/activityCounts';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 
 interface Adoption {
@@ -102,7 +103,7 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
     }
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, editFormComponent: EditComponent }: { adoptions: Adoption[], adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, avgRating = null, editFormComponent: EditComponent }: { adoptions: Adoption[], avgRating?: number | null, adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { formatShortDate } = useDateFormat();
     const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
@@ -124,15 +125,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     };
 
     // G — Activity summary above the timeline
-    const summaryCounts = initialAdoptions.reduce((acc, a) => {
-        const rt = a.recordType || 'adoption';
-        acc[rt] = (acc[rt] || 0) + 1;
-        return acc;
-    }, {} as Record<string, number>);
-    const ratedAdoptions = initialAdoptions.filter(a => a.rating != null && Number(a.rating) > 0);
-    const avgRating = ratedAdoptions.length > 0
-        ? (ratedAdoptions.reduce((s, a) => s + Number(a.rating), 0) / ratedAdoptions.length)
-        : null;
+    // The same rule (and words) as each person in «Familiares / Convivientes».
+    const summaryCounts = countActivity(initialAdoptions);
 
     // Check for editAdoption query param to auto-expand
     const editAdoptionParam = searchParams.get('editAdoption');
@@ -224,7 +218,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
     if (initialAdoptions.length === 0) {
         return (
             <div className="py-6 text-center">
-                <div className="text-3xl mb-2 opacity-60">📋</div>
+                {/* A lucide icon, not an emoji (design guide §3.2; audit C6). */}
+                <ClipboardList className="w-8 h-8 mx-auto mb-2 text-stone-400" strokeWidth={1.5} aria-hidden="true" />
                 <p className="text-sm text-stone-500 font-medium">{t('adoption.no_activity') || 'No hay actividad registrada aún.'}</p>
                 <p className="text-xs text-stone-400 mt-1">{t('adoption.no_activity_hint') || 'Registrá una adopción, solicitud o nota para comenzar.'}</p>
             </div>
@@ -238,31 +233,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
 
             {/* G — Activity summary: counts + avg rating */}
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600">
-                {summaryCounts.adoption > 0 && (
-                    <span><strong className="text-teal-700">{summaryCounts.adoption}</strong> {t('stats.adoptions') || 'adopciones'}</span>
-                )}
-                {summaryCounts.adoption_request > 0 && (
-                    <span><strong className="text-sky-700">{summaryCounts.adoption_request}</strong> {t('stats.requests') || 'solicitudes'}</span>
-                )}
-                {summaryCounts.observation > 0 && (
-                    <span><strong className="text-amber-700">{summaryCounts.observation}</strong> {t('stats.observations') || 'observaciones'}</span>
-                )}
-                {summaryCounts.follow_up > 0 && (
-                    <span><strong className="text-violet-700">{summaryCounts.follow_up}</strong> {t('stats.follow_ups') || 'seguimientos'}</span>
-                )}
-                {summaryCounts.returned_pet > 0 && (
-                    <span><strong className="text-rose-700">{summaryCounts.returned_pet}</strong> {t('stats.returns') || 'devoluciones'}</span>
-                )}
-                {summaryCounts.foster > 0 && (
-                    <span><strong className="text-indigo-700">{summaryCounts.foster}</strong> {t('stats.fosters') || 'tránsitos'}</span>
-                )}
-                {avgRating != null && (
-                    <span className="ml-auto inline-flex items-center gap-1 font-semibold">
-                        <StarIcon className={`w-3 h-3 ${getRatingColors(avgRating).text}`} />
-                        <span>{avgRating.toFixed(1)}</span>
-                        <span className="font-normal text-stone-500">{t('stats.rating_avg_short') || 'promedio'}</span>
-                    </span>
-                )}
+                <ActivityCountsLine counts={summaryCounts} />
+                {/* The person's rating: the one rating pill (Jon, 2026-10-28). */}
+                <span className="ml-auto"><RatingBadge rating={avgRating} /></span>
             </div>
 
             <div id="adoption-history" className="relative pb-6 scroll-mt-4">
@@ -356,17 +329,10 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                 title={canEdit ? t('common.edit') : undefined}
                             >
                                 <div className="p-3 md:p-4">
-                                    {/* A+B — 3-column header: Rating | Verb+Animal | Date */}
+                                    {/* Header: Verb+Animal | Date. The record's own rating is the one rating pill, on its
+                                        own line under the verb (Jon, 2026-10-28: one look everywhere — the labelled pill
+                                        doesn't fit the old 48px rating column at 390). */}
                                     <div className="flex items-start gap-2 md:gap-3">
-                                        {/* Rating column — fixed-width slot creates vertical scan axis */}
-                                        <div className="flex-shrink-0 w-12 md:w-14 pt-0.5 flex justify-center">
-                                            {adoption.rating != null && adoption.rating > 0 ? (
-                                                <RatingBadge rating={adoption.rating} size="sm" />
-                                            ) : (
-                                                <span className="text-stone-300 text-xs select-none" aria-hidden>—</span>
-                                            )}
-                                        </div>
-
                                         {/* Verb + animal — fluid middle. Record-type icon now lives in
                                             the timeline beacon to the left of the card; the verb leads
                                             the column directly. */}
@@ -410,8 +376,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                                     </a>
                                                 )}
                                                 {canEdit && (
-                                                    <span className="text-teal-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center ml-1.5 align-middle">
-                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                    // Always visible, like every edit pencil (fix round 2, item 7): the row opens the editor.
+                                                    <span className="text-teal-600 inline-flex items-center ml-1.5 align-middle">
+                                                        <Pencil className="w-4 h-4" aria-hidden="true" />
                                                     </span>
                                                 )}
                                             </p>
@@ -425,6 +392,9 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             {dateStr}
                                         </div>
                                     </div>
+                                    {adoption.rating != null && adoption.rating > 0 && (
+                                        <div className="mt-1.5" data-testid="record-rating"><RatingBadge rating={adoption.rating} /></div>
+                                    )}
 
                                     {/* Animal details (sex, age, neutered, color, microchip) */}
                                     {(adoption.estimatedBirthDate || adoption.age || adoption.sex || adoption.color || adoption.microchip || adoption.neutered != null) && (

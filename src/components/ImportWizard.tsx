@@ -12,14 +12,13 @@ import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
-import { findAdopters } from '@/app/actions';
-import type { DuplicateMatch } from '@/app/actions';
-import { confidenceBand } from '@/lib/scoring';
+import { matchImportRow, addHouseholdPerson, getMatchContext } from '@/app/actions';
+import type { MatchContext } from '@/app/actions';
+import type { JudgedMatch } from '@/app/actions';
 import type { ExtractedAdopterData } from '@/lib/gemini';
 import ContactEntriesInput from '@/components/ContactEntriesInput';
-import { buildContactEntries, contactEntriesToBlob, type ContactEntry } from '@/lib/contactEntries';
+import { buildContactEntries, contactEntriesToBlob, contactEntriesToIdentity, CONTACT_ENTRIES_FULL, type ContactEntry } from '@/lib/contactEntries';
 import { humanMatchSentence } from '@/lib/importMatch';
-import { IMPORT_FLAGS } from '@/domain/constants';
 import { dedupeImages } from '@/domain/facebookExtraction';
 import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, SparkIcon, SaveIcon } from '@/components/ui/Glyph';
 
@@ -29,21 +28,24 @@ import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, S
  */
 const MAX_FETCHED_IMAGES = 12;
 
-/**
- * Style guide §2.1, Standard × Primary — kept as a constant so the wizard's step
- * CTAs cannot drift apart again. `min-h-[44px]` is the §1.5 tap-target floor,
- * which these buttons sat 4px under at `py-2.5`.
- * The component form lives in `components/ui/Button.tsx`; see the 2026-09-04
- * audit for the plan to migrate the remaining inline buttons onto it.
- */
-const BTN_PRIMARY =
-    'inline-flex items-center justify-center gap-2 min-h-[44px] py-3 px-6 rounded-xl ' +
-    'font-bold text-sm bg-teal-600 text-white shadow-sm transition-all duration-200 ' +
-    'hover:bg-teal-700 hover:shadow-md focus:outline-none focus-visible:ring-2 ' +
-    'focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed';
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
-import { userFacingMessage } from '@/lib/errorMessage';
+import { handledAsStale } from '@/lib/errorMessage';
+import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
+import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
+import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
+import { ImportRelativeCheck, type RelativeChoice } from '@/components/import/ImportRelativeCheck';
+import { fill, householdErrorCopy } from '@/lib/householdCopy';
+import type { HouseholdContactInput } from '@/app/actions/households';
+import DatePicker from '@/components/ui/DatePicker';
+import MatchCompare from '@/components/MatchCompare';
+import { MatchCard } from '@/components/MatchCardParts';
+import { buttonClasses } from '@/components/ui/Button';
+
+/** The matrix's Standard × Primary (components/ui/Button) for the wizard's step CTAs — not a style of its own. */
+const BTN_PRIMARY = buttonClasses({ variant: 'primary' });
+import StickyActions from '@/components/import/StickyActions';
+import MediaPicker from '@/components/import/MediaPicker';
 
 interface PersonMatch {
     id: string;
@@ -52,6 +54,8 @@ interface PersonMatch {
     sourceUrl?: string | null;
     thumbnail?: string | null;
     confidence: 'high' | 'medium' | 'low';
+    /** Search score — shown to admins only. */
+    score?: number;
     /**
      * Raw token-type signals from the duplicate-detection backend (e.g.
      * 'phone_suffix', 'name_word', 'source_url'). The wizard converts these
@@ -60,25 +64,8 @@ interface PersonMatch {
      * locale or used to drive non-text affordances later.
      */
     matchTypes: string[];
-}
-
-/** Render the confidence-band pill — themed colours only (theme-safe). */
-function MatchBandPill({ band, t }: { band: 'high' | 'medium' | 'low'; t: (key: string) => string }) {
-    const styles = band === 'high'
-        ? 'bg-rose-100 text-rose-900 border-rose-200'
-        : band === 'medium'
-            ? 'bg-amber-100 text-amber-900 border-amber-200'
-            : 'bg-stone-100 text-stone-700 border-stone-200';
-    const label = band === 'high'
-        ? t('import.match_band_high')
-        : band === 'medium'
-            ? t('import.match_band_medium')
-            : t('import.match_band_low');
-    return (
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${styles}`}>
-            {label}
-        </span>
-    );
+    /** Their rating / alerts / «Menor de edad» and household line for the card's header (getMatchContext standing); absent when unread. */
+    standing?: MatchContext['standing'];
 }
 
 export default function ImportWizard() {
@@ -89,7 +76,34 @@ export default function ImportWizard() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const toast = useShowToast();
-    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // How the rescuer got here. The share target is the main mobile path, so
+    // every import event carries it — without it no drop-off can be attributed.
+    // Read once: the share parameters are stripped from the address after mount.
+    const [entry] = useState<'share' | 'contacts' | 'paste'>(() =>
+        searchParams.get('shared') === 'true' || searchParams.has('shared_url') || searchParams.has('shared_text') ? 'share'
+            : searchParams.get('contact_import') === '1' ? 'contacts'
+                : 'paste');
+    const trackImport = (event: string, props: Record<string, string | number | boolean> = {}) =>
+        zarazTrack(event, { entry, ...props });
+    /**
+     * Every problem that affects the rescuer goes to Axiom (warn), not only hard
+     * failures: a hint shown, a file refused, a lookup that degraded. Codes and
+     * counts only — never names, contacts or post text (Jon, 2026-10-22).
+     */
+    const logUxIssue = (message: string, extra: Record<string, unknown> = {}) => {
+        void reportClientError({ message, source: 'ImportWizard', level: 'warn', extra: { entry, ...extra } });
+    };
+
+    // The saved draft (sessionStorage) is read in the state initializers below,
+    // which the server cannot do: it renders an empty field and a DISABLED
+    // «Continuar». Hydrating that with a restored draft is a mismatch React does
+    // not repair for attributes — the button stayed disabled forever while the
+    // field showed the link, even after editing it (Jon's phone, 2026-10-22,
+    // after the tab reloaded). Render nothing until mounted, so the first
+    // client render matches the server and the draft applies cleanly.
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
 
     // Steps: 1=Input, 2=Content/Extract, 3=Review, 4=Confirm
     const [step, setStep] = useState(() => {
@@ -127,7 +141,27 @@ export default function ImportWizard() {
         } catch { return 1; }
     });
     const [loading, setLoading] = useState(false);
+    // Which wait the spinner stands for — step 1 now runs both the link fetch
+    // and (for pasted text) the AI read.
+    const [loadingKind, setLoadingKind] = useState<'fetch' | 'extract'>('fetch');
     const [error, setError] = useState<string | null>(null);
+    // A real failure (not a hint) carries an errorId — logged to Axiom under the
+    // same id — and names the operation that failed, so "Reintentar" retries
+    // that operation. It used to always re-run step 1, which on a failed AI read
+    // just re-showed step 2 and did nothing (audit 2026-10-21, A3).
+    const [errorId, setErrorId] = useState<string | null>(null);
+    const [failedOp, setFailedOp] = useState<'fetch' | 'extract' | null>(null);
+    const clearError = () => { setError(null); setErrorId(null); setFailedOp(null); };
+    /** Report a caught failure: banner + errorId, unless it is a stale tab (the "new version" notice covers that). */
+    const showFailure = (err: unknown, fallback: string, op: 'fetch' | 'extract' | null, source: string) => {
+        if (handledAsStale(err)) return;
+        // The translated sentence, not err.message: thrown messages are English
+        // server strings or raw browser errors ("Failed to fetch"). The raw text
+        // still reaches Axiom with the report under the same Error ID.
+        setError(fallback);
+        setErrorId(resolveErrorId(err, source));
+        setFailedOp(op);
+    };
     const [fetchProgress, setFetchProgress] = useState(0);
 
     // Fake progress bar: non-linear ease-out curve over ~110s
@@ -164,13 +198,6 @@ export default function ImportWizard() {
     // of the social-media post flow. Drives the Step 3 breadcrumb so the user
     // knows why animal fields are empty.
     const [fromContacts, setFromContacts] = useState(false);
-    // Did the AI have to INTERPRET something (a fetched post, a photo, a video),
-    // as opposed to the user pasting text directly? Captured at extraction time
-    // rather than read from current UI state, which the user can still change on
-    // step 3. Gates the confidence pill: grading how well the model read an image
-    // or a scraped post is meaningful; grading how well it read text the user
-    // typed themselves is not.
-    const [extractedFromSource, setExtractedFromSource] = useState(false);
     // Set when Facebook named the poster but served none of the post's text — i.e.
     // the source is not publicly readable. Flips the import to protected and swaps
     // the "it came from a public source" explainer, which would otherwise be a
@@ -217,6 +244,13 @@ export default function ImportWizard() {
     });
     const [fetchedImages, setFetchedImages] = useState<string[]>([]);
     const [selectedFetchedImages, setSelectedFetchedImages] = useState<Set<number>>(new Set());
+    // The link as the rescuer shared it, when Facebook resolved it to another
+    // one. Both are checked for "already imported": links stored before 2.56.213
+    // are the share links themselves (review of 2.56.213, item 2).
+    const [sharedLinkAsGiven, setSharedLinkAsGiven] = useState<string | null>(() => {
+        if (typeof window === 'undefined') return null;
+        try { return JSON.parse(sessionStorage.getItem('import_wizard_state') || '{}').sharedLinkAsGiven || null; } catch { return null; }
+    });
     const [sourceUrl, setSourceUrl] = useState(() => {
         if (typeof window === 'undefined') return '';
         const saved = sessionStorage.getItem('import_wizard_state');
@@ -227,6 +261,14 @@ export default function ImportWizard() {
     });
     const [_sourceType, setSourceType] = useState<string>('');
     const [isVideoPost, setIsVideoPost] = useState(false);
+    // Facebook served no caption (or no post at all): a fact about the fetch,
+    // part of the extraction quality (Jon, 2026-10-22).
+    const [postTextMissing, setPostTextMissing] = useState(false);
+    // What the extraction knew when it finished; the quality is computed live from
+    // these plus the fields the rescuer is editing, so a fixed problem disappears.
+    const [extractionFacts, setExtractionFacts] = useState<{
+        aiConfidence: unknown; aiIssues: unknown; aiFailed: boolean; postTextMissing: boolean; videoOnly: boolean;
+    } | null>(null);
     const [fetchedVideos, setFetchedVideos] = useState<string[]>([]);
     const [_videoLoading, _setVideoLoading] = useState(false);
     const [retryCountdown, setRetryCountdown] = useState(0);
@@ -249,9 +291,9 @@ export default function ImportWizard() {
             return;
         }
         sessionStorage.setItem('import_wizard_state', JSON.stringify({
-            step, inputContent, editableText, sourceUrl, sourceNotPublic
+            step, inputContent, editableText, sourceUrl, sourceNotPublic, sharedLinkAsGiven
         }));
-    }, [step, inputContent, editableText, sourceUrl, sourceNotPublic]);
+    }, [step, inputContent, editableText, sourceUrl, sourceNotPublic, sharedLinkAsGiven]);
 
     // Retry countdown timer
     useEffect(() => {
@@ -270,6 +312,16 @@ export default function ImportWizard() {
 
     // AI extraction state
     const [extractedData, setExtractedData] = useState<ExtractedAdopterData | null>(null);
+    // When it happened: 'YYYY-MM' (month and year), 'YYYY-MM-DD', or '' (no date).
+    // Edited with the shared DatePicker, as on the adoption form.
+    const [reportDate, setReportDate] = useState('');
+    // Other people the post names: saved as relatives of the profile (Jon, 2026-10-22).
+    const [relatives, setRelatives] = useState<PostPerson[]>([]);
+    // «¿Es este perfil?» per relative (a rescuer is here): the profile to link, keyed by the relative.
+    const [relativeChoices, setRelativeChoices] = useState<Record<string, RelativeChoice>>({});
+    // Merging into a profile matched only on phone/email/address: is the post's
+    // person the same one under another name, or someone in that household?
+    const [mergeAs, setMergeAs] = useState<'alias' | 'relative' | null>(null);
     const [contactEntries, setContactEntries] = useState<ContactEntry[]>([]);
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
     // Media the rescuer has de-selected in the review step so it is NOT imported.
@@ -299,10 +351,12 @@ export default function ImportWizard() {
     const [savingTargetName, setSavingTargetName] = useState<string>('');
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateAdopter, setDuplicateAdopter] = useState<any>(null);
+    // Every profile this post was already saved to (the first is duplicateAdopter).
+    const [duplicateAdopters, setDuplicateAdopters] = useState<Array<{ id: string; name: string | null; canEdit?: boolean }>>([]);
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
-    const [fieldOverlapHints, setFieldOverlapHints] = useState<DuplicateMatch[]>([]);
+    const [fieldOverlapHints, setFieldOverlapHints] = useState<JudgedMatch[]>([]);
     const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
     // Load shared images from Service Worker cache
@@ -343,7 +397,7 @@ export default function ImportWizard() {
                 await cache.delete(request);
             }
         } catch (e) {
-            console.warn('[ImportWizard] Failed to load shared images from cache:', e);
+            logUxIssue('import: shared images could not be loaded', { error: e instanceof Error ? e.message : String(e) });
         }
     };
 
@@ -423,7 +477,7 @@ export default function ImportWizard() {
             hydrateFromContact(parsed);
             return true;
         } catch (e) {
-            console.warn('[ImportWizard] Failed to load shared vCard from cache:', e);
+            logUxIssue('import: shared contact could not be loaded', { error: e instanceof Error ? e.message : String(e) });
             return false;
         }
     };
@@ -438,6 +492,14 @@ export default function ImportWizard() {
         const isSharedVcard = searchParams.get('shared_vcard') === 'true';
         const sharedVcardLost = searchParams.get('shared_vcard_lost') === 'true';
 
+        // The shared link and caption ride in the address (?shared_url=…&shared_text=…),
+        // and analytics record the address with every event and pageview. A caption can
+        // carry the adopter's name or phone, so drop the parameters once read; the
+        // draft survives a reload through sessionStorage (review of v2.56.210, item 5).
+        if ([...searchParams.keys()].some(k => k.startsWith('shared') || k === 'url' || k === 'text' || k === 'title')) {
+            window.history.replaceState(window.history.state, '', window.location.pathname);
+        }
+
         // Contact-import fast path (v2.16.0-33): the user picked a contact
         // on the homepage (or shared one from their phone's Contacts app)
         // and we already have structured fields. Skip Steps 1–2 entirely
@@ -449,17 +511,15 @@ export default function ImportWizard() {
         if (sharedVcardLost) {
             // SW was inactive when the share arrived — file body never made it
             // to the cache. Show a soft hint, leave the user on Step 1.
-            setError(t('import.vcard_parse_failed') || (locale !== 'en'
-                ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
-                : 'Could not load the shared contact. Please try again.'));
+            setError(t('import.vcard_parse_failed'));
+            logUxIssue('import: shared contact lost (service worker inactive)');
             return;
         }
         if (isSharedVcard) {
             loadSharedVcard().then(loaded => {
                 if (!loaded) {
-                    setError(t('import.vcard_parse_failed') || (locale !== 'en'
-                        ? 'No se pudo cargar el contacto compartido. Probá nuevamente.'
-                        : 'Could not load the shared contact. Please try again.'));
+                    logUxIssue('import: shared contact could not be read');
+                    setError(t('import.vcard_parse_failed'));
                 }
             });
             return;
@@ -472,20 +532,26 @@ export default function ImportWizard() {
 
         // Show warning if SW wasn't active and images were lost
         if (imagesLost) {
-            setError(locale !== 'en'
-                ? 'Las imágenes compartidas no se pudieron cargar. Por favor, subilas manualmente.'
-                : 'Shared images could not be loaded. Please upload them manually.');
+            setError(t('import.images_lost'));
+            logUxIssue('import: shared images lost (service worker inactive)');
         }
 
         if (sharedUrl) {
-            // Share intent with URL: skip Step 1, auto-fetch
+            // Share intent with URL: skip Step 1, auto-fetch. Any text shared
+            // alongside the link rides along as context — it used to be dropped.
             setSharedFrom(sharedUrl);
             setLoading(true);
             setStep(2);
-            handleFetchUrl(sharedUrl).catch(() => {
-                // Fetch failed — fall back to Step 1 with pre-filled content
+            handleFetchUrl(sharedUrl, sharedText || '').then(ok => {
+                if (ok) return;
+                // Fetch failed — back to Step 1 with the link (and its text) still
+                // in the field, so "Reintentar" works and nothing has to be copied
+                // again. handleFetchUrl reports failure by its result: it used to
+                // swallow the error, so this fallback never ran and the rescuer
+                // was left on an empty step 2 (audit 2026-10-21, A1).
                 setStep(1);
-                setInputContent(sharedUrl);
+                // Some apps put the link in both share fields; never write it twice.
+                setInputContent(sharedText && !sharedText.includes(sharedUrl) ? `${sharedText}\n${sharedUrl}` : (sharedText || sharedUrl));
                 setSharedFrom(null);
             });
         } else if (sharedText) {
@@ -519,12 +585,20 @@ export default function ImportWizard() {
         });
     };
 
-    const handleFetchUrl = async (url?: string) => {
+    /**
+     * Fetch a post and move to step 2. `context` is what the rescuer wrote around
+     * the link; it is kept below the fetched text. Resolves true when the wizard
+     * moved on (including the "paste the text yourself" path), false on failure —
+     * the caller decides where the rescuer lands.
+     */
+    const handleFetchUrl = async (url?: string, context = ''): Promise<boolean> => {
         const targetUrl = url || inputContent;
-        if (!targetUrl.trim()) return;
+        if (!targetUrl.trim()) return false;
 
         setLoading(true);
-        setError(null);
+        setLoadingKind('fetch');
+        clearError();
+        setPostTextMissing(false);
         // Re-evaluated per attempt so retrying against a readable URL clears it.
         setSourceNotPublic(false);
 
@@ -554,6 +628,7 @@ export default function ImportWizard() {
                     // signal that the part carrying the adopter's details is missing.
                     // Everything scraped is still kept and still removable below.
                     if (responseData.missingPostText) {
+                        setPostTextMissing(true);
                         setError(t('import.missing_post_text'));
                         if (responseData.sourceNotPublic) {
                             setSourceNotPublic(true);
@@ -561,7 +636,7 @@ export default function ImportWizard() {
                         }
                     }
                     setFetchedText(responseData.data.text || '');
-                    setEditableText(responseData.data.text || '');
+                    setEditableText(appendContext(responseData.data.text || '', context));
                     // Facebook serves one photo under many signed URLs, and the
                     // Playwright scraper path does no de-duplication of its own, so
                     // collapse them here as well as in the route. Capped so that what
@@ -591,29 +666,29 @@ export default function ImportWizard() {
                     }
                 } else if (responseData.extractionFailed) {
                     if (responseData.requiresManualInput) {
+                        setPostTextMissing(true);
                         // Private group post or restricted content — skip to manual
                         // input. The URL is still worth keeping: it is the audit trail
                         // for where the record came from, even when we could not read it.
-                        setSourceUrl(targetUrl);
+                        // A /share/ link resolved by the fetcher is stored as the post's
+                        // own link, so the same post is recognised next time (audit D1).
+                        setSourceUrl(responseData.resolvedUrl || targetUrl);
+                        setSharedLinkAsGiven(responseData.resolvedUrl && responseData.resolvedUrl !== targetUrl ? targetUrl : null);
                         if (responseData.sourceNotPublic) {
                             setSourceNotPublic(true);
                             setIsPublicProfile(false);
                         }
                         setError(responseData.sourceNotPublic
                             ? t('import.source_not_public')
-                            : responseData.error || (locale !== 'en'
-                                ? 'No se pudo extraer contenido. Pegá el texto manualmente.'
-                                : 'Could not extract content. Please paste text manually.'));
+                            : t('import.manual_input_needed'));
+                        setEditableText(appendContext('', context));
+                        trackImport('import_fetch_failed', { reason: responseData.sourceNotPublic ? 'not_public' : 'manual_input', facebook: true });
                         setStep(2);
-                        return;
+                        return true;
                     }
                     // Temporary extraction failure — start 30s retry countdown
                     setRetryCountdown(30);
-                    throw new Error(
-                        responseData.error || (locale !== 'en'
-                            ? 'No se pudo extraer contenido de esta publicación.'
-                            : 'Could not extract content from this post.')
-                    );
+                    throw new Error(t('import.post_unreadable'));
                 }
             } else {
                 const res = await fetch('/api/import/fetch-content', {
@@ -630,7 +705,7 @@ export default function ImportWizard() {
                 if (responseData.success && responseData.data) {
                     const titlePrefix = responseData.data.title ? `[${responseData.data.title}]\n\n` : '';
                     setFetchedText(titlePrefix + (responseData.data.text || ''));
-                    setEditableText(titlePrefix + (responseData.data.text || ''));
+                    setEditableText(appendContext(titlePrefix + (responseData.data.text || ''), context));
                     const imgs = responseData.data.images || [];
                     setFetchedImages(imgs);
                     setSelectedFetchedImages(new Set(imgs.map((_: string, i: number) => i)));
@@ -640,10 +715,14 @@ export default function ImportWizard() {
                 }
             }
 
-            setSourceUrl(targetUrl);
+            setSourceUrl(responseData?.resolvedUrl || targetUrl);
+            setSharedLinkAsGiven(responseData?.resolvedUrl && responseData.resolvedUrl !== targetUrl ? targetUrl : null);
             setStep(2);
+            return true;
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to fetch content'));
+            showFailure(err, t('import.fetch_failed'), 'fetch', 'ImportWizard.fetch');
+            trackImport('import_fetch_failed', { reason: 'error', facebook: /facebook\.com|fb\.com/i.test(targetUrl) });
+            return false;
         } finally {
             setLoading(false);
         }
@@ -653,41 +732,45 @@ export default function ImportWizard() {
     const handleSmartSubmit = () => {
         const content = inputContent.trim();
         if (!content && manualImages.length === 0) return;
+        clearError();
 
-        // Auto-detect: if content looks like a URL, fetch it
-        const urlPattern = /^https?:\/\/\S+$/i;
-        if (urlPattern.test(content)) {
-            handleFetchUrl(content);
-        } else if (content) {
-            // Plain text — go directly to content review
+        // A single link — alone or inside a caption — is fetched; the words
+        // around it are kept as context (audit 2026-10-21, A4).
+        const { url, text } = splitLinkAndText(content);
+        if (url) {
+            handleFetchUrl(url, text);
+        } else {
+            // Plain text and/or screenshots go straight to the AI read. The
+            // review-content step only repeated what was just pasted, under a
+            // wrong "Texto Extraído" label (design change 12, approved 2026-10-21).
+            // It stays for fetched links, where there is a scraped caption and
+            // photos to check first.
             setFetchedText(content);
             setEditableText(content);
-            setStep(2);
-        } else {
-            // Images only — go to content review
-            setStep(2);
+            handleExtract(content);
         }
     };
 
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files) return;
-
-        for (const file of Array.from(files)) {
+    /** Add picked, dropped or pasted files. Videos over 50 MB are refused out loud. */
+    const addFiles = async (files: File[]) => {
+        for (const file of files) {
             const isVideoFile = file.type.startsWith('video/');
 
             if (isVideoFile) {
                 // Video: store File object only — don't read as base64
                 // Videos will be uploaded via FormData after adopter creation
                 if (file.size > 50 * 1024 * 1024) {
-                    continue; // Skip oversized videos silently
+                    // Used to be skipped silently: the rescuer believed it was attached.
+                    toast.warning(t('import.video_too_large').replace('{name}', file.name));
+                    logUxIssue('import: video over 50 MB refused', { sizeMb: Math.round(file.size / 1048576) });
+                    continue;
                 }
                 // Generate thumbnail
                 let thumbnail: string | undefined;
                 try {
                     thumbnail = await extractVideoThumbnail(file);
                 } catch (err) {
-                    console.warn('Thumbnail extraction failed:', (err as Error).message);
+                    logUxIssue('import: video thumbnail could not be made', { error: (err as Error).message });
                 }
                 setManualImages(prev => [...prev, {
                     data: '',
@@ -696,7 +779,7 @@ export default function ImportWizard() {
                     file,
                     thumbnail,
                 }]);
-            } else {
+            } else if (file.type.startsWith('image/')) {
                 // Image: read as base64 for preview and sending in JSON
                 const reader = new FileReader();
                 reader.onload = () => {
@@ -711,8 +794,18 @@ export default function ImportWizard() {
                 reader.readAsDataURL(file);
             }
         }
-        // Reset input so same file can be re-selected
-        e.target.value = '';
+    };
+
+    /**
+     * A screenshot pasted anywhere on steps 1–2 is attached (audit A8). Text
+     * pastes are left alone so the textarea behaves as usual.
+     */
+    const handlePaste = (e: React.ClipboardEvent) => {
+        if (step > 2 || showConfirmModal) return;
+        const files = Array.from(e.clipboardData?.files ?? []).filter(f => f.type.startsWith('image/'));
+        if (!files.length) return;
+        e.preventDefault();
+        addFiles(files);
     };
 
     const removeImage = (index: number) => {
@@ -720,9 +813,12 @@ export default function ImportWizard() {
     };
 
     // AI Extraction — text + images sent together; hardened prompt prevents hallucination
-    const handleExtract = async () => {
+    const handleExtract = async (textOverride?: string) => {
+        // Called straight from step 1 for pasted text, before the state update lands.
+        const text = textOverride ?? editableText;
         setLoading(true);
-        setError(null);
+        setLoadingKind('extract');
+        clearError();
 
         try {
             const imagesToSend: Array<{ data: string; mimeType: string }> = [];
@@ -731,14 +827,17 @@ export default function ImportWizard() {
             }
 
             const imageUrls = fetchedImages.filter((_, i) => selectedFetchedImages.has(i));
-
-            setExtractedFromSource(!!sourceUrl || imagesToSend.length > 0 || imageUrls.length > 0);
+            trackImport('import_extract_started', {
+                hasUrl: !!sourceUrl,
+                hasText: !!text.trim(),
+                images: imagesToSend.length + imageUrls.length,
+            });
 
             const response = await fetch('/api/ai/extract-from-post', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    text: editableText || undefined,
+                    text: text || undefined,
                     images: imagesToSend.length > 0 ? imagesToSend : undefined,
                     imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
                     model: selectedModel || undefined,
@@ -758,11 +857,43 @@ export default function ImportWizard() {
             }
 
             const aiData = result.data || { confidence: 'low' as const };
+            // Only a whole 1–5 suggestion is pre-filled; anything else stays unrated.
+            aiData.adoptionRating = suggestedRating(aiData.adoptionRating) ?? undefined;
+            // Month and year: the day is rarely in a post, and would be invented.
+            setReportDate(monthOf(aiData.adoptionDate));
+            setRelatives(cleanOtherPeople(aiData.otherPeople, aiData.name));
+
+            const aiFailed = !!aiData.extractionFailed;
+            // The rescuer filled in what the fetch could not get (pasted the text or
+            // added screenshots): the missing caption is no longer a problem.
+            const addedOwnContent = manualImages.length > 0 || text.trim() !== _fetchedText.trim();
+            const facts = {
+                aiConfidence: aiData.confidence,
+                aiIssues: aiData.extractionIssues,
+                aiFailed,
+                postTextMissing: postTextMissing && !addedOwnContent,
+                videoOnly: isVideoPost && manualImages.length === 0 && !text.trim(),
+            };
+            setExtractionFacts(facts);
+            // What the rescuer is about to be told is missing — logged, so we know
+            // how often each problem happens (Jon, 2026-10-22).
+            const shown = extractionQuality({
+                ...facts,
+                name: aiData.name,
+                entries: buildContactEntries({ phones: aiData.phones, emails: aiData.emails, socials: aiData.socialProfiles }),
+            });
+            const cannotSave = !canSaveImportedProfile(aiData.name, buildContactEntries({ phones: aiData.phones, emails: aiData.emails, socials: aiData.socialProfiles }));
+            if (shown.issues.length || cannotSave) {
+                logUxIssue('import: extraction problems shown', { issues: shown.issues, level: shown.level, cannotSave });
+            }
 
             // Preserve original post text untouched, append any AI-extracted notes after
-            if (editableText?.trim()) {
-                const aiNotes = aiData.notes?.trim();
-                aiData.notes = editableText + (aiNotes ? '\n\n---\n' + aiNotes : '');
+            // (never the "Extraction failed: …" diagnostic).
+            if (text?.trim()) {
+                const aiNotes = aiFailed ? '' : aiData.notes?.trim();
+                aiData.notes = text + (aiNotes ? '\n\n---\n' + aiNotes : '');
+            } else if (aiFailed) {
+                aiData.notes = '';
             }
 
             setExtractedData(aiData);
@@ -780,9 +911,17 @@ export default function ImportWizard() {
             if (result.processedImages) {
                 setProcessedImages(result.processedImages);
             }
+            trackImport('import_extract_succeeded', {
+                aiConfidence: typeof aiData.confidence === 'string' ? aiData.confidence : 'unknown',
+                aiFailed,
+                aiIssues: Array.isArray(aiData.extractionIssues) ? aiData.extractionIssues.join(',') : '',
+                adoptionDetected: !!aiData.adoptionDetected,
+                hasName: !!aiData.name?.trim(),
+            });
             setStep(3);
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to extract data'));
+            showFailure(err, t('import.extract_failed'), 'extract', 'ImportWizard.extract');
+            trackImport('import_extract_failed');
         } finally {
             setLoading(false);
         }
@@ -793,12 +932,16 @@ export default function ImportWizard() {
         if (step !== 3 || !extractedData) return;
         const timer = setTimeout(async () => {
             try {
-                const response = await findAdopters(
-                    { name: extractedData.name, contactInfo: contactEntriesToBlob(contactEntries) },
-                    { mode: 'duplicate' },
-                );
-                setFieldOverlapHints(response.results as DuplicateMatch[]);
-            } catch {
+                const res = await matchImportRow({ name: extractedData.name || '', ...contactEntriesToIdentity(contactEntries) });
+                if (!res.ok) {
+                    // The hint is optional: show none, but report it. The save-time check still runs.
+                    logUxIssue('import: overlap hint failed', { errorId: res.errorId });
+                    setFieldOverlapHints([]);
+                    return;
+                }
+                setFieldOverlapHints(res.matches);
+            } catch (e) {
+                logUxIssue('import: overlap hint failed', { error: e instanceof Error ? e.message : String(e) });
                 setFieldOverlapHints([]);
             }
         }, 600);
@@ -806,70 +949,118 @@ export default function ImportWizard() {
     }, [step, extractedData?.name, contactEntries]);
 
     // Pre-save duplicate check
-    const handlePreSave = async () => {
+    /**
+     * Check for duplicates, then show the choice — or save straight away when
+     * there is nothing to choose. `preselectId` is the match the rescuer picked
+     * on the review screen ("Agregar a este perfil"): the same checks still run,
+     * the same-post one first (review of 2.56.213, item 4).
+     */
+    /** Each match's standing for its card header (audit B6); a failed read leaves it out. */
+    const withStanding = (list: PersonMatch[]): Promise<PersonMatch[]> => Promise.all(list.map(m =>
+        getMatchContext(m.id, { standing: true })
+            .then(c => (c.standing ? { ...m, standing: c.standing } : m))
+            .catch(e => {
+                logUxIssue('import: match standing could not load', { adopterId: m.id, error: e instanceof Error ? e.message : String(e) });
+                return m;
+            }),
+    ));
+
+    const handlePreSave = async (preselect?: PersonMatch, opts: { skipUrlCheck?: boolean } = {}) => {
         setIsSaving(true);
         setDuplicateAdopter(null);
+        setDuplicateAdopters([]);
         setPersonMatches([]);
         setSelectedMatch(null);
         setDuplicateCheckFailed(false);
+        setMergeAs(null);
+        // Local mirrors of the state above: the decision at the end must not
+        // wait for a re-render.
+        let foundMatches = false;
+        let checkFailed = false;
 
-        // Check for URL duplicate
-        if (sourceUrl) {
+        // Check for URL duplicate — skipped when the rescuer said "it is not the
+        // same post" on that screen (Jon, 2026-10-21): link matching can still
+        // misfire on shapes we have not seen, and the screen had no way out.
+        if (sourceUrl && !opts.skipUrlCheck) {
             try {
-                const res = await fetch(`/api/adopters?sourceUrl=${encodeURIComponent(sourceUrl)}`);
+                const query = [sourceUrl, sharedLinkAsGiven].filter(Boolean).map(u => `sourceUrl=${encodeURIComponent(u!)}`).join('&');
+                const res = await fetch(`/api/adopters?${query}`);
                 // M4: a 500 here used to fall through as "no duplicate" (res.json()
                 // succeeds on an error body, matches undefined). Treat non-OK as a
                 // failed check so the warning UI shows instead of silently skipping.
                 if (!res.ok) throw new Error(`URL duplicate check failed (${res.status})`);
-                const data = await res.json() as { matches: any[]; matchType?: string };
+                const data = await res.json() as { matches: Array<{ id: string; name: string | null; canEdit?: boolean }>; matchType?: string };
                 if (data.matches && data.matches.length > 0) {
                     setDuplicateAdopter(data.matches[0]);
+                    setDuplicateAdopters(data.matches.map(m => ({ id: m.id, name: m.name, canEdit: !!m.canEdit })));
+                    trackImport('import_duplicate_shown', { kind: 'url', count: data.matches.length });
                     setIsSaving(false);
                     setShowConfirmModal(true);
                     return;
                 }
             } catch (e) {
-                console.warn('[ImportWizard] URL duplicate check failed', e);
+                logUxIssue('import: same-post check failed', { error: e instanceof Error ? e.message : String(e) });
                 setDuplicateCheckFailed(true);
+                checkFailed = true;
             }
         }
 
-        // Check for person match via token index.
-        //
-        // Pass ONLY `name` + the freshly-rebuilt contactInfo blob. We used to
-        // also forward `phones`/`emails`/`socials` from `extractedData`, but
-        // those fields are populated once (AI extraction or the contact-import
-        // hydrator) and never updated when the user edits a chip in
-        // ContactEntriesInput — the chip editor only mutates `contactEntries`.
-        // findAdopters' input contract preferred the structured arrays over
-        // the contactInfo blob (`input.phones?.length ? input.phones : extractPhones(blob)`),
-        // so the stale fields silently overrode the user's edits and the
-        // duplicate check ran against the original values. Dropping them
-        // makes contactEntries the single source of truth (v2.16.0-44).
+        // Check for a person match: the identity verdict over the typed contacts
+        // (the same one the spreadsheet import uses). contactEntries is the single
+        // source of truth: extractedData's phones/emails/socials are populated once
+        // and not updated when the user edits a chip (v2.16.0-44). Social values go
+        // as entered.
         if (extractedData) {
+            let matchErrorId: string | undefined;
             try {
-                const response = await findAdopters(
-                    {
-                        name: extractedData.name,
-                        contactInfo: contactEntriesToBlob(contactEntries),
-                    },
-                    { mode: 'duplicate' },
-                );
-                const tokenResults = response.results as DuplicateMatch[];
+                const response = await matchImportRow({ name: extractedData.name || '', ...contactEntriesToIdentity(contactEntries) });
+                // A server-side failure is a failed check, like a thrown one: never a silent "no match".
+                if (!response.ok) { matchErrorId = response.errorId; throw new Error('matchImportRow failed'); }
+                const tokenResults = response.matches;
                 if (tokenResults.length > 0) {
                     const matches: PersonMatch[] = tokenResults.map(r => ({
                         id: r.adopterId,
                         name: r.adopterName,
-                        confidence: confidenceBand(r.relevancePercent) as 'high' | 'medium' | 'low',
+                        // Only «same» is pre-selected (see pick below).
+                        confidence: (r.verdict === 'same' ? 'high' : 'medium') as 'high' | 'medium' | 'low',
+                        score: r.relevancePercent,
                         matchTypes: r.matchTypes,
                     }));
-                    setPersonMatches(matches);
-                    setSelectedMatch(matches[0]);
+                    foundMatches = true;
+                    // The match picked on the review screen stays on the list and selected.
+                    const list = await withStanding(preselect && !matches.some(m => m.id === preselect.id) ? [preselect, ...matches] : matches);
+                    setPersonMatches(list);
+                    // Otherwise pre-select only a strong match. A weak one used to come
+                    // pre-selected, one tap from merging into the wrong person;
+                    // the spreadsheet import makes the rescuer choose (audit D5).
+                    const pick = preselect ? list.find(m => m.id === preselect.id)! : (list.find(m => m.id === matches[0].id)!.confidence === 'high' ? list.find(m => m.id === matches[0].id)! : null);
+                    setSelectedMatch(pick);
+                    trackImport('import_duplicate_shown', { kind: 'person', count: matches.length, topBand: matches[0].confidence });
                 }
             } catch (e) {
-                console.error('[ImportWizard] Token match check failed', e);
+                logUxIssue('import: duplicate (name/contact) check failed', { errorId: matchErrorId, error: e instanceof Error ? e.message : String(e) });
                 setDuplicateCheckFailed(true);
+                checkFailed = true;
             }
+        }
+
+        // Keep the profile the rescuer picked even when a check failed — the
+        // "couldn't verify" screen alone only offers "Crear perfil", pushing them
+        // toward the duplicate they were avoiding (re-review of 2.56.214, C).
+        if (preselect && !foundMatches) {
+            setPersonMatches([preselect]);
+            setSelectedMatch(preselect);
+            foundMatches = true;
+        }
+
+        // Nothing to decide: save straight away. The "¿Crear nuevo perfil?"
+        // screen only repeated the name (decision B3, 2026-10-21). It still
+        // shows when there are matches, or when the check failed and the
+        // rescuer has to look for themselves.
+        if (!foundMatches && !checkFailed) {
+            setShowConfirmModal(true);
+            await handleConfirmSave();
+            return;
         }
 
         setIsSaving(false);
@@ -877,14 +1068,22 @@ export default function ImportWizard() {
     };
 
     // Save new adopter
+    /** Problems still on screen when the rescuer saves anyway — worth knowing which ones. */
+    const logOpenIssuesAtSave = (mode: 'create' | 'merge') => {
+        if (quality?.issues.length) logUxIssue('import: saved with open extraction problems', { mode, issues: quality.issues, level: quality.level });
+    };
+
     const handleConfirmSave = async () => {
         if (!extractedData) return;
+        logOpenIssuesAtSave('create');
         setSavingMode('create');
         setSavingTargetName(extractedData.name || '');
         setIsSaving(true);
 
         try {
-            const flags = [IMPORT_FLAGS[extractedData.confidence] ?? IMPORT_FLAGS.low];
+            // No import_high/medium/low flag any more: it was the AI's undefined
+            // impression, stored as a moderation flag that inflated "Active Flags"
+            // and the reported-content panel (Jon, 2026-10-22).
 
             // Generate thumbnails for fetched videos (via proxy for CORS)
             const videoPayloads = await Promise.all(
@@ -893,7 +1092,7 @@ export default function ImportWizard() {
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
                     } catch (e) {
-                        console.warn('[ImportWizard] Fetched video thumbnail failed:', (e as Error).message);
+                        logUxIssue('import: fetched video thumbnail failed', { error: (e as Error).message });
                     }
                     return { data: '', mimeType: 'video/mp4', originalUrl: videoUrl, thumbnail };
                 })
@@ -914,7 +1113,9 @@ export default function ImportWizard() {
                 // default (private). When `false`, the API skips the
                 // stampPublic block entirely → entries land non-public.
                 ...(sourceUrl && !fromContacts ? { isPublic: isPublicProfile } : {}),
-                flags,
+                // The other people the post names, as relatives of this profile.
+                // Those the rescuer recognised as an existing profile («¿Es este perfil?» → sí) are linked after the save.
+                ...(relatives.some(p => !linkedProfileOf(p)) ? { householdMembers: JSON.stringify(relatives.filter(p => !linkedProfileOf(p)).map(toMember)) } : {}),
                 images: [
                     // Honor the review-step de-selection: a processed image is
                     // excluded by `p:<i>`, a manual image by `m:<i>`.
@@ -932,11 +1133,12 @@ export default function ImportWizard() {
                 ...(fromContacts ? {} : {
                     adoption: {
                         // v2.19.52: blank goes through as undefined → API saves NULL.
-                        animalName: extractedData.animalName?.trim() || undefined,
-                        species: extractedData.animalSpecies,
-                        recordType: extractedData.recordType || 'observation',
+                        // A social post is a report about the person (Jon, 2026-10-22):
+                        // no activity type to pick, no animal fields. What matters is
+                        // the rating the rescuer confirmed, and roughly when.
+                        recordType: 'observation',
                         rating: extractedData.adoptionRating || undefined,
-                        date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
+                        date: recordDateFrom(reportDate),
                     },
                 }),
             };
@@ -947,20 +1149,30 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { id: string; error?: string; details?: string[]; errorId?: string };
+            const result = await response.json() as { id: string; error?: string; code?: string; details?: string[]; errorId?: string };
 
             if (!response.ok) {
                 // v2.19.66: surface the schema's per-field reason (`details`) and
                 // the server errorId instead of the bare "Invalid input". The
                 // 400 path already computes which field failed — show it so the
                 // rescuer (and we) can see *why* the save was rejected.
-                const base = result.details?.length
-                    ? `${result.error || 'Invalid input'}: ${result.details.join('; ')}`
-                    : (result.error || 'Failed to create adopter');
-                throw new Error(result.errorId ? `${base} (${result.errorId})` : base);
+                const base = result.code === CONTACT_ENTRIES_FULL
+                    ? t('adopter.ce_add_full')
+                    : result.details?.length
+                        ? `${result.error || 'Invalid input'}: ${result.details.join('; ')}`
+                        : (result.error || 'Failed to create adopter');
+                // "Error ID:" so resolveErrorId reuses the server's id instead of minting a second one.
+                throw new Error(result.errorId ? `${base} (Error ID: ${result.errorId})` : base);
             }
 
             const adopterId = result.id;
+
+            // Relatives recognised as an existing profile join the new profile's household (credited, notified).
+            for (const [i, p] of relatives.entries()) {
+                const existingProfileId = linkedProfileOf(p);
+                if (!existingProfileId) continue;
+                await addRelative(adopterId, { ...toMember(p), slot: `r${i}`, existingProfileId });
+            }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
             const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
@@ -979,21 +1191,12 @@ export default function ImportWizard() {
                 }
             }
 
-            // v2.19.18: contacts-import suppresses the success toast because
-            // we redirect straight to the new profile — the redirect IS the
-            // success signal, and a "→ Ver Perfil" CTA pointing to the same
-            // destination the browser is already loading is just visual
-            // noise. Facebook / share-URL imports keep the toast since their
-            // redirect goes back to `/`.
+            // Every import now lands on the new profile (decision B1, 2026-10-21),
+            // so the toast carries no "→ Ver Perfil" link: it would point at the
+            // page already loading. Contacts imports stay silent as before — the
+            // redirect is their success signal.
             if (!fromContacts) {
-                const successMessage = extractedData.adoptionDetected && extractedData.adoptionConfidence !== 'low'
-                    ? 'Profile + adoption record created'
-                    : (extractedData.name || 'New Profile');
-
-                toast.success('¡Adoptante Creado!', successMessage, {
-                    label: '→ Ver Perfil',
-                    href: `/adopter/${adopterId}`,
-                });
+                toast.success(t('import.profile_created'), extractedData.name?.trim() || undefined);
             }
 
             // Clear persisted wizard state on completion so reopening starts
@@ -1003,36 +1206,90 @@ export default function ImportWizard() {
             // it → the "reopens at step 2 with old data" bug).
             sessionStorage.removeItem('import_wizard_state');
 
-            // Track import event in Amplitude via Zaraz
-            zarazTrack('import_completed', {
+            // Track import event in Amplitude via Zaraz (mirrored to PostHog)
+            trackImport('import_completed', {
                 source: sourceUrl ? 'url' : (fromContacts ? 'contacts' : 'text'),
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
-                confidence: extractedData.confidence || 'unknown',
+                quality: quality?.level ?? 'n/a',
+                openIssues: quality?.issues.join(',') ?? '',
+                afterDuplicates: personMatches.length > 0,
             });
 
-            // v2.19.17: contacts-import path lands on the new profile so the
-            // rescuer can declare the real intent via the always-present
-            // VisitIntentCard. The Facebook / share-URL paths already created
-            // an activity at save time, so they keep the original "back home"
-            // redirect.
-            if (fromContacts) {
-                router.push(`/adopter/${adopterId}`);
-            } else {
-                router.push('/');
-            }
+            // Land on the new profile, for every kind of import (decision B1):
+            // it is where the rescuer checks what was saved. Contacts imports
+            // also get the VisitIntentCard there to declare the real activity.
+            router.push(`/adopter/${adopterId}`);
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to save'));
+            showFailure(err, t('import.save_failed'), null, 'ImportWizard.save');
             setShowConfirmModal(false);
-        } finally {
+            // Reset only on failure: on success the "saving" screen stays up while
+            // the profile loads, so nothing can be tapped twice into a duplicate.
             setIsSaving(false);
             setSavingMode(null);
         }
     };
 
     // Merge into existing profile
+    /** A post person as a household member: name, relationship, their own contacts. */
+    const toMember = (p: PostPerson) => ({
+        name: p.name,
+        relationship: p.relationship,
+        contactEntries: buildContactEntries({ phones: p.phones, socials: p.socialProfiles }),
+    });
+    /** The add actions' contact shape for a relative's (or the post person's) entries. */
+    const asHouseholdContacts = (entries: ContactEntry[]): HouseholdContactInput[] => entries.map(e => ({
+        type: e.type, value: e.value,
+        ...(e.platform ? { platform: e.platform } : {}),
+        ...(e.apps?.length ? { apps: e.apps } : {}),
+        ...(e.streetAndNumber ? { streetAndNumber: e.streetAndNumber } : {}),
+        ...(e.locality ? { locality: e.locality } : {}),
+    }));
+    /**
+     * One relative into the profile's household. A relative the rescuer recognised is linked; if that
+     * link fails, they are added as a new person instead — never lost. Each failure says why
+     * (householdErrorCopy) and the others still go in. 'already_there' is not a failure.
+     */
+    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null }) => {
+        const base = { anchorAdopterId, relationship: m.relationship, contactEntries: asHouseholdContacts(m.contactEntries), fromImport: { sourceUrl: sourceUrl || null, slot: m.slot } };
+        const report = (res: { error: string; errorId?: string }) => {
+            const copy = householdErrorCopy(t, res.error);
+            if (copy.refused) toast.warning(`${t('import.relative_failed')}: ${m.name}`, copy.message);
+            else toast.error(t('errors.generic'), `${t('import.relative_failed')}: ${m.name}`, res.errorId ?? resolveErrorId(new Error(`addHouseholdPerson (import): ${res.error}`), 'ImportWizard'));
+        };
+        try {
+            if (m.existingProfileId) {
+                const linked = await addHouseholdPerson({ ...base, existingProfileId: m.existingProfileId });
+                if (linked.ok || linked.error === 'already_there') return;
+                logUxIssue('import: recognised relative not linked, added as new instead', { reason: linked.error });
+                // Final fix P5: the rescuer chose that profile — say it didn't link, and why.
+                const why = householdErrorCopy(t, linked.error);
+                toast.warning(fill(t('import.relative_link_fell_back'), { name: m.name }), why.refused ? why.message : `ID: ${('errorId' in linked && linked.errorId) || resolveErrorId(new Error(`addHouseholdPerson (import link): ${linked.error}`), 'ImportWizard.relativeLink')}`);
+            }
+            const res = await addHouseholdPerson({ ...base, name: m.name });
+            if (!res.ok && res.error !== 'already_there') report(res);
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), `${t('import.relative_failed')}: ${m.name}`, resolveErrorId(e, 'ImportWizard.relative'));
+        }
+    };
+    /** A relative's «¿Es este perfil?» answer is kept under who they are, not their place in the list. */
+    const relativeKey = (p: PostPerson) => JSON.stringify([p.name, p.phones, p.socialProfiles]);
+    const linkedProfileOf = (p: PostPerson): string | null => {
+        const c = relativeChoices[relativeKey(p)];
+        return c && c !== 'new' ? c : null;
+    };
+
+    /**
+     * Merging into a match that did NOT match on the name (only phone, email or
+     * address) with a different name: ask whether the post's person is the same
+     * one (alias) or someone in that household (relative) — Jon, 2026-10-22.
+     */
+    const needsIdentityChoice = (match: PersonMatch | null) =>
+        !!match && !duplicateAdopter && needsIdentityChoiceFor({ matchTypes: match.matchTypes, nameA: extractedData?.name ?? '', nameB: match.name });
+
     const handleMerge = async (target?: { id: string; name: string }) => {
         const mergeTarget = target || selectedMatch;
         if (!extractedData || !mergeTarget) return;
+        logOpenIssuesAtSave('merge');
         setSavingMode('merge');
         setSavingTargetName(mergeTarget.name || '');
         setIsSaving(true);
@@ -1061,9 +1318,10 @@ export default function ImportWizard() {
                 if (!result.success) {
                     throw new Error(result.error || 'Failed to merge contact data');
                 }
-                zarazTrack('import_merged', {
+                trackImport('import_merged', {
                     hasImages: 0,
                     fromContacts: 1,
+                    kind: duplicateAdopter ? 'url' : 'person',
                 });
                 router.push(`/adopter/${mergeTarget.id}`);
                 return;
@@ -1076,26 +1334,26 @@ export default function ImportWizard() {
                     try {
                         thumbnail = await extractVideoThumbnailFromUrl(`/api/proxy-image?url=${encodeURIComponent(videoUrl)}`);
                     } catch (e) {
-                        console.warn('[ImportWizard] Fetched video thumbnail failed:', (e as Error).message);
+                        logUxIssue('import: fetched video thumbnail failed', { error: (e as Error).message });
                     }
                     return { data: '', mimeType: 'video/mp4', originalUrl: videoUrl, thumbnail };
                 })
             );
 
+            // Contacts go to the profile's typed entries below (appendToExistingAdopter),
+            // never into the activity note (audit 2026-10-21, D8).
             const payload = {
                 sourceUrl,
                 notes: extractedData.notes,
-                contactInfo: contactEntriesToBlob(contactEntries) || undefined,
                 adoption: {
                     // v2.19.52: was `|| 'Unknown'` — literal English string
                     // overwrote empty names with "Unknown" regardless of locale
                     // and stuffed it into the DB. Blank now passes through as
                     // undefined → API saves NULL.
-                    animalName: extractedData.animalName?.trim() || undefined,
-                    species: extractedData.animalSpecies,
-                    recordType: extractedData.recordType || 'observation',
+                    // Same report shape as the create path (Jon, 2026-10-22).
+                    recordType: 'observation',
                     rating: extractedData.adoptionRating || undefined,
-                    date: extractedData.adoptionDate || new Date().toISOString().split('T')[0],
+                    date: recordDateFrom(reportDate),
                 },
                 images: [
                     // Honor the review-step de-selection: a processed image is
@@ -1116,7 +1374,7 @@ export default function ImportWizard() {
             const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; errorId?: string };
 
             if (!response.ok) {
-                throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (${result.errorId})` : (result.error || 'Failed to add record'));
+                throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (Error ID: ${result.errorId})` : (result.error || 'Failed to add record'));
             }
 
             const adopterId = result.adopterId || mergeTarget.id;
@@ -1128,18 +1386,51 @@ export default function ImportWizard() {
             // edits the rescuer made in the review step actually land on the
             // profile and in the dedup index (the contacts-import path already
             // does this; the post-import merge path used to drop them).
-            if (contactEntries.length) {
+            // Who is the post's person to this profile? Matched only on phone /
+            // email / address with another name, the rescuer chose (Jon,
+            // 2026-10-22): the same person → alias; someone in that household →
+            // a relative carrying the post's contacts. Otherwise the post's name,
+            // when it differs, stays as an alias (decision B8).
+            const asRelative = mergeAs === 'relative' && needsIdentityChoice(selectedMatch);
+            // Each with its place in the post (`slot`): a re-merge of the same post adds nobody twice.
+            const members = [
+                ...(asRelative ? [{ name: extractedData.name?.trim() || '', relationship: 'unknown' as const, contactEntries, slot: 's' }] : []),
+                ...relatives.map((p, i) => ({ ...toMember(p), slot: `r${i}`, existingProfileId: linkedProfileOf(p) })),
+            ];
+            const alias = asRelative ? null : aliasForMerge(extractedData.name, mergeTarget.name);
+            const entriesToMerge: ContactEntry[] = asRelative ? [] : (alias
+                ? [...contactEntries, { type: 'alias', value: alias }]
+                : contactEntries);
+            if (entriesToMerge.length) {
                 const { appendToExistingAdopter } = await import('@/app/actions');
                 const appendRes = await appendToExistingAdopter(mergeTarget.id, {
-                    contactInfo: contactEntriesToBlob(contactEntries) || undefined,
-                    contactEntries: JSON.stringify(contactEntries),
+                    contactInfo: contactEntriesToBlob(entriesToMerge) || undefined,
+                    contactEntries: JSON.stringify(entriesToMerge),
                     sourceUrl: sourceUrl || undefined,
+                    // Honour the "público" switch the rescuer saw (audit D8).
+                    publicSource: !!sourceUrl && isPublicProfile,
                 });
                 if (!appendRes?.success) {
-                    // Non-fatal: the activity record saved. appendRes.error already
-                    // carries an "(Error ID: …)" suffix from the server action.
-                    toast.error(t('errors.generic') || 'Error', appendRes?.error || (t('import.contact_merge_failed') || 'No se pudieron fusionar los datos de contacto'));
+                    // Non-fatal: the activity record saved. Contacts and the alias go
+                    // through the owner/teammate-only append; on another team's
+                    // profile it is refused by design. With only the alias to add,
+                    // that refusal is expected and not worth a toast (review of
+                    // 2.56.213, item 6); with contacts, the rescuer has to know.
+                    const refused = /not authorized/i.test(appendRes?.error ?? '');
+                    if (refused && contactEntries.length === 0) {
+                        logUxIssue('import: alias not kept (profile of another team)', { adopterId: mergeTarget.id });
+                    } else {
+                        const id = appendRes?.error?.match(/Error ID:\s*([a-f0-9-]{6,})/i)?.[1];
+                        toast.error(t('errors.generic'), refused ? t('import.contact_merge_not_allowed') : t('import.contact_merge_failed'), id);
+                    }
                 }
+            }
+            // Relatives: households as profiles — each one becomes a profile (with their
+            // own contacts) in the target's household, through the same add anyone signed
+            // in uses (D54: credited, granted, the target's team told). A relative the
+            // rescuer recognised in «¿Es este perfil?» (ImportRelativeCheck) is linked instead.
+            for (const m of members) {
+                await addRelative(mergeTarget.id, { ...m, existingProfileId: 'existingProfileId' in m ? m.existingProfileId : null });
             }
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
@@ -1159,102 +1450,156 @@ export default function ImportWizard() {
                 }
             }
 
-            toast.success(t('import.record_added_to_profile') || 'Registro agregado al perfil', adopterName, {
-                label: t('import.go_to_profile_link') || '→ Ver perfil',
-                href: `/adopter/${adopterId}`,
-            });
+            // Lands on the profile (decision B1), so no "→ Ver perfil" link.
+            toast.success(t('import.record_added_to_profile'), adopterName);
 
             // Clear persisted wizard state on completion (see create path) so
             // reopening starts fresh instead of rehydrating the stale snapshot.
             sessionStorage.removeItem('import_wizard_state');
 
-            // Track merge event in Amplitude via Zaraz
-            zarazTrack('import_merged', {
+            // Track merge event in Amplitude via Zaraz (mirrored to PostHog)
+            trackImport('import_merged', {
                 hasImages: (processedImages.length + manualImages.length) > 0 ? 1 : 0,
+                kind: duplicateAdopter ? 'url' : 'person',
+                band: duplicateAdopter ? 'url' : (mergeTarget as PersonMatch).confidence ?? 'unknown',
             });
 
-            router.push('/');
+            router.push(`/adopter/${adopterId}`);
         } catch (err) {
-            setError(userFacingMessage(err, 'Failed to add record'));
+            showFailure(err, t('import.save_failed'), null, 'ImportWizard.merge');
             setShowConfirmModal(false);
-        } finally {
+            // Reset only on failure (see handleConfirmSave).
             setIsSaving(false);
             setSavingMode(null);
         }
     };
 
+    /**
+     * "Agregar a este perfil" on the review screen (decision B7): run the same
+     * checks as "Guardar" — the same-post one first — with this match selected.
+     * It used to open the match screen directly and skip the same-post check
+     * (review of 2.56.213, item 4).
+     */
+    const openMatchFromHint = (hint: JudgedMatch) => {
+        trackImport('import_duplicate_choice', { choice: 'hint', kind: 'person' });
+        handlePreSave({
+            id: hint.adopterId,
+            name: hint.adopterName,
+            confidence: hint.verdict === 'same' ? 'high' : 'medium',
+            score: hint.relevancePercent,
+            matchTypes: hint.matchTypes,
+        });
+    };
+
     // --- RENDER ---
 
-    const stepLabels = [t('import.stepInput') || 'Input', t('import.stepContent') || 'Content', t('import.stepReview') || 'Review'];
+    const stepLabels = [t('import.stepInput'), t('import.stepContent'), t('import.stepReview')];
+    const spinner = <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>;
+    const canRetry = (failedOp === 'extract' || (failedOp === 'fetch' && !!inputContent.trim())) && !loading;
+    // Extraction quality, live: facts from the import + the AI's report + what the
+    // rescuer has fixed since (a name, a contact).
+    const quality = extractionFacts && extractedData && !fromContacts
+        ? extractionQuality({ ...extractionFacts, name: extractedData.name, entries: contactEntries })
+        : null;
+
+    if (!mounted) {
+        return (
+            <div className="max-w-2xl mx-auto flex items-center justify-center py-20" aria-busy="true">
+                <span className="w-8 h-8 rounded-full border-4 border-stone-200 border-t-teal-600 animate-spin" aria-hidden="true" />
+            </div>
+        );
+    }
 
     return (
-        <div className="max-w-2xl mx-auto">
-            {/* Header */}
+        <div className="max-w-2xl mx-auto" onPaste={handlePaste}>
+            {/* Header. The top control leaves the wizard ("Cancelar", to home);
+                only the bottom "Volver" steps back. Both used to read "Volver",
+                and the top one was router.back(), which after a share left the
+                app (design change 14, approved 2026-10-21). */}
             <div className="mb-6">
                 <button
-                    onClick={() => router.back()}
-                    className="text-sm text-stone-500 hover:text-stone-700 mb-2 flex items-center gap-1"
+                    type="button"
+                    onClick={() => {
+                        sessionStorage.removeItem('import_wizard_state');
+                        router.push('/');
+                    }}
+                    className="-ml-2 mb-1 inline-flex items-center gap-1 min-h-[44px] px-2 text-sm text-stone-500 hover:text-stone-700"
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                    {t('import.back') || 'Back'}
+                    <CloseIcon className="w-4 h-4" />
+                    {t('common.cancel')}
                 </button>
-                <h1 className="text-2xl font-semibold text-stone-900">{t('import.title') || 'Import Content'}</h1>
-                <p className="text-stone-500 text-sm mt-1">
-                    {t('import.subtitle') || 'Extract adopter information from links, text, or images using AI'}
-                </p>
+                <h1 className="text-2xl font-semibold text-stone-900">{t('import.title')}</h1>
+                <p className="text-stone-500 text-sm mt-1">{t('import.subtitle')}</p>
             </div>
 
-            {/* Step Indicator */}
+            {/* Step Indicator — teal (themed); the old blue-* did not remap in
+                Azul Noche. On phones the labels don't fit, so the current step's
+                name shows underneath instead of bare numbers (design change 15). */}
             {!showConfirmModal && (
-                <div className="flex items-center justify-center gap-4 py-4 mb-6 bg-white rounded-xl border border-stone-200">
-                    {stepLabels.map((label, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                            {i > 0 && <div className="w-8 h-px bg-stone-200" />}
-                            <div className={`flex items-center gap-2 ${step >= i + 1 ? 'text-blue-600' : 'text-stone-500'}`}>
-                                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold ${step >= i + 1 ? 'bg-blue-100' : 'bg-stone-100'}`}>
-                                    {i + 1}
+                <div className="py-4 mb-6 bg-white rounded-xl border border-stone-200">
+                    <ol className="flex items-center justify-center gap-4">
+                        {stepLabels.map((label, i) => (
+                            <li key={i} className="flex items-center gap-2" aria-current={step === i + 1 ? 'step' : undefined}>
+                                {i > 0 && <span aria-hidden="true" className="w-8 h-px bg-stone-200" />}
+                                <span className={`flex items-center gap-2 ${step >= i + 1 ? 'text-teal-700' : 'text-stone-500'}`}>
+                                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold ${step >= i + 1 ? 'bg-teal-100' : 'bg-stone-100'}`}>
+                                        {i + 1}
+                                    </span>
+                                    <span className="text-sm font-medium hidden sm:block">{label}</span>
                                 </span>
-                                <span className="text-sm font-medium hidden sm:block">{label}</span>
-                            </div>
-                        </div>
-                    ))}
+                            </li>
+                        ))}
+                    </ol>
+                    <p className="sm:hidden mt-2 text-center text-xs font-semibold text-teal-700">
+                        {t('import.step_n_of')
+                            .replace('{n}', String(Math.min(step, 3)))
+                            .replace('{total}', '3')
+                            .replace('{label}', stepLabels[Math.min(step, 3) - 1])}
+                    </p>
                 </div>
             )}
 
-            {/* Error Display */}
+            {/* Error Display — rose (themed), with the Error ID logged under it. */}
             {error && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm">
+                <div className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-sm" role="alert">
                     <div className="flex items-start gap-3">
-                        <WarningIcon className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-red-700 font-medium">{error}</p>
+                        <WarningIcon className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-rose-700 font-medium break-words">{error}</p>
+                            {errorId && (
+                                <p className="text-xs text-rose-600 mt-1 font-mono select-all">Error ID: {errorId}</p>
+                            )}
                             {retryCountdown > 0 && (
-                                <p className="text-red-500 mt-1">
-                                    {locale !== 'en'
-                                        ? `Podés reintentar en ${retryCountdown}s`
-                                        : `You can retry in ${retryCountdown}s`}
+                                <p className="text-rose-600 mt-1">
+                                    {t('import.retry_in').replace('{s}', String(retryCountdown))}
                                 </p>
                             )}
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                             {retryCountdown > 0 ? (
-                                <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-100 text-red-400 font-semibold text-sm tabular-nums">
+                                <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-rose-100 text-rose-600 font-semibold text-sm tabular-nums">
                                     {retryCountdown}
                                 </span>
-                            ) : retryCountdown === 0 && error && inputContent.trim() ? (
+                            ) : canRetry ? (
                                 <button
+                                    type="button"
                                     onClick={() => {
-                                        setError(null);
-                                        handleSmartSubmit();
+                                        // Retry what failed. A pasted text read from step 1 re-runs
+                                        // step 1; a read from step 2 re-runs the read.
+                                        if (failedOp === 'extract' && step !== 1) handleExtract();
+                                        else handleSmartSubmit();
                                     }}
-                                    className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 transition-colors"
+                                    className="min-h-[44px] px-4 bg-rose-600 text-white rounded-xl text-sm font-bold hover:bg-rose-700 transition-colors"
                                 >
-                                    {locale !== 'en' ? 'Reintentar' : 'Retry'}
+                                    {t('import.retry')}
                                 </button>
                             ) : null}
-                            <button onClick={() => { setError(null); setRetryCountdown(0); }} className="text-red-400 hover:text-red-600">
+                            <button
+                                type="button"
+                                onClick={() => { clearError(); setRetryCountdown(0); }}
+                                aria-label={t('common.close')}
+                                className="w-11 h-11 inline-flex items-center justify-center rounded-full text-rose-500 hover:text-rose-700"
+                            >
                                 <CloseIcon className="w-4 h-4" />
                             </button>
                         </div>
@@ -1267,100 +1612,62 @@ export default function ImportWizard() {
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
                     {/* Smart textarea */}
                     <div>
-                        <label className="block text-sm font-medium text-stone-700 mb-2">
-                            {t('import.smartLabel') || 'Paste a link or text about an adopter'}
+                        <label htmlFor="import-input" className="block text-sm font-medium text-stone-700 mb-2">
+                            {t('import.smartLabel')}
                         </label>
                         <textarea
+                            id="import-input"
                             value={inputContent}
                             onChange={e => setInputContent(e.target.value)}
-                            placeholder={t('import.smartPlaceholder') || 'Paste a URL, Instagram post, WhatsApp message, or any text with adopter info...'}
+                            placeholder={t('import.smartPlaceholder')}
                             className="w-full px-4 py-3 border border-stone-300 rounded-xl outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100 text-base min-h-[120px] resize-y"
                             autoFocus
                         />
-                        <p className="text-xs text-stone-500 mt-1">
-                            {t('import.smartHint') || 'Links are fetched automatically. Text is sent directly to AI extraction.'}
-                        </p>
+                        <p className="text-xs text-stone-500 mt-1">{t('import.smartHint')}</p>
                     </div>
 
-                    {/* Photo upload - always visible */}
-                    <div>
-                        <label className="block text-sm font-medium text-stone-700 mb-2">
-                            <AttachIcon className="w-4 h-4 shrink-0" />{t('import.photoUploadLabel') || 'Add photos (optional)'}
-                        </label>
-                        <div
-                            onClick={() => fileInputRef.current?.click()}
-                            className="border-2 border-dashed border-stone-300 rounded-xl p-6 text-center cursor-pointer hover:border-teal-400 hover:bg-blue-50 transition-colors"
+                    <MediaPicker
+                        items={manualImages}
+                        onAddFiles={addFiles}
+                        onRemove={removeImage}
+                        label={t('import.photoUploadLabel')}
+                        dropzoneText={t('import.dropzone')}
+                        hint={t('import.paste_hint')}
+                        removeLabel={t('import.removeImage')}
+                        testId="import-dropzone"
+                    />
+
+                    <StickyActions>
+                        <button
+                            type="button"
+                            onClick={handleSmartSubmit}
+                            disabled={(!inputContent.trim() && manualImages.length === 0) || loading}
+                            className={`${BTN_PRIMARY} w-full`}
                         >
-                            <svg className="w-8 h-8 mx-auto text-stone-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <p className="text-sm text-stone-500">{t('import.imageDropzone') || 'Click to upload images'}</p>
-                            <p className="text-xs text-stone-500 mt-0.5">{t('import.imageHint') || 'Screenshots of posts, chat messages, etc.'}</p>
-                        </div>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*,video/*"
-                            multiple
-                            onChange={handleImageUpload}
-                            className="hidden"
-                        />
-
-                        {/* Image previews */}
-                        {manualImages.length > 0 && (
-                            <div className="grid grid-cols-4 gap-2 mt-3">
-                                {manualImages.map((img, i) => (
-                                    <div key={i} className="relative group">
-                                        {img.file ? (
-                                            <div className="w-full h-20 rounded-lg bg-gradient-to-br from-teal-600 to-teal-800 flex items-center justify-center">
-                                                <div className="w-8 h-8 rounded-full bg-white/25 flex items-center justify-center">
-                                                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
-                                        )}
-                                        <button
-                                            onClick={() => removeImage(i)}
-                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <CloseIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Submit button */}
-                    <button
-                        onClick={handleSmartSubmit}
-                        disabled={(!inputContent.trim() && manualImages.length === 0) || loading}
-                        className="w-full py-3 bg-teal-600 text-white rounded-xl font-medium hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                    >
-                        {loading ? (
-                            <>
-                                <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
-                                {t('import.fetching') || 'Fetching content...'} {fetchProgress > 0 && <span className="tabular-nums">{fetchProgress}%</span>}
-                            </>
-                        ) : (
-                            <>
-                                {t('import.continueBtn') || 'Continue'} →
-                            </>
-                        )}
-                    </button>
+                            {loading ? (
+                                <>
+                                    {spinner}
+                                    {loadingKind === 'extract'
+                                        ? t('import.aiAnalyzing')
+                                        : <>{t('import.fetching')} {fetchProgress > 0 && <span className="tabular-nums">{fetchProgress}%</span>}</>}
+                                </>
+                            ) : (
+                                <>{t('import.continueBtn')} →</>
+                            )}
+                        </button>
+                    </StickyActions>
                 </div>
             )}
 
-            {/* === STEP 2: Content Review + Extract === */}
+            {/* === STEP 2: Content Review + Extract (fetched links only) === */}
             {step === 2 && !showConfirmModal && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
                     {/* Shared from badge */}
                     {sharedFrom && sharedFrom !== 'shared' && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                            <UploadIcon className="w-5 h-5" />
-                            <span className="font-medium">{t('import.sharedFrom') || 'Shared from'}:</span>
-                            <span className="truncate text-blue-600">{(() => { try { return new URL(sharedFrom).hostname; } catch { return sharedFrom; } })()}</span>
+                        <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-lg text-sm text-teal-800 min-w-0">
+                            <UploadIcon className="w-5 h-5 shrink-0" />
+                            <span className="font-medium shrink-0">{t('import.sharedFrom')}:</span>
+                            <span className="truncate">{(() => { try { return new URL(sharedFrom).hostname; } catch { return sharedFrom; } })()}</span>
                         </div>
                     )}
 
@@ -1369,9 +1676,8 @@ export default function ImportWizard() {
                         <div className="flex flex-col items-center gap-3 py-8 text-stone-500">
                             <svg className="w-7 h-7 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                             <p className="text-sm">
-                                {t('import.fetchingShared') || 'Fetching shared content...'} {fetchProgress > 0 && <span className="tabular-nums font-medium">{fetchProgress}%</span>}
+                                {t('import.fetchingShared')} {fetchProgress > 0 && <span className="tabular-nums font-medium">{fetchProgress}%</span>}
                             </p>
-                            {/* Progress bar */}
                             <div className="w-48 h-1.5 bg-stone-200 rounded-full overflow-hidden">
                                 <div
                                     className="h-full bg-teal-600 rounded-full transition-all duration-500 ease-out"
@@ -1381,29 +1687,29 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewTitle') || 'Review Content'}</h3>
+                    <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewTitle')}</h3>
 
                     {/* Video post warning */}
                     {isVideoPost && (
                         <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
                             <VideoIcon className="w-5 h-5 shrink-0" />
                             <div>
-                                <p className="font-medium">{locale !== 'en' ? 'Este enlace contiene un video' : 'This link contains a video'}</p>
-                                <p className="mt-0.5 text-amber-700">
-                                    {locale !== 'en'
-                                        ? 'La información puede estar en el video. Adjuntá capturas de pantalla del video para que las analicemos mejor.'
-                                        : 'The information may be in the video. Attach screenshots from the video for better extraction.'}
-                                </p>
+                                <p className="font-medium">{t('import.video_post_title')}</p>
+                                <p className="mt-0.5 text-amber-700">{t('import.video_post_hint')}</p>
                             </div>
                         </div>
                     )}
 
                     {/* Editable text */}
                     <div>
-                        <label className="block text-sm font-medium text-stone-600 mb-1">
-                            {t('import.extractedText') || 'Extracted Text'} {sourceUrl && <span className="text-stone-500">(from {new URL(sourceUrl).hostname})</span>}
+                        <label htmlFor="import-fetched-text" className="block text-sm font-medium text-stone-600 mb-1">
+                            {t('import.extractedText')}{' '}
+                            {sourceUrl && (() => {
+                                try { return <span className="text-stone-500">{t('import.from_host').replace('{host}', new URL(sourceUrl).hostname)}</span>; } catch { return null; }
+                            })()}
                         </label>
                         <textarea
+                            id="import-fetched-text"
                             value={editableText}
                             onChange={e => setEditableText(e.target.value)}
                             className="w-full px-4 py-3 border border-stone-300 rounded-xl text-base min-h-[150px] resize-y outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
@@ -1414,9 +1720,9 @@ export default function ImportWizard() {
                     {fetchedImages.length > 0 && (
                         <div>
                             <div className="flex items-center justify-between mb-2">
-                                <label className="block text-sm font-medium text-stone-600">
-                                    {selectedFetchedImages.size} {t('import.imagesOf') || 'of'} {fetchedImages.length} {fetchedImages.length !== 1 ? (t('import.imagesFoundPlural') || 'images') : (t('import.imagesFound') || 'image')} {t('import.imagesSelected') || 'selected'}
-                                </label>
+                                <span className="block text-sm font-medium text-stone-600">
+                                    {selectedFetchedImages.size} {t('import.imagesOf')} {fetchedImages.length} {fetchedImages.length !== 1 ? t('import.imagesFoundPlural') : t('import.imagesFound')} {t('import.imagesSelected')}
+                                </span>
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1426,9 +1732,9 @@ export default function ImportWizard() {
                                             setSelectedFetchedImages(new Set(fetchedImages.map((_, i) => i)));
                                         }
                                     }}
-                                    className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                                    className="min-h-[44px] px-2 -mr-2 text-xs font-semibold text-teal-700 hover:text-teal-800"
                                 >
-                                    {selectedFetchedImages.size === fetchedImages.length ? (t('import.deselectAll') || 'Deselect All') : (t('import.selectAll') || 'Select All')}
+                                    {selectedFetchedImages.size === fetchedImages.length ? t('import.deselectAll') : t('import.selectAll')}
                                 </button>
                             </div>
                             <div className="grid grid-cols-4 gap-2">
@@ -1438,6 +1744,7 @@ export default function ImportWizard() {
                                         <button
                                             key={i}
                                             type="button"
+                                            aria-pressed={isSelected}
                                             onClick={() => {
                                                 setSelectedFetchedImages(prev => {
                                                     const next = new Set(prev);
@@ -1456,29 +1763,38 @@ export default function ImportWizard() {
                                                 alt=""
                                                 className="w-full h-20 object-cover bg-stone-100"
                                             />
-                                            {/* Checkmark overlay */}
-                                            <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs transition-all ${isSelected
+                                            {/* Selection mark — the whole tile is the control. */}
+                                            <span aria-hidden="true" className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-all ${isSelected
                                                 ? 'bg-teal-600 text-white'
                                                 : 'bg-white/80 text-stone-500 border border-stone-300'
                                                 }`}>
-                                                {isSelected ? <CheckIcon className="w-3 h-3" /> : null}
-                                            </div>
-                                            {/* Expand button */}
-                                            <div
+                                                {isSelected ? <CheckIcon className="w-3.5 h-3.5" /> : null}
+                                            </span>
+                                            {/* Expand and discard: <span role=button> because the tile
+                                                itself is a button and nesting buttons is invalid HTML.
+                                                24px visual, 44px hit area (§1.5) via ::after. */}
+                                            <span
+                                                role="button"
+                                                tabIndex={0}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setLightboxItem({ url: `/api/proxy-image?url=${encodeURIComponent(url)}`, mediaType: 'image' });
                                                 }}
-                                                className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-xs md:opacity-0 md:group-hover:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
+                                                onKeyDown={(e) => {
+                                                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setLightboxItem({ url: `/api/proxy-image?url=${encodeURIComponent(url)}`, mediaType: 'image' });
+                                                }}
+                                                className="absolute bottom-1 left-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 cursor-pointer after:absolute after:-inset-2.5 after:content-['']"
                                                 title={t('nav.expand_image')}
+                                                aria-label={t('nav.expand_image')}
                                             >
-                                                ⤢
-                                            </div>
-                                            {/* Discard. A <div> rather than a <button>
-                                                because the tile itself is a button and
-                                                nesting them is invalid HTML — same
-                                                reason the expand control above is one. */}
-                                            <div
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                                </svg>
+                                            </span>
+                                            <span
                                                 role="button"
                                                 tabIndex={0}
                                                 onClick={(e) => {
@@ -1491,14 +1807,12 @@ export default function ImportWizard() {
                                                     e.stopPropagation();
                                                     removeFetchedImage(i);
                                                 }}
-                                                className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity cursor-pointer"
+                                                className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center cursor-pointer after:absolute after:-inset-2.5 after:content-['']"
                                                 title={t('import.removeImage')}
                                                 aria-label={t('import.removeImage')}
                                             >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </div>
+                                                <CloseIcon className="w-3.5 h-3.5" />
+                                            </span>
                                         </button>
                                     );
                                 })}
@@ -1509,107 +1823,72 @@ export default function ImportWizard() {
                     {/* Fetched videos */}
                     {fetchedVideos.length > 0 && (
                         <div>
-                            <label className="block text-sm font-medium text-stone-600 mb-2">
-                                <VideoIcon className="w-4 h-4 inline-block mr-1 -mt-0.5" />{fetchedVideos.length} {fetchedVideos.length !== 1 ? 'videos' : 'video'} {locale !== 'en' ? 'encontrados' : 'found'}
-                            </label>
+                            <span className="flex items-center gap-1 text-sm font-medium text-stone-600 mb-2">
+                                <VideoIcon className="w-4 h-4" />{t('import.videos_found').replace('{count}', String(fetchedVideos.length))}
+                            </span>
                             <div className="grid grid-cols-2 gap-3">
                                 {fetchedVideos.map((url, i) => (
-                                    <div
+                                    <button
+                                        type="button"
                                         key={i}
-                                        className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video cursor-pointer group bg-gradient-to-br from-teal-600 to-teal-800"
+                                        className="relative rounded-xl overflow-hidden border-2 border-teal-300 aspect-video group bg-gradient-to-br from-teal-600 to-teal-800"
                                         onClick={() => setLightboxItem({ url, mediaType: 'video' })}
                                     >
                                         {/* Video placeholder — actual playback happens in lightbox */}
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                                <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                        <span className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                            <span className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                                     <path d="M8 5v14l11-7z" />
                                                 </svg>
-                                            </div>
-                                            <span className="text-white/80 text-xs mt-2 font-medium">Video {i + 1}</span>
-                                        </div>
-                                    </div>
+                                            </span>
+                                            <span className="text-white/80 text-xs mt-2 font-medium">{t('import.video_n').replace('{n}', String(i + 1))}</span>
+                                        </span>
+                                    </button>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* Manual image upload */}
-                    <div>
-                        <label className="block text-sm font-medium text-stone-600 mb-1">
-                            {t('import.addMoreImages') || 'Add more images (optional)'}
-                        </label>
-                        <input
-                            type="file"
-                            accept="image/*,video/*"
-                            multiple
-                            onChange={handleImageUpload}
-                            className=""
-                        />
-                        {manualImages.length > 0 && (
-                            <div className="grid grid-cols-4 gap-2 mt-2">
-                                {manualImages.map((img, i) => (
-                                    <div key={i} className="relative group">
-                                        <img src={img.preview} alt="" className="w-full h-20 object-cover rounded-lg" />
-                                        <button
-                                            onClick={() => removeImage(i)}
-                                            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <CloseIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    {/* More photos — the same picker as step 1 (it was a bare file input). */}
+                    <MediaPicker
+                        items={manualImages}
+                        onAddFiles={addFiles}
+                        onRemove={removeImage}
+                        label={t('import.addMoreImages')}
+                        dropzoneText={t('import.dropzone')}
+                        hint={t('import.paste_hint')}
+                        removeLabel={t('import.removeImage')}
+                    />
 
-                    <div className="flex gap-3 pt-2">
+                    <StickyActions className="flex gap-3">
                         <button
-                            onClick={() => setStep(1)}
-                            className="px-4 py-2.5 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
+                            type="button"
+                            onClick={() => { clearError(); setStep(1); }}
+                            className="min-h-[44px] px-4 border border-stone-300 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-50"
                         >
-                            ← {t('import.back') || 'Back'}
+                            ← {t('import.back')}
                         </button>
                         <button
-                            onClick={handleExtract}
+                            type="button"
+                            onClick={() => handleExtract()}
                             disabled={loading || (!editableText.trim() && manualImages.length === 0 && selectedFetchedImages.size === 0)}
                             className={`${BTN_PRIMARY} flex-1`}
                         >
                             {loading ? (
-                                <>
-                                    <svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
-                                    {t('import.aiAnalyzing') || 'AI is analyzing...'}
-                                </>
+                                <>{spinner}{t('import.aiAnalyzing')}</>
                             ) : (
-                                <>
-                                    <SparkIcon className="w-4 h-4 shrink-0" />{t('import.extractWithAi') || 'Extract with AI'}
-                                </>
+                                <><SparkIcon className="w-4 h-4 shrink-0" />{t('import.extractWithAi')}</>
                             )}
                         </button>
-                    </div>
+                    </StickyActions>
                 </div>
             )}
 
             {/* === STEP 3: Review Extracted Data === */}
             {step === 3 && !showConfirmModal && extractedData && (
                 <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted') || 'Review Extracted Data'}</h3>
-                        {/* The pill grades the AI EXTRACTION, so it only shows when
-                            the model actually had to interpret something — a fetched
-                            post, a photo, a video.
-                            Hidden for contacts imports (the hydrate path hardcodes
-                            'low'; there is no AI signal to grade) and for plain text
-                            pastes, where the user handed over the data directly and a
-                            confidence grade on reading it back says nothing. */}
-                        {!fromContacts && extractedFromSource && (
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${extractedData.confidence === 'high' ? 'bg-green-100 text-green-700' :
-                                extractedData.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-red-100 text-red-700'
-                                }`}>
-                                {t(`import.confidence_${extractedData.confidence}`)}
-                            </span>
-                        )}
+                    <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-lg font-semibold text-stone-900">{t('import.reviewExtracted')}</h3>
                     </div>
 
                     {/* Contact-import breadcrumb — only shown when the wizard
@@ -1624,15 +1903,44 @@ export default function ImportWizard() {
                         </div>
                     )}
 
-                    {/* Validation warning — only when AI extraction ran. The
-                        contact-import path has no AI in the loop, so the
-                        warning would be inaccurate. */}
-                    {!fromContacts && (
-                        <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                            <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                            <span>{t('import.aiValidationWarning') || 'AI-extracted data may contain errors. Please verify all fields before saving.'}</span>
-                        </div>
+                    {/* What could not be extracted, and how to fix it (Jon, 2026-10-22).
+                        Only when there is a problem — no generic "verify everything"
+                        banner, no confidence grade. Each hint is a fact of the import or
+                        something the AI says it could not read; never its opinion of
+                        the post. Hints about missing source content offer the way
+                        back to add it; the rest point at the field right here. */}
+                    {quality && quality.issues.length > 0 && (
+                        <ul data-testid="import-quality" className="space-y-2">
+                            {quality.issues.map((issue: ExtractionIssue) => {
+                                const goBack = ['post_text_unavailable', 'info_in_video', 'image_unreadable', 'text_cut_off'].includes(issue);
+                                return (
+                                    <li key={issue} data-issue={issue} className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+                                        <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                                        <span className="flex-1 min-w-0">{t(`import.issue_${issue}`)}</span>
+                                        {goBack && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setStep(sourceUrl ? 2 : 1)}
+                                                className="shrink-0 min-h-[44px] -my-2.5 px-2 text-sm font-semibold text-teal-800 underline underline-offset-2"
+                                            >
+                                                {t('import.issue_fix_add')}
+                                            </button>
+                                        )}
+                                        {issue === 'extraction_failed' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleExtract()}
+                                                className="shrink-0 min-h-[44px] -my-2.5 px-2 text-sm font-semibold text-teal-800 underline underline-offset-2"
+                                            >
+                                                {t('import.retry')}
+                                            </button>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
                     )}
+
 
                     {/* v2.19.47: per-record public-visibility consent toggle.
                         Only rendered for social-URL imports — Google Contacts
@@ -1641,30 +1949,37 @@ export default function ImportWizard() {
                         Default ON (preserves the historical FB-import-is-public
                         behaviour) but the rescuer can flip it off if they want
                         the record gated like a normal manual entry. */}
+                    {/* The whole row is the switch: 44px+ target, and a line on what
+                        "public" means for this person (decision B2, 2026-10-21). It
+                        was a 36x20 toggle. */}
                     {!fromContacts && !!sourceUrl?.trim() && (
-                        <div className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${isPublicProfile ? 'bg-teal-50 border-teal-200' : 'bg-stone-50 border-stone-200'}`}>
-                            <button
-                                type="button"
-                                onClick={() => setIsPublicProfile(p => !p)}
-                                aria-pressed={isPublicProfile}
-                                className={`mt-0.5 relative w-9 h-5 rounded-full transition-colors shrink-0 ${isPublicProfile ? 'bg-teal-500' : 'bg-stone-300'}`}
-                                title={t('import.public_profile_toggle_title')}
-                            >
-                                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${isPublicProfile ? 'translate-x-4' : 'translate-x-0'}`} />
-                            </button>
-                            <div className="flex-1 min-w-0 text-xs">
-                                <p className={`font-medium ${isPublicProfile ? 'text-teal-800' : 'text-stone-700'}`}>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isPublicProfile}
+                            onClick={() => setIsPublicProfile(p => !p)}
+                            title={t('import.public_profile_toggle_title')}
+                            className={`w-full text-left flex items-start gap-3 px-3 py-3 min-h-[44px] rounded-xl border transition-colors ${isPublicProfile ? 'bg-teal-50 border-teal-200' : 'bg-stone-50 border-stone-200'}`}
+                        >
+                            <span aria-hidden="true" className={`mt-0.5 relative w-11 h-6 rounded-full transition-colors shrink-0 ${isPublicProfile ? 'bg-teal-500' : 'bg-stone-300'}`}>
+                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${isPublicProfile ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </span>
+                            <span className="flex-1 min-w-0 text-xs">
+                                <span className={`block text-sm font-semibold ${isPublicProfile ? 'text-teal-800' : 'text-stone-700'}`}>
                                     {isPublicProfile
                                         ? t('import.public_profile_on')
                                         : t('import.public_profile_off')}
-                                </p>
-                                <p className="text-stone-600 mt-0.5">
+                                </span>
+                                {isPublicProfile && (
+                                    <span className="block text-teal-800 mt-0.5">{t('import.public_profile_on_consequence')}</span>
+                                )}
+                                <span className="block text-stone-600 mt-0.5">
                                     {sourceNotPublic
                                         ? t('import.public_profile_explainer_private_source')
                                         : t('import.public_profile_explainer')}
-                                </p>
-                            </div>
-                        </div>
+                                </span>
+                            </span>
+                        </button>
                     )}
 
                     {/* Name */}
@@ -1678,32 +1993,119 @@ export default function ImportWizard() {
                         />
                     </div>
 
+                    {/* Rating — the point of a report (Jon, 2026-10-22). Social-post
+                        imports are almost always call-outs, so there is no activity
+                        type to choose: the record is a report, and the rating is what
+                        protects other rescuers. The AI may suggest one from the
+                        conduct described; it is tagged as a suggestion, with the
+                        reason, until the rescuer touches the stars. Never saved
+                        silently. Contacts imports keep their own flow. */}
+                    {!fromContacts && (
+                        <div data-testid="import-rating" className="rounded-xl border border-stone-200 p-4 space-y-3">
+                            <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider">{t('import.rating_title')}</h3>
+                            {/* Pre-filled with the AI's suggestion when the post gives grounds;
+                                the rescuer changes it with a tap (re-tapping clears). Kept terse
+                                (Jon, 2026-10-22): no suggestion caption, no «Quitar». */}
+                            <StarRating
+                                value={extractedData.adoptionRating || 0}
+                                onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r || undefined })}
+                                size="md"
+                                showLabel
+                                clearable={false}
+                            />
+                            {extractedData.adoptionRating === 1 && (
+                                <p className="text-xs text-rose-700">{t('import.rating_one_bans')}</p>
+                            )}
+                            <div>
+                                <span className="block text-xs font-medium text-stone-500 mb-1">{t('import.report_month')}</span>
+                                <DatePicker
+                                    value={reportDate}
+                                    onChange={setReportDate}
+                                    maxDate={new Date().toISOString().split('T')[0]}
+                                    dayOptional
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Other people the post names (Jon, 2026-10-22): saved as relatives
+                        of this profile in the same save. The rescuer can drop anyone the
+                        AI got wrong. */}
+                    {!fromContacts && relatives.length > 0 && (
+                        <div data-testid="import-relatives" className="rounded-xl border border-stone-200 p-4 space-y-2">
+                            <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider">{t('import.relatives_title')}</h3>
+                            <p className="text-xs text-stone-500">{t('import.relatives_hint')}</p>
+                            <ul className="space-y-2">
+                                {relatives.map((p, i) => (
+                                    <li key={`${p.name}-${i}`} className="rounded-lg bg-stone-50 border border-stone-200">
+                                    <div className="flex items-center justify-between gap-3 pl-3">
+                                        <span className="min-w-0 py-2">
+                                            <span className="block font-semibold text-stone-900 break-words">{p.name}</span>
+                                            <span className="block text-xs text-stone-500">
+                                                {t(p.relationship === 'unknown' ? 'adopter.hh_rel_unknown_display' : `adopter.hh_rel_${p.relationship}`)}
+                                                {[...p.phones, ...p.socialProfiles].length > 0 && <> · {[...p.phones, ...p.socialProfiles].join(' · ')}</>}
+                                            </span>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setRelatives(prev => prev.filter((_, j) => j !== i))}
+                                            aria-label={t('import.relative_remove').replace('{name}', p.name)}
+                                            title={t('import.relative_remove').replace('{name}', p.name)}
+                                            className="shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-full text-stone-500 hover:text-rose-700"
+                                        >
+                                            <CloseIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <ImportRelativeCheck
+                                        name={p.name}
+                                        contactEntries={asHouseholdContacts(toMember(p).contactEntries)}
+                                        excludeIds={selectedMatch ? [selectedMatch.id] : []}
+                                        choice={relativeChoices[relativeKey(p)]}
+                                        onChoose={c => setRelativeChoices(prev => ({ ...prev, [relativeKey(p)]: c }))}
+                                    />
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     {/* Contact Info — typed entries, AI-categorized and editable */}
                     <div>
                         <h3 className="text-sm font-semibold text-teal-800 mb-3 uppercase tracking-wider">{t('adopter.contact')}</h3>
                         <ContactEntriesInput entries={contactEntries} onChange={setContactEntries} />
-                        {/* Field-overlap preview (v2.16.0-43 — Option B).
-                            Step 3 previously surfaced every duplicate as its
-                            own chip with type-list labels and a percentage,
-                            duplicating the dedup decision UI on Step 4. Now
-                            it shows a single count line — the user knows
-                            something will surface at save-time, the decision
-                            still happens on Step 4. We only count hits above
-                            the 15% noise floor (same threshold the old
-                            "visible" bucket used). */}
+                        {/* Field-overlap preview. Was a bare count ("1 posible
+                            duplicado") the rescuer could not act on, so they kept
+                            editing a profile they might end up merging. Now it
+                            names the strongest match and offers to add to it
+                            (decision B7, 2026-10-21); the decision still happens
+                            on the duplicate screen, which opens pre-selected.
+                            Every judged match shows, same person first. */}
                         {(() => {
-                            const visibleCount = fieldOverlapHints.filter(h => h.relevancePercent >= 15).length;
-                            if (visibleCount === 0) return null;
-                            const template = visibleCount === 1
-                                ? t('import.duplicates_found_count_one')
-                                : t('import.duplicates_found_count_other').replace('{count}', String(visibleCount));
+                            const visible = fieldOverlapHints
+                                .slice()
+                                .sort((x, y) => (Number(y.verdict === 'same') - Number(x.verdict === 'same')) || (y.relevancePercent - x.relevancePercent));
+                            if (visible.length === 0) return null;
+                            const top = visible[0];
                             return (
-                                <p className="mt-1.5 text-xs text-amber-700 flex items-start gap-1.5">
-                                    <svg className="w-3.5 h-3.5 flex-shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                    </svg>
-                                    <span>{template}</span>
-                                </p>
+                                <div data-testid="import-match-hint" className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-2">
+                                    <p className="flex items-start gap-1.5">
+                                        <WarningIcon className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                                        <span>
+                                            {t('import.review_hint_match')
+                                                .replace('{name}', top.adopterName?.trim() || t('import.unnamed_profile'))
+                                                .replace('{why}', humanMatchSentence(top.matchTypes || [], t))}
+                                            {visible.length > 1 && <> {t('import.duplicates_found_count_other').replace('{count}', String(visible.length))}</>}
+                                        </span>
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => openMatchFromHint(top)}
+                                        disabled={isSaving}
+                                        className="min-h-[44px] px-4 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-sm font-bold hover:bg-teal-100 disabled:opacity-40"
+                                    >
+                                        {t('import.review_hint_action')}
+                                    </button>
+                                </div>
                             );
                         })()}
                     </div>
@@ -1721,109 +2123,6 @@ export default function ImportWizard() {
                                 className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base min-h-[80px] resize-y outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                                 placeholder={t('import.initial_observation_placeholder') || 'Saved as an observation record on the new profile.'}
                             />
-                        </div>
-                    )}
-
-                    {/* Adoption / Record Detection */}
-                    {extractedData.adoptionDetected && (
-                        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
-                            <div className="flex items-center gap-2 text-green-700 font-medium text-sm">
-                                <span>🐾</span>
-                                {t('import.adoptionDetected') || '🐾 Adoption Detected'}
-                                <span className={`px-2 py-0.5 rounded-full text-xs ${extractedData.adoptionConfidence === 'high' ? 'bg-green-200' :
-                                    extractedData.adoptionConfidence === 'medium' ? 'bg-yellow-200' :
-                                        'bg-stone-200'
-                                    }`}>
-                                    {extractedData.adoptionConfidence}
-                                </span>
-                            </div>
-
-                            {/* Record Type Pills */}
-                            <div>
-                                <label className="block text-xs font-medium text-green-700 mb-1.5">
-                                    {t('import.recordType') || 'Record Type'}
-                                </label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {[
-                                        { value: 'adoption', icon: '🏠', label: t('import.typeAdoption') || 'Adoption' },
-                                        { value: 'adoption_request', icon: '📝', label: t('import.typeRequest') || 'Request' },
-                                        { value: 'returned_pet', icon: '↩️', label: t('import.typeReturned') || 'Returned' },
-                                        { value: 'follow_up', icon: '📞', label: t('import.typeFollowUp') || 'Follow-up' },
-                                        { value: 'observation', icon: '👁️', label: t('import.typeObservation') || 'Note' }
-                                    ].map(type => {
-                                        const isSelected = (extractedData.recordType || 'adoption') === type.value;
-                                        return (
-                                            <button
-                                                key={type.value}
-                                                type="button"
-                                                onClick={() => setExtractedData({ ...extractedData, recordType: type.value as any })}
-                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${isSelected
-                                                    ? 'bg-green-200 border-green-400 text-green-800'
-                                                    : 'bg-white border-green-200 text-green-600 hover:border-green-300'
-                                                    }`}
-                                            >
-                                                <span>{type.icon}</span>
-                                                <span>{type.label}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-stone-500 mb-1">
-                                        {t('import.animalName') || 'Animal Name'}
-                                        <span className="ml-1 lowercase">({t('common.optional')})</span>
-                                    </label>
-                                    {/* v2.19.52: "unknown name" checkbox gone. Field is just
-                                        optional — see AdoptionFormWizard for the full rationale.
-                                        Empty saves as NULL on the API side. */}
-                                    <input
-                                        value={extractedData.animalName || ''}
-                                        onChange={e => setExtractedData({ ...extractedData, animalName: e.target.value })}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.species') || 'Species'}</label>
-                                    <select
-                                        value={extractedData.animalSpecies || ''}
-                                        onChange={e => setExtractedData({ ...extractedData, animalSpecies: e.target.value as any })}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                    >
-                                        <option value="dog">{t('import.speciesDog') || '🐕 Dog'}</option>
-                                        <option value="cat">{t('import.speciesCat') || '🐱 Cat'}</option>
-                                        <option value="bird">{t('import.speciesBird') || '🐦 Bird'}</option>
-                                        <option value="other">{t('import.speciesOther') || 'Other'}</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.rating') || 'Rating'}</label>
-                                <StarRating
-                                    value={extractedData.adoptionRating || 0}
-                                    onChange={(r: number) => setExtractedData({ ...extractedData, adoptionRating: r })}
-                                    size="md"
-                                    showLabel
-                                />
-                            </div>
-
-                            {/* Adoption Date */}
-                            <div>
-                                <label className="block text-xs font-medium text-stone-500 mb-1">{t('import.adoptionDate') || 'Date'}</label>
-                                <input
-                                    type="date"
-                                    value={extractedData.adoptionDate || new Date().toISOString().split('T')[0]}
-                                    onChange={e => setExtractedData({ ...extractedData, adoptionDate: e.target.value })}
-                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-base outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                                />
-                            </div>
-
-                            <p className="text-xs text-green-600">
-                                {t('import.adoptionNote') || 'A record will be created automatically.'}
-                            </p>
                         </div>
                     )}
 
@@ -1893,7 +2192,7 @@ export default function ImportWizard() {
                                                     onClick={(e) => { e.stopPropagation(); toggleMediaExcluded(m.key); }}
                                                     aria-label={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
                                                     title={excluded ? (t('import.mediaInclude') || 'Include') : (t('import.mediaExclude') || 'Exclude')}
-                                                    className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${excluded ? 'bg-white text-teal-700 border border-teal-300 hover:bg-teal-50' : 'bg-black/60 text-white hover:bg-black/80'}`}
+                                                    className={`absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center shadow transition-all after:absolute after:-inset-2.5 after:content-[''] ${excluded ? 'bg-white text-teal-700 border border-teal-300 hover:bg-teal-50' : 'bg-black/60 text-white hover:bg-black/80'}`}
                                                 >
                                                     {excluded
                                                         ? <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -1909,31 +2208,44 @@ export default function ImportWizard() {
 
                     <LegalConsent />
 
-                    <div className="flex gap-3 pt-2">
-                        {/* v2.19.20: contacts imports skip steps 1+2 entirely
-                            (hydrateFromContact jumps straight to step 3), so
-                            "Back" must not drop the rescuer onto step 2's AI
-                            text-paste screen they never saw. Send them home —
-                            the contact picker is one tap away on the home
-                            page. */}
-                        <button
-                            onClick={() => fromContacts ? router.push('/') : setStep(2)}
-                            className="px-4 py-2.5 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                        >
-                            ← {t('import.back') || 'Back'}
-                        </button>
-                        <button
-                            onClick={handlePreSave}
-                            disabled={!extractedData.name?.trim() || isSaving}
-                            className={`${BTN_PRIMARY} flex-1`}
-                        >
-                            {isSaving ? (
-                                <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.checking') || 'Checking...'}</>
-                            ) : (
-                                <><SaveIcon className="w-4 h-4 shrink-0" />{t('import.saveAdopter') || 'Save Adopter'}</>
-                            )}
-                        </button>
-                    </div>
+                    {(() => {
+                        const canSave = canSaveImportedProfile(extractedData.name, contactEntries);
+                        return (
+                            <StickyActions>
+                                {/* Why "Guardar" is off — it used to be disabled with no word (decision B4). */}
+                                {!canSave && (
+                                    <p id="import-save-hint" className="text-xs text-amber-800 mb-2">{t('import.save_needs_identifier')}</p>
+                                )}
+                                <div className="flex gap-3">
+                                    {/* v2.19.20: contacts imports skip steps 1+2 entirely
+                                        (hydrateFromContact jumps straight to step 3), so
+                                        "Back" must not drop the rescuer onto step 2's AI
+                                        text-paste screen they never saw. Send them home.
+                                        Pasted text skips step 2 too, so it goes to step 1. */}
+                                    <button
+                                        type="button"
+                                        onClick={() => fromContacts ? router.push('/') : setStep(sourceUrl ? 2 : 1)}
+                                        className="min-h-[44px] px-4 border border-stone-300 rounded-xl text-sm font-bold text-stone-600 hover:bg-stone-50"
+                                    >
+                                        ← {t('import.back')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handlePreSave()}
+                                        disabled={!canSave || isSaving}
+                                        aria-describedby={!canSave ? 'import-save-hint' : undefined}
+                                        className={`${BTN_PRIMARY} flex-1`}
+                                    >
+                                        {isSaving ? (
+                                            <>{spinner} {t('import.checking')}</>
+                                        ) : (
+                                            <><SaveIcon className="w-4 h-4 shrink-0" />{t('import.saveAdopter')}</>
+                                        )}
+                                    </button>
+                                </div>
+                            </StickyActions>
+                        );
+                    })()}
                 </div>
             )}
 
@@ -1959,7 +2271,7 @@ export default function ImportWizard() {
                             <p className="text-lg font-semibold text-stone-900">
                                 {savingMode === 'merge'
                                     ? `${t('import.saving_merging_prefix') || 'Agregando datos a'} ${savingTargetName || (t('import.thisProfile') || 'este perfil')}…`
-                                    : `${t('import.saving_creating') || 'Creando perfil'}${savingTargetName ? ` de ${savingTargetName}` : ''}…`}
+                                    : `${savingTargetName ? t('import.saving_creating_for').replace('{name}', savingTargetName) : t('import.saving_creating')}…`}
                             </p>
                             <p className="text-sm text-stone-500">
                                 {fromContacts
@@ -1970,166 +2282,246 @@ export default function ImportWizard() {
                     </div>
                 </div>
             )}
-            {showConfirmModal && !isSaving && (
-                <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-6">
-                    <div className="flex flex-col items-center text-center">
-                        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${duplicateAdopter ? 'bg-yellow-100 text-yellow-600' :
-                            personMatches.length > 0 ? 'bg-purple-100 text-purple-600' :
-                                'bg-blue-100 text-blue-600'
-                            }`}>
-                            {personMatches.length > 0 && !duplicateAdopter ? (
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                            ) : (
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
-                            )}
-                        </div>
+            {showConfirmModal && !isSaving && (() => {
+                const secondary = buttonClasses({ variant: 'secondary', fullWidth: true });
+                const backToReview = (kind: 'url' | 'person' | 'none') => (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (kind !== 'none') trackImport('import_duplicate_choice', { choice: 'back', kind });
+                            setDuplicateAdopter(null);
+                            setDuplicateAdopters([]);
+                            setPersonMatches([]);
+                            setSelectedMatch(null);
+                            setShowConfirmModal(false);
+                        }}
+                        className="-ml-2 inline-flex items-center min-h-[44px] px-2 text-sm font-semibold text-stone-500 hover:text-stone-700"
+                    >
+                        {t('import.backToReview')}
+                    </button>
+                );
 
-                        <h3 className="text-xl font-semibold text-stone-900 mb-2">
-                            {duplicateAdopter
-                                ? (<span className="inline-flex items-center gap-1.5"><WarningIcon className="w-4 h-4 shrink-0" />{t('import.duplicateWarning') || 'Duplicate Post Detected'}</span>)
-                                : personMatches.length > 0
-                                    ? (t('import.personMatchTitle') || 'Existing Profiles Found')
-                                    : (t('import.confirmCreate') || 'Create New Profile?')}
-                        </h3>
-
-                        <p className="text-stone-600 mb-4">
-                            {duplicateAdopter
-                                ? <>{t('import.duplicateUrl') || 'This URL was already imported. Existing profile:'} <a href={`/adopter/${duplicateAdopter.id}`} target="_blank" className="underline font-medium text-blue-600">{duplicateAdopter.name}</a></>
-                                : personMatches.length > 0
-                                    ? (t('import.personMatchDesc') || 'Select a profile to add this record to, or create a new one')
-                                    : <>{t('import.aboutToCreate') || 'You are about to create a new profile for'} <strong className="text-stone-900">{extractedData?.name || (t('import.unknownName') || 'Unknown')}</strong>.</>
-                            }
-                        </p>
-
-                        {/* Warning when duplicate check failed */}
-                        {duplicateCheckFailed && !duplicateAdopter && personMatches.length === 0 && (
-                            <div className="w-full px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 text-left flex items-start gap-2 mb-2 outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100">
-                                <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
-                                <span>{t('import.duplicateCheckFailed') || 'Could not verify if this person already exists. Please check manually before saving.'}</span>
+                // ── The post was already imported (decisions B9 + B6) ──
+                if (duplicateAdopter) {
+                    const first = duplicateAdopters[0] ?? { id: duplicateAdopter.id, name: duplicateAdopter.name, canEdit: false };
+                    const firstName = first.name?.trim() || t('import.unnamed_profile');
+                    return (
+                        <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
+                            {backToReview('url')}
+                            <div className="flex items-start gap-3">
+                                <span className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                                    <WarningIcon className="w-5 h-5" />
+                                </span>
+                                <div className="min-w-0">
+                                    <h3 className="text-lg font-semibold text-stone-900">{t('import.already_imported_title')}</h3>
+                                    <p className="text-sm text-stone-600 mt-0.5">{t('import.already_imported_desc')}</p>
+                                </div>
                             </div>
-                        )}
+                            <ul className="space-y-2">
+                                {(duplicateAdopters.length ? duplicateAdopters : [first]).map(p => (
+                                    <li key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 px-4 py-2">
+                                        <span className="font-semibold text-stone-900 line-clamp-2 break-words">{p.name?.trim() || t('import.unnamed_profile')}</span>
+                                        <a
+                                            href={`/adopter/${p.id}`}
+                                            onClick={() => trackImport('import_duplicate_choice', { choice: 'view', kind: 'url' })}
+                                            className="shrink-0 inline-flex items-center min-h-[44px] px-2 text-sm font-semibold text-teal-700 underline underline-offset-2"
+                                        >
+                                            {t('import.viewProfile')}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    trackImport('import_duplicate_choice', { choice: 'not_same_post', kind: 'url' });
+                                    setDuplicateAdopter(null);
+                                    setDuplicateAdopters([]);
+                                    setShowConfirmModal(false);
+                                    // The name/contact check still runs.
+                                    handlePreSave(undefined, { skipUrlCheck: true });
+                                }}
+                                className="inline-flex items-center min-h-[44px] text-sm font-semibold text-stone-600 underline underline-offset-2 hover:text-stone-800"
+                            >
+                                {t('import.not_same_post')}
+                            </button>
+                            <StickyActions className="flex flex-col gap-2">
+                                <a
+                                    href={`/adopter/${first.id}`}
+                                    onClick={() => trackImport('import_duplicate_choice', { choice: 'view', kind: 'url' })}
+                                    className={`${BTN_PRIMARY} w-full`}
+                                >
+                                    {t('import.view_profile_btn')}
+                                </a>
+                                <button type="button" onClick={() => handleMerge({ id: first.id, name: first.name || '' })} className={secondary}>
+                                    {t('import.add_interaction_to').replace('{name}', firstName)}
+                                </button>
+                            </StickyActions>
+                        </div>
+                    );
+                }
 
-                        {/* Person Match Cards — selectable list */}
-                        {personMatches.length > 0 && !duplicateAdopter && (
-                            <div className="w-full space-y-2 mb-2">
-                                {personMatches.map((match) => {
+                // ── Possible matches by name / contact (decision B5, audit D5–D6) ──
+                if (personMatches.length > 0) {
+                    const mergeLeads = selectedMatch?.confidence === 'high';
+                    const mergeBtn = (
+                        <button
+                            type="button"
+                            data-testid="import-merge-selected"
+                            onClick={() => handleMerge()}
+                            disabled={!selectedMatch || (needsIdentityChoice(selectedMatch) && !mergeAs)}
+                            className={mergeLeads ? `${BTN_PRIMARY} w-full` : secondary}
+                        >
+                            {t('import.add_to_selected')}
+                        </button>
+                    );
+                    const createBtn = (
+                        <button
+                            type="button"
+                            onClick={() => { trackImport('import_duplicate_choice', { choice: 'create', kind: 'person' }); handleConfirmSave(); }}
+                            className={mergeLeads ? secondary : `${BTN_PRIMARY} w-full`}
+                        >
+                            {t('import.create_new_instead')}
+                        </button>
+                    );
+                    return (
+                        <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
+                            {backToReview('person')}
+                            <div>
+                                <h3 className="text-lg font-semibold text-stone-900">{t('import.possible_match_title')}</h3>
+                                <p className="text-sm text-stone-600 mt-0.5">{t('import.possible_match_desc')}</p>
+                            </div>
+                            {/* A failed check is said here too, not only when nothing
+                                matched (re-review of 2.56.214, D). */}
+                            {duplicateCheckFailed && (
+                                <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+                                    <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                                    <span>{t('import.duplicateCheckFailed')}</span>
+                                </div>
+                            )}
+                            <div className="space-y-2" role="radiogroup" aria-label={t('import.possible_match_title')}>
+                                {personMatches.map(match => {
                                     const isSelected = selectedMatch?.id === match.id;
+                                    const toggle = () => { setMergeAs(null); setSelectedMatch(isSelected ? null : match); };
                                     return (
-                                        <button
+                                        <div
                                             key={match.id}
-                                            type="button"
-                                            onClick={() => setSelectedMatch(isSelected ? null : match)}
+                                            role="radio"
+                                            aria-checked={isSelected}
+                                            tabIndex={0}
+                                            data-testid="import-match"
+                                            onClick={e => {
+                                                // A link or button inside the card (its name, «Ver perfil completo», «No es
+                                                // esta persona», the comparison's toggle) does its own thing, never picks the card.
+                                                const inner = (e.target as HTMLElement).closest('a, button');
+                                                if (inner && inner !== e.currentTarget) {
+                                                    if (inner.tagName === 'A') trackImport('import_duplicate_choice', { choice: 'view', kind: 'person' });
+                                                    return;
+                                                }
+                                                toggle();
+                                            }}
+                                            onKeyDown={e => {
+                                                // Enter on a nested link or button must not toggle the card.
+                                                if (e.target !== e.currentTarget) return;
+                                                if (e.key !== 'Enter' && e.key !== ' ') return;
+                                                e.preventDefault();
+                                                toggle();
+                                            }}
                                             className={`w-full text-left rounded-xl p-4 border-2 transition-all ${isSelected
-                                                ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-200'
-                                                : 'border-stone-200 bg-stone-50 hover:border-stone-300'
+                                                ? 'border-teal-500 bg-teal-50 cursor-pointer'
+                                                : 'border-stone-200 bg-stone-50 hover:border-stone-300 cursor-pointer'
                                                 }`}
                                         >
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-purple-500 bg-purple-500' : 'border-stone-300'
-                                                        }`}>
+                                            {/* The shared match card (audit B6). Selecting is the card itself (the radio mark);
+                                                the action follows below the list. */}
+                                            <MatchCard newTab headTestId="import-match-head"
+                                                person={{ id: match.id, name: match.name || '', rating: match.standing?.rating, openAlerts: match.standing?.openAlerts, isMinor: !!match.standing?.isMinor, households: match.standing?.households }}
+                                                showStanding={!!match.standing}
+                                                leading={(
+                                                    <span aria-hidden="true" className={`mt-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-teal-600 bg-teal-600' : 'border-stone-300'}`}>
                                                         {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="font-semibold text-stone-900 line-clamp-2 break-words" title={match.name}>{match.name}</p>
-                                                        {/* Natural-sentence dedup reason (v2.16.0-43). Replaced
-                                                            the chip list of raw token-type labels with one line
-                                                            that names what's shared in user-language. */}
-                                                        <p className="text-xs text-stone-600 mt-1">
-                                                            {humanMatchSentence(match.matchTypes || [], t)}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <MatchBandPill band={match.confidence} t={t} />
-                                                    <a
-                                                        href={`/adopter/${match.id}`}
-                                                        target="_blank"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="text-teal-600 hover:text-blue-700 text-xs underline"
-                                                    >{t('import.viewProfile') || 'View'}</a>
-                                                </div>
-                                            </div>
-                                        </button>
+                                                    </span>
+                                                )}
+                                                compare={(
+                                                    // What matches and what doesn't, field by field (Jon, 2026-10-25); open by
+                                                    // default when it is the only possible match.
+                                                    <MatchCompare
+                                                        adopterId={match.id}
+                                                        matchTypes={match.matchTypes || []}
+                                                        profileName={match.name}
+                                                        source={{ kind: 'post', name: extractedData?.name, entries: contactEntries }}
+                                                        score={match.score}
+                                                        defaultOpen={personMatches.length === 1}
+                                                        t={t}
+                                                    />
+                                                )}
+                                                actions={{
+                                                    viewTestId: 'import-match-view',
+                                                    notThisTestId: 'import-match-not-this',
+                                                    // Off the list; if it was the picked one, nothing is picked.
+                                                    onNotThis: () => {
+                                                        trackImport('import_duplicate_choice', { choice: 'not_this', kind: 'person' });
+                                                        setPersonMatches(list => list.filter(m => m.id !== match.id));
+                                                        if (isSelected) { setMergeAs(null); setSelectedMatch(null); }
+                                                    },
+                                                }} />
+                                        </div>
                                     );
                                 })}
                             </div>
-                        )}
-                    </div>
+                            {/* Matched on phone/email/address but not the name: who is the
+                                post's person to that profile? (Jon, 2026-10-22) */}
+                            {needsIdentityChoice(selectedMatch) && (
+                                <fieldset data-testid="import-identity-choice" className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-1">
+                                    <legend className="px-1 text-sm font-semibold text-amber-900">
+                                        {t('import.identity_question')
+                                            .replace('{post}', extractedData?.name?.trim() || t('import.unnamed_profile'))
+                                            .replace('{profile}', selectedMatch?.name?.trim() || t('import.unnamed_profile'))}
+                                    </legend>
+                                    {(['alias', 'relative'] as const).map(choice => (
+                                        <label key={choice} className="flex items-center gap-3 min-h-[44px] text-sm text-stone-800 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="import-identity"
+                                                value={choice}
+                                                checked={mergeAs === choice}
+                                                onChange={() => setMergeAs(choice)}
+                                                className="w-5 h-5 accent-teal-600"
+                                            />
+                                            {t(choice === 'alias' ? 'import.identity_alias' : 'import.identity_relative')}
+                                        </label>
+                                    ))}
+                                </fieldset>
+                            )}
+                            <StickyActions className="flex flex-col gap-2">
+                                {mergeLeads ? <>{mergeBtn}{createBtn}</> : <>{createBtn}{mergeBtn}</>}
+                            </StickyActions>
+                        </div>
+                    );
+                }
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-col gap-2">
-                        {duplicateAdopter ? (
-                            <>
-                                <button
-                                    onClick={() => {
-                                        handleMerge({ id: duplicateAdopter.id, name: duplicateAdopter.name });
-                                    }}
-                                    disabled={isSaving}
-                                    className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.addingRecord') || 'Adding...'}</> : <>{t('import.addInteraction') || '➕ Add New Interaction to This Profile'}</>}
-                                </button>
-                                <a
-                                    href={`/adopter/${duplicateAdopter.id}`}
-                                    className={BTN_PRIMARY}
-                                >
-                                    {t('import.viewExisting') || '→ View Existing Profile'}
-                                </a>
-                                <button
-                                    onClick={() => { setDuplicateAdopter(null); setShowConfirmModal(false); }}
-                                    className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                                >
-                                    {t('import.backToReview') || '← Back to Review'}
-                                </button>
-                            </>
-                        ) : personMatches.length > 0 ? (
-                            <>
-                                <button
-                                    onClick={() => handleMerge()}
-                                    disabled={isSaving || !selectedMatch}
-                                    className="py-2.5 px-4 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.addingRecord') || 'Adding record...'}</> : <>{t('import.addToExisting') || 'Add Record to Selected Profile'}</>}
-                                </button>
-                                <button
-                                    onClick={handleConfirmSave}
-                                    disabled={isSaving}
-                                    className={BTN_PRIMARY}
-                                >
-                                    {t('import.createNewAnyway') || 'Create New Profile Instead'}
-                                </button>
-                                <button
-                                    onClick={() => { setPersonMatches([]); setSelectedMatch(null); setShowConfirmModal(false); }}
-                                    className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                                >
-                                    {t('import.backToReview') || '← Back to Review'}
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <button
-                                    onClick={handleConfirmSave}
-                                    disabled={isSaving}
-                                    className={BTN_PRIMARY}
-                                >
-                                    {isSaving ? <><svg className="w-4 h-4 animate-spin motion-reduce:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg> {t('import.creating') || 'Creating...'}</> : <><CheckIcon className="w-4 h-4 shrink-0" />{t('import.createProfile') || 'Create Profile'}</>}
-                                </button>
-                                <button
-                                    onClick={() => setShowConfirmModal(false)}
-                                    className="py-2.5 px-4 border border-stone-300 rounded-xl text-sm font-medium text-stone-600 hover:bg-stone-50"
-                                >
-                                    {t('import.backToReview') || '← Back to Review'}
-                                </button>
-                            </>
+                // ── No match, but the check itself failed: the rescuer has to look ──
+                return (
+                    <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
+                        {backToReview('none')}
+                        <h3 className="text-lg font-semibold text-stone-900">{t('import.confirmCreate')}</h3>
+                        <p className="text-sm text-stone-600">
+                            {t('import.aboutToCreate')} <strong className="text-stone-900">{extractedData?.name?.trim() || t('import.unnamed_profile')}</strong>.
+                        </p>
+                        {duplicateCheckFailed && (
+                            <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+                                <WarningIcon className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>{t('import.duplicateCheckFailed')}</span>
+                            </div>
                         )}
+                        <StickyActions>
+                            <button type="button" onClick={handleConfirmSave} className={`${BTN_PRIMARY} w-full`}>
+                                <CheckIcon className="w-4 h-4 shrink-0" />{t('import.createProfile')}
+                            </button>
+                        </StickyActions>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Image/Video Lightbox */}
             <MediaLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />

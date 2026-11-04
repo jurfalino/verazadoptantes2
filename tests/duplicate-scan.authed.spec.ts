@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execD1 } from './db';
 
 /**
  * The admin duplicate scan (Datos → Duplicados → Scan Now): stale profiles
@@ -10,9 +10,6 @@ import { execSync } from 'child_process';
  * after it in the same shard see the seed state, not the rebuilt queue.
  * Fixtures: test-scan-fixture-* (two profiles sharing a phone, never tokenized).
  */
-function execD1(sql: string): string {
-    return execSync(`npx wrangler d1 execute DB --local --command="${sql.replace(/"/g, '\\"')}" --json`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-}
 function rows<T>(sql: string): T[] {
     return JSON.parse(execD1(sql))[0].results as T[];
 }

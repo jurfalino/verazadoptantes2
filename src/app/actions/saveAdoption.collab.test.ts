@@ -169,6 +169,15 @@ describe('saveAdoption — per-field collisions', () => {
         expect(ev.rating).toBe(5);
     });
 
+    it('rating 0 = not rated: stored as NULL on update and on create, never 0', async () => {
+        await saveAdoption({ id: 'ev1', rating: 0 } as never, { loaded: { rating: 3 } });
+        expect(sqlite.prepare("SELECT rating FROM adopter_events WHERE id = 'ev1'").get()!.rating).toBeNull();
+        await saveAdoption({ adopterId: 'ad1', recordType: 'observation', details: 'Sin nota', rating: 0 } as never);
+        const rows = sqlite.prepare("SELECT rating FROM adopter_events WHERE adopter_id = 'ad1' AND details = 'Sin nota'").all();
+        expect(rows).toHaveLength(1);
+        expect(rows[0].rating).toBeNull();
+    });
+
     it('moving an animal to another adopter while a teammate already moved it: refused, no second active placement', async () => {
         await as(MATE, () => saveAdoption({ id: 'an1', adopterId: 'ad2' } as never, { loaded: { adopterId: 'ad1' } }));
         const res = await saveAdoption({ id: 'an1', recordType: 'available', adopterId: null } as never, { loaded: { adopterId: 'ad1', recordType: 'adoption' } });

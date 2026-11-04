@@ -11,6 +11,7 @@
  * losing the comparison context. Keyboard: ←/→ paging, Esc closes.
  */
 
+import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { useCallback, useEffect, useState } from 'react';
 import { emailHandle } from '@/lib/userDisplay';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -28,6 +29,8 @@ import { createContractInvitation } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import LocationMap from '@/components/LocationMap';
+import { AlertPill } from '@/components/AlertPill';
+import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
 
 interface Props {
     applicants: ApplicantSummary[];
@@ -130,8 +133,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         const f = applicant.flags;
         if (f.verified_identity) flagPills.push(<FlagBadge key="vid" icon="✓" label={t('flags.verified_identity') || 'Verified ID'} tone="ok" />);
         if (f.verified_address) flagPills.push(<FlagBadge key="vad" icon="✓" label={t('flags.verified_address') || 'Verified address'} tone="ok" />);
-        if (f.inaccurate) flagPills.push(<FlagBadge key="ina" icon="⚠" label={t('flags.inaccurate') || 'Inaccurate'} tone="warn" />);
-        if (f.duplicate) flagPills.push(<FlagBadge key="dup" icon="📄" label={t('flags.duplicate') || 'Duplicate'} tone="warn" />);
+        // The flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01).
+        for (const kind of rescuerFlagKinds(openAlertKinds(f))) flagPills.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
     }
 
     const fullAnswers = (() => {
@@ -234,10 +237,10 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
                             {applicant.adopterRating != null ? (
                                 <RatingExplainer rating={applicant.adopterRating}>
-                                    <RatingBadge rating={applicant.adopterRating} size="sm" label="short" />
+                                    <RatingBadge rating={applicant.adopterRating} />
                                 </RatingExplainer>
                             ) : (
-                                <span className="text-xs text-stone-400 italic">{t('myAdopters.rating_empty_hint')?.split(' — ')[0] || 'Sin actividad calificada'}</span>
+                                <RatingBadge rating={null} />
                             )}
                             {sourcePill}
                             {applicant.appliedAt && (
@@ -268,15 +271,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                                         👤 {(t('myAnimals.applicants_panel_added_by') || 'Agregado por {email}').replace('{email}', applicant.adopterContext.addedByName || emailHandle(applicant.adopterContext.addedBy))}
                                     </p>
                                 )}
-                                <a
-                                    href={`/adopter/${applicant.adopterId}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:text-teal-800 mt-1"
-                                >
-                                    {t('myAnimals.applicants_panel_view_full_profile') || 'Ver perfil completo'}
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                </a>
+                                {/* «Abrir perfil ↗», the new-tab link everywhere (point B). */}
+                                <OpenProfileLink href={`/adopter/${encodeURIComponent(applicant.adopterId)}`} className="-ml-1" />
                             </div>
                         ) : (
                             <p className="text-sm text-stone-500 italic">

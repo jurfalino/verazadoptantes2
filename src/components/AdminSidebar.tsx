@@ -9,7 +9,7 @@ import { useLanguage } from '@/context/LanguageContext';
 // 'moderator' items) and the admin's per-item marker (Mod pill vs 🔒). Sections
 // whose items all get filtered out don't render. NOTE: this only drives the UI —
 // actual access control for admin-only pages must be enforced server-side.
-type NavItem = { href: string; labelKey: string; icon: string; minRole: 'moderator' | 'admin'; special?: boolean; countKey?: 'dataRequests' | 'piiRequests' };
+type NavItem = { href: string; labelKey: string; icon: string; minRole: 'moderator' | 'admin'; special?: boolean; countKey?: 'dataRequests' | 'piiRequests' | 'mergeRequests' };
 const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
     { titleKey: 'nav_sect_panel', items: [
         { href: '/admin', labelKey: 'nav_overview', icon: '📊', minRole: 'moderator' },
@@ -23,6 +23,7 @@ const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
     { titleKey: 'nav_sect_requests', items: [
         { href: '/admin/data-requests', labelKey: 'nav_data_requests', icon: '📬', minRole: 'moderator', countKey: 'dataRequests' },
         { href: '/admin/pii-requests', labelKey: 'nav_pii_requests', icon: '🔒', minRole: 'moderator', countKey: 'piiRequests' },
+        { href: '/admin/merge-requests', labelKey: 'nav_merge_requests', icon: '🔗', minRole: 'admin', countKey: 'mergeRequests' },
     ] },
     { titleKey: 'nav_sect_admin', items: [
         { href: '/admin/users', labelKey: 'nav_users', icon: '👥', minRole: 'admin' },
@@ -45,7 +46,7 @@ const SECTIONS: Array<{ titleKey: string; items: NavItem[] }> = [
 export default function AdminSidebar({ isAdmin, counts }: {
     isAdmin: boolean;
     /** Actionable-item counts; a badge renders only when > 0. See lib/adminCounts.ts. */
-    counts?: { dataRequests: number; piiRequests: number };
+    counts?: { dataRequests: number; piiRequests: number; mergeRequests: number };
 }) {
     const [open, setOpen] = useState(false);
     const pathname = usePathname();

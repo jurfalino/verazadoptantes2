@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isAdminAsync } from '@/config/admins';
 import { mergeAdopters, mergeCandidatePair, notifyMergeOwners } from '@/lib/adopterMerge';
+import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 
 /**
  * How many secondaries one request may merge into the primary. Each merge is
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
         for (const candidateId of candidateIds) {
             const r = await mergeCandidatePair(candidateId, session.user.email);
             results.push({ candidateId, success: r.success, skipped: r.skipped, error: r.error, auditId: r.auditId, primaryId: r.primaryId });
-            if (notifyOwners && r.success && !r.skipped && r.primaryId) await notifyMergeOwners({ ...r, primaryId: r.primaryId }, session.user.email);
+            if (notifyOwners && r.success && !r.skipped && r.primaryId) await notifyMergeOwners({ ...r, primaryId: r.primaryId, secondaryId: r.secondaryId }, session.user.email);
         }
         const failed = results.filter(r => !r.success);
         const merged = results.filter(r => r.success && !r.skipped);
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     for (const secondaryId of secondaryIds) {
         const result = await mergeAdopters(primaryId, secondaryId, session.user.email);
         results.push({ secondaryId, success: result.success, error: result.error, auditId: result.auditId });
-        if (notifyOwners && result.success) await notifyMergeOwners({ ...result, primaryId }, session.user.email);
+        if (notifyOwners && result.success) await notifyMergeOwners({ ...result, primaryId, secondaryId }, session.user.email);
     }
 
     const failed = results.filter(r => !r.success);
@@ -88,6 +89,7 @@ export async function POST(request: Request) {
         const firstError = failed[0]?.error ?? 'Merge failed';
         const status = firstError.includes('not found') ? 404
             : firstError.includes('Invalid') || firstError.includes('already-deleted') ? 400
+            : firstError === HOUSEHOLD_NOT_CONVERTED ? 409
             : 500;
         return NextResponse.json({ error: firstError, results }, { status });
     }

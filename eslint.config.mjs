@@ -14,6 +14,10 @@ const eslintConfig = [
   {
     ignores: [
       ".next/**",
+      // Cloudflare build output (next-on-pages; the e2e copy in .vercel/e2e-cf-static).
+      ".vercel/**",
+      // wrangler pages dev bundles the worker into .wrangler/tmp.
+      ".wrangler/**",
       "out/**",
       "build/**",
       // Utility scripts at root — CommonJS, not part of the app
