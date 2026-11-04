@@ -31,11 +31,11 @@ export function checkPartition(all, legs) {
     return { missing, duplicated };
 }
 
-/** Narrow parser for the e2e job's `- group:` / `projects:` pairs. */
-export function parseLegs(yamlText) {
+/** Narrow parser for a job's `- group:` / `projects:` pairs (default: the e2e job). */
+export function parseLegs(yamlText, job = 'e2e') {
     const lines = yamlText.split('\n');
-    const start = lines.findIndex((l) => /^ {2}e2e:\s*$/.test(l));
-    if (start < 0) throw new Error('e2e job not found in ci.yml');
+    const start = lines.findIndex((l) => l.trimEnd() === `  ${job}:`);
+    if (start < 0) throw new Error(`${job} job not found in ci.yml`);
     const legs = [];
     let group = null;
     for (let i = start + 1; i < lines.length; i++) {
@@ -48,6 +48,22 @@ export function parseLegs(yamlText) {
     }
     if (legs.length === 0) throw new Error('no matrix legs parsed from ci.yml');
     return legs;
+}
+
+/**
+ * The Cloudflare-build matrix (e2e-cf) is a copy of the e2e one: a leg that drifts
+ * would run a different set of tests on each path. Returns one message per difference.
+ */
+export function diffMatrices(dev, cf) {
+    const byGroup = (legs) => new Map(legs.map((l) => [l.group, l.args.join(' ')]));
+    const d = byGroup(dev), c = byGroup(cf);
+    const out = [];
+    for (const g of [...new Set([...d.keys(), ...c.keys()])].sort()) {
+        if (!c.has(g)) out.push(`leg ${g}: only in e2e`);
+        else if (!d.has(g)) out.push(`leg ${g}: only in e2e-cf`);
+        else if (d.get(g) !== c.get(g)) out.push(`leg ${g}: ${d.get(g)} vs ${c.get(g)}`);
+    }
+    return out;
 }
 
 /** `playwright test --list` output -> test ids; drops banners/totals, strips the column. */
@@ -68,9 +84,21 @@ function list(args) {
 
 function main() {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-    const legDefs = parseLegs(readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
+    const yaml = readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+    const legDefs = parseLegs(yaml);
     // No --project: every project the config defines, so a newly added one cannot bypass the guard.
     const all = list([]);
+    // Same legs on the Cloudflare build, and its config selects the same tests.
+    const drift = diffMatrices(legDefs, parseLegs(yaml, 'e2e-cf'));
+    const allCf = new Set(list(['--config', 'playwright.cf.config.ts']));
+    const cfOnly = [...allCf].filter((id) => !all.includes(id));
+    const devOnly = all.filter((id) => !allCf.has(id));
+    if (drift.length || cfOnly.length || devOnly.length) {
+        for (const m of drift) console.error(`MATRIX DRIFT (e2e vs e2e-cf): ${m}`);
+        for (const id of devOnly) console.error(`NOT on the Cloudflare build: ${id}`);
+        for (const id of cfOnly) console.error(`ONLY on the Cloudflare build: ${id}`);
+        process.exit(1);
+    }
     const legs = {};
     for (const { group, args } of legDefs) legs[group] = list(args);
     const { missing, duplicated } = checkPartition(all, legs);
@@ -79,7 +107,7 @@ function main() {
         for (const d of duplicated) console.error(`DUPLICATED in ${d.legs.join(', ')}: ${d.id}`);
         process.exit(1);
     }
-    console.log(`partition OK: ${new Set(all.filter((i) => !i.startsWith('[setup]'))).size} tests in ${legDefs.length} legs`);
+    console.log(`partition OK: ${new Set(all.filter((i) => !i.startsWith("[setup]"))).size} tests in ${legDefs.length} legs (e2e-cf matrix identical)`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

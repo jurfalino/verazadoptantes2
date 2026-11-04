@@ -15,6 +15,8 @@ All notable changes to BuenAdoptante are documented here.
 - Memory log: every e2e leg uploads `e2e-heap.log` (heap peak every 10 s). Measured: the restarts come from the two
   biggest legs crossing ~6.4 GB; `--disable-source-maps` did not help and is not used.
 - Manual experiment runs (`workflow_dispatch`) run build and tests only — never migrations or deploys.
+- The partition check also fails the build if the Cloudflare matrix drifts from the e2e one or its config selects
+  different tests. Today: 362 tests, both paths identical.
 
 ## [2.58.15] - 2026-11-04
 

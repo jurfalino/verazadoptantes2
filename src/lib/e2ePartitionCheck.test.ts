@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkPartition, parseLegs, normalizeListOutput } from '../../scripts/e2e-partition-check.mjs';
+import { checkPartition, parseLegs, normalizeListOutput, diffMatrices } from '../../scripts/e2e-partition-check.mjs';
 
 const A = '[user] › a.spec.ts:1 › one';
 const B = '[authed] › b.spec.ts:2 › two';
@@ -37,6 +37,33 @@ describe('parseLegs', () => {
         expect(parseLegs(yaml)).toEqual([
             { group: 'g1', args: ['--project=user', '--shard=1/2'] },
             { group: 'g2', args: ['--project=authed', '--grep', '@leg-x'] },
+        ]);
+    });
+
+    it('reads another job by name (the Cloudflare matrix), not a job whose name starts the same', () => {
+        const yaml = [
+            'jobs:', '  e2e:', '    - group: dev', '      projects: --project=user',
+            '  e2e-cf:', '    - group: cf', '      projects: --project=authed', '',
+        ].join('\n');
+        expect(parseLegs(yaml)).toEqual([{ group: 'dev', args: ['--project=user'] }]);
+        expect(parseLegs(yaml, 'e2e-cf')).toEqual([{ group: 'cf', args: ['--project=authed'] }]);
+    });
+});
+
+describe('diffMatrices', () => {
+    const leg = (group: string, projects: string) => ({ group, args: projects.split(' ') });
+    it('is empty when both matrices have the same legs in any order', () => {
+        expect(diffMatrices([leg('a', '--project=user'), leg('b', '--project=authed')],
+            [leg('b', '--project=authed'), leg('a', '--project=user')])).toEqual([]);
+    });
+    it('names a leg missing from either side and a leg whose args differ', () => {
+        expect(diffMatrices(
+            [leg('a', '--project=user --shard=1/3'), leg('b', '--project=authed')],
+            [leg('a', '--project=user --shard=1/4'), leg('c', '--project=mobile')],
+        )).toEqual([
+            'leg a: --project=user --shard=1/3 vs --project=user --shard=1/4',
+            'leg b: only in e2e',
+            'leg c: only in e2e-cf',
         ]);
     });
 });
