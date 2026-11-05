@@ -2018,6 +2018,7 @@ export const en = {
         checkin_180d: 'Six-month check-in',
         health_vaccines: 'Vaccine plan (puppy/kitten)',
         health_neuter: 'Neutering (≈6 months of age)',
+        health_neuter_short: 'Neutering',
         checkin_custom: 'Day-{days} check-in',
         foster_checkin: 'Foster check-in (day {days})',
         status_due: 'Due',

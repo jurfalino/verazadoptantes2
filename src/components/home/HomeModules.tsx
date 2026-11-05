@@ -90,6 +90,25 @@ function TodoRow({ children, href, testId }: { children: ReactNode; href: string
     );
 }
 
+/** One animal: its photo (or the species placeholder), its name, one line under it — amber when a check-up is due. */
+function AnimalRow({ href, testId, name, photo, species, line, due = false }: {
+    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean;
+}) {
+    return (
+        <Link href={href} data-testid={testId} className="flex items-center gap-3 min-h-11 py-2 group">
+            <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
+                {photo
+                    ? <img src={photo} alt="" className="w-full h-full object-cover" />
+                    : <img src={`/placeholders/${species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
+            </span>
+            <span className="flex-1 min-w-0">
+                <span className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere]">{name}</span>
+                <span className={`block text-xs [overflow-wrap:anywhere] ${due ? 'font-semibold text-amber-700' : 'text-stone-500'}`}>{line}</span>
+            </span>
+        </Link>
+    );
+}
+
 function MoreRow({ label, href, testId }: { label: string; href: string; testId: string }) {
     return (
         <Link href={href} data-testid={testId} className="flex items-center justify-between gap-2 min-h-11 pt-2 text-sm font-semibold text-teal-700 hover:underline underline-offset-4">
@@ -209,11 +228,13 @@ function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t:
         <ModuleShell icon="paw" title={t('homeModules.animals_title')} summary={summary} href={d.available === 0 ? '/my-animals?view=adopted' : '/my-animals'} testId="home-animals">
             {dueRows.length > 0 && (
                 <div className="space-y-2">
-                    {dueRows.map(a => (
-                        <TodoRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}#next-action`} testId="home-animals-due">
-                            {(a.name ? `${a.name} · ` : '') + followupBadgeLabel(t, a.dueFollowups, a.dueTop, now)}
-                        </TodoRow>
-                    ))}
+                    <div className={ROWS}>
+                        {dueRows.map(a => (
+                            <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}#next-action`} testId="home-animals-due"
+                                name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} due
+                                line={followupBadgeLabel(t, a.dueFollowups, a.dueTop, now, { short: true })} />
+                        ))}
+                    </div>
                     {moreCount > 0 && (
                         <TodoRow href="/my-animals?view=pendientes" testId="home-animals-due-more">
                             {interpolate(t('homeModules.more_due'), { n: moreCount })}
@@ -225,17 +246,8 @@ function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t:
                 <div>
                     <div className={ROWS}>
                         {d.listed.slice(0, homeListLimit(dueRows.length > 0)).map(a => (
-                            <Link key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}`} data-testid="home-animal-row" className="flex items-center gap-3 min-h-11 py-2 group">
-                                <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
-                                    {a.photo
-                                        ? <img src={a.photo} alt="" className="w-full h-full object-cover" />
-                                        : <img src={`/placeholders/${a.species === 'cat' ? 'cat' : a.species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
-                                </span>
-                                <span className="flex-1 min-w-0">
-                                    <span className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere]">{a.name || t('homeModules.unnamed_animal')}</span>
-                                    <span className="block text-xs text-stone-500 [overflow-wrap:anywhere]">{status(a)}</span>
-                                </span>
-                            </Link>
+                            <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}`} testId="home-animal-row"
+                                name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} line={status(a)} />
                         ))}
                     </div>
                     {d.available > Math.min(d.listed.length, homeListLimit(dueRows.length > 0)) && (

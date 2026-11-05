@@ -16,6 +16,7 @@ import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { summarizeAdopterForms } from '@/domain/formLink';
 import { RECORD_TYPES } from '@/domain/constants';
+import { dueRowsShown } from '@/domain/homeModules';
 import { loadFormContext } from '@/lib/adopterFormContext';
 import type { HomeAdoptersData, HomeAnimalsData, HomePostsData, HomePersonRow } from '@/types/homeModules';
 
@@ -176,6 +177,13 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
         loadFollowupCtx(db, userEmail, log),
     ]);
 
+    // The /my-animals card's photo: images[0] of the same order.
+    const photoOf = (animalId: string): Promise<string | null> =>
+        db.select({ url: adopterImages.url }).from(adopterImages)
+            .where(eq(adopterImages.adoptionId, animalId))
+            .orderBy(animalPrimaryFirst(), sql`rowid ASC`).limit(1).get()
+            .then((r: { url: string } | undefined) => r?.url ?? null)
+            .catch((e: unknown) => { logger.warn('homeModules: animal photo fallback', { ...log, animalId, error: errMsg(e) }); return null; });
     const countOf = (where: typeof availableWhere) =>
         db.select({ n: sql<number>`count(DISTINCT ${adoptions.id})` }).from(adoptions).where(where).get()
             .then((r: { n: number } | undefined) => Number(r?.n ?? 0));
@@ -183,10 +191,18 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
     const dueP = followupCtx
         ? Promise.all([
             loadAnimalActivityBulk(db, scopeEmails, log),
-            db.select({ id: adoptions.id, animalName: adoptions.animalName, adopterId: adoptions.adopterId, date: adoptions.date })
+            db.select({ id: adoptions.id, animalName: adoptions.animalName, species: adoptions.species, adopterId: adoptions.adopterId, date: adoptions.date })
                 .from(adoptions).where(placedWhere).orderBy(sql`${adoptions.date} DESC`).all(),
-        ]).then(([bulk, placedRows]) => withDueFollowups(placedRows as Array<{ id: string; animalName: string | null; adopterId: string | null; date: unknown }>, bulk, followupCtx, log)
-            .map(r => ({ id: r.id, name: r.animalName, dueFollowups: r.dueFollowups, dueTop: r.dueTop })))
+        ]).then(([bulk, placedRows]) => {
+            const due = withDueFollowups(placedRows as Array<{ id: string; animalName: string | null; species: string | null; adopterId: string | null; date: unknown }>, bulk, followupCtx, log);
+            // Photos only for the rows the card shows: each due row reads as the animal it is.
+            const shown = new Set(dueRowsShown(due).rows.map(r => r.id));
+            return Promise.all(due.map(async r => ({
+                id: r.id, name: r.animalName, species: r.species,
+                photo: shown.has(r.id) ? await photoOf(r.id) : null,
+                dueFollowups: r.dueFollowups, dueTop: r.dueTop,
+            })));
+        })
         : Promise.resolve([]);
     // The newest «Disponibles» animals (same order as the tab), each with the
     // /my-animals card's photo (images[0] of the same order), foster home and
@@ -194,11 +210,7 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
     type Listed = { id: string; animalName: string | null; species: string | null; adopterId: string | null; recordType: string | null; addedBy: string | null };
     const ownerTeam = createOwnerTeamResolver();
     const enrichListed = (a: Listed) => Promise.all([
-        db.select({ url: adopterImages.url }).from(adopterImages)
-            .where(eq(adopterImages.adoptionId, a.id))
-            .orderBy(animalPrimaryFirst(), sql`rowid ASC`).limit(1).get()
-            .then((r: { url: string } | undefined) => r?.url ?? null)
-            .catch((e: unknown) => { logger.warn('homeModules: animal photo fallback', { ...log, animalId: a.id, error: errMsg(e) }); return null; }),
+        photoOf(a.id),
         a.adopterId
             ? db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, a.adopterId)).get()
                 .then((r: { name: string | null } | undefined) => r?.name ?? null)

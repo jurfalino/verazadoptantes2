@@ -2024,6 +2024,7 @@ export const es = {
         checkin_180d: 'Control de los 6 meses',
         health_vaccines: 'Plan de vacunas (cachorro)',
         health_neuter: 'Castración (≈6 meses de edad)',
+        health_neuter_short: 'Castración',
         checkin_custom: 'Control del día {days}',
         foster_checkin: 'Control de tránsito (día {days})',
         status_due: 'Pendiente',

@@ -14,6 +14,7 @@ export function followupBadgeLabel(
     dueFollowups: number,
     dueTop: { copyKey: string; offsetDays?: number; dueDate: number } | null | undefined,
     nowMs: number,
+    opts: { short?: boolean } = {},
 ): string {
     // Name the action instead of only counting it: "1 pendiente" made the
     // rescuer open the animal just to find out what.
@@ -22,9 +23,16 @@ export function followupBadgeLabel(
             ? (t('followups.pending_one') || 'pendiente')
             : (t('followups.pending_many') || 'pendientes')}`;
     }
-    const label = (dueTop.copyKey === 'checkin_custom' || dueTop.copyKey === 'foster_checkin')
-        ? interpolate(t(`followups.${dueTop.copyKey}`) || '{days}', { days: dueTop.offsetDays ?? '' })
-        : (t(`followups.${dueTop.copyKey}`) || dueTop.copyKey);
+    // short: the homepage row's second line drops what the animal's page
+    // explains («Castración (≈6 meses de edad)» → «Castración») when the
+    // control has a `_short` wording; t() answers the raw key when it doesn't.
+    const shortKey = `followups.${dueTop.copyKey}_short`;
+    const shortLabel = opts.short ? t(shortKey) : '';
+    const label = shortLabel && shortLabel !== shortKey
+        ? shortLabel
+        : (dueTop.copyKey === 'checkin_custom' || dueTop.copyKey === 'foster_checkin')
+            ? interpolate(t(`followups.${dueTop.copyKey}`) || '{days}', { days: dueTop.offsetDays ?? '' })
+            : (t(`followups.${dueTop.copyKey}`) || dueTop.copyKey);
     const extra = dueFollowups - 1;
     return `${label} · ${dueWhenText(t, dueTop.dueDate, nowMs)}${extra > 0 ? ` +${extra}` : ''}`;
 }

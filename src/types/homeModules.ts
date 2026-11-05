@@ -33,8 +33,9 @@ export type HomeAnimalsData = {
     available: number;
     /** «Ya adoptados» tab count. */
     adopted: number;
-    /** «Con controles pendientes»: one entry per animal, most overdue first. */
-    due: Array<{ id: string; name: string | null; dueFollowups: number; dueTop: DueTop }>;
+    /** «Con controles pendientes»: one entry per animal, most overdue first.
+     *  photo is loaded only for the rows the card can show (dueRowsShown); null otherwise. */
+    due: Array<{ id: string; name: string | null; species: string | null; photo: string | null; dueFollowups: number; dueTop: DueTop }>;
     /** The newest «Disponibles» animals (up to 3). */
     listed: Array<{
         id: string;

@@ -90,6 +90,8 @@ test.describe.serial('homepage modules', () => {
         await openHome(page);
         const animals = page.getByTestId('home-animals');
         await expect(animals.getByTestId('home-animals-due').filter({ hasText: DUE_ANIMAL_NAME })).toHaveCount(1);
+        // Shown as the animal it is: its photo (or the species placeholder) beside the name.
+        await expect(animals.getByTestId('home-animals-due').filter({ hasText: DUE_ANIMAL_NAME }).locator('img')).toHaveCount(1);
         await expect.poll(async () => {
             await openHome(page);
             const card = page.getByTestId('home-animals');

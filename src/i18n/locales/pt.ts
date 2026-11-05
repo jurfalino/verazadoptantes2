@@ -2023,6 +2023,7 @@ export const pt = {
         checkin_180d: 'Controle dos 6 meses',
         health_vaccines: 'Plano de vacinas (filhote)',
         health_neuter: 'Castração (≈6 meses de idade)',
+        health_neuter_short: 'Castração',
         checkin_custom: 'Controle do dia {days}',
         foster_checkin: 'Controle de lar temporário (dia {days})',
         status_due: 'Pendente',
