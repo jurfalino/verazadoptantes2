@@ -3723,8 +3723,6 @@ export const pt = {
         import_another: 'Importar outro post',
         first_steps_start: 'Para começar',
         first_steps_more: 'Você também pode',
-        hide: 'Ocultar',
-        hide_failed: 'Não conseguimos ocultar o cartão.',
         step_adopters_title: 'Registre um adotante',
         step_adopters_desc: 'Se ele aparecer de novo, você vai saber como foi.',
         step_animals_title: 'Cadastre um animal para adoção',

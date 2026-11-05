@@ -399,7 +399,8 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // show the caller, with the same scopes (getOrgMemberEmails / myAnimalsScope /
 // getPendingDuplicatesForUser), counts + ≤3 rows per card; +hideHomeFirstSteps() — session
 // required, takes no input, writes only the caller's own user_profiles.home_prefs.
-const EXPECTED_ACTIONS = 175;
+// 174 = 175 − 1. 2026-11-05 hideHomeFirstSteps removed with the «Ocultar» button (Jon).
+const EXPECTED_ACTIONS = 174;
 
 let manifest;
 try {

@@ -104,19 +104,4 @@ test.describe.serial('homepage modules', () => {
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
     });
 
-    test('«Ocultar» hides the first-steps card for the account, after a reload too', async ({ page }) => {
-        test.setTimeout(150_000);
-        // With the post fixture gone the user has no post: «Importá un post» is a step again.
-        execD1Batch([
-            `DELETE FROM adopter_events WHERE id = 'test-hm-fixture-ev-${stamp}'`,
-            `DELETE FROM adopters WHERE id = '${POST_ADOPTER}'`,
-        ]);
-        await openHome(page);
-        const steps = page.getByTestId('home-first-steps');
-        await expect(steps.getByTestId('home-step-posts')).toBeVisible();
-        await page.getByTestId('home-first-steps-hide').click();
-        await expect(steps).toHaveCount(0);
-        await openHome(page);
-        await expect(page.getByTestId('home-first-steps')).toHaveCount(0);
-    });
 });

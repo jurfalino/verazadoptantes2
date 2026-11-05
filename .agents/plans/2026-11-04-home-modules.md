@@ -9,7 +9,7 @@ Signed-in users with `ENABLE_CLEAN_HOMEPAGE` **off** see three cards under the s
 - **Mis adoptantes**: «N adoptantes»; amber rows «N pendientes de revisar» (→ `/my-adopters#pendientes`) and «N formularios por revisar» (→ `/my-adopters?filtro=por-revisar`, a new «Por revisar» chip with the same count); the newest 3 people (2 under amber rows), then «Ver los N adoptantes».
 - **Mis animales**: «N disponibles · N adoptados»; one amber row per animal with a follow-up due, using the /my-animals badge text (`followupBadgeLabel`), most overdue first. From the third animal on, the second row is «N animales más con controles pendientes» → `/my-animals?view=pendientes` (new tab; its count comes with each tab's list as `x-pending-count`, so `?counts=1` stays two COUNTs). Then up to 3 «Disponibles» rows.
 - **Posts de redes**: counts **people** («N personas desde posts») → `/my-adopters?filtro=posts` (new «Desde un post» chip). It shows only if the team brought in a post in the last `HOME_POSTS_WINDOW_DAYS` (30). The rows read «Observación · Facebook · hace 3 días».
-- **Empty modules** are never cards. They are steps of one «Para empezar» card (no content anywhere) or «También podés» card, which «Ocultar» hides per account (`user_profiles.home_prefs`, migration 0102).
+- **Empty modules** are never cards. They are steps of one «Para empezar» card (no content anywhere) or «También podés» card. It has no «Ocultar» (removed 2.58.28 by Jon's call; `user_profiles.home_prefs`, migration 0102, stays unused).
 
 ## Rules
 

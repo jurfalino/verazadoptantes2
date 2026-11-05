@@ -2,10 +2,8 @@
 
 import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
-import { logAudit } from '@/lib/audit';
 import { getFeatureFlag } from '@/config/features';
 import type { HomeModulesData, HomeSection } from '@/types/homeModules';
-import type { HomePrefs } from '@/domain/homePrefs';
 
 /**
  * Everything the signed-in homepage modules show (Mis adoptantes, Mis
@@ -35,11 +33,10 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
         }
     };
 
-    const [{ loadHomeAdopters, loadHomePosts, loadHomeAnimals }, { getOrgMemberEmails }, { getPendingDuplicatesForUser }, { getHomePrefsForEmail }, animalsOn, postsOn] = await Promise.all([
+    const [{ loadHomeAdopters, loadHomePosts, loadHomeAnimals }, { getOrgMemberEmails }, { getPendingDuplicatesForUser }, animalsOn, postsOn] = await Promise.all([
         import('@/lib/homeModulesData'),
         import('./organizations'),
         import('./duplicates'),
-        import('@/lib/homePrefs'),
         getFeatureFlag('ENABLE_ANIMALS_FOR_ADOPTION'),
         getFeatureFlag('ENABLE_CONTENT_IMPORT'),
     ]);
@@ -52,32 +49,13 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
         try { return (await getPendingDuplicatesForUser(1, 1, false)).total; } finally { timings.pendingReview = Date.now() - t0; }
     })();
 
-    const [adopters, animals, posts, prefs] = await Promise.all([
+    const [adopters, animals, posts] = await Promise.all([
         section('adopters', async () => loadHomeAdopters(db, email, await members, pendingReview)),
         animalsOn ? section('animals', () => loadHomeAnimals(db, email)) : Promise.resolve(null),
         postsOn ? section('posts', async () => loadHomePosts(db, email, await members)) : Promise.resolve(null),
-        getHomePrefsForEmail(db, email).catch((e: unknown) => {
-            logger.warn('getHomeModules: home prefs fallback, nothing hidden', { userEmail: email, error: e instanceof Error ? e.message : String(e) });
-            return {} as HomePrefs;
-        }),
     ]);
 
     // Per-card time, to keep the homepage honest (each card waits for the slowest read).
     logger.info('getHomeModules timings', { userEmail: email, totalMs: Date.now() - started, ...timings });
-    return { adopters, animals, posts, firstStepsHidden: prefs.firstStepsHidden === true };
-}
-
-/** «Ocultar» on «Para empezar» / «También podés» — for this account, on every device. */
-export async function hideHomeFirstSteps(): Promise<{ success: boolean; errorId?: string }> {
-    let userEmail: string | undefined;
-    try {
-        userEmail = await getUser();
-        const { setHomePrefsForEmail } = await import('@/lib/homePrefs');
-        await setHomePrefsForEmail(await getDb(), userEmail, { firstStepsHidden: true });
-        logAudit({ userEmail, action: 'home_first_steps_hidden', details: {} });
-        return { success: true };
-    } catch (error) {
-        const errorId = logger.error('hideHomeFirstSteps failed', error, { userEmail });
-        return { success: false, errorId };
-    }
+    return { adopters, animals, posts };
 }

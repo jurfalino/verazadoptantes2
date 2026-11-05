@@ -3724,8 +3724,6 @@ export const es = {
         import_another: 'Importar otro post',
         first_steps_start: 'Para empezar',
         first_steps_more: 'También podés',
-        hide: 'Ocultar',
-        hide_failed: 'No pudimos ocultar la tarjeta.',
         step_adopters_title: 'Registrá un adoptante',
         step_adopters_desc: 'Si vuelve a aparecer, vas a saber cómo le fue.',
         step_animals_title: 'Cargá un animal en adopción',

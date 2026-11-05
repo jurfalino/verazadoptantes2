@@ -3718,8 +3718,6 @@ export const en = {
         import_another: 'Import another post',
         first_steps_start: 'Get started',
         first_steps_more: 'You can also',
-        hide: 'Hide',
-        hide_failed: 'We couldn\'t hide the card.',
         step_adopters_title: 'Register an adopter',
         step_adopters_desc: 'If they show up again, you\'ll know how it went.',
         step_animals_title: 'Add an animal for adoption',

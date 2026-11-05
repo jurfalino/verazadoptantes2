@@ -61,5 +61,4 @@ export type HomeModulesData = {
     animals: HomeSection<HomeAnimalsData> | null;
     /** null: ENABLE_CONTENT_IMPORT is off. */
     posts: HomeSection<HomePostsData> | null;
-    firstStepsHidden: boolean;
 };

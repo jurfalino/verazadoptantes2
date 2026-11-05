@@ -20,8 +20,7 @@ import { timeAgo } from '@/lib/timeAgo';
 import { RatingBadge } from '@/components/RatingBadge';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
-import { useShowToast } from '@/components/ui/Toast';
-import { getHomeModules, hideHomeFirstSteps } from '@/app/actions/homeModules';
+import { getHomeModules } from '@/app/actions/homeModules';
 import { orderHomeModules, homeListLimit, dueRowsShown, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
 import { HOME_POSTS_WINDOW_DAYS } from '@/config/constants';
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
@@ -291,15 +290,10 @@ const STEPS: Record<HomeModuleKey, { icon: keyof typeof PATHS; key: string; href
     posts: { icon: 'post', key: 'posts', href: '/import' },
 };
 
-function FirstSteps({ steps, title, onHide, t }: { steps: HomeModuleKey[]; title: string; onHide: () => void; t: T }) {
+function FirstSteps({ steps, title, t }: { steps: HomeModuleKey[]; title: string; t: T }) {
     return (
         <section data-testid="home-first-steps" className="bg-white rounded-2xl border border-stone-200 px-4 pt-2 pb-1 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
-                <h2 className="text-base font-bold text-stone-900">{title}</h2>
-                <button type="button" data-testid="home-first-steps-hide" onClick={onHide} className="min-h-11 px-2 -mr-2 text-sm font-semibold text-stone-500 hover:text-teal-700">
-                    {t('homeModules.hide')}
-                </button>
-            </div>
+            <h2 className="flex items-center min-h-11 text-base font-bold text-stone-900">{title}</h2>
             <div className={ROWS}>
                 {steps.map(k => (
                     <Link key={k} href={STEPS[k].href} data-testid={`home-step-${k}`} className="flex items-center gap-3 min-h-14 py-3 group">
@@ -332,10 +326,8 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     googleContactsImportEnabled: boolean;
 }) {
     const { t, locale } = useLanguage();
-    const toast = useShowToast();
     const [data, setData] = useState<HomeModulesData | null | undefined>(undefined);
     const [failedId, setFailedId] = useState<string | null>(null);
-    const [stepsHidden, setStepsHidden] = useState(false);
 
     useEffect(() => {
         let active = true;
@@ -388,19 +380,6 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         </GoogleContactsPickerLauncher>
     ) : null;
 
-    const hide = async () => {
-        setStepsHidden(true);
-        try {
-            const res = await hideHomeFirstSteps();
-            if (!res.success) {
-                setStepsHidden(false);
-                toast.error(t('errors.generic') || 'Error', t('homeModules.hide_failed'), res.errorId);
-            }
-        } catch (e) {
-            setStepsHidden(false);
-            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('homeModules.hide_failed'), resolveErrorId(e, 'HomeModules.hide'));
-        }
-    };
 
     const card = (k: HomeModuleKey) => {
         if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} />;
@@ -410,9 +389,9 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     };
 
     const items = cards.map(card).filter(Boolean);
-    if (steps.length > 0 && !data.firstStepsHidden && !stepsHidden) {
+    if (steps.length > 0) {
         items.push(
-            <FirstSteps key="steps" steps={steps} onHide={hide} t={t}
+            <FirstSteps key="steps" steps={steps} t={t}
                 title={t(firstSteps === 'start' ? 'homeModules.first_steps_start' : 'homeModules.first_steps_more')} />,
         );
     }

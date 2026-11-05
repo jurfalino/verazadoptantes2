@@ -772,7 +772,7 @@ export const userProfiles = sqliteTable("user_profiles", {
     // Email notification preferences — EmailPrefs JSON, NULL = defaults.
     emailPrefs: text("email_prefs"),
     // Homepage modules: what the person hid (the «Para empezar» card) —
-    // HomePrefs JSON (src/domain/homePrefs.ts), NULL = defaults.
+    // Unused since 2.58.28 (the homepage «Ocultar» was removed). Kept: migration 0102 already ran on staging.
     homePrefs: text("home_prefs"),
     // UI language the person chose (es | en | pt); NULL = unknown -> emails go out in es.
     locale: text("locale"),
