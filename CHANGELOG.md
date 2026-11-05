@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.26] - 2026-11-05
+
+### Fixed — homepage cards: dates and load time
+- A person created more than 30 days ago showed «Creado» with no date on the Mis adoptantes
+  card. The cards now use the same compact wording as /my-adopters («hace 4 sem»), now shared
+  in `src/lib/timeAgo.ts`.
+- The cards took ~4.8 s to appear on staging: their reads ran one after another. Independent
+  reads now run side by side (the «Pendientes de revisar» count, the listed rows, the forms
+  count, the animals' check-ins and listed animals). Each load logs `getHomeModules timings`
+  with the time per card.
+
 ## [2.58.25] - 2026-11-05
 
 ### Added — homepage modules: Mis adoptantes, Mis animales, Posts de redes

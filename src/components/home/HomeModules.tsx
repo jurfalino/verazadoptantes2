@@ -16,7 +16,7 @@
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { useRelativeTime } from '@/context/TimezoneContext';
+import { timeAgo } from '@/lib/timeAgo';
 import { RatingBadge } from '@/components/RatingBadge';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
@@ -332,7 +332,6 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     googleContactsImportEnabled: boolean;
 }) {
     const { t, locale } = useLanguage();
-    const relative = useRelativeTime();
     const toast = useShowToast();
     const [data, setData] = useState<HomeModulesData | null | undefined>(undefined);
     const [failedId, setFailedId] = useState<string | null>(null);
@@ -351,7 +350,8 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         return () => { active = false; };
     }, []);
 
-    const rel = (ms: number) => relative(ms, locale === 'en' ? 'en' : 'es') ?? '';
+    // Same compact wording as /my-adopters' «Creado por … hace 4 sem».
+    const rel = (ms: number) => timeAgo(new Date(ms), locale !== 'en');
 
     if (failedId) {
         return (
