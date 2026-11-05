@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         }
 
         const { adoptions, adopterImages, adopters } = await import('@/db/schema');
-        const { eq, sql, and, or, isNull, isNotNull } = await import('drizzle-orm');
+        const { eq, sql, and } = await import('drizzle-orm');
 
         // Edit mode fetches ONE animal by id. Without this, the edit page pulled
         // the whole `view=all` list and enriched every row (2–3 D1 queries each) —
@@ -43,48 +43,36 @@ export async function GET(request: NextRequest) {
         // one request → past Cloudflare's Workers subrequest limit → 500.
         const idParam = searchParams.get('id');
 
-        // v2.55.18: animals are TEAM resources — the list spans the org (self +
-        // org-mates). OR fan-out per email, never `IN ${array}` (D1 quirk).
-        // Fails open to [self] inside getTeamEmails.
-        const { getTeamEmails } = await import('@/lib/orgMembership');
-        const teamEmails = await getTeamEmails(userEmail);
-        // Fail CLOSED: `or()` of an empty array is `undefined`, and `and(undefined, …)`
-        // silently drops it — an empty team list would return EVERY animal to any
-        // authenticated user. getTeamEmails always includes self today, so this is
-        // defense in depth against a future refactor, not a live hole.
-        const scopeEmails = teamEmails.length > 0 ? teamEmails : [userEmail];
-        const teamMatch = or(...scopeEmails.map((e: string) => eq(adoptions.addedBy, e)));
+        // The tabs' filters (team scope included), shared by the list queries,
+        // ?counts=1 and the homepage card so a count never disagrees with its list.
+        const { myAnimalsScope } = await import('@/lib/myAnimalsScope');
+        const { scopeEmails, teamMatch, adoptedWhere, availableWhere, placedWhere } = await myAnimalsScope(userEmail);
 
-        // The two tabs' filters, shared by the list queries and ?counts=1 so a
-        // tab's count can never disagree with its list.
-        // Adopted: recordType = 'adoption', linked to an adopter.
-        const adoptedWhere = and(
-            teamMatch,
-            isNotNull(adoptions.adopterId),
-            eq(adoptions.recordType, 'adoption')
-        );
-        // Available (not yet adopted) PLUS animals currently in a foster home
-        // ("Tránsito"). Foster rows have an adopterId (the foster home) +
-        // recordType='foster', so the isNull(adopterId) guard applies only to
-        // plain 'available' rows — otherwise a fostered animal falls through
-        // both /my-animals tabs and vanishes.
-        const availableWhere = and(
-            teamMatch,
-            or(
-                and(isNull(adoptions.adopterId), eq(adoptions.recordType, 'available')),
-                eq(adoptions.recordType, 'foster')
-            )
-        );
+        // Due follow-ups: the «N pendientes» badge, the «Con controles
+        // pendientes» tab and its count. The bulk read is 4 queries TOTAL,
+        // independent of N (the per-row fan-out once pushed large rescuers
+        // toward the Workers subrequest limit). It also feeds «Actualizado
+        // por», so list views always load it; ?counts=1 only when follow-ups
+        // are on. Skipped for ?id= (one row, not the set).
+        const { loadAnimalActivityBulk, loadFollowupCtx, dueForAnimal, withDueFollowups } = await import('@/lib/animalFollowupsDue');
+        const log = { userEmail, view };
+        const followupCtx = idParam ? null : await loadFollowupCtx(db, userEmail, log);
+        const isCounts = searchParams.get('counts') === '1';
+        const bulk = idParam || (isCounts && !followupCtx) ? null : await loadAnimalActivityBulk(db, scopeEmails, log);
+        const pendingRows = () => followupCtx
+            ? db.select().from(adoptions).where(placedWhere).orderBy(sql`${adoptions.date} DESC`).all()
+                .then((rows: Array<typeof adoptions.$inferSelect>) => withDueFollowups(rows, bulk, followupCtx, log))
+            : Promise.resolve([]);
 
-        // ?counts=1 — both tab counts in one call, so the tab you are not on
+        // ?counts=1 — every tab's count in one call, so the tab you are not on
         // shows a number instead of "(...)". DISTINCT id: the compat view can
         // repeat an id (two open placements), and the list dedupes by id.
-        if (searchParams.get('counts') === '1') {
+        if (isCounts) {
             const countOf = (where: typeof availableWhere) =>
                 db.select({ n: sql<number>`count(DISTINCT ${adoptions.id})` }).from(adoptions).where(where).get()
                     .then((r: { n: number } | undefined) => Number(r?.n ?? 0));
-            const [available, adopted] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere)]);
-            return NextResponse.json({ available, adopted });
+            const [available, adopted, pending] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere), pendingRows()]);
+            return NextResponse.json({ available, adopted, pending: pending.length });
         }
 
         let results;
@@ -92,6 +80,9 @@ export async function GET(request: NextRequest) {
             results = await db.select().from(adoptions)
                 .where(and(teamMatch, eq(adoptions.id, idParam)))
                 .all();
+        } else if (view === 'pendientes') {
+            // Already deduped and most-overdue first; enrichment below keeps the order.
+            results = await pendingRows();
         } else if (view === 'adopted') {
             results = await db.select().from(adoptions)
                 .where(adoptedWhere)
@@ -138,100 +129,6 @@ export async function GET(request: NextRequest) {
         // is the animal page's job).
         const { createOwnerTeamResolver, listApplicantIdsForAnimal } = await import('@/app/actions/_applicants');
         const ownerTeam = createOwnerTeamResolver();
-
-        // v2.55.16: «N pendientes» badge — due follow-ups per placed animal, so
-        // the list works as the follow-through triage board. Flag-gated; the
-        // owner's schedule is loaded ONCE; per-row computation fails open.
-        /* v2.55.20 bulk read, HOISTED out of the follow-up flag in v2.56.16.
-         * 4 queries TOTAL, independent of N — the per-row fan-out (4 × N) once
-         * pushed large rescuers toward the Workers subrequest limit this route
-         * has hit historically. Two features consume it now: the «N pendientes»
-         * badge and «Actualizado por», and the latter must not depend on a flag.
-         * Skipped for ?id= (a single-animal fetch wants one row, not the set). */
-        type ActiveRow = { id: string; animalId: string; startedAt: unknown; endedAt: unknown; recordType: string; recordedBy: string | null; createdAt: unknown };
-        type EvRow = { id: string; animalId: string | null; date: unknown; followupKey: string | null; followupSubtype: string | null; eventType: string; placementId: string | null; recordedBy: string | null; createdAt: unknown };
-        type CareRow = { id: string; animalId: string; date: unknown; followupKey: string | null; eventType: string; recordedBy: string | null; createdAt: unknown };
-        type AnimalRow = { id: string; estimatedBirthDate: unknown; neutered: number | null; updatedAt: unknown; updatedBy: string | null };
-
-        let bulk: null | {
-            activeByAnimal: Map<string, ActiveRow>;
-            placementsByAnimal: Map<string, ActiveRow[]>;
-            eventsByAnimal: Map<string, EvRow[]>;
-            careByAnimal: Map<string, CareRow[]>;
-            animalById: Map<string, AnimalRow>;
-        } = null;
-
-        if (!idParam) {
-            try {
-                const { placements, adopterEvents, animalEvents, animals } = await import('@/db/schema');
-                const ownerMatch = or(...scopeEmails.map((e: string) => eq(animals.addedBy, e)));
-                const [placementRows, evRows, careRows, animalRows] = await Promise.all([
-                    // NOT filtered to active: an ENDED span (a devolución) is an
-                    // update too, and `active` is derived from endedAt in JS.
-                    db.select({ id: placements.id, animalId: placements.animalId, startedAt: placements.startedAt, endedAt: placements.endedAt, recordType: placements.recordType, recordedBy: placements.recordedBy, createdAt: placements.createdAt })
-                        .from(placements).innerJoin(animals, eq(animals.id, placements.animalId))
-                        .where(ownerMatch).all(),
-                    db.select({ id: adopterEvents.id, animalId: adopterEvents.animalId, date: adopterEvents.date, followupKey: adopterEvents.followupKey, followupSubtype: adopterEvents.followupSubtype, eventType: adopterEvents.eventType, placementId: adopterEvents.placementId, recordedBy: adopterEvents.recordedBy, createdAt: adopterEvents.createdAt })
-                        .from(adopterEvents).innerJoin(animals, eq(animals.id, adopterEvents.animalId))
-                        .where(ownerMatch).all(),
-                    db.select({ id: animalEvents.id, animalId: animalEvents.animalId, date: animalEvents.date, followupKey: animalEvents.followupKey, eventType: animalEvents.eventType, recordedBy: animalEvents.recordedBy, createdAt: animalEvents.createdAt })
-                        .from(animalEvents).innerJoin(animals, eq(animals.id, animalEvents.animalId))
-                        .where(ownerMatch).all(),
-                    db.select({ id: animals.id, estimatedBirthDate: animals.estimatedBirthDate, neutered: animals.neutered, updatedAt: animals.updatedAt, updatedBy: animals.updatedBy })
-                        .from(animals).where(ownerMatch).all(),
-                ]);
-
-                const placementsByAnimal = new Map<string, ActiveRow[]>();
-                const activeByAnimal = new Map<string, ActiveRow>();
-                for (const r of placementRows as ActiveRow[]) {
-                    const list = placementsByAnimal.get(r.animalId) || []; list.push(r); placementsByAnimal.set(r.animalId, list);
-                    if (r.endedAt == null) activeByAnimal.set(r.animalId, r);
-                }
-                const eventsByAnimal = new Map<string, EvRow[]>();
-                for (const r of evRows as EvRow[]) {
-                    if (!r.animalId) continue;
-                    const list = eventsByAnimal.get(r.animalId) || []; list.push(r); eventsByAnimal.set(r.animalId, list);
-                }
-                const careByAnimal = new Map<string, CareRow[]>();
-                for (const r of careRows as CareRow[]) {
-                    const list = careByAnimal.get(r.animalId) || []; list.push(r); careByAnimal.set(r.animalId, list);
-                }
-                const animalById = new Map<string, AnimalRow>();
-                for (const r of animalRows as AnimalRow[]) animalById.set(r.id, r);
-
-                bulk = { activeByAnimal, placementsByAnimal, eventsByAnimal, careByAnimal, animalById };
-            } catch (e) {
-                logger.warn('my-animals: bulk activity fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
-            }
-        }
-
-        // v2.55.16: «N pendientes» badge — due follow-ups per placed animal, so
-        // the list works as the follow-through triage board. Flag-gated; the
-        // owner's schedule is loaded ONCE; per-row computation fails open.
-        let followupCtx: null | {
-            schedule: import('@/domain/followups').ScheduleEntry[];
-            fosterRule: import('@/domain/followups').FosterRule;
-            compute: typeof import('@/domain/followups').computeFollowups;
-        } = null;
-        const followupsOn = await getFeatureFlag('ENABLE_FOLLOWUPS').catch(() => false);
-        if (followupsOn && bulk) {
-            try {
-                const { computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings, DEFAULT_SCHEDULE } = await import('@/domain/followups');
-                const { users, userProfiles } = await import('@/db/schema');
-                const row = await db.select({ settings: userProfiles.followupSettings })
-                    .from(userProfiles)
-                    .innerJoin(users, eq(users.id, userProfiles.userId))
-                    .where(eq(users.email, userEmail)).get();
-                const settings = parseFollowupSettings(row?.settings);
-                followupCtx = {
-                    schedule: mergeSchedule(DEFAULT_SCHEDULE, settings),
-                    fosterRule: mergeFosterRule(settings),
-                    compute: computeFollowups,
-                };
-            } catch (e) {
-                logger.warn('my-animals: followup settings fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
-            }
-        }
 
         // Enrich with images, adopter name, and (for available animals) the
         // list of people who applied via the customized form.
@@ -284,47 +181,9 @@ export async function GET(request: NextRequest) {
                         return [];
                     });
 
-                // Due follow-up count for the badge — only animals with an
-                // active placement (the view row's adopterId marks it).
-                let dueFollowups = 0;
-                /** The soonest-overdue slot, so the card can name the action
-                 *  instead of only counting it. */
-                let dueTop: { copyKey: string; offsetDays?: number; dueDate: number } | null = null;
-                if (followupCtx && bulk && animal.adopterId && animal.date) {
-                    try {
-                        // v2.55.20: pure map lookups — zero extra subrequests per row.
-                        const active = bulk!.activeByAnimal.get(animal.id);
-                        if (active?.startedAt) {
-                            const asDate = (v: unknown): Date | null => v instanceof Date ? v : typeof v === 'number' ? new Date(v < 1e12 ? v * 1000 : v) : null;
-                            const evRows = bulk!.eventsByAnimal.get(animal.id) || [];
-                            const careRows = bulk!.careByAnimal.get(animal.id) || [];
-                            const animalRow = bulk!.animalById.get(animal.id);
-                            const slots = followupCtx.compute({
-                                placementStartedAt: asDate(active.startedAt)!,
-                                placementType: active.recordType,
-                                animal: { estimatedBirthDate: asDate(animalRow?.estimatedBirthDate ?? null), neutered: animalRow?.neutered ?? null },
-                                schedule: followupCtx.schedule,
-                                fosterRule: followupCtx.fosterRule,
-                                recorded: [
-                                    ...evRows.filter(e => e.placementId === active.id || !e.placementId)
-                                        .map(e => ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: e.followupSubtype, eventType: e.eventType })),
-                                    ...careRows.map(e => ({ id: e.id, date: asDate(e.date), followupKey: e.followupKey, subtype: null, eventType: e.eventType })),
-                                ],
-                                now: new Date(),
-                            });
-                            const due = slots.filter(s => s.status === 'due')
-                                .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
-                            dueFollowups = due.length;
-                            if (due[0]) dueTop = {
-                                copyKey: due[0].copyKey,
-                                offsetDays: due[0].offsetDays,
-                                dueDate: due[0].dueDate.getTime(),
-                            };
-                        }
-                    } catch (e) {
-                        logger.warn('my-animals: due-followups fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });
-                    }
-                }
+                // Due follow-ups for the badge — only animals with an active
+                // placement can have any (src/lib/animalFollowupsDue.ts).
+                const { dueFollowups, dueTop } = dueForAnimal(animal, bulk, followupCtx, log);
 
                 /* v2.56.16: who last touched this animal, and when. Derived
                  * rather than stamped — placements/adopter_events/animal_events

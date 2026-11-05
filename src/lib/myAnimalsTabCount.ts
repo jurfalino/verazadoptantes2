@@ -7,15 +7,20 @@
  * still loading — shows its total from `/api/my-animals?counts=1`, or "..."
  * until that arrives.
  */
-export type MyAnimalsTab = 'available' | 'adopted';
+export type MyAnimalsTab = 'available' | 'adopted' | 'pendientes';
+
+/** ?counts=1 — `pending` is the «Con controles pendientes» tab. */
+export type MyAnimalsTabCounts = { available: number; adopted: number; pending: number };
+
+const COUNT_KEY: Record<MyAnimalsTab, keyof MyAnimalsTabCounts> = { available: 'available', adopted: 'adopted', pendientes: 'pending' };
 
 export function myAnimalsTabCount(
     tab: MyAnimalsTab,
     view: string,
     loadedView: string | null,
     listLength: number,
-    counts: { available: number; adopted: number } | null,
+    counts: MyAnimalsTabCounts | null,
 ): number | string {
     if (tab === view && loadedView === view) return listLength;
-    return counts?.[tab] ?? '...';
+    return counts?.[COUNT_KEY[tab]] ?? '...';
 }
