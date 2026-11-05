@@ -15,7 +15,6 @@ import { adopters, adoptions, adopterEvents, adopterImages, formSubmissions } fr
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { summarizeAdopterForms } from '@/domain/formLink';
-import { isPostRecord } from '@/domain/homeModules';
 import { RECORD_TYPES } from '@/domain/constants';
 import { loadFormContext } from '@/lib/adopterFormContext';
 import type { HomeAdoptersData, HomeAnimalsData, HomePostsData, HomePersonRow } from '@/types/homeModules';
@@ -107,38 +106,45 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
 
 export async function loadHomePosts(db: Db, userEmail: string, memberEmails: string[]): Promise<HomePostsData> {
     const log = { userEmail, op: 'loadHomePosts' };
-    // The observations that carry a post link, on people /my-adopters lists.
-    // isPostRecord re-checks in JS so the rule lives in one place.
-    const rows = await db.select({ adopterId: adopterEvents.adopterId, sourceUrl: adopterEvents.sourceUrl, createdAt: adopterEvents.createdAt, name: adopters.name })
-        .from(adopterEvents)
-        .innerJoin(adopters, eq(adopters.id, adopterEvents.adopterId))
-        .where(and(
-            adopterScope(memberEmails),
-            eq(adopterEvents.eventType, RECORD_TYPES.OBSERVATION),
-            sql`lower(trim(${adopterEvents.sourceUrl})) LIKE 'http%'`,
-        ))
-        .all() as Array<{ adopterId: string; sourceUrl: string | null; createdAt: unknown; name: string | null }>;
-
-    const posts = rows
-        .filter(r => isPostRecord({ recordType: RECORD_TYPES.OBSERVATION, sourceUrl: r.sourceUrl }))
-        .map(r => ({ ...r, at: toMs(r.createdAt) }))
-        .sort((a, b) => b.at - a.at);
-    const people = new Set(posts.map(p => p.adopterId));
-    const lastPostAt = posts[0]?.at ?? null;
-
-    // The newest post per person, two people.
-    const seen = new Set<string>();
-    const newest = posts.filter(p => !seen.has(p.adopterId) && seen.add(p.adopterId)).slice(0, 2);
-    const bits = await personBits(db, newest.map(p => p.adopterId), log);
+    // The observations that carry a post link (isPostRecord, in SQL), on people
+    // /my-adopters lists. Aggregated in D1: a count, the newest date and two rows.
+    const isPost = and(
+        eq(adopterEvents.eventType, RECORD_TYPES.OBSERVATION),
+        or(sql`lower(trim(${adopterEvents.sourceUrl})) LIKE 'http://%'`, sql`lower(trim(${adopterEvents.sourceUrl})) LIKE 'https://%'`),
+    );
+    // Joined with adopters (the scope reads adopters.added_by / deleted_at).
+    const postWhere = and(adopterScope(memberEmails), isPost);
+    const [summary, newest] = await Promise.all([
+        db.select({ people: sql<number>`count(DISTINCT ${adopterEvents.adopterId})`, last: sql<number | null>`max(${adopterEvents.createdAt})` })
+            .from(adopterEvents).innerJoin(adopters, eq(adopters.id, adopterEvents.adopterId))
+            .where(postWhere).get(),
+        // The newest post per person, two people.
+        db.select({ adopterId: adopterEvents.adopterId, name: adopters.name, at: sql<number>`max(${adopterEvents.createdAt})` })
+            .from(adopterEvents).innerJoin(adopters, eq(adopters.id, adopterEvents.adopterId))
+            .where(postWhere).groupBy(adopterEvents.adopterId)
+            .orderBy(sql`max(${adopterEvents.createdAt}) DESC`).limit(2).all(),
+    ]);
+    type Newest = { adopterId: string; name: string | null; at: unknown };
+    const people = newest as Newest[];
+    const [bits, links] = await Promise.all([
+        personBits(db, people.map(p => p.adopterId), log),
+        // That post's link, for the network name.
+        Promise.all(people.map(p => db.select({ sourceUrl: adopterEvents.sourceUrl }).from(adopterEvents)
+            .where(and(eq(adopterEvents.adopterId, p.adopterId), isPost))
+            .orderBy(desc(adopterEvents.createdAt)).limit(1).get()
+            .then((r: { sourceUrl: string | null } | undefined) => (r?.sourceUrl || '').trim())
+            .catch((e: unknown) => { logger.warn('homeModules: post link fallback', { ...log, adopterId: p.adopterId, error: errMsg(e) }); return ''; }))),
+    ]);
+    const s = summary as { people: number; last: unknown } | undefined;
     return {
-        people: people.size,
-        lastPostAt,
-        recent: newest.map(p => ({
+        people: Number(s?.people ?? 0),
+        lastPostAt: s?.last != null ? toMs(s.last) : null,
+        recent: people.map((p, i) => ({
             id: p.adopterId,
             name: p.name,
             ...(bits.get(p.adopterId) ?? { thumbnail: null, avgRating: null }),
-            at: p.at,
-            sourceUrl: (p.sourceUrl || '').trim(),
+            at: toMs(p.at),
+            sourceUrl: links[i],
         })),
     };
 }

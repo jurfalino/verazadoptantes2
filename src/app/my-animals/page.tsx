@@ -87,6 +87,9 @@ export default function MyAnimalsPage() {
     const [speciesFilter, setSpeciesFilter] = useState<string>('all');
     /** Every tab's total, so the tab you are not on shows a number, not "...". */
     const [tabCounts, setTabCounts] = useState<MyAnimalsTabCounts | null>(null);
+    /** «Con controles pendientes»: comes with every tab's list (x-pending-count), not with ?counts=1. */
+    const [pendingCount, setPendingCount] = useState<number | null>(null);
+    const counts: MyAnimalsTabCounts | null = tabCounts ? { ...tabCounts, ...(pendingCount != null ? { pending: pendingCount } : {}) } : null;
 
     useEffect(() => {
         async function fetchAnimals() {
@@ -103,6 +106,8 @@ export default function MyAnimalsPage() {
                     const unique = Array.from(new Map(data.map(a => [a.id, a])).values());
                     setAnimals(unique);
                     setLoadedView(view);
+                    const pending = res.headers.get('x-pending-count');
+                    if (pending != null) setPendingCount(Number(pending));
                 } else {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
@@ -121,7 +126,7 @@ export default function MyAnimalsPage() {
                     console.warn('my-animals: tab counts unavailable', { view, status: res.status });
                     return;
                 }
-                setTabCounts(await res.json() as MyAnimalsTabCounts);
+                setTabCounts(await res.json() as { available: number; adopted: number });
             } catch (e) {
                 console.warn('my-animals: tab counts failed', { view, error: e instanceof Error ? e.message : String(e) });
             }
@@ -248,7 +253,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        🏠 {t('dashboard.available') || 'Available'} ({myAnimalsTabCount('available', view, loadedView, animals.length, tabCounts)})
+                        🏠 {t('dashboard.available') || 'Available'} ({myAnimalsTabCount('available', view, loadedView, animals.length, counts)})
                     </Link>
                     <Link
                         href="/my-animals?view=adopted"
@@ -257,12 +262,12 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({myAnimalsTabCount('adopted', view, loadedView, animals.length, tabCounts)})
+                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({myAnimalsTabCount('adopted', view, loadedView, animals.length, counts)})
                     </Link>
                     {/* «Con controles pendientes»: where the homepage's «N animales más con
                         controles pendientes» lands — those animals are otherwise split
                         between the two tabs above. Only while there is one (or you are on it). */}
-                    {(view === 'pendientes' || (tabCounts?.pending ?? 0) > 0) && (
+                    {(view === 'pendientes' || (pendingCount ?? 0) > 0) && (
                         <Link
                             href="/my-animals?view=pendientes"
                             data-testid="tab-pendientes"
@@ -274,7 +279,7 @@ export default function MyAnimalsPage() {
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            {t('dashboard.pending_followups_tab') || 'Con controles pendientes'} ({myAnimalsTabCount('pendientes', view, loadedView, animals.length, tabCounts)})
+                            {t('dashboard.pending_followups_tab') || 'Con controles pendientes'} ({myAnimalsTabCount('pendientes', view, loadedView, animals.length, counts)})
                         </Link>
                     )}
                 </div>

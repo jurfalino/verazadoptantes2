@@ -1750,6 +1750,7 @@ export const en = {
         duplicateUrl: 'This Facebook post was already imported. Existing Profile:',
     },
     myAdopters: {
+        review_empty: 'No forms to review.',
         filter_posts: 'From a post',
         posts_empty: 'No profiles from a post yet.',
         filter_label: 'Filter adopters',

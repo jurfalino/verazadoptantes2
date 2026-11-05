@@ -103,7 +103,7 @@ test.describe('Accessibility', () => {
         // Results should appear — look for result cards or result heading
         // Use separate expects with Promise.any instead of .or() to avoid strict mode issues
         const anyVisible = await Promise.race([
-            page.locator('a[href*="/adopter/"]').first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true),
+            page.locator('[data-walkthrough="results"] a[href*="/adopter/"]').first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true),
             page.getByText(/No one found|No se encontraron/i).first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true),
             page.getByText(/found \d+ match/i).first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true),
         ]).catch(() => false);

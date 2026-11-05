@@ -27,10 +27,10 @@ test.describe('Mobile Responsive', () => {
         await searchBtn.click();
 
         // Results should appear — look for adopter links
-        await expect(page.locator('a[href*="/adopter/"]').first()).toBeVisible({ timeout: 30000 });
+        await expect(page.locator('[data-walkthrough="results"] a[href*="/adopter/"]').first()).toBeVisible({ timeout: 30000 });
 
         // Result cards should not overflow the viewport
-        const firstCard = page.locator('a[href*="/adopter/"]').first();
+        const firstCard = page.locator('[data-walkthrough="results"] a[href*="/adopter/"]').first();
         const cardBox = await firstCard.boundingBox();
         const viewportSize = page.viewportSize();
         if (cardBox && viewportSize) {

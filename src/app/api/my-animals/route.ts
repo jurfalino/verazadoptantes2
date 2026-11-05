@@ -48,32 +48,33 @@ export async function GET(request: NextRequest) {
         const { myAnimalsScope } = await import('@/lib/myAnimalsScope');
         const { scopeEmails, teamMatch, adoptedWhere, availableWhere, placedWhere } = await myAnimalsScope(userEmail);
 
+        // ?counts=1 — the two tabs' counts in one cheap call (the page fires it
+        // on every tab switch), so the tab you are not on shows a number instead
+        // of "(...)". DISTINCT id: the compat view can repeat an id (two open
+        // placements), and the list dedupes by id. «Con controles pendientes»
+        // needs the follow-up math, so its count rides on the list response
+        // instead (x-pending-count below) rather than repeating the bulk read.
+        if (searchParams.get('counts') === '1') {
+            const countOf = (where: typeof availableWhere) =>
+                db.select({ n: sql<number>`count(DISTINCT ${adoptions.id})` }).from(adoptions).where(where).get()
+                    .then((r: { n: number } | undefined) => Number(r?.n ?? 0));
+            const [available, adopted] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere)]);
+            return NextResponse.json({ available, adopted });
+        }
+
         // Due follow-ups: the «N pendientes» badge, the «Con controles
         // pendientes» tab and its count. The bulk read is 4 queries TOTAL,
         // independent of N (the per-row fan-out once pushed large rescuers
         // toward the Workers subrequest limit). It also feeds «Actualizado
-        // por», so list views always load it; ?counts=1 only when follow-ups
-        // are on. Skipped for ?id= (one row, not the set).
+        // por», so list views always load it. Skipped for ?id= (one row, not the set).
         const { loadAnimalActivityBulk, loadFollowupCtx, dueForAnimal, withDueFollowups } = await import('@/lib/animalFollowupsDue');
         const log = { userEmail, view };
         const followupCtx = idParam ? null : await loadFollowupCtx(db, userEmail, log);
-        const isCounts = searchParams.get('counts') === '1';
-        const bulk = idParam || (isCounts && !followupCtx) ? null : await loadAnimalActivityBulk(db, scopeEmails, log);
-        const pendingRows = () => followupCtx
-            ? db.select().from(adoptions).where(placedWhere).orderBy(sql`${adoptions.date} DESC`).all()
-                .then((rows: Array<typeof adoptions.$inferSelect>) => withDueFollowups(rows, bulk, followupCtx, log))
+        const bulk = idParam ? null : await loadAnimalActivityBulk(db, scopeEmails, log);
+        /** Placed animals with a follow-up due now, most overdue first. `select` reads full rows for the list, or only id/adopterId/date for the count. */
+        const pendingRows = <R extends { id: string; adopterId: string | null; date: unknown }>(select: () => Promise<R[]>) => followupCtx
+            ? select().then(rows => withDueFollowups(rows, bulk, followupCtx, log))
             : Promise.resolve([]);
-
-        // ?counts=1 — every tab's count in one call, so the tab you are not on
-        // shows a number instead of "(...)". DISTINCT id: the compat view can
-        // repeat an id (two open placements), and the list dedupes by id.
-        if (isCounts) {
-            const countOf = (where: typeof availableWhere) =>
-                db.select({ n: sql<number>`count(DISTINCT ${adoptions.id})` }).from(adoptions).where(where).get()
-                    .then((r: { n: number } | undefined) => Number(r?.n ?? 0));
-            const [available, adopted, pending] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere), pendingRows()]);
-            return NextResponse.json({ available, adopted, pending: pending.length });
-        }
 
         let results;
         if (idParam) {
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
                 .all();
         } else if (view === 'pendientes') {
             // Already deduped and most-overdue first; enrichment below keeps the order.
-            results = await pendingRows();
+            results = await pendingRows(() => db.select().from(adoptions).where(placedWhere).orderBy(sql`${adoptions.date} DESC`).all());
         } else if (view === 'adopted') {
             results = await db.select().from(adoptions)
                 .where(adoptedWhere)
@@ -254,7 +255,17 @@ export async function GET(request: NextRequest) {
             logger.warn('my-animals: lastUpdate name fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
         }
 
-        return NextResponse.json(deduped);
+        // The «Con controles pendientes» tab count, from the bulk this request
+        // already read (one narrow extra select). Only for the tab lists.
+        const headers: Record<string, string> = {};
+        if (!idParam && view !== 'all') {
+            const pending = view === 'pendientes'
+                ? deduped.length
+                : (await pendingRows(() => db.select({ id: adoptions.id, adopterId: adoptions.adopterId, date: adoptions.date })
+                    .from(adoptions).where(placedWhere).all())).length;
+            headers['x-pending-count'] = String(pending);
+        }
+        return NextResponse.json(deduped, { headers });
     } catch (error) {
         const errorId = logger.error('API my-animals error', error, { userEmail, view, counts: searchParams.get('counts') === '1' });
         return NextResponse.json({ error: 'Failed to load animals', errorId }, { status: 500 });

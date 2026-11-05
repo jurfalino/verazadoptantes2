@@ -9,8 +9,8 @@
  */
 export type MyAnimalsTab = 'available' | 'adopted' | 'pendientes';
 
-/** ?counts=1 — `pending` is the «Con controles pendientes» tab. */
-export type MyAnimalsTabCounts = { available: number; adopted: number; pending: number };
+/** ?counts=1, plus `pending` (the «Con controles pendientes» tab) from the list's x-pending-count header. */
+export type MyAnimalsTabCounts = { available: number; adopted: number; pending?: number };
 
 const COUNT_KEY: Record<MyAnimalsTab, keyof MyAnimalsTabCounts> = { available: 'available', adopted: 'adopted', pendientes: 'pending' };
 

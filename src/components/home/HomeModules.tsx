@@ -115,7 +115,6 @@ function PersonRow({ id, name, thumbnail, avgRating, meta, chip, t }: {
     return (
         <Link href={`/adopter/${encodeURIComponent(id)}`} data-testid="home-person-row" className="flex items-center gap-3 min-h-11 py-2 group">
             <span className="w-9 h-9 shrink-0 rounded-full bg-stone-100 border border-stone-200 overflow-hidden flex items-center justify-center text-stone-500">
-                {/* eslint-disable-next-line @next/next/no-img-element -- R2 URLs, same as /my-adopters */}
                 {thumbnail ? <img src={thumbnail} alt="" className="w-full h-full object-cover" /> : <Icon name="person" className="w-4 h-4" />}
             </span>
             <span className="flex-1 min-w-0">
@@ -164,7 +163,7 @@ function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<Home
                         </TodoRow>
                     )}
                     {d.formsToReview > 0 && (
-                        <TodoRow href="/my-adopters?filtro=formularios" testId="home-adopters-forms">
+                        <TodoRow href="/my-adopters?filtro=por-revisar" testId="home-adopters-forms">
                             {count(t, d.formsToReview, 'homeModules.forms_review_one', 'homeModules.forms_review_many')}
                         </TodoRow>
                     )}
@@ -230,9 +229,7 @@ function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t:
                             <Link key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}`} data-testid="home-animal-row" className="flex items-center gap-3 min-h-11 py-2 group">
                                 <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
                                     {a.photo
-                                        // eslint-disable-next-line @next/next/no-img-element -- R2 URLs, same as /my-animals
                                         ? <img src={a.photo} alt="" className="w-full h-full object-cover" />
-                                        // eslint-disable-next-line @next/next/no-img-element -- static placeholder
                                         : <img src={`/placeholders/${a.species === 'cat' ? 'cat' : a.species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
                                 </span>
                                 <span className="flex-1 min-w-0">
@@ -346,7 +343,9 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         getHomeModules()
             .then(d => { if (active) setData(d); })
             .catch((e: unknown) => {
-                if (!active || handledAsStale(e)) return;
+                if (!active) return;
+                // An older tab: the page reloads itself; meanwhile show nothing rather than a skeleton forever.
+                if (handledAsStale(e)) { setData(null); return; }
                 setFailedId(resolveErrorId(e, 'HomeModules'));
             });
         return () => { active = false; };

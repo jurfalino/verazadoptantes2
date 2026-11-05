@@ -335,7 +335,8 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         await expect(row.getByTestId('picker-minor-tag')).toBeVisible();
         await row.getByTestId('picker-pick').click();
         await page.waitForURL(/newAdoption=adoption/, { timeout: 30_000 });
-        await expect(page.getByTestId('wizard-next-step1')).toBeVisible({ timeout: 30_000 });
+        // The animal is already known, so the record wizard opens on step 2.
+        await expect(page.getByTestId('wizard-next-step2')).toBeVisible({ timeout: 30_000 });
     });
 
     test('6. «Quitar del hogar» → «No vive acá» removes Marta from the household on every profile', async ({ page }) => {

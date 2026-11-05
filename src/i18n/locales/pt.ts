@@ -1755,6 +1755,7 @@ export const pt = {
         duplicateUrl: 'Este post do Facebook já foi importado. Perfil existente:',
     },
     myAdopters: {
+        review_empty: 'Nenhum formulário para revisar.',
         filter_posts: 'De um post',
         posts_empty: 'Ainda não há perfis de um post.',
         filter_label: 'Filtrar adotantes',

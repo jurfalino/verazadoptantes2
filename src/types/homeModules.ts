@@ -15,7 +15,7 @@ export type HomeAdoptersData = {
     total: number;
     /** Same number as the «Pendientes de revisar» section header. */
     pendingReview: number;
-    /** People with a «Por revisar» pill in /my-adopters?filtro=formularios. */
+    /** Same number as the «Por revisar» chip (/my-adopters?filtro=por-revisar). */
     formsToReview: number;
     /** Newest created first, as /my-adopters lists them. */
     recent: Array<HomePersonRow & {

@@ -1,6 +1,6 @@
 'use server';
 
-import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory, notifications, animals, householdMemberships } from '@/db/schema';
+import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory, householdMemberships } from '@/db/schema';
 import { eq, ne, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -15,7 +15,7 @@ import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { isPostRecord } from '@/domain/homeModules';
 import { loadFormContext } from '@/lib/adopterFormContext';
-import { formLinkKind, summarizeAdopterForms, type AdopterFormRow } from '@/domain/formLink';
+import { summarizeAdopterForms, type AdopterFormRow } from '@/domain/formLink';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { computeRequestRescueDensity } from '@/domain/requestDensity';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';

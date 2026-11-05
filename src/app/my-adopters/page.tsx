@@ -75,11 +75,11 @@ interface Adopter {
 }
 
 /**
- * `?filtro=formularios` / `?filtro=posts` — kept in the URL so Back, shared
- * links and the homepage cards («Ver las N personas», «N formularios por
- * revisar») open the list already filtered.
+ * `?filtro=formularios` / `por-revisar` / `posts` — kept in the URL so Back,
+ * shared links and the homepage cards («N formularios por revisar», «Ver las
+ * N personas») open the list already filtered, with the same count.
  */
-const FILTERS = { forms: 'formularios', posts: 'posts' } as const;
+const FILTERS = { forms: 'formularios', review: 'por-revisar', posts: 'posts' } as const;
 type Filter = 'all' | keyof typeof FILTERS;
 
 /**
@@ -410,11 +410,16 @@ export default function MyAdoptersPage() {
         .sort((a, b) => (b.latestForm?.submittedAt ?? 0) - (a.latestForm?.submittedAt ?? 0));
     // «Desde un post»: everyone with a record from a social post, same order as «Todos».
     const fromPosts = adopters.filter(a => a.fromPost);
-    const visible = filter === 'forms' ? withForms : filter === 'posts' ? fromPosts : adopters;
+    // «Por revisar»: the people whose form still needs a decision — the rows with the pill.
+    const toReview = withForms.filter(a => a.formNeedsReview);
+    const visible = filter === 'forms' ? withForms : filter === 'review' ? toReview : filter === 'posts' ? fromPosts : adopters;
     // Few accounts import posts; the chip shows only when it has someone (or is the open view).
     const chips: Array<[Filter, string, number]> = [
         ['all', t('myAdopters.filter_all') || 'Todos', adopters.length],
         ['forms', t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
+        ...(toReview.length > 0 || filter === 'review'
+            ? [['review', t('myAdopters.form_needs_review') || 'Por revisar', toReview.length] as [Filter, string, number]]
+            : []),
         ...(fromPosts.length > 0 || filter === 'posts'
             ? [['posts', t('myAdopters.filter_posts') || 'Desde un post', fromPosts.length] as [Filter, string, number]]
             : []),
@@ -476,6 +481,7 @@ export default function MyAdoptersPage() {
                                     : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
                             >
                                 {key === 'forms' && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
+                                {key === 'review' && <AlertCircle className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
                                 {key === 'posts' && <Share2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
                                 {label}
                                 <span data-testid={`filter-${key}-count`} className={`text-xs font-semibold px-1.5 rounded-full ${filter === key ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
@@ -499,6 +505,8 @@ export default function MyAdoptersPage() {
                         </div>
                         <p className="text-stone-600 mb-6 text-sm">{filter === 'posts'
                             ? (t('myAdopters.posts_empty') || 'Todavía no hay perfiles desde un post.')
+                            : filter === 'review'
+                            ? (t('myAdopters.review_empty') || 'No hay formularios por revisar.')
                             : (t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.')}</p>
                         <button type="button" onClick={() => setFilter('all')} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
                             {t('myAdopters.forms_empty_cta') || 'Ver todos'}
