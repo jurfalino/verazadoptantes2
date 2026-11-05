@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.28] - 2026-11-05
+
+### Changed — homepage: no «Ocultar»; due check-ups show the animal
+- The «Para empezar» / «También podés» card no longer has «Ocultar». It shows while a step is
+  still undone and goes away by itself once every step is done. Removes `hideHomeFirstSteps`
+  (action surface 175 → 174) and the `home_prefs` read/write; the column (migration 0102) stays,
+  unused. Anyone who had hidden the card on staging sees it again.
+- Mis animales: each animal with a check-up due is now a row like the available ones — photo
+  (or the species placeholder), name, and the check-up in amber underneath («Castración · venció
+  hace 119 días»). The homepage uses a short wording when one exists (`followups.*_short`);
+  /my-animals keeps the full one. Photos load only for the rows shown.
+
 ## [2.58.27] - 2026-11-05
 
 ### Changed — homepage cards side by side on desktop
