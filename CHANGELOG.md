@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.27] - 2026-11-05
+
+### Changed — homepage cards side by side on desktop
+- On screens 768 px and wider, the homepage cards sit in two columns inside the page's own width
+  (option A of the desktop prototype), read left to right; the third card drops to a second row.
+  Each card keeps its own height. A lone card stays full width. Phones are unchanged.
+
 ## [2.58.26] - 2026-11-05
 
 ### Fixed — homepage cards: dates and load time

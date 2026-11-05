@@ -409,13 +409,20 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         return null;
     };
 
+    const items = cards.map(card).filter(Boolean);
+    if (steps.length > 0 && !data.firstStepsHidden && !stepsHidden) {
+        items.push(
+            <FirstSteps key="steps" steps={steps} onHide={hide} t={t}
+                title={t(firstSteps === 'start' ? 'homeModules.first_steps_start' : 'homeModules.first_steps_more')} />,
+        );
+    }
+
+    // Desktop: two columns inside the page's own width, read left to right,
+    // each card keeping its own height. A lone card stays full width rather
+    // than leaving an empty column beside it. Phones: one column.
     return (
-        <div data-testid="home-modules" className="space-y-4">
-            {cards.map(card)}
-            {steps.length > 0 && !data.firstStepsHidden && !stepsHidden && (
-                <FirstSteps steps={steps} onHide={hide} t={t}
-                    title={t(firstSteps === 'start' ? 'homeModules.first_steps_start' : 'homeModules.first_steps_more')} />
-            )}
+        <div data-testid="home-modules" className={items.length > 1 ? 'grid gap-4 md:grid-cols-2 items-start' : 'space-y-4'}>
+            {items}
         </div>
     );
 }
