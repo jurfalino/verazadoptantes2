@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.25] - 2026-11-05
+
+### Added — homepage modules: Mis adoptantes, Mis animales, Posts de redes
+With the minimal homepage OFF (staging), a signed-in rescuer sees three cards under the search
+instead of the action cards; visitors keep the cards. With it ON (production), the homepage does
+not change. Every number on a card is the number on the page it opens:
+- **Mis adoptantes**: the total, «N pendientes de revisar», «N formularios por revisar», the
+  newest people, «Ver los N adoptantes». Contacts import lives here now (only where it works).
+- **Mis animales**: one amber row per animal with an overdue check-in (same words as its card),
+  «N animales más con controles pendientes», then the animals still looking for a home.
+- **Posts de redes**: «N personas desde posts», only if the team imported a post in the last 30 days.
+- Empty sections join one «Para empezar» / «También podés» card; «Ocultar» hides it for the
+  account on every device (`user_profiles.home_prefs`, migration 0102).
+Design: `.agents/plans/2026-11-04-home-modules.md`. Tests: `src/domain/homeModules.test.ts`,
+`tests/home-modules.user.spec.ts`.
+
+### Added — on the pages the cards open (live whatever the homepage setting)
+- /my-animals: a «Con controles pendientes» tab, shown while some animal has one.
+- /my-adopters: «Por revisar» and «Desde un post» filters, shown when they have someone.
+
+### Changed
+- /my-adopters shows the group name on a row only to people in two or more groups.
+- The homepage «Registrar adopción» / «Dejar una observación» cards are the visitors' homepage
+  only; their test runs as a visitor, and the picker test moved to an animal's «Registrar adopción».
+
 ## [2.58.24] - 2026-11-04
 
 ### Fixed — every «Conocido/a como» in one place
