@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.29] - 2026-11-05
+
+### Changed — homepage «Mis animales»: one list, what needs you first
+- The card shows up to 3 animals: those with a check-up due first (most overdue), then the most
+  recently updated ones (available or adopted). An animal never appears twice. With nothing due,
+  it simply shows the 3 most recently updated.
+- «N animales más con controles pendientes» appears only when more than 3 are due;
+  «Ver los N animales» appears when there are animals the card doesn't show and opens the new tab.
+- /my-animals has a new «Todos» tab (available + adopted, most recently updated first), so the
+  card's number and order match the page it opens. «Disponibles» and «Ya adoptados» are unchanged.
+
 ## [2.58.28] - 2026-11-05
 
 ### Changed — homepage: no «Ocultar»; due check-ups show the animal
