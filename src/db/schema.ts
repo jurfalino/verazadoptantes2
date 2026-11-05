@@ -771,6 +771,9 @@ export const userProfiles = sqliteTable("user_profiles", {
     followupSettings: text("followup_settings"),
     // Email notification preferences — EmailPrefs JSON, NULL = defaults.
     emailPrefs: text("email_prefs"),
+    // Homepage modules: what the person hid (the «Para empezar» card) —
+    // HomePrefs JSON (src/domain/homePrefs.ts), NULL = defaults.
+    homePrefs: text("home_prefs"),
     // UI language the person chose (es | en | pt); NULL = unknown -> emails go out in es.
     locale: text("locale"),
     // Legal
