@@ -16,9 +16,9 @@ import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { summarizeAdopterForms } from '@/domain/formLink';
 import { RECORD_TYPES } from '@/domain/constants';
-import { dueRowsShown } from '@/domain/homeModules';
+import { homeAnimalRows } from '@/domain/homeModules';
 import { loadFormContext } from '@/lib/adopterFormContext';
-import type { HomeAdoptersData, HomeAnimalsData, HomePostsData, HomePersonRow } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomePostsData, HomePersonRow } from '@/types/homeModules';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Drizzle D1/better-sqlite3 union getDb() returns
 type Db = any;
@@ -166,73 +166,71 @@ export async function loadHomePosts(db: Db, userEmail: string, memberEmails: str
 
 export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAnimalsData> {
     const log = { userEmail, op: 'loadHomeAnimals' };
-    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups }, { createOwnerTeamResolver, listApplicantIdsForAnimal }, { animalPrimaryFirst }] = await Promise.all([
+    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { createOwnerTeamResolver, listApplicantIdsForAnimal }, { animalPrimaryFirst }] = await Promise.all([
         import('@/lib/myAnimalsScope'),
         import('@/lib/animalFollowupsDue'),
         import('@/app/actions/_applicants'),
         import('@/lib/showcase'),
     ]);
-    const [{ scopeEmails, adoptedWhere, availableWhere, placedWhere }, followupCtx] = await Promise.all([
+    const [{ scopeEmails, adoptedWhere, availableWhere, placedWhere, allWhere }, followupCtx] = await Promise.all([
         myAnimalsScope(userEmail),
         loadFollowupCtx(db, userEmail, log),
     ]);
 
-    // The /my-animals card's photo: images[0] of the same order.
-    const photoOf = (animalId: string): Promise<string | null> =>
-        db.select({ url: adopterImages.url }).from(adopterImages)
-            .where(eq(adopterImages.adoptionId, animalId))
-            .orderBy(animalPrimaryFirst(), sql`rowid ASC`).limit(1).get()
-            .then((r: { url: string } | undefined) => r?.url ?? null)
-            .catch((e: unknown) => { logger.warn('homeModules: animal photo fallback', { ...log, animalId, error: errMsg(e) }); return null; });
     const countOf = (where: typeof availableWhere) =>
         db.select({ n: sql<number>`count(DISTINCT ${adoptions.id})` }).from(adoptions).where(where).get()
             .then((r: { n: number } | undefined) => Number(r?.n ?? 0));
-    // Overdue check-ins: the team's bulk activity + its placed animals (only when follow-ups are on).
-    const dueP = followupCtx
-        ? Promise.all([
-            loadAnimalActivityBulk(db, scopeEmails, log),
-            db.select({ id: adoptions.id, animalName: adoptions.animalName, species: adoptions.species, adopterId: adoptions.adopterId, date: adoptions.date })
-                .from(adoptions).where(placedWhere).orderBy(sql`${adoptions.date} DESC`).all(),
-        ]).then(([bulk, placedRows]) => {
-            const due = withDueFollowups(placedRows as Array<{ id: string; animalName: string | null; species: string | null; adopterId: string | null; date: unknown }>, bulk, followupCtx, log);
-            // Photos only for the rows the card shows: each due row reads as the animal it is.
-            const shown = new Set(dueRowsShown(due).rows.map(r => r.id));
-            return Promise.all(due.map(async r => ({
-                id: r.id, name: r.animalName, species: r.species,
-                photo: shown.has(r.id) ? await photoOf(r.id) : null,
-                dueFollowups: r.dueFollowups, dueTop: r.dueTop,
-            })));
-        })
-        : Promise.resolve([]);
-    // The newest «Disponibles» animals (same order as the tab), each with the
-    // /my-animals card's photo (images[0] of the same order), foster home and
-    // applicant count. A few extra rows absorb compat-view repeats.
-    type Listed = { id: string; animalName: string | null; species: string | null; adopterId: string | null; recordType: string | null; addedBy: string | null };
-    const ownerTeam = createOwnerTeamResolver();
-    const enrichListed = (a: Listed) => Promise.all([
-        photoOf(a.id),
-        a.adopterId
-            ? db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, a.adopterId)).get()
-                .then((r: { name: string | null } | undefined) => r?.name ?? null)
-                .catch((e: unknown) => { logger.warn('homeModules: foster name fallback', { ...log, animalId: a.id, error: errMsg(e) }); return null; })
-            : Promise.resolve(null),
-        // Applicants exist only while the animal waits for a home — as on the card.
-        a.adopterId
-            ? Promise.resolve(0)
-            : ownerTeam(a.addedBy).then(team => listApplicantIdsForAnimal(db, a.id, team)).then(ids => ids.length)
-                .catch((e: unknown) => { logger.warn('homeModules: applicants fallback', { ...log, animalId: a.id, error: errMsg(e) }); return 0; }),
-    ]).then(([photo, fosterName, applicants]) => ({
-        id: a.id, name: a.animalName, species: a.species, photo,
-        fosterName: a.recordType === RECORD_TYPES.FOSTER ? fosterName : null, applicants,
-    }));
-    const listedP = db.select({ id: adoptions.id, animalName: adoptions.animalName, species: adoptions.species, adopterId: adoptions.adopterId, recordType: adoptions.recordType, addedBy: adoptions.addedBy })
-        .from(adoptions).where(availableWhere).orderBy(sql`${adoptions.date} DESC`).limit(8).all()
-        .then((rows: Listed[]) => {
-            const seen = new Set<string>();
-            return Promise.all(rows.filter(r => !seen.has(r.id) && seen.add(r.id)).slice(0, 3).map(enrichListed));
-        });
+    type Animal = { id: string; animalName: string | null; species: string | null; adopterId: string | null; recordType: string | null; addedBy: string | null; date: unknown };
+    const cols = { id: adoptions.id, animalName: adoptions.animalName, species: adoptions.species, adopterId: adoptions.adopterId, recordType: adoptions.recordType, addedBy: adoptions.addedBy, date: adoptions.date };
+    const unique = (rows: Animal[]) => { const seen = new Set<string>(); return rows.filter(r => !seen.has(r.id) && seen.add(r.id)); };
 
-    const [available, adopted, due, listed] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere), dueP, listedP]);
-    return { available, adopted, due, listed };
+    // The team's activity (4 queries): both the check-ups due and «last updated».
+    const bulkP = loadAnimalActivityBulk(db, scopeEmails, log);
+    // «Todos» — the same rows and order as /my-animals?view=todos.
+    const recentP = Promise.all([bulkP, db.select(cols).from(adoptions).where(allWhere).orderBy(sql`${adoptions.date} DESC`).all()])
+        .then(([bulk, rows]) => byRecentActivity(unique(rows as Animal[]), bulk));
+    // «Con controles pendientes» — the same scope as that tab (only when follow-ups are on).
+    const dueP = followupCtx
+        ? Promise.all([bulkP, db.select(cols).from(adoptions).where(placedWhere).orderBy(sql`${adoptions.date} DESC`).all()])
+            .then(([bulk, rows]) => withDueFollowups(rows as Animal[], bulk, followupCtx, log))
+        : Promise.resolve([]);
+
+    const [available, adopted, total, due, recent] = await Promise.all([
+        countOf(availableWhere), countOf(adoptedWhere), countOf(allWhere), dueP, recentP,
+    ]);
+    const shown = homeAnimalRows(due, recent);
+
+    // Only the rows shown are enriched, as the /my-animals card is: photo
+    // (images[0] of the same order), the home it is in, applicants.
+    const ownerTeam = createOwnerTeamResolver();
+    const enrich = (a: Animal, dueInfo: HomeAnimalRow['due']): Promise<HomeAnimalRow> => {
+        const status: HomeAnimalRow['status'] = a.recordType === RECORD_TYPES.FOSTER ? 'foster'
+            : a.adopterId && a.recordType === RECORD_TYPES.ADOPTION ? 'adopted' : 'available';
+        return Promise.all([
+            db.select({ url: adopterImages.url }).from(adopterImages)
+                .where(eq(adopterImages.adoptionId, a.id))
+                .orderBy(animalPrimaryFirst(), sql`rowid ASC`).limit(1).get()
+                .then((r: { url: string } | undefined) => r?.url ?? null)
+                .catch((e: unknown) => { logger.warn('homeModules: animal photo fallback', { ...log, animalId: a.id, error: errMsg(e) }); return null; }),
+            // The person's name only where the grey line shows it.
+            !dueInfo && a.adopterId && status !== 'available'
+                ? db.select({ name: adopters.name }).from(adopters).where(eq(adopters.id, a.adopterId)).get()
+                    .then((r: { name: string | null } | undefined) => r?.name ?? null)
+                    .catch((e: unknown) => { logger.warn('homeModules: home name fallback', { ...log, animalId: a.id, error: errMsg(e) }); return null; })
+                : Promise.resolve(null),
+            // Applicants exist only while the animal waits for a home — as on the card.
+            !dueInfo && status === 'available'
+                ? ownerTeam(a.addedBy).then(team => listApplicantIdsForAnimal(db, a.id, team)).then(ids => ids.length)
+                    .catch((e: unknown) => { logger.warn('homeModules: applicants fallback', { ...log, animalId: a.id, error: errMsg(e) }); return 0; })
+                : Promise.resolve(0),
+        ]).then(([photo, personName, applicants]) => ({
+            id: a.id, name: a.animalName, species: a.species, photo, due: dueInfo, status, personName, applicants,
+        }));
+    };
+    const rows = await Promise.all([
+        ...shown.due.map(a => enrich(a, { dueFollowups: a.dueFollowups, dueTop: a.dueTop })),
+        ...shown.recent.map(a => enrich(a, null)),
+    ]);
+    return { available, adopted, total, dueCount: due.length, rows };
 }
 

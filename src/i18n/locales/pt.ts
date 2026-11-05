@@ -1458,6 +1458,7 @@ export const pt = {
         },
     },
     dashboard: {
+        all_animals_tab: 'Todos',
         pending_followups_tab: 'Com acompanhamentos pendentes',
         no_pending_followups_title: 'Nenhum acompanhamento pendente',
         no_pending_followups_desc: 'Quando vencer um acompanhamento de um animal adotado ou em lar temporário, ele aparece aqui.',
@@ -3714,7 +3715,7 @@ export const pt = {
         available_status: 'Disponível',
         unnamed_animal: 'Sem nome',
         more_due: 'Mais {n} animais com acompanhamentos pendentes',
-        see_available: 'Ver os {n} disponíveis',
+        see_all_animals: 'Ver os {n} animais',
         add_animal: 'Adicionar animal',
         posts_title: 'Posts de redes',
         post_people_one: '1 pessoa de posts',

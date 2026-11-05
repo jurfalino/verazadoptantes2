@@ -1453,6 +1453,7 @@ export const en = {
         },
     },
     dashboard: {
+        all_animals_tab: 'All',
         pending_followups_tab: 'Follow-ups due',
         no_pending_followups_title: 'No follow-ups due',
         no_pending_followups_desc: 'When a check-in for an adopted or fostered animal comes due, it shows up here.',
@@ -3709,7 +3710,7 @@ export const en = {
         available_status: 'Available',
         unnamed_animal: 'No name',
         more_due: '{n} more animals with follow-ups due',
-        see_available: 'See all {n} available',
+        see_all_animals: 'See all {n} animals',
         add_animal: 'Add animal',
         posts_title: 'Social posts',
         post_people_one: '1 person from posts',

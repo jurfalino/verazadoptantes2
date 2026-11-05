@@ -21,7 +21,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
 import { getHomeModules } from '@/app/actions/homeModules';
-import { orderHomeModules, homeListLimit, dueRowsShown, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
+import { orderHomeModules, homeListLimit, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
 import { HOME_POSTS_WINDOW_DAYS } from '@/config/constants';
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -29,7 +29,7 @@ import { interpolate } from '@/lib/interpolate';
 import { detectSocialPlatform, SOCIAL_PLATFORMS } from '@/lib/contactEntries';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
-import type { HomeAdoptersData, HomeAnimalsData, HomeModulesData, HomePostsData, HomeSection } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeModulesData, HomePostsData, HomeSection } from '@/types/homeModules';
 
 type T = (key: string) => string;
 
@@ -214,48 +214,44 @@ function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t:
         return <ModuleShell icon="paw" title={t('homeModules.animals_title')} href="/my-animals" testId="home-animals"><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
     const d = section.data;
-    const { rows: dueRows, moreCount } = dueRowsShown(d.due);
     const now = Date.now();
     const summary = d.available === 0
         ? interpolate(t('homeModules.animals_none_available'), { adopted: count(t, d.adopted, 'homeModules.adopted_one', 'homeModules.adopted_many') })
         : `${count(t, d.available, 'homeModules.available_one', 'homeModules.available_many')} · ${count(t, d.adopted, 'homeModules.adopted_one', 'homeModules.adopted_many')}`;
-    const status = (a: HomeAnimalsData['listed'][number]) => a.fosterName
-        ? `${t('dashboard.in_foster_with')} ${adopterDisplayName({ name: a.fosterName }, t('adopter.nameless'))}`
-        : a.applicants > 0
+    // The grey line, worded as on the /my-animals card.
+    const status = (a: HomeAnimalRow) => {
+        const who = adopterDisplayName({ name: a.personName }, t('adopter.nameless'));
+        if (a.status === 'foster') return `${t('dashboard.in_foster_with')} ${who}`;
+        if (a.status === 'adopted') return `${t('dashboard.adopted_by')} ${who}`;
+        return a.applicants > 0
             ? `${t('homeModules.available_status')} · ${a.applicants} ${t(a.applicants === 1 ? 'animalProfile.applicant_one' : 'animalProfile.applicant_many')}`
             : t('homeModules.available_status');
+    };
+    const moreDue = d.dueCount - d.rows.filter(a => a.due).length;
     return (
         <ModuleShell icon="paw" title={t('homeModules.animals_title')} summary={summary} href={d.available === 0 ? '/my-animals?view=adopted' : '/my-animals'} testId="home-animals">
-            {dueRows.length > 0 && (
+            {d.rows.length > 0 && (
                 <div className="space-y-2">
+                    {/* Animals that need you first (a check-up due), then the most recently updated. */}
                     <div className={ROWS}>
-                        {dueRows.map(a => (
-                            <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}#next-action`} testId="home-animals-due"
+                        {d.rows.map(a => a.due
+                            ? <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}#next-action`} testId="home-animals-due"
                                 name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} due
-                                line={followupBadgeLabel(t, a.dueFollowups, a.dueTop, now, { short: true })} />
-                        ))}
+                                line={followupBadgeLabel(t, a.due.dueFollowups, a.due.dueTop, now, { short: true })} />
+                            : <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}`} testId="home-animal-row"
+                                name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} line={status(a)} />)}
                     </div>
-                    {moreCount > 0 && (
+                    {moreDue > 0 && (
                         <TodoRow href="/my-animals?view=pendientes" testId="home-animals-due-more">
-                            {interpolate(t('homeModules.more_due'), { n: moreCount })}
+                            {interpolate(t('homeModules.more_due'), { n: moreDue })}
                         </TodoRow>
                     )}
-                </div>
-            )}
-            {d.listed.length > 0 && (
-                <div>
-                    <div className={ROWS}>
-                        {d.listed.slice(0, homeListLimit(dueRows.length > 0)).map(a => (
-                            <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}`} testId="home-animal-row"
-                                name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} line={status(a)} />
-                        ))}
-                    </div>
-                    {d.available > Math.min(d.listed.length, homeListLimit(dueRows.length > 0)) && (
-                        <MoreRow href="/my-animals" testId="home-animals-more" label={interpolate(t('homeModules.see_available'), { n: d.available })} />
+                    {d.total > d.rows.length && (
+                        <MoreRow href="/my-animals?view=todos" testId="home-animals-more" label={interpolate(t('homeModules.see_all_animals'), { n: d.total })} />
                     )}
                 </div>
             )}
-            {dueRows.length === 0 && (
+            {d.dueCount === 0 && (
                 <Link href="/my-animals/new" className="btn btn-standard btn-secondary w-full">{t('homeModules.add_animal')}</Link>
             )}
         </ModuleShell>
@@ -374,7 +370,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         : data.posts;
     const { cards, steps, firstSteps } = orderHomeModules({
         adopters: stateOf(data.adopters, d => d.pendingReview > 0 || d.formsToReview > 0, d => d.total > 0),
-        animals: stateOf(data.animals, d => d.due.length > 0, d => d.available + d.adopted > 0),
+        animals: stateOf(data.animals, d => d.dueCount > 0, d => d.total > 0),
         posts: stateOf(posts, () => false, d => d.people > 0),
     });
 

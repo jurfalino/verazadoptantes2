@@ -106,4 +106,28 @@ test.describe.serial('homepage modules', () => {
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
     });
 
+    test('Mis animales: at most 3 animals, each once; «Ver los N animales» is the «Todos» count', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        const card = page.getByTestId('home-animals');
+        const rows = card.locator('[data-testid="home-animals-due"], [data-testid="home-animal-row"]');
+        expect(await rows.count()).toBeLessThanOrEqual(3);
+        // The overdue animal is listed as due, never again as «recently updated».
+        await expect(card.getByTestId('home-animal-row').filter({ hasText: DUE_ANIMAL_NAME })).toHaveCount(0);
+        await expect.poll(async () => {
+            await openHome(page);
+            const c = page.getByTestId('home-animals');
+            const more = c.getByTestId('home-animals-more');
+            // No «Ver los N» when every animal already has its row.
+            const onCard = (await more.count()) > 0
+                ? await numberIn(more)
+                : await c.locator('[data-testid="home-animals-due"], [data-testid="home-animal-row"]').count();
+            await page.goto('/my-animals?view=todos');
+            const tab = page.getByTestId('tab-todos');
+            await expect(tab).toBeVisible({ timeout: 60_000 });
+            await expect(page.getByText(DUE_ANIMAL_NAME).first()).toBeVisible({ timeout: 60_000 });
+            return onCard === await numberIn(tab);
+        }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
+    });
+
 });

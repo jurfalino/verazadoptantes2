@@ -45,5 +45,9 @@ export async function myAnimalsScope(userEmail: string) {
         or(eq(adoptions.recordType, 'adoption'), eq(adoptions.recordType, 'foster')),
     );
 
-    return { scopeEmails, teamMatch, adoptedWhere, availableWhere, placedWhere };
+    // «Todos»: both tabs together — what the homepage card's «Ver los N animales»
+    // counts. Not `teamMatch` alone, which also holds requests, observations…
+    const allWhere = or(availableWhere, adoptedWhere);
+
+    return { scopeEmails, teamMatch, adoptedWhere, availableWhere, placedWhere, allWhere };
 }

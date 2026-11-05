@@ -47,14 +47,31 @@ export function homeListLimit(hasTodoRows: boolean): number {
     return hasTodoRows ? 2 : 3;
 }
 
+/** The homepage animals card lists at most this many animals. */
+export const HOME_ANIMAL_ROWS = 3;
+
 /**
- * Amber follow-up rows: one per animal, at most 2. With 3 or more animals
- * the second row folds the rest into «N animales más con controles
- * pendientes» — `moreCount` is that N, 0 when every animal has its row.
+ * The homepage animals card's rows: the animals that need you first (a
+ * check-up due, most overdue first), then the most recently updated ones to
+ * fill the card. `moreDue` = due animals that didn't fit — the «N animales
+ * más con controles pendientes» link. `due` and `recent` arrive already
+ * ordered; an animal never appears twice.
  */
-export function dueRowsShown<T>(dueAnimals: readonly T[]): { rows: T[]; moreCount: number } {
-    if (dueAnimals.length <= 2) return { rows: [...dueAnimals], moreCount: 0 };
-    return { rows: dueAnimals.slice(0, 1), moreCount: dueAnimals.length - 1 };
+export function homeAnimalRows<D extends { id: string }, R extends { id: string }>(
+    due: readonly D[],
+    recent: readonly R[],
+    limit: number = HOME_ANIMAL_ROWS,
+): { due: D[]; recent: R[]; moreDue: number } {
+    const dueShown = due.slice(0, limit);
+    const taken = new Set(dueShown.map(a => a.id));
+    const recentShown: R[] = [];
+    for (const a of recent) {
+        if (dueShown.length + recentShown.length >= limit) break;
+        if (taken.has(a.id)) continue;
+        taken.add(a.id);
+        recentShown.push(a);
+    }
+    return { due: dueShown, recent: recentShown, moreDue: due.length - dueShown.length };
 }
 
 /**

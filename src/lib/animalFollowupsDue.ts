@@ -175,3 +175,59 @@ export function dueForAnimal(
         return none;
     }
 }
+
+export type AnimalLastUpdate = { by: string; at: number; kind: 'updated' | 'added' };
+
+const toMs = (v: unknown): number | null =>
+    v instanceof Date ? v.getTime() : typeof v === 'number' ? (v < 1e12 ? v * 1000 : v) : null;
+
+/**
+ * Who last touched this animal, and when — the /my-animals card's
+ * «Actualizado por …» and the order of the «Todos» tab and the homepage card.
+ *
+ * v2.56.16: derived rather than stamped — placements/adopter_events/
+ * animal_events all carry `recorded_by`, so nothing has to remember to keep a
+ * column fresh. `animals.updated_by` covers the one case those tables cannot
+ * see: a pure ficha edit.
+ *
+ * created_at, NOT date/started_at: those are real-world dates the rescuer
+ * types and can backdate by months, and "actualizado" means app-time.
+ * 'anonymous' is the tables' DEFAULT, so it is not an actor — skip it and fall
+ * back to the registration.
+ */
+export function animalLastUpdate(
+    animal: { id: string; addedBy?: string | null; date?: unknown },
+    bulk: AnimalActivityBulk | null,
+): AnimalLastUpdate | null {
+    const named = (by: string | null | undefined): by is string => !!by && by !== 'anonymous';
+    let last: AnimalLastUpdate | null = null;
+    if (bulk) {
+        const consider = (by: string | null | undefined, at: unknown) => {
+            const ms = toMs(at);
+            if (!named(by) || ms == null) return;
+            if (!last || ms > last.at) last = { by, at: ms, kind: 'updated' };
+        };
+        const arow = bulk.animalById.get(animal.id);
+        consider(arow?.updatedBy, arow?.updatedAt);
+        for (const p of bulk.placementsByAnimal.get(animal.id) || []) consider(p.recordedBy, p.createdAt);
+        for (const e of bulk.eventsByAnimal.get(animal.id) || []) consider(e.recordedBy, e.createdAt);
+        for (const c of bulk.careByAnimal.get(animal.id) || []) consider(c.recordedBy, c.createdAt);
+    }
+    // Never touched since it was created — say so honestly rather than
+    // calling a registration an update.
+    if (!last && named(animal.addedBy) && toMs(animal.date) != null) {
+        last = { by: animal.addedBy as string, at: toMs(animal.date)!, kind: 'added' };
+    }
+    return last;
+}
+
+/** «Most recently updated first» sort key: the last update, else the record's date, else 0 (last). */
+export function animalActivityAt(animal: { id: string; addedBy?: string | null; date?: unknown }, bulk: AnimalActivityBulk | null): number {
+    return animalLastUpdate(animal, bulk)?.at ?? toMs(animal.date) ?? 0;
+}
+
+/** Newest activity first; ties by the record's date, newest first. Returns a new array. */
+export function byRecentActivity<R extends { id: string; addedBy?: string | null; date?: unknown }>(rows: readonly R[], bulk: AnimalActivityBulk | null): R[] {
+    const key = new Map(rows.map(r => [r.id, animalActivityAt(r, bulk)]));
+    return [...rows].sort((a, b) => (key.get(b.id)! - key.get(a.id)!) || ((toMs(b.date) ?? 0) - (toMs(a.date) ?? 0)));
+}

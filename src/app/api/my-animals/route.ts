@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         // The tabs' filters (team scope included), shared by the list queries,
         // ?counts=1 and the homepage card so a count never disagrees with its list.
         const { myAnimalsScope } = await import('@/lib/myAnimalsScope');
-        const { scopeEmails, teamMatch, adoptedWhere, availableWhere, placedWhere } = await myAnimalsScope(userEmail);
+        const { scopeEmails, teamMatch, adoptedWhere, availableWhere, placedWhere, allWhere } = await myAnimalsScope(userEmail);
 
         // ?counts=1 — the two tabs' counts in one cheap call (the page fires it
         // on every tab switch), so the tab you are not on shows a number instead
@@ -58,8 +58,8 @@ export async function GET(request: NextRequest) {
             const countOf = (where: typeof availableWhere) =>
                 db.select({ n: sql<number>`count(DISTINCT ${adoptions.id})` }).from(adoptions).where(where).get()
                     .then((r: { n: number } | undefined) => Number(r?.n ?? 0));
-            const [available, adopted] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere)]);
-            return NextResponse.json({ available, adopted });
+            const [available, adopted, all] = await Promise.all([countOf(availableWhere), countOf(adoptedWhere), countOf(allWhere)]);
+            return NextResponse.json({ available, adopted, all });
         }
 
         // Due follow-ups: the «N pendientes» badge, the «Con controles
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         // independent of N (the per-row fan-out once pushed large rescuers
         // toward the Workers subrequest limit). It also feeds «Actualizado
         // por», so list views always load it. Skipped for ?id= (one row, not the set).
-        const { loadAnimalActivityBulk, loadFollowupCtx, dueForAnimal, withDueFollowups } = await import('@/lib/animalFollowupsDue');
+        const { loadAnimalActivityBulk, loadFollowupCtx, dueForAnimal, withDueFollowups, animalLastUpdate, byRecentActivity } = await import('@/lib/animalFollowupsDue');
         const log = { userEmail, view };
         const followupCtx = idParam ? null : await loadFollowupCtx(db, userEmail, log);
         const bulk = idParam ? null : await loadAnimalActivityBulk(db, scopeEmails, log);
@@ -87,6 +87,12 @@ export async function GET(request: NextRequest) {
         } else if (view === 'adopted') {
             results = await db.select().from(adoptions)
                 .where(adoptedWhere)
+                .orderBy(sql`${adoptions.date} DESC`)
+                .all();
+        } else if (view === 'todos') {
+            // «Todos»: both tabs; reordered below by last update, newest first.
+            results = await db.select().from(adoptions)
+                .where(allWhere)
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
         } else if (view === 'all') {
@@ -186,37 +192,8 @@ export async function GET(request: NextRequest) {
                 // placement can have any (src/lib/animalFollowupsDue.ts).
                 const { dueFollowups, dueTop } = dueForAnimal(animal, bulk, followupCtx, log);
 
-                /* v2.56.16: who last touched this animal, and when. Derived
-                 * rather than stamped — placements/adopter_events/animal_events
-                 * all carry `recorded_by`, so nothing has to remember to keep a
-                 * column fresh. `animals.updated_by` covers the one case those
-                 * tables cannot see: a pure ficha edit.
-                 *
-                 * created_at, NOT date/started_at: those are real-world dates
-                 * the rescuer types and can backdate by months, and "actualizado"
-                 * means app-time. 'anonymous' is the tables' DEFAULT, so it is
-                 * not an actor — skip it and fall back to the registration. */
-                const toMs = (v: unknown): number | null =>
-                    v instanceof Date ? v.getTime() : typeof v === 'number' ? (v < 1e12 ? v * 1000 : v) : null;
-                const named = (by: string | null | undefined): by is string => !!by && by !== 'anonymous';
-                let lastUpdate: { by: string; at: number; kind: 'updated' | 'added' } | null = null;
-                if (bulk) {
-                    const consider = (by: string | null | undefined, at: unknown) => {
-                        const ms = toMs(at);
-                        if (!named(by) || ms == null) return;
-                        if (!lastUpdate || ms > lastUpdate.at) lastUpdate = { by, at: ms, kind: 'updated' };
-                    };
-                    const arow = bulk.animalById.get(animal.id);
-                    consider(arow?.updatedBy, arow?.updatedAt);
-                    for (const p of bulk.placementsByAnimal.get(animal.id) || []) consider(p.recordedBy, p.createdAt);
-                    for (const e of bulk.eventsByAnimal.get(animal.id) || []) consider(e.recordedBy, e.createdAt);
-                    for (const c of bulk.careByAnimal.get(animal.id) || []) consider(c.recordedBy, c.createdAt);
-                }
-                // Never touched since it was created — say so honestly rather
-                // than calling a registration an update.
-                if (!lastUpdate && named(animal.addedBy) && toMs(animal.date) != null) {
-                    lastUpdate = { by: animal.addedBy as string, at: toMs(animal.date)!, kind: 'added' };
-                }
+                // v2.56.16: who last touched this animal, and when (src/lib/animalFollowupsDue.ts).
+                const lastUpdate = animalLastUpdate(animal, bulk);
 
                 return {
                     ...animal, images, adopterName, applicants, dueFollowups, dueTop,
@@ -255,6 +232,10 @@ export async function GET(request: NextRequest) {
             logger.warn('my-animals: lastUpdate name fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
         }
 
+        // «Todos» reads newest activity first — the homepage card's order
+        // (byRecentActivity), so «Ver los N animales» lands on the same list.
+        const listed = view === 'todos' ? byRecentActivity(deduped as Array<{ id: string; addedBy?: string | null; date?: unknown }>, bulk) : deduped;
+
         // The «Con controles pendientes» tab count, from the bulk this request
         // already read (one narrow extra select). Only for the tab lists.
         const headers: Record<string, string> = {};
@@ -265,7 +246,7 @@ export async function GET(request: NextRequest) {
                     .from(adoptions).where(placedWhere).all())).length;
             headers['x-pending-count'] = String(pending);
         }
-        return NextResponse.json(deduped, { headers });
+        return NextResponse.json(listed, { headers });
     } catch (error) {
         const errorId = logger.error('API my-animals error', error, { userEmail, view, counts: searchParams.get('counts') === '1' });
         return NextResponse.json({ error: 'Failed to load animals', errorId }, { status: 500 });

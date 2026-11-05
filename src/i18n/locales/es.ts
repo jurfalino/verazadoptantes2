@@ -1459,6 +1459,7 @@ export const es = {
         },
     },
     dashboard: {
+        all_animals_tab: 'Todos',
         pending_followups_tab: 'Con controles pendientes',
         no_pending_followups_title: 'No hay controles pendientes',
         no_pending_followups_desc: 'Cuando venza un control de un animal adoptado o en tránsito, aparece acá.',
@@ -3715,7 +3716,7 @@ export const es = {
         available_status: 'Disponible',
         unnamed_animal: 'Sin nombre',
         more_due: '{n} animales más con controles pendientes',
-        see_available: 'Ver los {n} disponibles',
+        see_all_animals: 'Ver los {n} animales',
         add_animal: 'Agregar animal',
         posts_title: 'Posts de redes',
         post_people_one: '1 persona desde posts',

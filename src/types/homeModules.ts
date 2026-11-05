@@ -28,23 +28,33 @@ export type HomeAdoptersData = {
     }>;
 };
 
+/** One animal on the homepage card: photo, name and the line under it. */
+export type HomeAnimalRow = {
+    id: string;
+    name: string | null;
+    species: string | null;
+    photo: string | null;
+    /** Set when a check-up is due: the amber line. */
+    due: { dueFollowups: number; dueTop: DueTop } | null;
+    /** Where it is — the grey line when nothing is due, worded like /my-animals. */
+    status: 'available' | 'foster' | 'adopted';
+    /** The foster home or adopter, for «En tránsito con …» / «Adoptado por …». */
+    personName: string | null;
+    /** «N interesadas», for an available animal. */
+    applicants: number;
+};
+
 export type HomeAnimalsData = {
     /** «Disponibles» tab count (available + in foster). */
     available: number;
     /** «Ya adoptados» tab count. */
     adopted: number;
-    /** «Con controles pendientes»: one entry per animal, most overdue first.
-     *  photo is loaded only for the rows the card can show (dueRowsShown); null otherwise. */
-    due: Array<{ id: string; name: string | null; species: string | null; photo: string | null; dueFollowups: number; dueTop: DueTop }>;
-    /** The newest «Disponibles» animals (up to 3). */
-    listed: Array<{
-        id: string;
-        name: string | null;
-        species: string | null;
-        photo: string | null;
-        fosterName: string | null;
-        applicants: number;
-    }>;
+    /** «Todos» tab count — «Ver los N animales». */
+    total: number;
+    /** «Con controles pendientes» tab count. */
+    dueCount: number;
+    /** Up to 3: the animals with a check-up due (most overdue first), then the most recently updated (homeAnimalRows). */
+    rows: HomeAnimalRow[];
 };
 
 export type HomePostsData = {

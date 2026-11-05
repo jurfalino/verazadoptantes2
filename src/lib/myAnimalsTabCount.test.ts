@@ -7,7 +7,7 @@ import { myAnimalsTabCount } from './myAnimalsTabCount';
  * PREVIOUS tab's list, so its length must not be shown for the new tab.
  */
 describe('myAnimalsTabCount', () => {
-    const counts = { available: 7, adopted: 12, pending: 3 };
+    const counts = { available: 7, adopted: 12, all: 19, pending: 3 };
 
     it('the tab whose list is loaded shows that list length', () => {
         expect(myAnimalsTabCount('available', 'available', 'available', 5, counts)).toBe(5);
@@ -26,6 +26,11 @@ describe('myAnimalsTabCount', () => {
     it('«Con controles pendientes» reads the pending count', () => {
         expect(myAnimalsTabCount('pendientes', 'available', 'available', 5, counts)).toBe(3);
         expect(myAnimalsTabCount('pendientes', 'pendientes', 'pendientes', 2, counts)).toBe(2);
+    });
+
+    it('«Todos» reads the all count', () => {
+        expect(myAnimalsTabCount('todos', 'available', 'available', 5, counts)).toBe(19);
+        expect(myAnimalsTabCount('todos', 'todos', 'todos', 19, counts)).toBe(19);
     });
 
     it('shows "..." when nothing is known yet', () => {

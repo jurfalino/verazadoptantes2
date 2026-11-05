@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { orderHomeModules, homeListLimit, dueRowsShown, isPostRecord, postsCardLive } from './homeModules';
+import { orderHomeModules, homeListLimit, homeAnimalRows, isPostRecord, postsCardLive } from './homeModules';
 
 describe('orderHomeModules', () => {
     it('a brand-new account gets no cards, only «Para empezar» with every step', () => {
@@ -32,14 +32,30 @@ describe('homeListLimit', () => {
     });
 });
 
-describe('dueRowsShown', () => {
-    it('one or two animals: one row each', () => {
-        expect(dueRowsShown(['a'])).toEqual({ rows: ['a'], moreCount: 0 });
-        expect(dueRowsShown(['a', 'b'])).toEqual({ rows: ['a', 'b'], moreCount: 0 });
+describe('homeAnimalRows', () => {
+    const a = (id: string) => ({ id });
+    const ids = (r: { due: { id: string }[]; recent: { id: string }[]; moreDue: number }) =>
+        ({ due: r.due.map(x => x.id), recent: r.recent.map(x => x.id), moreDue: r.moreDue });
+
+    it('nothing due: the 3 most recently updated', () => {
+        expect(ids(homeAnimalRows([], [a('r1'), a('r2'), a('r3'), a('r4')])))
+            .toEqual({ due: [], recent: ['r1', 'r2', 'r3'], moreDue: 0 });
     });
 
-    it('five animals: the most overdue + «4 animales más»', () => {
-        expect(dueRowsShown(['a', 'b', 'c', 'd', 'e'])).toEqual({ rows: ['a'], moreCount: 4 });
+    it('one due: it first, then the 2 most recently updated, never the due one twice', () => {
+        expect(ids(homeAnimalRows([a('luna')], [a('luna'), a('r1'), a('r2'), a('r3')])))
+            .toEqual({ due: ['luna'], recent: ['r1', 'r2'], moreDue: 0 });
+    });
+
+    it('ten due: the 3 most overdue + «7 animales más»', () => {
+        const due = Array.from({ length: 10 }, (_, i) => a(`d${i}`));
+        expect(ids(homeAnimalRows(due, [a('r1')])))
+            .toEqual({ due: ['d0', 'd1', 'd2'], recent: [], moreDue: 7 });
+    });
+
+    it('fewer animals than rows: all of them', () => {
+        expect(ids(homeAnimalRows([], [a('r1'), a('r1'), a('r2')])))
+            .toEqual({ due: [], recent: ['r1', 'r2'], moreDue: 0 });
     });
 });
 

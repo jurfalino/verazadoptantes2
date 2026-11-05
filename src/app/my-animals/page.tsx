@@ -126,7 +126,7 @@ export default function MyAnimalsPage() {
                     console.warn('my-animals: tab counts unavailable', { view, status: res.status });
                     return;
                 }
-                setTabCounts(await res.json() as { available: number; adopted: number });
+                setTabCounts(await res.json() as MyAnimalsTabCounts);
             } catch (e) {
                 console.warn('my-animals: tab counts failed', { view, error: e instanceof Error ? e.message : String(e) });
             }
@@ -264,6 +264,18 @@ export default function MyAnimalsPage() {
                     >
                         ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({myAnimalsTabCount('adopted', view, loadedView, animals.length, counts)})
                     </Link>
+                    {/* «Todos»: both tabs, newest activity first — where the homepage's
+                        «Ver los N animales» lands. */}
+                    <Link
+                        href="/my-animals?view=todos"
+                        data-testid="tab-todos"
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'todos'
+                            ? 'bg-stone-800 text-white shadow-sm'
+                            : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
+                            }`}
+                    >
+                        {t('dashboard.all_animals_tab') || 'Todos'} ({myAnimalsTabCount('todos', view, loadedView, animals.length, counts)})
+                    </Link>
                     {/* «Con controles pendientes»: where the homepage's «N animales más con
                         controles pendientes» lands — those animals are otherwise split
                         between the two tabs above. Only while there is one (or you are on it). */}
@@ -345,7 +357,7 @@ export default function MyAnimalsPage() {
                             <span className="text-3xl">🐾</span>
                         </div>
                         <h3 className="text-xl font-semibold text-stone-900 mb-2">
-                            {view === 'available'
+                            {view === 'available' || view === 'todos'
                                 ? (t('dashboard.no_animals_title') || 'No animals listed yet')
                                 : view === 'pendientes'
                                     ? (t('dashboard.no_pending_followups_title') || 'No hay controles pendientes')
@@ -353,14 +365,14 @@ export default function MyAnimalsPage() {
                             }
                         </h3>
                         <p className="text-stone-500 mb-6">
-                            {view === 'available'
+                            {view === 'available' || view === 'todos'
                                 ? (t('dashboard.no_animals_desc') || 'Add animals you want to give for adoption and share the adoption contract with potential adopters.')
                                 : view === 'pendientes'
                                     ? (t('dashboard.no_pending_followups_desc') || 'Cuando venza un control de un animal adoptado o en tránsito, aparece acá.')
                                     : (t('dashboard.no_adopted_desc') || 'Animals that have been adopted by someone will appear here.')
                             }
                         </p>
-                        {view === 'available' && (
+                        {(view === 'available' || view === 'todos') && (
                             <Link
                                 href="/my-animals/new"
                                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-700 text-white font-semibold rounded-xl hover:bg-teal-600 transition-colors shadow-lg shadow-teal-700/20"
