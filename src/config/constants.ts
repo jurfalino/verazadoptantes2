@@ -62,6 +62,13 @@ export const ADMIN_STATS_EXCLUSION_SQL =
 /** Number of recent activity items shown on the dashboard. */
 export const DASHBOARD_RECENT_ACTIVITY_LIMIT = 4;
 
+/**
+ * Homepage modules: the «Posts de redes» card shows only while the team has
+ * brought in a post within this many days; otherwise «Importá un post» is a
+ * step of «Para empezar» / «También podés».
+ */
+export const HOME_POSTS_WINDOW_DAYS = 30;
+
 // ── Session ─────────────────────────────────────────────────────
 /**
  * NextAuth session max-age in seconds.

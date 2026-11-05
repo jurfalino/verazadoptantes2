@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import HomepageActionCard from '@/components/HomepageActionCard';
+import HomeModules from '@/components/home/HomeModules';
 import PendingSearchesDeck from '@/components/PendingSearchesDeck';
 import ContactPickerLauncher, { useContactPickerSupported } from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
@@ -138,8 +139,14 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                     – ENABLE_CLEAN_HOMEPAGE: the two activity cards are hidden;
                       the surviving import affordance demotes to paired link-pills
                       below the search so search remains visually primary
-                      (v2.16.0-16, two-pill variant in v2.16.0-33). */}
-                {appConfig.ENABLE_CLEAN_HOMEPAGE === 'true' ? (
+                      (v2.16.0-16, two-pill variant in v2.16.0-33).
+                    – Flag off + signed in: the homepage modules (Mis adoptantes,
+                      Mis animales, Posts de redes) replace the cards; guests keep
+                      them (.agents/plans/2026-11-04-home-modules.md). */}
+                {/* userEmail comes from the server render, so a signed-in visit never flashes the guest cards while the session loads. */}
+                {appConfig.ENABLE_CLEAN_HOMEPAGE !== 'true' && (userEmail || session?.user) ? (
+                    <HomeModules contactImportAvailable={contactImportAvailable} googleContactsImportEnabled={googleContactsImportEnabled} />
+                ) : appConfig.ENABLE_CLEAN_HOMEPAGE === 'true' ? (
                     anyImportEnabled && (
                         <div id="action-cards" className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-2">
                             {contentImportEnabled && (

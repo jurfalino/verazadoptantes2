@@ -5,7 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { FileText, AlertCircle, Search } from 'lucide-react';
+import { FileText, AlertCircle, Search, Share2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
@@ -70,10 +70,17 @@ interface Adopter {
     latestForm?: { submissionId: string; submittedAt: number; animalName: string | null; ownedByViewer: boolean } | null;
     /** Someone in their home (getMyAdopters → housemateAlertsFor): the two chip answers only, never names. Null when none. */
     housemateAlert?: HousemateAlertSummary | null;
+    /** Has a record that came from a social post (domain/homeModules isPostRecord). */
+    fromPost?: boolean;
 }
 
-/** `?filtro=formularios` — kept in the URL so Back and shared links keep the view. */
-const FORMS_FILTER = 'formularios';
+/**
+ * `?filtro=formularios` / `?filtro=posts` — kept in the URL so Back, shared
+ * links and the homepage cards («Ver las N personas», «N formularios por
+ * revisar») open the list already filtered.
+ */
+const FILTERS = { forms: 'formularios', posts: 'posts' } as const;
+type Filter = 'all' | keyof typeof FILTERS;
 
 /**
  * The person's newest form as a provenance event: "Formulario para Luna ·
@@ -326,15 +333,17 @@ export default function MyAdoptersPage() {
     const { data: session } = useSession();
     const router = useRouter();
     const toast = useShowToast();
-    const [formsOnly, setFormsOnly] = useState(false);
+    const [filter, setFilterState] = useState<Filter>('all');
     // Read once from the URL (not useSearchParams: that would force a
     // Suspense boundary onto this whole client page).
     useEffect(() => {
-        setFormsOnly(new URLSearchParams(window.location.search).get('filtro') === FORMS_FILTER);
+        const param = new URLSearchParams(window.location.search).get('filtro');
+        const found = (Object.keys(FILTERS) as Array<keyof typeof FILTERS>).find(k => FILTERS[k] === param);
+        setFilterState(found ?? 'all');
     }, []);
-    const setFilter = (on: boolean) => {
-        setFormsOnly(on);
-        router.replace(on ? `/my-adopters?filtro=${FORMS_FILTER}` : '/my-adopters', { scroll: false });
+    const setFilter = (next: Filter) => {
+        setFilterState(next);
+        router.replace(next === 'all' ? '/my-adopters' : `/my-adopters?filtro=${FILTERS[next]}`, { scroll: false });
     };
     const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}`);
     const currentEmail = session?.user?.email || '';
@@ -399,7 +408,17 @@ export default function MyAdoptersPage() {
     const withForms = adopters
         .filter(a => (a.formCount ?? 0) > 0)
         .sort((a, b) => (b.latestForm?.submittedAt ?? 0) - (a.latestForm?.submittedAt ?? 0));
-    const visible = formsOnly ? withForms : adopters;
+    // «Desde un post»: everyone with a record from a social post, same order as «Todos».
+    const fromPosts = adopters.filter(a => a.fromPost);
+    const visible = filter === 'forms' ? withForms : filter === 'posts' ? fromPosts : adopters;
+    // Few accounts import posts; the chip shows only when it has someone (or is the open view).
+    const chips: Array<[Filter, string, number]> = [
+        ['all', t('myAdopters.filter_all') || 'Todos', adopters.length],
+        ['forms', t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
+        ...(fromPosts.length > 0 || filter === 'posts'
+            ? [['posts', t('myAdopters.filter_posts') || 'Desde un post', fromPosts.length] as [Filter, string, number]]
+            : []),
+    ];
 
     return (
         <div className="min-h-screen bg-stone-50 py-8 px-4">
@@ -443,24 +462,23 @@ export default function MyAdoptersPage() {
 
                 {adopters.length > 0 && (
                     <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
-                        {([
-                            [false, t('myAdopters.filter_all') || 'Todos', adopters.length],
-                            [true, t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
-                        ] as const).map(([on, label, count]) => (
+                        {chips.map(([key, label, count]) => (
                             <button
-                                key={String(on)}
+                                key={key}
                                 type="button"
-                                aria-pressed={formsOnly === on}
-                                onClick={() => setFilter(on)}
-                                className={`inline-flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors ${formsOnly === on
+                                data-testid={`filter-${key}`}
+                                aria-pressed={filter === key}
+                                onClick={() => setFilter(key)}
+                                className={`inline-flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors ${filter === key
                                     ? 'bg-teal-600 text-white border-transparent'
                                     // Not hover:bg-stone-100: hover variants have no [data-theme]
                                     // remap and flash a white chip in Azul Noche.
                                     : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
                             >
-                                {on && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
+                                {key === 'forms' && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
+                                {key === 'posts' && <Share2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
                                 {label}
-                                <span className={`text-xs font-semibold px-1.5 rounded-full ${formsOnly === on ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
+                                <span data-testid={`filter-${key}-count`} className={`text-xs font-semibold px-1.5 rounded-full ${filter === key ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
                             </button>
                         ))}
                     </div>
@@ -479,8 +497,10 @@ export default function MyAdoptersPage() {
                         <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
                             <FileText className="w-7 h-7" strokeWidth={1.5} aria-hidden="true" />
                         </div>
-                        <p className="text-stone-600 mb-6 text-sm">{t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.'}</p>
-                        <button type="button" onClick={() => setFilter(false)} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
+                        <p className="text-stone-600 mb-6 text-sm">{filter === 'posts'
+                            ? (t('myAdopters.posts_empty') || 'Todavía no hay perfiles desde un post.')
+                            : (t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.')}</p>
+                        <button type="button" onClick={() => setFilter('all')} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
                             {t('myAdopters.forms_empty_cta') || 'Ver todos'}
                         </button>
                     </div>
