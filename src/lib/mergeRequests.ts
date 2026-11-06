@@ -367,6 +367,49 @@ async function settleOtherRequestsOnPair(db: Db, req: RequestRow, actor: string,
 }
 
 /**
+ * A household «No, es otra persona» (spec 2026-11-05): the new profile and each
+ * profile the rescuer rejected are two people. An open pair is dismissed; with
+ * no row yet, a dismissed one is written — so the Scan (which skips dismissed
+ * keys) and the save-time matcher (which skips existing pairs) never ask again.
+ * Settled pairs (dismissed / merged) are left alone. Never throws: the add stands.
+ */
+export async function recordSeparatePairs(
+    db: Db,
+    newId: string,
+    otherIds: readonly string[],
+    actor: string,
+    ctx: Record<string, unknown> = {},
+): Promise<void> {
+    for (const other of otherIds) {
+        if (!other || other === newId) continue;
+        try {
+            const existing = await db.select({ id: duplicateCandidates.id, status: duplicateCandidates.status })
+                .from(duplicateCandidates)
+                .where(or(
+                    and(eq(duplicateCandidates.adopter1Id, newId), eq(duplicateCandidates.adopter2Id, other)),
+                    and(eq(duplicateCandidates.adopter1Id, other), eq(duplicateCandidates.adopter2Id, newId)),
+                ))
+                .get() as { id: string; status: string | null } | undefined;
+            if (existing) {
+                if (existing.status === 'pending') {
+                    await db.update(duplicateCandidates)
+                        .set({ status: 'dismissed', resolvedBy: actor, resolvedAt: new Date() })
+                        .where(eq(duplicateCandidates.id, existing.id));
+                }
+                continue;
+            }
+            await db.insert(duplicateCandidates).values({
+                id: crypto.randomUUID(), adopter1Id: newId, adopter2Id: other,
+                matchTypes: '[]', score: 0, confidence: 'low', status: 'dismissed',
+                resolvedBy: actor, resolvedAt: new Date(),
+            });
+        } catch (e) {
+            logger.error('recordSeparatePairs: «no es la misma persona» not recorded', e, { ...ctx, actor, newId, otherId: other });
+        }
+    }
+}
+
+/**
  * Resolve a pair as kept-separate, so it leaves both lists: every pending
  * detected candidate AND every duplicate flag between the two profiles, in
  * either orientation. Used by an admin's decline and by «No, es alguien de su

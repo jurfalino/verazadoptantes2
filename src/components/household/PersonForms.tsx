@@ -229,21 +229,23 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const [checking, setChecking] = useState(false);
     /** null = not checked yet; [] = checked, nobody (left). */
     const [candidates, setCandidates] = useState<HouseholdMatchCandidate[] | null>(null);
+    /** Profiles answered «No, es otra persona» in this check — recorded as different people if a new one is made. */
+    const [rejected, setRejected] = useState<string[]>([]);
     /** The «¿Es este perfil?» check failed (its errorId): the rescuer retries or adds as new, knowingly. */
     const [checkFailed, setCheckFailed] = useState<string | null>(null);
 
     const hasIdentifier = !!name.trim() || drafts.length > 0;
     const contactInputs = (): HouseholdContactInput[] => drafts.map(asInput);
     // Anything typed after the check makes it stale.
-    const edited = <T,>(set: (v: T) => void) => (v: T) => { set(v); setCandidates(null); };
+    const edited = <T,>(set: (v: T) => void) => (v: T) => { set(v); setCandidates(null); setRejected([]); };
 
-    async function add(existingProfileId?: string) {
+    async function add(existingProfileId?: string, rejectedIds: string[] = rejected) {
         setBusy(true);
         try {
             const res = await addHouseholdPerson({
                 anchorAdopterId,
                 ...(householdId ? { householdId } : {}),
-                ...(existingProfileId ? { existingProfileId } : { name: name.trim() }),
+                ...(existingProfileId ? { existingProfileId } : { name: name.trim(), ...(rejectedIds.length ? { rejectedProfileIds: rejectedIds } : {}) }),
                 ...(rel ? { relationship: rel } : {}),
                 contactEntries: contactInputs(),
             });
@@ -269,6 +271,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
         if (!hasIdentifier) return;
         setChecking(true);
         setCheckFailed(null);
+        setRejected([]);
         let found: HouseholdMatchCandidate[] = [];
         try {
             const res = await getHouseholdMatchCandidates({ name: name.trim() || undefined, contactEntries: contactInputs(), anchorAdopterId });
@@ -291,10 +294,13 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     }
 
     async function no() {
+        const current = candidates?.[0];
+        const nowRejected = current ? [...rejected, current.adopterId] : rejected;
+        setRejected(nowRejected);
         const rest = (candidates ?? []).slice(1);
         if (rest.length > 0) { setCandidates(rest); return; }
         setCandidates([]);
-        await add();
+        await add(undefined, nowRejected);
     }
 
     const current = candidates && candidates.length > 0 ? candidates[0] : null;
@@ -312,7 +318,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                         wizard): same rows, same «Agregar dato de contacto», same composer. */}
                     <ContactEntriesSection
                         entries={drafts}
-                        onChange={next => { setDrafts(next); setCandidates(null); }}
+                        onChange={next => { setDrafts(next); setCandidates(null); setRejected([]); }}
                         canEditAll
                         hideVisibilityMicrocopy
                         emptyMessage={null}

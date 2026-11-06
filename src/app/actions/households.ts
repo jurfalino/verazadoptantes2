@@ -68,6 +68,8 @@ import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintPairMatches, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
 import { ratingAfterMerge } from '@/domain/ratings';
 import { realOwner } from '@/domain/dedupPair';
+import { keepOffered } from '@/domain/rejectedCandidates';
+import { recordSeparatePairs } from '@/lib/mergeRequests';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
@@ -103,6 +105,12 @@ export type AddHouseholdPersonInput = {
     householdId?: string;
     /** «¿Es este perfil?» → sí: link this live profile instead of making one. */
     existingProfileId?: string;
+    /**
+     * «¿Es este perfil?» → no, for these profiles (spec 2026-11-05): when a new
+     * profile is made, each is recorded as a different person. Only ids the
+     * server's own check offers for this input count (keepOffered).
+     */
+    rejectedProfileIds?: string[];
     name?: string;
     relationship?: Relationship;
     contactEntries?: HouseholdContactInput[];
@@ -542,6 +550,18 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                     return { ok: false, error: 'failed', errorId };
                 }
                 if (res.autoRequestFiled) autoRequestFiled = true;
+            }
+        }
+        // «No, es otra persona»: the new profile and each rejected one are two people (spec 2026-11-05).
+        if (createdProfile && Array.isArray(input.rejectedProfileIds) && input.rejectedProfileIds.length) {
+            try {
+                const offered = await getHouseholdMatchCandidates({ name: name || undefined, contactEntries: input.contactEntries, anchorAdopterId: anchorId });
+                const { kept, dropped } = keepOffered(input.rejectedProfileIds.slice(0, 10), offered.results.map(r => r.adopterId));
+                if (dropped) logger.warn('addHouseholdPerson: rejected id not offered, ignored', { ...out, dropped });
+                if (offered.failed) logger.warn('addHouseholdPerson: candidate re-check failed, «no» answers not recorded', { ...out, errorId: offered.errorId });
+                await recordSeparatePairs(db, person.id, kept, actor, out);
+            } catch (e) {
+                logger.error('addHouseholdPerson: «no es la misma persona» not recorded (the add stands)', e, out);
             }
         }
         return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled, ...(warningErrorId ? { warningErrorId } : {}) };
