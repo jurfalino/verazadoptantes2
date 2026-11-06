@@ -39,6 +39,8 @@ import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
+import { answerNotSamePerson } from '@/app/actions/notSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { Button } from '@/components/ui/Button';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -648,6 +650,17 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     // older AdoptionWizard call sites.
                     const animalId = searchParams.get('animalId') || '';
 
+                    // «No es esta persona» on this form: one answer with every other «no» (spec 2026-11-06).
+                    // Never blocks the save: a failure is said with its id and the new profile stands.
+                    if (isNew && dismissedStrongIds.size > 0) {
+                        try {
+                            const answered = await answerNotSamePerson({ adopterId: res.id, rejectedIds: [...dismissedStrongIds] });
+                            if (answered.ok) trackSamePersonAnswer('new_profile', 'different', answered.recorded > 0);
+                            else toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), answered.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${answered.error}`), 'AdopterForm.notThis'));
+                        } catch (e) {
+                            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'AdopterForm.notThis'));
+                        }
+                    }
                     let redirectUrl = `/adopter/${res.id}`;
                     if (continueToAdoption === 'true') {
                         // Redirect to profile with all wizard params (adoption or observation)
@@ -740,7 +753,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         } finally {
             setLoading(false);
         }
-    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t, dontKnowName, anonPublic]);
+    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t, dontKnowName, anonPublic, dismissedStrongIds]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
