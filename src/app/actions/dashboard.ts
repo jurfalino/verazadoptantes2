@@ -1,6 +1,8 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory, householdMemberships } from '@/db/schema';
+import { hiddenAsHousematesSql } from '@/lib/housemateSql';
+import { pendingDuplicatesByAdopter, type PendingDuplicateRef } from '@/lib/openPairs';
 import { eq, ne, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -103,7 +105,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         type FormRow = { id: string; userId: string; linkedAdopterId: string; autoAdopterId: string | null; createdAt: Date | number | null; selectedAnimalId: string | null };
         type ContractCountRow = { adopterId: string; count: number };
         type EditRow = { adopterId: string; changedBy: string | null; changedAt: number | Date | null };
-        type DupRow = { a1: string; a2: string };
+        type DupRow = { a1: string; a2: string; detectedAt: Date | number | null };
 
         const allImages: ImageRow[] = [];
         const allFlags: FlagRow[] = [];
@@ -197,12 +199,14 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 // query that binds the id list TWICE (see D1_IN_CHUNK note).
                 // Weak (`low`) pairs are excluded: the chip links to the
                 // pending-dedup queue, which never lists them.
-                db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id })
+                db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id, detectedAt: duplicateCandidates.detectedAt })
                     .from(duplicateCandidates)
                     .where(and(
                         eq(duplicateCandidates.status, 'pending'),
                         ne(duplicateCandidates.confidence, 'low'),
                         sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`,
+                        // Housemates are never duplicates — the same rule as the profile bar (loadOpenPairs).
+                        sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
                     ))
                     .all(),
                 // Who in this chunk is in a home at all — only they are read for the housemate chips (most
@@ -240,11 +244,14 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             ? housemateAlertsFor(db, userEmail, withHome.slice(0, MY_ADOPTERS_HOUSEMATE_ROWS))
             : Promise.resolve({} as Record<string, HousemateAlertSummary>);
 
-        const adoptersWithPendingDup = new Set<string>();
-        for (const p of dupPairs) {
-            adoptersWithPendingDup.add(p.a1);
-            adoptersWithPendingDup.add(p.a2);
-        }
+        // Each row's open «same person?» questions, newest first — the card shows the
+        // profile's own bar (spec 2026-11-05). The other side's name and owner come
+        // in chunks; a gone (merged-away) other side drops its pair, like loadOpenPairs.
+        const pendingDupsP = pendingDuplicatesByAdopter(db, dupPairs, new Map((adoptersList as Array<{ id: string; addedBy: string | null }>).map(r => [r.id, r.addedBy])), userEmail)
+            .catch((e: unknown) => {
+                logger.warn('getMyAdopters: duplicate names unreadable, rows show no duplicate bar', { userEmail, pairs: dupPairs.length, error: e instanceof Error ? e.message : String(e) });
+                return new Map<string, PendingDuplicateRef[]>();
+            });
 
         // Build lookup maps
         // Ratings: compute from allAdoptionRecords using domain function (replaces separate AVG SQL query)
@@ -377,6 +384,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const viewerInManyGroups = (await getOrgsForEmail(userEmail)).length >= 2;
 
         // Assemble results in memory (no more DB calls)
+        const pendingDups = await pendingDupsP;
         const enrichedAdopters = adoptersList.map((adopter: typeof adopters.$inferSelect) => {
             const flags = flagsMap.get(adopter.id) || [];
             const counts = countsMap.get(adopter.id) || { adoptions: 0, requests: 0 };
@@ -442,7 +450,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 profileViews: stats.profileViews,
                 ...formFields(formsByAdopter.get(adopter.id) ?? [], userEmail!, animalNames),
                 signedContractCount: signedContractCountMap.get(adopter.id) ?? 0,
-                hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
+                pendingDuplicates: pendingDups.get(adopter.id) ?? [],
                 // «Desde un post»: the filter chip and the homepage posts card count the same rows.
                 fromPost: (recordsByAdopter.get(adopter.id) ?? []).some(isPostRecord),
                 creatorName,

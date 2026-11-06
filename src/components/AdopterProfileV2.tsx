@@ -36,12 +36,11 @@ import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderName } from '@/lib/piiAccess';
 import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profileHouseholds';
 import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
-import { pairKey } from '@/domain/dedupPair';
 import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
-import { buttonClasses } from '@/components/ui/Button';
-import { AlertTriangle, ArrowRight, Search } from 'lucide-react';
+import { PendingDupBar } from '@/components/PendingDupBar';
+import { AlertTriangle } from 'lucide-react';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -440,32 +439,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {/* Pending-duplicate signal, one line for everyone: «Posible duplicado de <name>», the name
                     opening the strongest match. «Revisar» shows only when the pair is on the viewer's own
                     «Pendientes de revisar» list, and opens that list at the pair. */}
-                {!isNew && adopter && reviewableDups.length > 0 && (() => {
-                    const top = reviewableDups[0];
-                    const reviewable = reviewableDups.find(c => c.onViewerList);
-                    const template = reviewableDups.length === 1
-                        ? (t('myAdopters.profile_pending_dup_of') || 'Posible duplicado de {name}')
-                        : (t('myAdopters.profile_pending_dup_of_more') || 'Posible duplicado de {name} y {n} más').replace('{n}', String(reviewableDups.length - 1));
-                    const [before, after = ''] = template.split('{name}');
-                    const title = (
-                        <>
-                            {before}
-                            <a href={`/adopter/${top.otherAdopterId}`} data-testid="profile-pending-dup-link" className="underline underline-offset-2">
-                                {top.otherAdopterName}
-                            </a>
-                            {after}
-                        </>
-                    );
-                    return reviewable ? (
-                        <ProfilePromptBanner tone="warning" icon={Search} testId="profile-pending-dup" singleLine title={title}
-                            actions={<a href={`/my-adopters?pair=${encodeURIComponent(pairKey(adopter.id, reviewable.otherAdopterId))}#pendientes`}
-                                data-testid="profile-pending-dup-review" className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
-                                {t('myAdopters.profile_pending_dup_review') || 'Revisar'}<ArrowRight className="w-4 h-4" aria-hidden="true" />
-                            </a>} />
-                    ) : (
-                        <ProfilePromptBanner tone="info" icon={Search} testId="profile-pending-dup" singleLine title={title} />
-                    );
-                })()}
+                {!isNew && adopter && <PendingDupBar adopterId={adopter.id} pairs={reviewableDups} />}
 
                 {/* PII access gating — pending-request approver panel stays here at
                     record level: it's an actionable task that must be seen and

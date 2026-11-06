@@ -130,3 +130,56 @@ export async function formMatchIds(
         }
     }
 }
+
+/** One open «same person?» question as a /my-adopters row shows it. */
+export interface PendingDuplicateRef {
+    otherAdopterId: string;
+    otherAdopterName: string;
+    /** On the viewer's «Pendientes» list (they loaded a side, didn't hide it) — the bar offers «Revisar». */
+    onViewerList: boolean;
+}
+
+/**
+ * Per row, its open pairs (already filtered: pending, not low, not housemates),
+ * newest first, with the other side's name. Other sides gone (merged away) drop
+ * out. Names/owners are read in D1-safe chunks. Throws on a D1 error.
+ */
+export async function pendingDuplicatesByAdopter(
+    db: Db,
+    pairs: ReadonlyArray<{ a1: string; a2: string; detectedAt: Date | number | null }>,
+    ownerOf: ReadonlyMap<string, string | null>,
+    viewer: string,
+): Promise<Map<string, PendingDuplicateRef[]>> {
+    const out = new Map<string, PendingDuplicateRef[]>();
+    if (pairs.length === 0) return out;
+    const { chunk, D1_IN_CHUNK } = await import('@/lib/chunk');
+    const otherIds = [...new Set(pairs.flatMap(p => [p.a1, p.a2]))];
+    const people = new Map<string, { name: string; addedBy: string | null }>();
+    for (const ids of chunk(otherIds, D1_IN_CHUNK)) {
+        const inList = sql.join(ids.map(id => sql`${id}`), sql`, `);
+        const rows = await db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy })
+            .from(adopters)
+            .where(and(sql`${adopters.id} IN (${inList})`, isNull(adopters.deletedAt)))
+            .all() as Array<{ id: string; name: string; addedBy: string | null }>;
+        for (const r of rows) people.set(r.id, { name: r.name, addedBy: r.addedBy });
+    }
+    const hidden = await loadHiddenPairKeys(db, viewer);
+    const when = (d: Date | number | null) => (d instanceof Date ? d.getTime() : Number(d ?? 0));
+    const sorted = [...pairs].sort((x, y) => when(y.detectedAt) - when(x.detectedAt));
+    for (const p of sorted) {
+        for (const [self, other] of [[p.a1, p.a2], [p.a2, p.a1]] as const) {
+            if (!ownerOf.has(self) || !people.has(self)) continue;
+            const o = people.get(other);
+            if (!o) continue;
+            const list = out.get(self) ?? [];
+            if (list.some(r => r.otherAdopterId === other)) continue;
+            list.push({
+                otherAdopterId: other,
+                otherAdopterName: o.name,
+                onViewerList: (ownerOf.get(self) === viewer || o.addedBy === viewer) && !hidden.has(pairKey(self, other)),
+            });
+            out.set(self, list);
+        }
+    }
+    return out;
+}
