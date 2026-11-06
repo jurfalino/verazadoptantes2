@@ -467,3 +467,11 @@ INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon,
 ('test-notif-fixture-contract-mate', 'e2e-teammate@example.com', 'contract_result', '1 coincidencia para Firmante Contratofixture', 'Nube fue adoptado por Firmante Contratofixture.', '/contract-results/test-notif-fixture-contract-mate', '⚠️', 1, 0,
  '{"notificationId":"test-notif-fixture-contract-mate","animalId":"test-animal-fixture-2","animalName":"Nube","adopterId":"test-adopter-fixture-contract-new","adopterName":"Firmante Contratofixture","matchCount":1,"matchedAdopters":[{"id":"test-adopter-fixture-apl-match","name":"Zulema Coincidefixture","matchTypes":["phone","name_word"]}],"submittedData":{"name":"Firmante Contratofixture","phone":"4555 0377","email":"firmante@example.com","dni":"","address":"","socialNetworks":""}}',
  strftime('%s','now','-1 days'));
+
+-- The contract's new profile and its pair with the match: a contract match IS a
+-- duplicate pair (spec 2026-11-05) — /contract-results reads the pair, not the
+-- notification's saved list. Owned by 'test-seed' so it is on nobody's list.
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-contract-new', 'Firmante Contratofixture', 'Tel: 4555 0377, Email: firmante@example.com', '5', 'test-seed', strftime('%s','now','-1 days'), strftime('%s','now','-1 days'));
+INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES
+('test-dup-fixture-contract-mate', 'test-adopter-fixture-contract-new', 'test-adopter-fixture-apl-match', '["phone","name_word"]', '{}', 70, 'high', 'pending', strftime('%s','now','-1 days'));

@@ -70,12 +70,17 @@ export async function attachContractToExistingAdopter(
         const animalName: string | undefined = metadata.animalName;
         if (!orphanAdopterId) return { success: false, error: 'Notification missing orphan adopter id' };
 
-        // Validate the requested merge target is one of the recorded matches —
-        // prevents using this action to merge into arbitrary profiles.
-        const recordedMatchIds = new Set<string>(
-            (metadata.matchedAdopters || []).map((m: { id: string }) => m.id),
-        );
-        if (!recordedMatchIds.has(matchAdopterId)) {
+        // The target must be an OPEN PAIR of the contract's new profile (spec
+        // 2026-11-05) — never an arbitrary profile, and never one whose pair was
+        // already answered («Mantener separados», another tab).
+        let openPairIds: Set<string>;
+        try {
+            openPairIds = new Set((await loadOpenPairs(db, orphanAdopterId, actorEmail, { limit: 20 })).map(p => p.otherAdopterId));
+        } catch (e) {
+            const errorId = logger.error('attachContractToExistingAdopter: open pairs unreadable', e, { notificationId, matchAdopterId, orphanAdopterId, actorEmail });
+            return { success: false, error: 'Could not check the matches', errorId };
+        }
+        if (!openPairIds.has(matchAdopterId)) {
             return { success: false, error: 'Adopter is not a recorded match for this notification' };
         }
 

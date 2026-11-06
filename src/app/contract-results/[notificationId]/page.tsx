@@ -11,6 +11,7 @@ import { markNotificationRead } from '@/app/actions/notifications';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
 import { logger } from '@/lib/logger';
+import { loadOpenPairs } from '@/lib/openPairs';
 import { isOrgMate } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
@@ -80,10 +81,23 @@ export default async function ContractResultsPage({ params }: { params: Promise<
 
     const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
 
+    // A contract match is an ordinary duplicate pair (spec 2026-11-05): the cards
+    // are the new profile's OPEN PAIRS, so an answer given anywhere clears them.
+    let matchList: Array<MatchedAdopter & { candidateId: string; canAnswer: boolean }> = [];
+    if (metadata.adopterId) {
+        try {
+            const pairs = await loadOpenPairs(db, metadata.adopterId, currentUser, { limit: 20 });
+            matchList = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList }));
+        } catch (e) {
+            const errorId = logger.error('contract-results: open pairs unreadable', e, { notificationId, user: currentUser, adopterId: metadata.adopterId });
+            return <ErrorState message="No pudimos cargar este contrato. Probá de nuevo en un rato." errorId={errorId} />;
+        }
+    }
+
     // Fetch full adopter profiles for matches
     let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: CardHousehold; rating?: number | null; openAlerts?: OpenAlertKind[] }> = [];
-    if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
-        const adopterIds = metadata.matchedAdopters.map(a => a.id);
+    if (matchList.length > 0) {
+        const adopterIds = matchList.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
         // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
         type Row = {
@@ -132,7 +146,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         }
     }
 
-    const hasMatches = metadata.matchCount > 0;
+    const hasMatches = matchList.length > 0;
     const signer = {
         name: metadata.submittedData?.name ?? metadata.adopterName ?? '',
         entries: [
@@ -167,7 +181,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             <div className={`rounded-xl p-4 mb-6 ${hasMatches ? 'bg-amber-50 border border-amber-200' : 'bg-teal-50 border border-teal-200'}`}>
                 <p className={`text-sm font-semibold ${hasMatches ? 'text-amber-800' : 'text-teal-800'}`}>
                     {hasMatches
-                        ? (metadata.matchCount === 1 ? 'Se encontró 1 posible coincidencia' : `Se encontraron ${metadata.matchCount} posibles coincidencias`)
+                        ? (matchList.length === 1 ? 'Se encontró 1 posible coincidencia' : `Se encontraron ${matchList.length} posibles coincidencias`)
                         : 'No se encontraron registros previos para este adoptante'
                     }
                 </p>
@@ -195,10 +209,10 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             )}
 
             {/* Matched Profiles */}
-            {hasMatches && metadata.matchedAdopters && (
+            {hasMatches && (
                 <div className="space-y-3">
                     <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-700"><Search className="w-4 h-4 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />Perfiles coincidentes</h2>
-                    {metadata.matchedAdopters.map((match) => {
+                    {matchList.map((match) => {
                         const profile = matchedProfiles.find(p => p.id === match.id);
                         if (!profile) return null;
 
@@ -211,7 +225,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                                 matchTypes={match.matchTypes}
                                 score={match.score}
                                 signer={signer}
-                                compareOpen={metadata.matchedAdopters!.length === 1}
+                                compareOpen={matchList.length === 1}
+                                candidateId={match.candidateId}
+                                canAnswer={match.canAnswer}
                             />
                         );
                     })}
@@ -260,11 +276,12 @@ function DataPill({ label, value }: { label: string; value: string }) {
     );
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({ message, errorId }: { message: string; errorId?: string }) {
     return (
         <main className="container mx-auto px-4 py-16 text-center">
             <p className="text-2xl mb-2">😕</p>
             <p className="text-sm text-stone-500 font-medium">{message}</p>
+            {errorId && <p className="text-xs text-stone-400 font-mono mt-2">Error ID: {errorId}</p>}
             <Link href="/" className="text-sm text-blue-600 hover:text-blue-700 mt-4 inline-block">
                 ← Volver al inicio
             </Link>

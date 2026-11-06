@@ -5,6 +5,7 @@ import type { OpenAlertKind } from '@/domain/flags';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
+import { useAnswerNotSamePerson } from '@/components/useAnswerNotSamePerson';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
@@ -36,6 +37,10 @@ interface ContractResultsMatchCardProps {
     signer: { name: string; entries: Array<{ type: string; value: string }> };
     /** Open the comparison by itself — when this is the only possible match. */
     compareOpen?: boolean;
+    /** The open pair behind this card; «No es esta persona» answers it for everyone (spec 2026-11-05). */
+    candidateId?: string | null;
+    /** The pair is on the viewer's «Pendientes» list (they loaded a side). */
+    canAnswer?: boolean;
 }
 
 export default function ContractResultsMatchCard({
@@ -46,6 +51,8 @@ export default function ContractResultsMatchCard({
     score,
     signer,
     compareOpen = false,
+    candidateId = null,
+    canAnswer = false,
 }: ContractResultsMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
@@ -53,6 +60,13 @@ export default function ContractResultsMatchCard({
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
     const [dismissed, setDismissed] = useState(false);
+    const answerNotSamePerson = useAnswerNotSamePerson('ContractResultsMatchCard.notThis');
+    const notThis = canAnswer && candidateId
+        ? async () => {
+            setLinking(true);
+            try { if (await answerNotSamePerson(candidateId)) setDismissed(true); } finally { setLinking(false); }
+        }
+        : undefined;
 
     const handleConfirm = async () => {
         setLinking(true);
@@ -102,7 +116,7 @@ export default function ContractResultsMatchCard({
                         />
                     )}
                     // «No es esta persona» takes the card off this page, as on a form's results.
-                    actions={{ onSame: () => setConfirmOpen(true), busy: linking, onNotThis: () => setDismissed(true), notThisTestId: 'contract-match-not-this' }}
+                    actions={{ onSame: () => setConfirmOpen(true), busy: linking, onNotThis: notThis, notThisTestId: 'contract-match-not-this' }}
                 />
             </div>
 
