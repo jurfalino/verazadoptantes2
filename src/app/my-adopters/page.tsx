@@ -653,7 +653,8 @@ export default function MyAdoptersPage() {
                                     {/* The profile's own bar (spec 2026-11-05): the same component and copy,
                                         a ≥44px «Revisar» instead of a 23px pill on a phone. */}
                                     {!!adopter.pendingDuplicates?.length && (
-                                        <div className="mt-3">
+                                        <div className={`mt-3 ${ROW_CONTROL}`}>
+                                            {/* Positioned (ROW_CONTROL) so it paints above the name link stretched over the card. */}
                                             <PendingDupBar adopterId={adopter.id} pairs={adopter.pendingDuplicates} testId="row-pending-dup-bar" stacked />
                                         </div>
                                     )}

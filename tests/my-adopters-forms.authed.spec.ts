@@ -97,6 +97,9 @@ test.describe('/my-adopters — people who filled a form', () => {
             const review = bar.getByRole('link', { name: /Review|Revisar/ });
             expect((await review.boundingBox())!.height).toBeGreaterThanOrEqual(44);
             await expect(review).toHaveAttribute('href', /\/my-adopters\?pair=.+#pendientes/);
+            // A real tap: the card's stretched name link must not swallow it.
+            await review.click();
+            await expect(page).toHaveURL(/\/my-adopters\?pair=/, { timeout: 30_000 });
         } finally {
             await ctx.close();
         }
