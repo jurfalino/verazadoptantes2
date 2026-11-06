@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.30] - 2026-11-06
+
+### Changed — "is this the same person?" has one answer, everywhere
+- A form or contract that looks like someone already registered is now an ordinary «Posible
+  duplicado». The form and contract screens show the same open matches as «Pendientes de revisar»,
+  and their «No es esta persona» is saved: it clears the match on every screen, for everyone. An
+  answer given in the list («Mantener separados») clears the form and contract screens too.
+- Mis adoptantes: the «Por revisar» filter and pill are gone. A person with an open match shows the
+  profile's own bar «Posible duplicado de X · Revisar» on their card (44 px button on a phone), and
+  the card and the profile name the same match and open the same one.
+- Homepage: «N formularios por revisar» is gone; those matches count in «N pendientes de revisar».
+- The form screen's back link names where you came from (Mis adoptantes, the profile, the animal),
+  instead of always «Mis animales».
+- Adding a household member: «No, es otra persona» is saved, so the duplicate scan doesn't ask the
+  same question again later. Only someone who loaded one of the two profiles (or an admin) records it.
+- After every match is answered, the form and contract screens no longer claim "no previous records".
+- New analytics event `same_person_answered` (screen, yes/no, own profile or not — no names).
+- Teammates answering each other's matches is the next step (needs a security review first).
+
 ## [2.58.29] - 2026-11-05
 
 ### Changed — homepage «Mis animales»: one list, what needs you first
