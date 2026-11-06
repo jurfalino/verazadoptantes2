@@ -147,6 +147,8 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     }
 
     const hasMatches = matchList.length > 0;
+    // Matched at signing, but every match has been answered since: never say "no records".
+    const answeredAll = !hasMatches && (metadata.matchCount ?? 0) > 0;
     const signer = {
         name: metadata.submittedData?.name ?? metadata.adopterName ?? '',
         entries: [
@@ -182,13 +184,17 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                 <p className={`text-sm font-semibold ${hasMatches ? 'text-amber-800' : 'text-teal-800'}`}>
                     {hasMatches
                         ? (matchList.length === 1 ? 'Se encontró 1 posible coincidencia' : `Se encontraron ${matchList.length} posibles coincidencias`)
-                        : 'No se encontraron registros previos para este adoptante'
+                        : answeredAll
+                            ? 'Las coincidencias de este contrato ya se respondieron'
+                            : 'No se encontraron registros previos para este adoptante'
                     }
                 </p>
                 <p className={`text-xs mt-1 ${hasMatches ? 'text-amber-600' : 'text-teal-700'}`}>
                     {hasMatches
                         ? 'Revisá los perfiles a continuación para verificar si es la misma persona.'
-                        : 'Todo parece estar en orden. Este adoptante no tiene registros previos en el sistema.'
+                        : answeredAll
+                            ? 'Alguien ya decidió si era la misma persona. Podés ver el perfil abajo.'
+                            : 'Todo parece estar en orden. Este adoptante no tiene registros previos en el sistema.'
                     }
                 </p>
             </div>

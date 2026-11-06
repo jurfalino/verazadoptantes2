@@ -371,6 +371,7 @@ export default async function FormResultsPage({ params, searchParams }: { params
             householdItems={householdItems}
             hasMatches={hasMatches}
             matchCount={matchList.length}
+            everMatched={(metadata.matchCount ?? 0) > 0 || matchList.length > 0}
             matchedAdopters={matchList}
             matchedProfiles={matchedProfiles}
             linkKind={linkKind}

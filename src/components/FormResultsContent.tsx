@@ -122,6 +122,8 @@ interface FormResultsContentProps {
     householdItems: string[];
     hasMatches: boolean;
     matchCount: number;
+    /** Someone matched at submit or still does — "no previous records" is false even after every match was answered. */
+    everMatched: boolean;
     matchedAdopters: MatchedAdopter[] | undefined;
     matchedFormSubmissions?: Array<{ id: string; name: string; notificationId: string | null }>;
     matchedProfiles: MatchedProfile[];
@@ -248,7 +250,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                 count={visibleMatches.length}
                 applicantName={submitted?.name || null}
                 linkedProfile={linkedProfile}
-                hadMatches={matchCount > 0}
+                hadMatches={props.everMatched}
                 L={L}
                 actions={
                     <>

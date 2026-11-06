@@ -56,6 +56,8 @@ test.describe('form match = one shared answer', () => {
         await page.reload();
         await expect(page.getByTestId('form-status-banner')).toHaveAttribute('data-state', 'new_profile', { timeout: 30_000 });
         expect(rows(`SELECT status ${pairSql(f.formProfileId, f.existingId)}`)[0]?.status).toBe('dismissed');
+        // Someone DID match — answering «no» doesn't make "no previous records" true.
+        await expect(page.getByTestId('form-status-banner')).not.toContainText(/found no previous records|No encontramos registros previos|Não encontramos registros anteriores/);
     });
 
     test('«Mantener separados» given elsewhere clears the form', async ({ page, request }) => {
