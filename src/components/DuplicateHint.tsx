@@ -186,7 +186,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
     );
     const notThis = (
         <Button type="button" variant="secondary" fullWidth onClick={onNotThis} disabled={disabled} data-testid="dup-hint-not-this">
-            {t('formResults.not_this_person')}
+            {t('samePerson.no')}
         </Button>
     );
     // «Abrir perfil ↗»: the same new-tab link on every surface and for every role (point B, Jon 2026-11-01).
@@ -229,7 +229,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
                         )}
                         <Button type="button" fullWidth onClick={onContinue} disabled={disabled || needsPlatform} data-testid="dup-hint-continue"
                             icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
-                            {t('adopter.dup_action_join_with_existing')}
+                            {t('samePerson.yes')}
                         </Button>
                         {notThis}
                         {openLink}
@@ -607,7 +607,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
         <>
             <DupHintBox matches={visible} done={done} onView={setOpenId} className={`mt-2 ${className ?? ''}`} />
             {open && (
-                <Modal title={t('adopter.hh_candidate_title')} onClose={() => setOpenId(null)} busy={!!busy} testId="dup-hint-window">
+                <Modal title={t('samePerson.question')} onClose={() => setOpenId(null)} busy={!!busy} testId="dup-hint-window">
                     <DupHintProfile
                         match={open}
                         canAct={!!excludeAdopterId}

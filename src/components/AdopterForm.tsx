@@ -1683,7 +1683,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         busy: continueBusyId === result.adopter.id,
                                         // The same step as the panel: the typed data goes into that profile, after its confirm.
                                         onSame: () => { setSaveDuplicateModal(null); handleContinueWith(result.adopter.id, result); },
-                                        sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
                                         onNotThis: () => dismissStrongMatch(result.adopter.id),
                                         notThisTestId: 'save-dup-not-this',
                                     }} />

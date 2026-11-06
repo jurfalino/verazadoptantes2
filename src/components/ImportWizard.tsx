@@ -2388,7 +2388,7 @@ export default function ImportWizard() {
                             disabled={!selectedMatch || (needsIdentityChoice(selectedMatch) && !mergeAs)}
                             className={mergeLeads ? `${BTN_PRIMARY} w-full` : secondary}
                         >
-                            {t('import.add_to_selected')}
+                            {t('samePerson.yes')}
                         </button>
                     );
                     const createBtn = (
@@ -2404,7 +2404,7 @@ export default function ImportWizard() {
                         <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
                             {backToReview('person')}
                             <div>
-                                <h3 className="text-lg font-semibold text-stone-900">{t('import.possible_match_title')}</h3>
+                                <h3 data-testid="import-person-match-title" className="text-lg font-semibold text-stone-900">{t('samePerson.question')}</h3>
                                 <p className="text-sm text-stone-600 mt-0.5">{t('import.possible_match_desc')}</p>
                             </div>
                             {/* A failed check is said here too, not only when nothing
@@ -2415,7 +2415,7 @@ export default function ImportWizard() {
                                     <span>{t('import.duplicateCheckFailed')}</span>
                                 </div>
                             )}
-                            <div className="space-y-2" role="radiogroup" aria-label={t('import.possible_match_title')}>
+                            <div className="space-y-2" role="radiogroup" aria-label={t('samePerson.question')}>
                                 {personMatches.map(match => {
                                     const isSelected = selectedMatch?.id === match.id;
                                     const toggle = () => { setMergeAs(null); setSelectedMatch(isSelected ? null : match); };

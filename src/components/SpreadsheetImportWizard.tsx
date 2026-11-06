@@ -1470,12 +1470,12 @@ export default function SpreadsheetImportWizard() {
                         <div className="border border-stone-200 rounded-xl p-6">
                             <div className="text-sm text-teal-700 mb-3 flex items-center gap-2">
                                 <span className="inline-block w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" aria-hidden />
-                                <span>Analizando {detectProgress.done}/{detectProgress.total} registros contra tu base…
-                                {detectEtaMs != null && <span className="text-stone-400"> · {fmtEta(detectEtaMs)} restante</span>}</span>
+                                <span>{tf(t, 'sheetDedup.analyzing', { done: detectProgress.done, total: detectProgress.total })}
+                                {detectEtaMs != null && <span className="text-stone-400"> · {tf(t, 'sheetDedup.remaining', { eta: fmtEta(detectEtaMs) })}</span>}</span>
                                 <button type="button" onClick={cancelDetection} data-testid="detect-cancel"
                                     className="ml-auto flex-shrink-0 px-3 py-1 text-xs font-semibold text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200"
-                                    title="Frena el análisis y volvés a Revisar con tus cambios. No se importó nada.">
-                                    Cancelar
+                                    title={t('sheetDedup.cancel_title')}>
+                                    {t('sheetDedup.cancel')}
                                 </button>
                             </div>
                             <div className="h-2 rounded-full bg-stone-100 overflow-hidden">
@@ -1489,64 +1489,64 @@ export default function SpreadsheetImportWizard() {
                             {/* Summary bar — this IS the folded pre-import confirmation. */}
                             <div className="mb-3 p-3 rounded-lg bg-teal-50 border border-teal-100 text-sm text-teal-800 flex flex-wrap items-center justify-between gap-2">
                                 <span className="flex flex-wrap items-center gap-x-1">
-                                    <span>🔍 {analyzedCount} analizados · {matchedRows.length} coinciden · {newCount} nuevos ·</span>
-                                    <b style={{ color: 'var(--status-emerald-text)' }}>{importSummary.create} a crear</b>
-                                    {importSummary.update > 0 && <>· <b className="text-sky-700">{importSummary.update} a actualizar</b></>}
-                                    {importSummary.skipCount > 0 && <>· <b className="text-amber-700">{importSummary.skipCount} omitidas</b></>}
-                                    <span>· <b style={{ color: 'var(--status-sky-text)' }}>{visibilityCounts.publicCount} públicos</b> · <b className="text-stone-600">{visibilityCounts.protectedCount} protegidos</b></span>
+                                    <span>{tf(t, 'sheetDedup.summary', { analyzed: analyzedCount, matched: matchedRows.length, fresh: newCount })}</span>
+                                    <b style={{ color: 'var(--status-emerald-text)' }}>{tf(t, 'sheetDedup.to_create', { n: importSummary.create })}</b>
+                                    {importSummary.update > 0 && <>· <b className="text-sky-700">{tf(t, 'sheetDedup.to_update', { n: importSummary.update })}</b></>}
+                                    {importSummary.skipCount > 0 && <>· <b className="text-amber-700">{tf(t, 'sheetDedup.skipped', { n: importSummary.skipCount })}</b></>}
+                                    <span>· <b style={{ color: 'var(--status-sky-text)' }}>{tf(t, 'sheetDedup.public_count', { n: visibilityCounts.publicCount })}</b> · <b className="text-stone-600">{tf(t, 'sheetDedup.protected_count', { n: visibilityCounts.protectedCount })}</b></span>
                                 </span>
-                                <button onClick={runDetection} className="flex-shrink-0 font-semibold text-teal-700 hover:underline">Volver a analizar</button>
+                                <button onClick={runDetection} className="flex-shrink-0 font-semibold text-teal-700 hover:underline">{t('sheetDedup.reanalyze')}</button>
                             </div>
 
                             {detectionDegraded && (
                                 <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
                                     <span>⚠ {detectFailedRows.size > 0
-                                        ? `${detectFailedRows.size} ${detectFailedRows.size === 1 ? 'registro no se pudo comparar' : 'registros no se pudieron comparar'} (error temporal). El import está bloqueado hasta volver a analizarlos — así ninguno se importa como duplicado sin verificar.`
-                                        : 'La búsqueda de duplicados no se completó del todo (error temporal). Algunos registros podrían no haberse comparado — revisá antes de importar.'}</span>
-                                    <button onClick={runDetection} className="flex-shrink-0 font-semibold text-amber-800 underline hover:no-underline">Volver a analizar</button>
+                                        ? tf(t, detectFailedRows.size === 1 ? 'sheetDedup.degraded_rows_one' : 'sheetDedup.degraded_rows_many', { n: detectFailedRows.size })
+                                        : t('sheetDedup.degraded_partial')}</span>
+                                    <button onClick={runDetection} className="flex-shrink-0 font-semibold text-amber-800 underline hover:no-underline">{t('sheetDedup.reanalyze')}</button>
                                 </div>
                             )}
 
                             {reviewCount > 0 && (
                                 <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 sticky top-16 z-30 shadow-sm">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <span>⚠ {reviewCount} {reviewCount === 1 ? 'coincidencia requiere' : 'coincidencias requieren'} tu decisión</span>
+                                        <span>{reviewCount === 1 ? t('sheetDedup.review_one') : tf(t, 'sheetDedup.review_many', { n: reviewCount })}</span>
                                         <div className="flex flex-shrink-0 flex-wrap items-center gap-3">
                                             <button onClick={toggleFocusPending} aria-pressed={focusPending}
                                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-200 font-semibold ${focusPending ? 'bg-amber-100' : ''}`}>
-                                                {focusPending ? '✕ Ver todas las coincidencias' : `○ Ver solo las pendientes (${reviewCount})`}
+                                                {focusPending ? t('sheetDedup.show_all') : tf(t, 'sheetDedup.show_pending', { n: reviewCount })}
                                             </button>
-                                            <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">Crear todas como nuevas</button>
-                                            <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">Omitir todas</button>
+                                            <button onClick={() => resolveAllReview('create')} className="font-semibold text-amber-800 underline hover:no-underline">{t('sheetDedup.create_all')}</button>
+                                            <button onClick={() => resolveAllReview('skip')} className="font-semibold text-amber-800 underline hover:no-underline">{t('sheetDedup.skip_all')}</button>
                                         </div>
                                     </div>
-                                    <p className="mt-1.5 text-xs text-amber-700">“Actualizar” en bloque solo aplica a coincidencias idénticas (opción “Aplicar a idénticos”, abajo). En estas, cada actualización es una decisión por fila.</p>
+                                    <p className="mt-1.5 text-xs text-amber-700">{t('sheetDedup.bulk_hint')}</p>
                                 </div>
                             )}
                             {reviewCount === 0 && focusPending && (
                                 <div className="mb-3 p-3 rounded-lg border text-sm sticky top-16 z-30 shadow-sm flex flex-wrap items-center justify-between gap-2"
                                     style={{ backgroundColor: 'var(--status-emerald-bg)', color: 'var(--status-emerald-text)', borderColor: 'var(--status-emerald-text)' }}>
-                                    <span>✓ Todas resueltas — listo para importar</span>
-                                    <button onClick={toggleFocusPending} className="flex-shrink-0 font-semibold underline hover:no-underline">✕ Ver todas las coincidencias</button>
+                                    <span>{t('sheetDedup.all_resolved')}</span>
+                                    <button onClick={toggleFocusPending} className="flex-shrink-0 font-semibold underline hover:no-underline">{t('sheetDedup.show_all')}</button>
                                 </div>
                             )}
 
                             {matchedRows.length === 0 && !detectionDegraded ? (
                                 <div className="p-4 rounded-xl border border-stone-200 text-sm text-stone-600">
-                                    No encontramos duplicados. Los {analyzedCount} registros se crearán como nuevos.
+                                    {tf(t, 'sheetDedup.none_found', { n: analyzedCount })}
                                 </div>
                             ) : matchedRows.length > 0 ? (
                                 <>
                                     <div className="mb-3 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 bg-stone-50 border border-stone-200 rounded-xl">
-                                        <span className="text-xs uppercase tracking-wider text-stone-500">Coincidencias a decidir · {matchedRows.length}</span>
+                                        <span className="text-xs uppercase tracking-wider text-stone-500">{tf(t, 'sheetDedup.to_decide', { n: matchedRows.length })}</span>
                                         <label className="flex items-center gap-1.5 text-xs text-stone-500">
-                                            Aplicar a todos los idénticos:
+                                            {t('sheetDedup.apply_identical')}
                                             <select value="" onChange={e => { const a = e.target.value as RowAction | ''; if (a) applyToAllIdentical(a); }}
                                                 className="text-xs border border-stone-200 rounded px-1 py-0.5 bg-white text-stone-600">
-                                                <option value="">— elegir —</option>
-                                                <option value="upsert">Actualizar</option>
-                                                <option value="create">Crear</option>
-                                                <option value="skip">Omitir</option>
+                                                <option value="">{t('sheetDedup.choose')}</option>
+                                                <option value="upsert">{t('samePerson.yes')}</option>
+                                                <option value="create">{t('samePerson.no')}</option>
+                                                <option value="skip">{t('sheetDedup.skip')}</option>
                                             </select>
                                         </label>
                                     </div>
@@ -1564,13 +1564,13 @@ export default function SpreadsheetImportWizard() {
                             ) : null}
 
                             <div className="flex flex-wrap gap-2 items-center justify-between mt-4">
-                                <button onClick={() => setStep('confirm')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">← Volver a revisar</button>
+                                <button onClick={() => setStep('confirm')} className="px-4 py-2 text-sm text-stone-500 hover:text-stone-700">{t('sheetDedup.back_review')}</button>
                                 <div className="flex items-center gap-3">
-                                    <span className="text-xs text-stone-400">Los {newCount} se crearán como nuevos</span>
+                                    <span className="text-xs text-stone-400">{tf(t, 'sheetDedup.new_count', { n: newCount })}</span>
                                     <button disabled={importable.length === 0 || reviewCount > 0 || detectFailedRows.size > 0} onClick={runImport}
-                                        title={detectFailedRows.size > 0 ? `Volvé a analizar: ${detectFailedRows.size} sin comparar` : reviewCount > 0 ? `Resolvé las ${reviewCount} coincidencias marcadas primero` : undefined}
+                                        title={detectFailedRows.size > 0 ? tf(t, 'sheetDedup.title_reanalyze', { n: detectFailedRows.size }) : reviewCount > 0 ? tf(t, 'sheetDedup.title_resolve', { n: reviewCount }) : undefined}
                                         className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 rounded-xl hover:bg-teal-700 disabled:opacity-40">
-                                        Importar {importable.length} →
+                                        {tf(t, 'sheetDedup.import_n', { n: importable.length })}
                                     </button>
                                 </div>
                             </div>
@@ -1698,15 +1698,22 @@ export default function SpreadsheetImportWizard() {
 }
 
 // One record row in the confirmation grid: checkbox + summary, expandable to edit.
-const MATCH_TYPE_LABELS: Record<string, string> = {
-    identical: 'todos los datos',
-    phone: 'teléfono', phone_suffix: 'teléfono', like_fallback_contact: 'teléfono',
-    email: 'email', social: 'red social', social_handle: 'red social', id_number: 'DNI', address_word: 'dirección',
-    name_full: 'nombre', name_word: 'nombre', name_phonetic: 'nombre', name_word_fuzzy: 'nombre', like_fallback_name: 'nombre',
+/** sheetDedup.type_* key for each match type (step 3: translated). */
+const MATCH_TYPE_KEYS: Record<string, string> = {
+    identical: 'type_all',
+    phone: 'type_phone', phone_suffix: 'type_phone', like_fallback_contact: 'type_phone',
+    email: 'type_email', social: 'type_social', social_handle: 'type_social', id_number: 'type_document', address_word: 'type_address',
+    name_full: 'type_name', name_word: 'type_name', name_phonetic: 'type_name', name_word_fuzzy: 'type_name', like_fallback_name: 'type_name',
 };
-function matchTypeLabels(types: string[]): string {
-    const labels = [...new Set(types.map(t => MATCH_TYPE_LABELS[t]).filter(Boolean))];
-    return labels.length ? labels.join(', ') : 'datos';
+function matchTypeLabels(types: string[], t: (k: string) => string): string {
+    const labels = [...new Set(types.map(x => MATCH_TYPE_KEYS[x]).filter(Boolean))].map(k => t(`sheetDedup.${k}`));
+    return labels.length ? labels.join(', ') : t('sheetDedup.type_data');
+}
+/** `t` with `{name}` placeholders filled. */
+function tf(t: (k: string) => string, key: string, vars: Record<string, string | number>): string {
+    let s = t(key);
+    for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
+    return s;
 }
 
 
@@ -1721,32 +1728,35 @@ type RowMatch = DuplicateMatch & { verdict?: 'same' | 'possible' };
 // Shared match badge — used both in the confirm grid's inline sub-row (RowView)
 // and the Duplicados triage list, so the ● Idéntico/○ Posible copy never drifts.
 function MatchBadge({ match, isExact }: { match: RowMatch; isExact: boolean }) {
+    const { t } = useLanguage();
     const identical = match.matchTypes?.includes('identical');
     const strong = identical || isExact;
     return (
         <span className={strong ? 'text-sky-800' : 'text-stone-600'}>
-            {identical ? '● Idéntico a' : isExact ? '● Duplicado de' : '○ Posible duplicado de'} <span className="font-semibold">{match.adopterName?.trim() || 'Sin nombre'}</span>
-            <span className="text-stone-500"> · {identical ? 'mismos datos' : `coincide en ${matchTypeLabels(match.matchTypes)}`}</span>
+            {t(identical ? 'sheetDedup.badge_identical' : isExact ? 'sheetDedup.badge_exact' : 'sheetDedup.badge_possible')} <span className="font-semibold">{match.adopterName?.trim() || t('sheetDedup.no_name')}</span>
+            <span className="text-stone-500"> · {identical ? t('sheetDedup.same_data') : tf(t, 'sheetDedup.matches_on', { fields: matchTypeLabels(match.matchTypes, t) })}</span>
         </span>
     );
 }
 
-// Shared Actualizar/Crear/Omitir segmented control — same two call sites as MatchBadge.
-// A 'review' action (weak match, unresolved default) highlights NONE of the three
-// segments and shows an amber "⚠ Elegí" hint — picking any segment resolves it.
+// Shared «Sí, es la misma persona» / «No, es otra persona» / «Omitir» control (step 3: one way to
+// ask) — same two call sites as MatchBadge. upsert = the same person (its data join the existing
+// profile), create = someone else (a new profile). A 'review' action (weak match, unresolved
+// default) highlights NONE of the three and shows an amber "⚠ Respondé" hint.
 function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: RowAction) => void }) {
+    const { t } = useLanguage();
     return (
-        <div className="inline-flex items-center gap-1.5">
-            <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden">
+        <div className="inline-flex flex-wrap items-center gap-1.5">
+            <div className="inline-flex flex-wrap rounded-lg border border-stone-200 overflow-hidden">
                 {(['upsert', 'create', 'skip'] as const).map(a => (
                     <button key={a} type="button" onClick={() => onAction(a)}
                         className={`px-2 py-0.5 ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
-                        title={a === 'upsert' ? 'Actualizar el registro existente (merge aditivo)' : a === 'create' ? 'Crear un registro nuevo igual' : 'No importar esta fila'}>
-                        {a === 'upsert' ? 'Actualizar' : a === 'create' ? 'Crear' : 'Omitir'}
+                        title={t(a === 'upsert' ? 'sheetDedup.title_yes' : a === 'create' ? 'sheetDedup.title_no' : 'sheetDedup.title_skip')}>
+                        {t(a === 'upsert' ? 'samePerson.yes' : a === 'create' ? 'samePerson.no' : 'sheetDedup.skip')}
                     </button>
                 ))}
             </div>
-            {action === 'review' && <span className="text-amber-600 text-xs font-semibold whitespace-nowrap">⚠ Elegí</span>}
+            {action === 'review' && <span className="text-amber-600 text-xs font-semibold whitespace-nowrap">{t('sheetDedup.choose_hint')}</span>}
         </div>
     );
 }
@@ -2040,7 +2050,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                             <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-50 border border-stone-200 rounded-lg px-2.5 py-1.5">
                                 {onToggleWhy && (
                                     <button type="button" onClick={onToggleWhy}
-                                        aria-expanded={expanded} aria-label="Ver por qué coincidió"
+                                        aria-expanded={expanded} aria-label={t('sheetDedup.why')}
                                         className="text-stone-400 hover:text-stone-600 flex-shrink-0 w-4 text-center">{expanded ? '▾' : '▸'}</button>
                                 )}
                                 <MatchBadge match={match} isExact={isExact} />
@@ -2048,13 +2058,13 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
                                 <div className="ml-auto"><ActionToggle action={action} onAction={onAction} /></div>
                                 {otherMatches && otherMatches.length > 0 && (
                                     <div className="basis-full flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 mt-0.5 border-t border-stone-200" data-testid="sheet-also-matches">
-                                        <span className="text-stone-500">También coincide con</span>
+                                        <span className="text-stone-500">{t('sheetDedup.also_matches')}</span>
                                         {otherMatches.map(o => (
                                             <span key={o.adopterId} className="inline-flex items-center gap-2" data-testid="sheet-also-match">
-                                                <span className="font-semibold text-stone-700">{o.adopterName?.trim() || 'Sin nombre'}</span>
+                                                <span className="font-semibold text-stone-700">{o.adopterName?.trim() || t('sheetDedup.no_name')}</span>
                                                 <OpenProfileLink href={`/adopter/${encodeURIComponent(o.adopterId)}`} />
                                                 {onChooseMatch && (
-                                                    <button type="button" onClick={() => onChooseMatch(o)} className="text-teal-700 hover:underline" data-testid="sheet-also-match-choose">Actualizar este</button>
+                                                    <button type="button" onClick={() => onChooseMatch(o)} className="text-teal-700 hover:underline" data-testid="sheet-also-match-choose">{t('sheetDedup.choose_this')}</button>
                                                 )}
                                             </span>
                                         ))}

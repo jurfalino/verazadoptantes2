@@ -76,7 +76,7 @@ test.describe('form match = one shared answer', () => {
         const card = page.locator('article').filter({ hasText: f.firstName });
         await expect(card).toBeVisible();
         execD1(`UPDATE duplicate_candidates SET status = 'dismissed', resolved_by = '${ADMIN_EMAIL}', resolved_at = strftime('%s','now') WHERE id IN (SELECT id ${pairSql(f.formProfileId, f.existingId)})`);
-        await card.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ }).click();
+        await card.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ }).click();
         await page.getByRole('dialog').getByRole('button', { name: /Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa/ }).click();
         await expect(page.getByText(/Error ID/).first()).toBeVisible({ timeout: 30_000 });
         // Nothing merged: both profiles still live.

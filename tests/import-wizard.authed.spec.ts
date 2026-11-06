@@ -339,7 +339,7 @@ test.describe('Import wizard — duplicates', () => {
         await page.getByRole('button', { name: /Extract with AI|Extraer con IA/i }).click();
         await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
 
-        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('import-person-match-title')).toBeVisible({ timeout: 30000 });
         await expect(page.getByText(/Could not verify|No se pudo verificar/i)).toBeVisible();
     });
 
@@ -348,13 +348,13 @@ test.describe('Import wizard — duplicates', () => {
         await stubAi(page, { name: 'Pedro Prueba', phones: ['555-1234'] });
         await pasteAndContinue(page, 'Pedro Prueba, tel 555-1234');
         await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
-        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('import-person-match-title')).toBeVisible({ timeout: 30000 });
 
         const card = page.locator('[role="radio"]').filter({ hasText: /María/ }).first();
         if ((await card.getAttribute('aria-checked')) !== 'true') await card.click();
         const choice = page.getByTestId('import-identity-choice');
         await expect(choice).toBeVisible();
-        const merge = page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i });
+        const merge = page.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ });
         await expect(merge).toBeDisabled();
         await choice.getByRole('radio', { name: /relative|familiar/i }).check();
         await expect(merge).toBeEnabled();
@@ -370,13 +370,13 @@ test.describe('Import wizard — duplicates', () => {
         await expect(hint).toContainText('María García López', { timeout: 30000 });
 
         await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
-        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('import-person-match-title')).toBeVisible({ timeout: 30000 });
         await expect(page.getByRole('radio').first()).toBeVisible();
         // A name with no contact is never a strong match, so nothing is selected
         // and "create" is the main action (audit D5, decision B5).
         await expect(page.locator('[role="radio"][aria-checked="true"]')).toHaveCount(0);
         await expect(page.getByTestId('import-actions').getByRole('button').first()).toHaveText(/Create a new profile|Crear un perfil nuevo/i);
-        await expect(page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i })).toBeDisabled();
+        await expect(page.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ })).toBeDisabled();
     });
 
     test('«No es esta persona», then «Crear un perfil nuevo»: the answer is saved for that pair (consistency rule)', async ({ page }) => {
@@ -386,7 +386,7 @@ test.describe('Import wizard — duplicates', () => {
         await stubAi(page, { name, phones: ['555-1234'] });
         await pasteAndContinue(page, `${name}, tel 555-1234`);
         await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
-        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('import-person-match-title')).toBeVisible({ timeout: 30000 });
         const maria = page.getByTestId('import-match').filter({ hasText: /María/ }).first();
         await maria.getByTestId('import-match-not-this').click();
         await expect(page.getByTestId('import-match').filter({ hasText: /María/ })).toHaveCount(0);
@@ -430,9 +430,9 @@ test.describe('Import wizard — duplicates', () => {
         await expect(hint).toBeVisible({ timeout: 30000 });
         await hint.getByRole('button', { name: /Add to this profile|Agregar a este perfil/i }).click();
 
-        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('import-person-match-title')).toBeVisible({ timeout: 30000 });
         await expect(page.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1);
-        await expect(page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i })).toBeEnabled();
+        await expect(page.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ })).toBeEnabled();
     });
 });
 

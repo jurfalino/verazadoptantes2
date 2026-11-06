@@ -212,7 +212,7 @@ export default function FormResultMatchCard({
                 )}
                 actions={{
                     busy: linking,
-                    onSame: canLink ? () => setConfirmOpen(true) : undefined, sameLabel: L('same_person'),
+                    onSame: canLink ? () => setConfirmOpen(true) : undefined,
                     onNotThis: notThis, notThisTestId: 'form-match-not-this',
                 }}
             />

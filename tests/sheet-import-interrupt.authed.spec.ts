@@ -22,7 +22,7 @@ async function startAnalysis(page: Page) {
     await page.getByTestId('sheet-file-input').setInputFiles({ name: 'interrupt.csv', mimeType: 'text/csv', buffer: Buffer.from(CSV) });
     await expect(page.getByText('Ines Interruptfixture').first()).toBeVisible({ timeout: 30000 });
     await page.getByRole('button', { name: /Continuar a duplicados/ }).click();
-    await expect(page.getByText(/Analizando \d+\/2 registros/)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/(Analizando|Analyzing|Analisando) \d+\/2 (registros|records)/)).toBeVisible({ timeout: 15000 });
 }
 
 test.describe('sheet import: stopping and reloading', () => {
@@ -36,7 +36,7 @@ test.describe('sheet import: stopping and reloading', () => {
         await slowServerActions(page, 8000);
         await startAnalysis(page);
         await page.getByTestId('detect-cancel').click();
-        await expect(page.getByText(/Analizando/)).toHaveCount(0);
+        await expect(page.getByText(/Analizando|Analyzing|Analisando/)).toHaveCount(0);
         await expect(page.getByText('Ines Interruptfixture').first()).toBeVisible();
         await expect(page.getByText('Teo Interruptfixture').first()).toBeVisible();
         await expect(page.getByRole('button', { name: /Continuar a duplicados/ })).toBeEnabled();
@@ -81,7 +81,7 @@ test.describe('sheet import: stopping and reloading', () => {
         const csv = 'Nombre,Telefono,Email\nNora Completefixture,1155550166,nora.complete@example.com\n';
         await page.getByTestId('sheet-file-input').setInputFiles({ name: 'completa.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
         await page.getByRole('button', { name: /Continuar a duplicados/ }).click();
-        await page.getByRole('button', { name: /Importar 1 →/ }).click({ timeout: 60000 });
+        await page.getByRole('button', { name: /(Importar|Import) 1 →/ }).click({ timeout: 60000 });
         await expect(page.getByText('Importación completa')).toBeVisible({ timeout: 60000 });
         expect(await page.evaluate(() => localStorage.getItem('buenadoptante-import-activity-v1'))).toBeNull();
         const dialogs: string[] = [];

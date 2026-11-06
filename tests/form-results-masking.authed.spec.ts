@@ -113,7 +113,7 @@ test.describe('form-results: match card masks another rescuer\'s protected profi
         await page.goto(`/form-results/${bSubmission}`);
         await dismissCountryBanner(page);
         const card = page.locator('article').filter({ has: page.locator(`#comparison-${aId}`) });
-        await card.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ }).click();
+        await card.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ }).click();
         await page.getByRole('dialog').getByRole('button', { name: /Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa/ }).click();
         await expect(page).toHaveURL(new RegExp(`/adopter/${aId}`), { timeout: 30_000 });
         await ctx.close();
@@ -192,7 +192,7 @@ test.describe('form-results: match card masks another rescuer\'s protected profi
         await page.goto(`/form-results/${bSubmission}`);
         await dismissCountryBanner(page);
         const card = page.locator('article').filter({ has: page.locator(`#comparison-${xId}`) });
-        await card.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ }).click();
+        await card.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ }).click();
         await page.getByRole('dialog').getByRole('button', { name: /Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa/ }).click();
         await expect(page).toHaveURL(new RegExp(`/adopter/${xId}`), { timeout: 30_000 });
 

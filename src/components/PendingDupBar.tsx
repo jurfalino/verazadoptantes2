@@ -54,6 +54,6 @@ export function PendingDupBar({ adopterId, pairs, testId = 'profile-pending-dup'
         </a>
     ) : undefined;
     return (
-        <ProfilePromptBanner tone={reviewable ? 'warning' : 'info'} icon={Search} testId={testId} singleLine={!stacked} title={title} actions={actions} />
+        <ProfilePromptBanner tone="warning" icon={Search} testId={testId} singleLine={!stacked} title={title} actions={actions} />
     );
 }

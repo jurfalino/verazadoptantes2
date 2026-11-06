@@ -133,10 +133,12 @@ describe('DupHintProfile — the window', () => {
         expect(html).toContain('data-testid="dup-hint-activity"');
     });
 
-    it("case 1 'continue': «Unir con este perfil», «No es esta persona», then «Abrir perfil ↗» — in that order (point B)", () => {
+    it("case 1 'continue': «Sí, es la misma persona», «No, es otra persona», then «Abrir perfil ↗» — in that order (point B; one way to ask, step 3)", () => {
         const html = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct {...handlers} />);
         expect(ids(html)).toEqual(['dup-hint-continue', 'dup-hint-not-this', 'dup-hint-open-full']);
-        expect(text(html)).toContain('Unir con este perfil');
+        expect(text(html)).toContain('Sí, es la misma persona');
+        expect(text(html)).toContain('No, es otra persona');
+        expect(text(html)).not.toContain('Unir con este perfil');
         expect(text(html)).not.toContain('Continuar con este perfil');
         expect(text(html)).toContain('Abrir perfil');
         expect(text(html)).not.toContain('Abrir perfil completo');

@@ -199,7 +199,6 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                                             actions={{
                                                 busy: busyAdopterId === result.adopter.id,
                                                 onSame: onContinueWith ? () => onContinueWith(result.adopter.id) : undefined,
-                                                sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
                                                 onNotThis: onNotThis ? () => onNotThis(result.adopter.id) : undefined,
                                                 notThisTestId: 'dup-peek-not-this',
                                                 sameTestId: 'dup-peek-continue',

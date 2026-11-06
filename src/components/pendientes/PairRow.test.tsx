@@ -96,11 +96,10 @@ describe('PairRow — «Pedir revisión a un administrador» (D49)', () => {
         expect(html).not.toContain(es.myAdopters.pending_d_action_dispute);
     });
 
-    it.each(dicts)('%s: a possible duplicate an admin ruled separate offers the review, not «Combinar perfiles»', (_l, dict) => {
+    it.each(dicts)('%s: a possible duplicate an admin ruled separate: the line says the admins decide, the buttons ask the one question (step 3)', (_l, dict) => {
         const html = render(pair({ actionByKeep: { new: 'dispute', existing: 'dispute' } }), as(dict));
-        expect(html).toContain(dict.myAdopters.pending_d_action_dispute);
         expect(html).toContain(dict.myAdopters.pending_d_explain_dispute);
-        expect(html).not.toContain(dict.myAdopters.pending_dedup_action_merge);
+        expect(html).toContain(dict.samePerson.yes);
     });
 
     it.each(dicts)('%s: a dispute that was sent reads as a review the admins have', (_l, dict) => {

@@ -395,17 +395,15 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
                             {/* Dismiss writes to duplicate_candidates; a hand-flagged pair has no row there. */}
                             {pair.source === 'detected' && (
                                 <Button variant="secondary" size="compact" data-testid="dedup-keep-separate" disabled={locked} onClick={() => onAction(pair, 'keep_separate')}>
-                                    {t('myAdopters.pending_dedup_action_keep') || 'Mantener separados'}
+                                    {t('samePerson.no')}
                                 </Button>
                             )}
                             {mainAction && (
                                 <Button variant="primary" size="compact" data-testid="dedup-merge" disabled={locked} onClick={() => onAction(pair, 'combine', keep)}>
                                     {busy ? (t('common.processing') || 'Procesando...')
-                                        : mainAction === 'request'
-                                            ? (t('myAdopters.pending_dedup_action_request') || 'Pedir combinar')
-                                            : mainAction === 'dispute'
-                                                ? (t('myAdopters.pending_d_action_dispute') || 'Pedir revisión a un administrador')
-                                                : (t('myAdopters.pending_dedup_action_merge') || 'Combinar perfiles')}
+                                        // One way to ask (step 3): the answer, whatever it does — the line above says
+                                        // whether it merges, asks the other owner or goes to the admins.
+                                        : t('samePerson.yes')}
                                 </Button>
                             )}
                         </>}

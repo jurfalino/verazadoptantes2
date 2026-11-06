@@ -67,7 +67,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
             <div className="px-4 py-2.5 border-b" style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)' }}>
                 <div className="flex items-center gap-2">
                     <HelpCircle className="w-4 h-4 shrink-0" style={{ color: 'var(--status-info-text)' }} aria-hidden="true" />
-                    <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{t('adopter.hh_candidate_title')}</h3>
+                    <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{t('samePerson.question')}</h3>
                 </div>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t(reasonKey(candidate.matchTypes))}</p>
             </div>
@@ -111,10 +111,10 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
                     <Button type="button" size="compact" onClick={onYes} disabled={busy} data-testid={`${testId}-yes`} icon={<Check className="w-4 h-4" aria-hidden="true" />}>
-                        {t('adopter.hh_candidate_yes')}
+                        {t('samePerson.yes')}
                     </Button>
                     <Button type="button" variant="secondary" size="compact" onClick={onNo} disabled={busy} data-testid={`${testId}-no`}>
-                        {t('adopter.hh_candidate_no')}
+                        {t('samePerson.no')}
                     </Button>
                 </div>
             </div>

@@ -29,7 +29,7 @@ export default function IdentityChoice({ nameA, nameB, busy, onSame, onHousehold
             </p>
             <div className="mt-6 flex flex-col gap-2">
                 <Button type="button" data-testid="dedup-identity-same" onClick={onSame} disabled={busy} fullWidth>
-                    {t('myAdopters.pending_d_identity_same') || 'Sí, la misma persona'}
+                    {t('samePerson.yes')}
                 </Button>
                 <Button type="button" variant="secondary" data-testid="dedup-identity-household" onClick={onHousehold} disabled={busy} fullWidth>
                     {t('myAdopters.pending_d_identity_household') || 'No, es alguien de su hogar'}

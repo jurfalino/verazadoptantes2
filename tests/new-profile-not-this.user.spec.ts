@@ -27,8 +27,8 @@ test('«No es esta persona», then save: the pair is recorded as two people', as
     await page.getByTestId('ce-composer-input').fill(PHONE);
     await page.getByTestId('ce-composer-submit').click();
     const notThis = page.locator('[data-testid="strong-match-not-this"], [data-testid="dup-peek-not-this"]').first();
-    // The matches sit behind the sticky bar («N posibles coincidencias — Revisar») unless the strip shows one.
-    const bar = page.getByRole('button', { name: /^(Possible matches|Posibles coincidencias|Possíveis correspondências)$/ });
+    // The matches sit behind the sticky bar («N posibles duplicados — Revisar») unless the strip shows one.
+    const bar = page.getByRole('button', { name: /^(Possible duplicates|Posibles duplicados|Possíveis duplicados)$/ });
     await expect(notThis.or(bar)).toBeVisible({ timeout: 30_000 });
     if (!(await notThis.isVisible())) await bar.click();
     await expect(notThis).toBeVisible({ timeout: 30_000 });

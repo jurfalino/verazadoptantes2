@@ -101,7 +101,7 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
             {onSame && (
                 <Button type="button" size="compact" onClick={onSame} disabled={busy} data-testid={sameTestId} layoutClassName={layout}
                     icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
-                    {sameLabel || t('formResults.same_person')}
+                    {sameLabel || t('samePerson.yes')}
                 </Button>
             )}
             {newTab
@@ -114,7 +114,7 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
                 </Link>}
             {onNotThis && (
                 <Button type="button" variant="secondary" size="compact" onClick={onNotThis} disabled={busy} data-testid={notThisTestId} layoutClassName={`${layout} sm:ml-auto`}>
-                    {t('formResults.not_this_person')}
+                    {t('samePerson.no')}
                 </Button>
             )}
         </div>

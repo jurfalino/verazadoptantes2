@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.31] - 2026-11-06
+
+### Changed — your team answers «¿Es la misma persona?» as one (step 2)
+- A possible duplicate where you **or a teammate** loaded one of the profiles is yours to answer: it
+  is listed in your «Pendientes de revisar», counted on your homepage, its profile bar offers
+  «Revisar», and you can answer it both ways (keep them separate, or say it's the same person — the
+  usual rules about whose profile is kept and when the other rescuer is asked still apply). Before,
+  only the person who loaded a profile could. Every «No» on the other screens (form, contract,
+  household, «Ya está en otro perfil», post import, new profile) follows the same rule.
+- Someone outside your team still sees the bar but can't answer; a team-lookup failure falls back to
+  only your own profiles, never wider. Independent security review: GO (2026-11-06).
+
+### Changed — one way to ask (step 3)
+- Every screen that asks whether two profiles are the same person now asks it the same way: the
+  question «¿Es la misma persona?», the answers «Sí, es la misma persona» / «No, es otra persona»,
+  and the concept «Posible duplicado». What happens next (merge, add the data, ask the other
+  rescuer, keep them separate) is still said next to the buttons or in the confirmation.
+  Screens: «Pendientes de revisar», form and contract results, the new-profile form, the «Ya está en
+  otro perfil» window, adding a household member, the post import, and the spreadsheet import.
+- The profile bar «Posible duplicado de X» looks the same for everyone (it used to be blue for
+  people who can't answer); only «Revisar» depends on whether you can.
+- The contract results page and the spreadsheet import's «Duplicados» step are now translated (en/pt).
+
 ## [2.58.30] - 2026-11-06
 
 ### Changed — "is this the same person?" has one answer, everywhere
@@ -26,7 +49,6 @@ All notable changes to BuenAdoptante are documented here.
   a «No» that fails to save is shown with its Error ID.
 - After every match is answered, the form and contract screens no longer claim "no previous records".
 - New analytics event `same_person_answered` (screen, yes/no, own profile or not — no names), on every screen above.
-- Teammates answering each other's matches is the next step (needs a security review first).
 
 ## [2.58.29] - 2026-11-05
 
