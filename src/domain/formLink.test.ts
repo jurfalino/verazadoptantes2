@@ -71,7 +71,7 @@ describe('planFormLink', () => {
     const base = {
         row: { linkedAdopterId: AUTO, autoAdopterId: AUTO },
         targetId: EXISTING,
-        recordedMatchIds: [EXISTING, OTHER],
+        openPairIds: [EXISTING, OTHER],
         targetLive: true,
         autoLive: true,
     };
@@ -94,13 +94,13 @@ describe('planFormLink', () => {
         expect(planFormLink({ ...base, row: { linkedAdopterId: EXISTING, autoAdopterId: AUTO } })).toEqual({ ok: true, op: 'noop' });
     });
 
-    it('refuses a target that is not one of the recorded matches — the action must not merge into arbitrary profiles', () => {
+    it('refuses a target that is not an open pair of the form profile — the action must not merge into arbitrary profiles', () => {
         expect(planFormLink({ ...base, targetId: 'someone-else' })).toEqual({ ok: false, reason: 'not_a_match' });
     });
 
     it('refuses to merge the auto-created profile into itself', () => {
         const row = { linkedAdopterId: null, autoAdopterId: AUTO };
-        expect(planFormLink({ ...base, row, targetId: AUTO, recordedMatchIds: [AUTO] })).toEqual({ ok: false, reason: 'self' });
+        expect(planFormLink({ ...base, row, targetId: AUTO, openPairIds: [AUTO] })).toEqual({ ok: false, reason: 'self' });
     });
 
     it('refuses a match that has since been deleted or merged', () => {
@@ -121,7 +121,7 @@ describe('summarizeAdopterForms', () => {
     });
 
     it('is empty for a person with no forms', () => {
-        expect(summarizeAdopterForms([], ME, () => 0)).toEqual({ count: 0, latest: null, needsReview: false });
+        expect(summarizeAdopterForms([], ME)).toEqual({ count: 0, latest: null });
     });
 
     it('counts every form and surfaces the newest one', () => {
@@ -129,38 +129,19 @@ describe('summarizeAdopterForms', () => {
             form({ id: 'old', submittedAt: 100 }),
             form({ id: 'new', submittedAt: 300, selectedAnimalId: 'luna' }),
             form({ id: 'mid', submittedAt: 200 }),
-        ], ME, () => 0);
+        ], ME);
         expect(s.count).toBe(3);
         expect(s.latest).toEqual({ submissionId: 'new', submittedAt: 300, animalId: 'luna', ownedByViewer: true });
     });
 
-    it('needs review exactly when the form-results page would ask for a decision', () => {
-        // New profile with live look-alikes → review_matches.
-        expect(summarizeAdopterForms([form({})], ME, () => 2).needsReview).toBe(true);
-        // Nothing left to compare against.
-        expect(summarizeAdopterForms([form({})], ME, () => 0).needsReview).toBe(false);
-        // Already linked to an existing profile — decided.
-        expect(summarizeAdopterForms([form({ linkedAdopterId: EXISTING })], ME, () => 2).needsReview).toBe(false);
-    });
-
-    it("never flags a teammate's form: only its owner can act on it", () => {
-        const s = summarizeAdopterForms([form({ userId: TEAMMATE })], ME, () => 2);
-        expect(s.needsReview).toBe(false);
-        expect(s.latest?.ownedByViewer).toBe(false);
-    });
-
-    it('flags the person when any of their forms needs review, not only the newest', () => {
-        const s = summarizeAdopterForms([
-            form({ id: 'pending', submittedAt: 100 }),
-            form({ id: 'decided', submittedAt: 200, linkedAdopterId: EXISTING }),
-        ], ME, (id) => (id === 'pending' ? 1 : 0));
-        expect(s.latest?.submissionId).toBe('decided');
-        expect(s.needsReview).toBe(true);
+    it('carries no review state of its own: a form match is an ordinary pair (spec 2026-11-05)', () => {
+        const s = summarizeAdopterForms([form({})], ME);
+        expect('needsReview' in s).toBe(false);
     });
 });
 
 describe('canLinkSubmissionDirectly', () => {
-    const base = { targetLive: true, isRecordedMatch: false, callerFullySees: false };
+    const base = { targetLive: true, isOpenPair: false, callerFullySees: false };
 
     it('refuses a profile that is neither a recorded match nor fully visible (no forged applicants)', () => {
         expect(canLinkSubmissionDirectly(base)).toEqual({ ok: false, reason: 'not_allowed' });
@@ -171,11 +152,11 @@ describe('canLinkSubmissionDirectly', () => {
     });
 
     it('allows a match recorded for this submission', () => {
-        expect(canLinkSubmissionDirectly({ ...base, isRecordedMatch: true })).toEqual({ ok: true });
+        expect(canLinkSubmissionDirectly({ ...base, isOpenPair: true })).toEqual({ ok: true });
     });
 
     it('refuses a deleted or missing profile, even a recorded match', () => {
-        expect(canLinkSubmissionDirectly({ ...base, targetLive: false, isRecordedMatch: true }))
+        expect(canLinkSubmissionDirectly({ ...base, targetLive: false, isOpenPair: true }))
             .toEqual({ ok: false, reason: 'target_unavailable' });
     });
 });

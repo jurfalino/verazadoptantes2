@@ -289,7 +289,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             else if (s.eventType === 'profile_view') entry.profileViews = s.count;
         }
 
-        const { formsByAdopter, liveMatchCounts, animalNames } = await loadFormContext(db, allForms, userEmail);
+        const { formsByAdopter, animalNames } = await loadFormContext(db, allForms, userEmail);
         const signedContractCountMap = new Map<string, number>();
         for (const row of allContractCounts as { adopterId: string; count: number }[]) {
             if (row.adopterId) signedContractCountMap.set(row.adopterId, row.count);
@@ -440,7 +440,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 requestCount: counts.requests,
                 searchHits: stats.searchHits,
                 profileViews: stats.profileViews,
-                ...formFields(formsByAdopter.get(adopter.id) ?? [], userEmail!, liveMatchCounts, animalNames),
+                ...formFields(formsByAdopter.get(adopter.id) ?? [], userEmail!, animalNames),
                 signedContractCount: signedContractCountMap.get(adopter.id) ?? 0,
                 hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
                 // «Desde un post»: the filter chip and the homepage posts card count the same rows.
@@ -480,11 +480,10 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 }
 
 /** The per-row form fields /my-adopters renders. */
-function formFields(forms: AdopterFormRow[], viewerEmail: string, liveMatchCounts: Map<string, number>, animalNames: Map<string, string>) {
-    const summary = summarizeAdopterForms(forms, viewerEmail, (id) => liveMatchCounts.get(id) ?? 0);
+function formFields(forms: AdopterFormRow[], viewerEmail: string, animalNames: Map<string, string>) {
+    const summary = summarizeAdopterForms(forms, viewerEmail);
     return {
         formCount: summary.count,
-        formNeedsReview: summary.needsReview,
         latestForm: summary.latest && {
             ...summary.latest,
             animalName: summary.latest.animalId ? (animalNames.get(summary.latest.animalId) ?? null) : null,

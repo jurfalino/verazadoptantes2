@@ -175,7 +175,7 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
             : null;
         const decision = canLinkSubmissionDirectly({
             targetLive: !!target && !target.deletedAt,
-            isRecordedMatch: recordedMatchIds.includes(adopterId),
+            isOpenPair: recordedMatchIds.includes(adopterId),
             callerFullySees: !!visibility?.nothingMasked,
         });
         if (!decision.ok) {
@@ -293,7 +293,7 @@ export async function linkFormToExistingAdopter(
         const plan = planFormLink({
             row: { linkedAdopterId: sub.linkedAdopterId, autoAdopterId: sub.autoAdopterId },
             targetId: adopterId,
-            recordedMatchIds,
+            openPairIds: recordedMatchIds,
             targetLive: !!target && !target.deletedAt,
             autoLive: !!auto && !auto.deletedAt,
         });

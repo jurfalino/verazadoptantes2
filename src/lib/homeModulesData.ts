@@ -11,13 +11,11 @@
  * enriched list (the homepage is the most visited page).
  */
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
-import { adopters, adoptions, adopterEvents, adopterImages, formSubmissions } from '@/db/schema';
+import { adopters, adoptions, adopterEvents, adopterImages } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
-import { summarizeAdopterForms } from '@/domain/formLink';
 import { RECORD_TYPES } from '@/domain/constants';
 import { homeAnimalRows } from '@/domain/homeModules';
-import { loadFormContext } from '@/lib/adopterFormContext';
 import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomePostsData, HomePersonRow } from '@/types/homeModules';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Drizzle D1/better-sqlite3 union getDb() returns
@@ -95,28 +93,13 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
             ...people[i],
         }));
     })();
-    const formsToReviewP = (async () => {
-        const myForms = await db.select({
-            id: formSubmissions.id, userId: formSubmissions.userId, linkedAdopterId: formSubmissions.linkedAdopterId,
-            autoAdopterId: formSubmissions.autoAdopterId, createdAt: formSubmissions.createdAt, selectedAnimalId: formSubmissions.selectedAnimalId,
-        }).from(formSubmissions)
-            .innerJoin(adopters, eq(adopters.id, formSubmissions.linkedAdopterId))
-            .where(and(eq(formSubmissions.userId, userEmail), scope)).all();
-        const { formsByAdopter, liveMatchCounts } = await loadFormContext(db, myForms, userEmail);
-        let n = 0;
-        for (const forms of formsByAdopter.values()) {
-            if (summarizeAdopterForms(forms, userEmail, (id) => liveMatchCounts.get(id) ?? 0).needsReview) n++;
-        }
-        return n;
-    })();
 
-    const [totalRow, recent, formsToReview, pending] = await Promise.all([
+    const [totalRow, recent, pending] = await Promise.all([
         db.select({ n: sql<number>`count(*)` }).from(adopters).where(scope).get(),
         rowsP,
-        formsToReviewP,
         pendingReview,
     ]);
-    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending, formsToReview, recent };
+    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending, formsToReview: 0, recent };
 }
 
 export async function loadHomePosts(db: Db, userEmail: string, memberEmails: string[]): Promise<HomePostsData> {
