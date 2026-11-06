@@ -11,7 +11,11 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export interface NotSamePersonAsked {
     otherId: string;
     otherName: string;
-    /** Who will see the question in «Pendientes»: each profile's owner, by org name, else display name. */
+    /**
+     * Who will see the question in «Pendientes»: each profile's owner — their group's name
+     * when the viewer is in it, else their display name. Empty when neither profile has an
+     * owner: the screen then says «los administradores».
+     */
     ownerLabels: string[];
 }
 
@@ -20,9 +24,12 @@ const sameEmail = (a: string | null | undefined, b: string) => !!a && a.trim().t
 async function ownerLabel(email: string | null, viewer: string): Promise<string | null> {
     if (!email || email === 'anonymous') return null;
     try {
-        const { pickAttributionOrg } = await import('@/lib/orgMembership');
-        const org = await pickAttributionOrg(email, viewer);
-        if (org?.name) return org.name;
+        // The owner's group is named only to someone in it — the profile byline's rule
+        // (v2.18.15: strangers see a name, never org membership). Otherwise a display name.
+        const { getOrgsForEmail } = await import('@/lib/orgMembership');
+        const [ownerOrgs, viewerOrgs] = await Promise.all([getOrgsForEmail(email), getOrgsForEmail(viewer)]);
+        const shared = ownerOrgs.find(o => viewerOrgs.some(v => v.id === o.id));
+        if (shared?.name) return shared.name;
         const { resolveDisplayName } = await import('@/app/actions/notifications');
         return (await resolveDisplayName(email)) || email.split('@')[0];
     } catch (e) {

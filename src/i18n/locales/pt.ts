@@ -1147,6 +1147,7 @@ export const pt = {
         hh_added_body_others: 'Agora aparece no lar de {host}, e também no perfil de {others}.',
         hh_asked_owners: 'Perguntamos a {owners} se {name} é a mesma pessoa que {other}.',
         dup_hint_asked_owners: 'Perguntamos a {owners} se é a mesma pessoa que {other}.',
+        asked_admins: 'os administradores',
         hh_gift_form_title: 'Destinatário do presente (segundo o formulário)',
         hh_gift_form_body: 'Foi assim que {giver} escreveu no formulário. Não sabemos se o nome e o telefone são dessa pessoa ou de {giver}.',
         hh_gift_title: 'Destinatário do presente',

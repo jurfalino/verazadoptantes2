@@ -51,6 +51,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { answerNotSamePerson } from '@/app/actions/notSamePerson';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
+import { askedOwnersText } from '@/lib/askedOwners';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -464,7 +465,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
                 }
                 trackSamePersonAnswer('dup_hint', 'different', res.recorded > 0);
                 for (const a of res.asked) {
-                    toast.info(t('adopter.dup_hint_asked_owners').replace('{owners}', a.ownerLabels.join(', ')).replace('{other}', a.otherName));
+                    toast.info(t('adopter.dup_hint_asked_owners').replace('{owners}', askedOwnersText(t, a.ownerLabels)).replace('{other}', a.otherName));
                 }
             })
             .catch(e => {

@@ -21,6 +21,7 @@
  * (MemberCard, the profile) and still set by the public form and imports.
  */
 import { useId, useState, useRef } from 'react';
+import { askedOwnersText } from '@/lib/askedOwners';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { useRouter } from 'next/navigation';
 import { Check, X } from 'lucide-react';
@@ -266,7 +267,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
             if (res.autoRequestFiled) toast.info(t('adopter.ce_add_toast_added_with_request'));
             // A «No» this rescuer may not settle went to the owners (consistency rule): say who.
             for (const a of res.asked ?? []) {
-                toast.info(fill(t('adopter.hh_asked_owners'), { owners: joinNames(t, a.ownerLabels), name: who, other: a.otherName }));
+                toast.info(fill(t('adopter.hh_asked_owners'), { owners: askedOwnersText(t, a.ownerLabels), name: who, other: a.otherName }));
             }
             fail.partial(res.warningErrorId);
             onDone();

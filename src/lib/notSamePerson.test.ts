@@ -14,7 +14,8 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/config/admins', () => ({ isAdminAsync: vi.fn(async (e: string) => e === 'admin@x.org') }));
 vi.mock('@/lib/orgMembership', async (orig) => ({
     ...(await orig()),
-    pickAttributionOrg: vi.fn(async (email: string) => (email === 'north@x.org' ? { id: 'o1', name: 'Rescate Norte' } : null)),
+    // Rescate Norte: north@x.org and its member mate@x.org.
+    getOrgsForEmail: vi.fn(async (email: string) => (['north@x.org', 'mate@x.org'].includes(email) ? [{ id: 'o1', name: 'Rescate Norte' }] : [])),
 }));
 vi.mock('@/app/actions/notifications', () => ({ resolveDisplayName: vi.fn(async (e: string) => e.split('@')[0]) }));
 
@@ -51,7 +52,8 @@ describe('settleNotSamePerson', () => {
     it('someone who loaded neither: never dismissed — a pending pair for the owners, and who was asked', async () => {
         const r = await run('helper@x.org', ['old']);
         expect(r.recorded).toEqual([]);
-        expect(r.asked).toEqual([{ otherId: 'old', otherName: 'Rosa Díaz', ownerLabels: ['Rescate Norte', 'east'] }]);
+        // The owner's group is named only to its members (the byline's rule, v2.18.15): a helper sees names.
+        expect(r.asked).toEqual([{ otherId: 'old', otherName: 'Rosa Díaz', ownerLabels: ['north', 'east'] }]);
         expect(rows()).toEqual([{ a: 'new', b: 'old', status: 'pending', confidence: 'medium' }]);
     });
 
@@ -80,5 +82,16 @@ describe('settleNotSamePerson', () => {
         const r = await settleNotSamePerson(db as never, { actor: 'east@x.org', adopterId: 'new', rejectedIds: ['old'], offered, ctx: {}, settleBy: 'subject' });
         expect(r.recorded).toEqual([]);
         expect(rows()).toEqual([{ a: 'new', b: 'old', status: 'pending', confidence: 'medium' }]);
+    });
+
+    it('a member of the owner\'s group sees the group\'s name', async () => {
+        const r = await run('mate@x.org', ['old']);
+        expect(r.asked[0].ownerLabels).toEqual(['Rescate Norte', 'east']);
+    });
+
+    it('profiles with no owner: no label (the screen says «los administradores»)', async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'anonymous'`).run();
+        const r = await run('helper@x.org', ['old']);
+        expect(r.asked).toEqual([{ otherId: 'old', otherName: 'Rosa Díaz', ownerLabels: [] }]);
     });
 });
