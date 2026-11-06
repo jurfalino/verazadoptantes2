@@ -19,8 +19,11 @@ All notable changes to BuenAdoptante are documented here.
   everyone — as soon as both profiles exist, on every screen: «Pendientes», form, contract, adding a
   household member, the «Ya está en otro perfil» window (was "local only" since 2026-10-29), the post
   import and the new-profile form. Only someone who loaded one of the two profiles (or an admin)
-  settles it; anyone else's «No» sends the question to the owners' «Pendientes», and they're told who
-  was asked. The server only accepts a «No» about a profile its own duplicate search offers.
+  settles it (on the «Ya está en otro perfil» window, only whoever loaded the profile being edited);
+  anyone else's «No» sends the question to the owners' «Pendientes» and they're told who was asked
+  (the group's name only to its members; «los administradores» when nobody owns the profiles). The
+  server only accepts a «No» about a profile its own duplicate search offers for the same input, and
+  a «No» that fails to save is shown with its Error ID.
 - After every match is answered, the form and contract screens no longer claim "no previous records".
 - New analytics event `same_person_answered` (screen, yes/no, own profile or not — no names), on every screen above.
 - Teammates answering each other's matches is the next step (needs a security review first).
