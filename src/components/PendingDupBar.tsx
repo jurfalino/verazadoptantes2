@@ -5,6 +5,7 @@ import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
 import { buttonClasses } from '@/components/ui/Button';
 import { useLanguage } from '@/context/LanguageContext';
 import { pairKey } from '@/domain/dedupPair';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 
 export interface PendingDupBarPair {
     otherAdopterId: string;
@@ -48,7 +49,7 @@ export function PendingDupBar({ adopterId, pairs, testId = 'profile-pending-dup'
     );
     const actions = reviewable ? (
         <a href={`/my-adopters?pair=${encodeURIComponent(pairKey(adopterId, reviewable.otherAdopterId))}#pendientes`}
-            data-testid={`${testId}-review`} className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
+            data-testid={`${testId}-review`} onClick={() => trackSamePersonAnswer('profile_bar', 'opened', true)} className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
             {t('myAdopters.profile_pending_dup_review') || 'Revisar'}<ArrowRight className="w-4 h-4" aria-hidden="true" />
         </a>
     ) : undefined;

@@ -7,6 +7,7 @@ import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import { useShowToast } from '@/components/ui/Toast';
 import { useAnswerNotSamePerson } from '@/components/useAnswerNotSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
@@ -75,7 +76,9 @@ export default function FormResultMatchCard({
     const notThis = canLink && canAnswer && candidateId && onDismiss
         ? async () => {
             setLinking(true);
-            try { if (await answerNotSamePerson(candidateId)) onDismiss(); } finally { setLinking(false); }
+            try {
+                if (await answerNotSamePerson(candidateId)) { trackSamePersonAnswer('form_results', 'different', canAnswer); onDismiss(); }
+            } finally { setLinking(false); }
         }
         : undefined;
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -107,6 +110,7 @@ export default function FormResultMatchCard({
                 return;
             }
             if (result.success) {
+                trackSamePersonAnswer('form_results', 'same', canAnswer);
                 toast.success(L('link_success').replace('{name}', result.adopterName ?? profile.name));
                 router.push(`/adopter/${profile.id}`);
                 return;

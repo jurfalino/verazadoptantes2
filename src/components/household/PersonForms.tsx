@@ -20,7 +20,8 @@
  * never sent from here, so an edit keeps them as they are; they are still shown
  * (MemberCard, the profile) and still set by the public form and imports.
  */
-import { useId, useState } from 'react';
+import { useId, useState, useRef } from 'react';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { useRouter } from 'next/navigation';
 import { Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -231,6 +232,8 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const [candidates, setCandidates] = useState<HouseholdMatchCandidate[] | null>(null);
     /** Profiles answered «No, es otra persona» in this check — recorded as different people if a new one is made. */
     const [rejected, setRejected] = useState<string[]>([]);
+    /** Everyone this check offered (the «no» answers' ownership, for the answer event). */
+    const offeredRef = useRef<HouseholdMatchCandidate[]>([]);
     /** The «¿Es este perfil?» check failed (its errorId): the rescuer retries or adds as new, knowingly. */
     const [checkFailed, setCheckFailed] = useState<string | null>(null);
 
@@ -250,6 +253,10 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                 contactEntries: contactInputs(),
             });
             if (!res.ok) { fail.refused(res); return; }
+            // One event per «¿Es este perfil?» answer (spec 2026-11-05): the household check offers only the viewer's reachable profiles.
+            const isOwn = (id: string) => (candidates ?? []).concat(offeredRef.current).some(c => c.adopterId === id && c.ownership === 'mine');
+            if (existingProfileId) trackSamePersonAnswer('household', 'same', isOwn(existingProfileId));
+            else for (const id of rejectedIds) trackSamePersonAnswer('household', 'different', isOwn(id));
             const shownName = existingProfileId ? (candidates?.find(c => c.adopterId === existingProfileId)?.adopter.name ?? name.trim()) : name.trim();
             const who = shownName || t('adopter.nameless');
             toast.success(fill(t('adopter.hh_added_title'), { name: who }),
@@ -289,6 +296,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
         } finally {
             setChecking(false);
         }
+        offeredRef.current = found;
         if (found.length > 0) { setCandidates(found); return; }
         await add();
     }

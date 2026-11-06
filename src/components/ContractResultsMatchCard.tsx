@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { attachContractToExistingAdopter } from '@/app/actions/duplicates';
 import { useAnswerNotSamePerson } from '@/components/useAnswerNotSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
@@ -64,7 +65,9 @@ export default function ContractResultsMatchCard({
     const notThis = canAnswer && candidateId
         ? async () => {
             setLinking(true);
-            try { if (await answerNotSamePerson(candidateId)) setDismissed(true); } finally { setLinking(false); }
+            try {
+                if (await answerNotSamePerson(candidateId)) { trackSamePersonAnswer('contract_results', 'different', canAnswer); setDismissed(true); }
+            } finally { setLinking(false); }
         }
         : undefined;
 
@@ -73,6 +76,7 @@ export default function ContractResultsMatchCard({
         try {
             const result = await attachContractToExistingAdopter(notificationId, matchId);
             if (result.success) {
+                trackSamePersonAnswer('contract_results', 'same', canAnswer);
                 toast.success(
                     (t('contractResults.link_success') || 'Adopción atribuida a {name}').replace('{name}', result.primaryName || profile.name),
                 );

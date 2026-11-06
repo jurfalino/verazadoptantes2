@@ -48,6 +48,7 @@ import WriteMessage from '@/components/pendientes/WriteMessage';
 import MergedRow, { keptSentence, mergedInfo, type MergedInfo } from '@/components/pendientes/MergedRow';
 import { pendientesSections } from '@/components/pendientes/sections';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 
 /** The section's anchor: request notifications link to /my-adopters#pendientes. */
 const SECTION_ID = 'pendientes';
@@ -209,6 +210,9 @@ export default function PendingDedup() {
         const result = await mergePendingDedupPair(pair.candidateId, { keepId: sideOf(pair, keep).id, ...(identity ? { identity } : {}) });
         setConfirm(null);
         setIdentityAsk(null);
+        const own = pair.newAdopter.isMine && pair.existingAdopter.isMine;
+        if (result.success && result.outcome !== 'household') trackSamePersonAnswer('pendientes', 'same', own);
+        if (result.success && result.outcome === 'household') trackSamePersonAnswer('pendientes', 'different', own);
         if (result.success && result.outcome === 'merged') {
             markMerged(pair, keep, t('myAdopters.pending_dedup_merged') || 'Perfiles unidos');
         } else if (result.success && result.outcome === 'disputed') {
@@ -310,7 +314,10 @@ export default function PendingDedup() {
 
     const keepSeparate = (pair: PendingDedupPair) => run(pair, 'errors.dedup_dismiss_failed', 'No se pudo descartar.', async () => {
         const result = await dismissDuplicateCandidate(pair.candidateId);
-        if (result?.success) return dropRow(pair);
+        if (result?.success) {
+            trackSamePersonAnswer('pendientes', 'different', pair.newAdopter.isMine && pair.existingAdopter.isMine);
+            return dropRow(pair);
+        }
         // 'already_resolved' / 'not_found': something else settled the pair
         // after the page loaded — what the user wanted. Refresh instead of
         // leaving a row that looks like the click did nothing.
