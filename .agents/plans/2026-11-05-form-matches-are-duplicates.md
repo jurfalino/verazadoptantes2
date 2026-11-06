@@ -1,0 +1,101 @@
+# A form match is a possible duplicate
+
+**Status:** design, awaiting Jon's approval · 2026-11-05 · branch `feature/form-match-is-duplicate`
+
+## Why
+
+On /my-adopters, Pedro Paez filled in Jon's form and his row carries «Por revisar». Then:
+
+- clicking the **row** opens Pedro's profile, which shows **nothing** pending;
+- clicking the **pill** opens the form screen, whose back link says «← Mis animales» whatever you came from;
+- the question the pill asks («¿es la misma persona que Jonathan Urfalino?») had **already been answered** «Mantener separados» in «Pendientes de revisar», and the form still asks it.
+
+The cause is one question kept in two places. A form submission already creates a normal
+possible-duplicate pair (`duplicate_candidates`, via `findAndPersistDuplicateCandidates`), but the form
+screen, the «Por revisar» filter/pill and the homepage's «N formularios por revisar» ignore that pair
+and read their own copy: the match list frozen into the `form_submission` notification. That copy
+never learns about an answer given elsewhere, and the form screen's «No es esta persona» isn't saved
+at all, so it comes back on reload.
+
+Jon's direction (2026-11-05): **a form match is just another possible duplicate.**
+
+## Goals
+
+1. One record per "same person?" question: the duplicate pair. Every screen reads it; every answer writes it.
+2. An answer given anywhere clears the question everywhere, for everyone (one shared reality).
+3. A person with a pending question looks the same on every screen, whether the question came from a form, an import, a household or a Scan.
+4. The form screen's back link returns to where the rescuer came from.
+
+## Non-goals
+
+- No change to how pairs are detected or scored, how merges work, or the cross-team «Pedir unir» flow.
+- No new wording for «Pendientes de revisar» / «Posible duplicado». The labels proposed earlier in the conversation are a separate decision.
+- No change to what the form screen shows besides the match banner and the back link (answers, semáforo, contract stay).
+
+## Anti-goals (would be a failure even if it "works")
+
+- A pending question visible on one screen and invisible on another.
+- Two different answers to the same pair (dismissed in the list, still asked on the form).
+- Removing «Por revisar» but leaving the person without any marker on the list.
+
+## What the rescuer experiences
+
+| Case | Today | After |
+|---|---|---|
+| Form arrives, looks like an existing profile | Row: «Por revisar» → form screen. Profile: nothing. Home: «1 formulario por revisar» | Row: «Posible duplicado» → «Pendientes de revisar», scrolled to that pair. Profile: «Posible duplicado de Jonathan Urfalino · Revisar». Home: counted in «N pendientes de revisar». Form screen: still shows «Encontramos un perfil parecido» with the same pair |
+| Rescuer says «No es esta persona» on the form screen | Hides the card until reload; nothing saved | Same as «Mantener separados»: the pair is dismissed. Gone from the form screen, the list, the profile, the pill and the homepage |
+| Rescuer says «Mantener separados» in the list (Pedro's case) | Form still says «Por revisar» | Form screen shows no pending match; nothing else marks Pedro |
+| Rescuer says «Es la misma persona» / «Unir perfiles» | Merges (unchanged) | Unchanged |
+| Rescuer opens the form screen from Mis adoptantes / Pedro's profile / an animal's applicants / a notification | «← Mis animales» always | «← Mis adoptantes» / «← Pedro Paez» / «← <animal name>»; from a notification or a direct link, «← Mis adoptantes» |
+
+Removed: the «Por revisar» filter and pill on /my-adopters, and the homepage line «N formularios por revisar». «Por formulario» stays.
+
+## Decided (Jon)
+
+- A form match is a possible duplicate; one list, one answer (2026-11-05).
+- The form screen stays where you read the answers and can still decide there.
+- Back goes back to the source screen (also `docs/ux-ui-guidelines.md` §2.2: back-nav names its source).
+
+## Builder's calls (Claude, technical; listed so Jon can check them)
+
+1. **Source of the form banner.** The form screen lists the pending pairs of the form's own profile (the auto-created one), using the same filter as «Pendientes de revisar» and the profile banner: pending, both sides alive, not housemates, not low confidence. The notification's `matchedAdopters` stops being read for this purpose (it stays as the notification's history).
+2. **«No es esta persona»** on the form screen calls the existing `dismissDuplicateCandidate` for that pair. It is the same action as «Mantener separados», with the same permissions. No new server action.
+3. **«Es la misma persona»** keeps calling `linkFormToExistingAdopter`. Its guard (`planFormLink`: "target must be a recorded match") changes to "target must be a pending pair of the form's profile", so the guard and the banner can't disagree.
+4. **`needsReview` is dropped.** The row gets the normal «Posible duplicado» pill from its pending pair. Today that pill is *suppressed* when the form needs review; with `needsReview` gone the suppression goes too. `formResultsView`'s `review_matches` banner is derived from the pending-pair count.
+5. **Back link.** Each entry link adds `?from=` (`adopters`, `adopter:<id>`, `animal:<id>`). The form screen renders the matching label, falling back to «Mis adoptantes». The id in `from` is only used for the label and link, never trusted for access.
+6. **Contract screen, full parity.** /contract-results asks the same question the same broken way: cards from the notification's `matchedAdopters`, an unsaved «No es esta persona», and `attachContractToExistingAdopter` checked against `recordedMatchIds`. It gets all of calls 1–3: cards from the new profile's pending pairs, «No es esta persona» = `dismissDuplicateCandidate`, attach guard = "pending pair of the contract's profile". Otherwise «Mantener separados» in the list would never clear the contract card (anti-goal 2).
+8. **Also aligned:** `linkFormSubmissionToAdopter`'s match check follows the same pair rule. When a person has several pairs, the row pill scrolls to the newest. The admin orphan-submissions entry uses the «Mis adoptantes» fallback.
+
+## Decided after the builder check (Jon, 2026-11-05)
+
+- **Teammates answer both ways, everywhere.** The team acts as one. A pair where someone on the viewer's team loaded a side:
+  - is listed in the viewer's «Pendientes de revisar» and counted on their homepage;
+  - can be answered there with «Mantener separados» / «No es esta persona» and with «Unir» / «Es la misma persona».
+
+  Today both `getPendingDuplicatesForUser` and `dismissDuplicateCandidate` are scoped to the person who loaded a side; both widen to that person's team (OR of `eq`, no `IN`, failing closed on an empty team). This applies on every surface, not just forms. It is security-adjacent, so **an independent review must come back before production**.
+- **Contract «¿Ninguna coincide? → Continuar con el perfil nuevo» records nothing** (as today). Walked through four cases: recording on that click helps only when every match is clearly someone else, and costs only a few clicks there; when it's wrong it is permanent (a dismissed pair is never suggested again and can't be reopened) and decides for other teams. Matches stay pending until someone answers each one.
+7. **No data migration.** Production has 0 form submissions; staging has 13 (2 still on their own profile). Pairs for them already exist or were dismissed; nothing to backfill.
+
+## Known edge, accepted
+
+The admin Scan rebuilds every pending pair by its own rules. A form pair the Scan's rules don't
+reproduce disappears after a Scan, and the form stops asking. This is the same for every pair today,
+and it is the price of one shared answer.
+
+## Surfaces touched
+
+- `src/components/FormResultsContent.tsx`, `src/app/form-results/[submissionId]/page.tsx`: banner from pairs, persisted «No es esta persona», back link
+- `src/components/ContractResultsMatchCard.tsx` (+ its page): persisted «No es esta persona»
+- `src/domain/formLink.ts`: `planFormLink` guard, `formResultsView` input, `summarizeAdopterForms` without `needsReview`
+- `src/app/actions/formSubmission.ts`: `linkFormToExistingAdopter` guard
+- `src/app/my-adopters/page.tsx`, `src/app/actions/dashboard.ts`: remove «Por revisar» filter/pill and the pill suppression
+- `src/lib/homeModulesData.ts`, `src/components/home/HomeModules.tsx`, `src/types/homeModules.ts`: remove `formsToReview`
+- Entry links: `my-adopters/page.tsx`, `AdoptionHistory.tsx`, `AnimalApplicants.tsx`, `ApplicantDetailPanel.tsx`, `OrphanSubmissionsSection.tsx`, notification URL in `api/form/[userId]/submit/route.ts`
+- i18n es/en/pt: remove `myAdopters.form_needs_review*`, `homeModules.forms_review_*`, `myAdopters.review_empty`; add back-link labels
+- Tests: `src/domain/formLink.test.ts`, `tests/my-adopters-forms.authed.spec.ts`, `tests/form-results-link.authed.spec.ts`, homepage spec; new e2e: answer on one screen, check it's gone on the others
+
+## Verification
+
+- e2e: a form that matches an existing profile → the row shows «Posible duplicado», the profile shows the banner, the form screen shows the match. «No es esta persona» on the form screen → all three gone after reload. Same starting from «Mantener separados» in the list.
+- Back link from each of the 4 entry points.
+- Staging: Pedro Paez shows no pending match; his row has no «Por revisar».
