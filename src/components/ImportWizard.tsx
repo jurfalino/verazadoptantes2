@@ -31,6 +31,8 @@ const MAX_FETCHED_IMAGES = 12;
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
 import { handledAsStale } from '@/lib/errorMessage';
+import { answerNotSamePerson } from '@/app/actions/notSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { resolveErrorId, reportClientError } from '@/lib/clientErrorReporter';
 import { splitLinkAndText, appendContext, canSaveImportedProfile, suggestedRating, monthOf, recordDateFrom, aliasForMerge, cleanOtherPeople, extractionQuality, type PostPerson, type ExtractionIssue } from '@/domain/importInput';
 import { needsIdentityChoice as needsIdentityChoiceFor } from '@/domain/identityChoice';
@@ -354,6 +356,8 @@ export default function ImportWizard() {
     // Every profile this post was already saved to (the first is duplicateAdopter).
     const [duplicateAdopters, setDuplicateAdopters] = useState<Array<{ id: string; name: string | null; canEdit?: boolean }>>([]);
     const [personMatches, setPersonMatches] = useState<PersonMatch[]>([]);
+    /** «No es esta persona» answers on this match screen: saved once «Crear un perfil nuevo» has made the profile (consistency rule). */
+    const [rejectedMatchIds, setRejectedMatchIds] = useState<string[]>([]);
     const [selectedMatch, setSelectedMatch] = useState<PersonMatch | null>(null);
     const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
     const [fieldOverlapHints, setFieldOverlapHints] = useState<JudgedMatch[]>([]);
@@ -969,7 +973,7 @@ export default function ImportWizard() {
         setIsSaving(true);
         setDuplicateAdopter(null);
         setDuplicateAdopters([]);
-        setPersonMatches([]);
+        setPersonMatches([]); setRejectedMatchIds([]);
         setSelectedMatch(null);
         setDuplicateCheckFailed(false);
         setMergeAs(null);
@@ -1166,6 +1170,18 @@ export default function ImportWizard() {
             }
 
             const adopterId = result.id;
+
+            // «No es esta persona» on the match screen: one answer with every other «no» (spec 2026-11-06).
+            // Never blocks the save: a failure is said with its id and the profile stands.
+            if (rejectedMatchIds.length) {
+                try {
+                    const answered = await answerNotSamePerson({ adopterId, rejectedIds: rejectedMatchIds });
+                    if (answered.ok) trackSamePersonAnswer('import', 'different', answered.recorded > 0);
+                    else toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), answered.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${answered.error}`), 'ImportWizard.notThis'));
+                } catch (e) {
+                    if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'ImportWizard.notThis'));
+                }
+            }
 
             // Relatives recognised as an existing profile join the new profile's household (credited, notified).
             for (const [i, p] of relatives.entries()) {
@@ -2291,7 +2307,7 @@ export default function ImportWizard() {
                             if (kind !== 'none') trackImport('import_duplicate_choice', { choice: 'back', kind });
                             setDuplicateAdopter(null);
                             setDuplicateAdopters([]);
-                            setPersonMatches([]);
+                            setPersonMatches([]); setRejectedMatchIds([]);
                             setSelectedMatch(null);
                             setShowConfirmModal(false);
                         }}
@@ -2462,6 +2478,7 @@ export default function ImportWizard() {
                                                     onNotThis: () => {
                                                         trackImport('import_duplicate_choice', { choice: 'not_this', kind: 'person' });
                                                         setPersonMatches(list => list.filter(m => m.id !== match.id));
+                                                        setRejectedMatchIds(ids => (ids.includes(match.id) ? ids : [...ids, match.id]));
                                                         if (isSelected) { setMergeAs(null); setSelectedMatch(null); }
                                                     },
                                                 }} />

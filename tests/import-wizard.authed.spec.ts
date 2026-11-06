@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { cleanupProfiles, createProfileViaApi, execD1, housemates, rows } from './householdFixtures';
+import { TEST_ADOPTERS } from './helpers';
 
 test.setTimeout(90000);
 
@@ -376,6 +377,27 @@ test.describe('Import wizard — duplicates', () => {
         await expect(page.locator('[role="radio"][aria-checked="true"]')).toHaveCount(0);
         await expect(page.getByTestId('import-actions').getByRole('button').first()).toHaveText(/Create a new profile|Crear un perfil nuevo/i);
         await expect(page.getByRole('button', { name: /Add to the selected|Agregar al perfil elegido/i })).toBeDisabled();
+    });
+
+    test('«No es esta persona», then «Crear un perfil nuevo»: the answer is saved for that pair (consistency rule)', async ({ page }) => {
+        test.setTimeout(120_000);
+        const name = `Pedro Prueba No ${Date.now()}`;
+        // Seeded María has phone 555-1234; the post names someone else with that phone.
+        await stubAi(page, { name, phones: ['555-1234'] });
+        await pasteAndContinue(page, `${name}, tel 555-1234`);
+        await page.getByRole('button', { name: /Save Adopter|Guardar Adoptante/i }).click();
+        await expect(page.getByRole('heading', { name: /may already exist|ya exista/i })).toBeVisible({ timeout: 30000 });
+        const maria = page.getByTestId('import-match').filter({ hasText: /María/ }).first();
+        await maria.getByTestId('import-match-not-this').click();
+        await expect(page.getByTestId('import-match').filter({ hasText: /María/ })).toHaveCount(0);
+        await page.getByRole('button', { name: /Create a new profile|Crear un perfil nuevo|Create profile|Crear perfil/i }).first().click();
+        await expect(page).toHaveURL(/\/adopter\/[^/?]+/, { timeout: 30000 });
+        const newId = page.url().split('/adopter/')[1].split(/[?#]/)[0];
+        try {
+            await expect.poll(() => rows(`SELECT status FROM duplicate_candidates WHERE (adopter1_id = '${newId}' AND adopter2_id = '${TEST_ADOPTERS.MARIA}') OR (adopter1_id = '${TEST_ADOPTERS.MARIA}' AND adopter2_id = '${newId}')`).map(r => r.status), { timeout: 30000 }).toEqual(['dismissed']);
+        } finally {
+            cleanupProfiles([newId]);
+        }
     });
 
     test('a minor matched on name and phone is tagged, pre-selected, and takes the post like anyone (Jon, 2026-10-28)', async ({ page }) => {
