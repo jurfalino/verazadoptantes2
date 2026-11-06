@@ -398,8 +398,10 @@ export async function recordSeparatePairs(
                 }
                 continue;
             }
+            // Sorted, as the Scan's skip set and the save-time matcher look pairs up (adopter1Id < adopter2Id).
+            const [adopter1Id, adopter2Id] = newId < other ? [newId, other] : [other, newId];
             await db.insert(duplicateCandidates).values({
-                id: crypto.randomUUID(), adopter1Id: newId, adopter2Id: other,
+                id: crypto.randomUUID(), adopter1Id, adopter2Id,
                 matchTypes: '[]', score: 0, confidence: 'low', status: 'dismissed',
                 resolvedBy: actor, resolvedAt: new Date(),
             });
