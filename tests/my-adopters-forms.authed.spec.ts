@@ -105,7 +105,7 @@ test.describe('/my-adopters — people who filled a form', () => {
         }
     });
 
-    test('two open questions: the bar says «y 1 más» and «Revisar» opens the newest', async ({ browser, request }) => {
+    test('two open questions: card and profile name the same person, «y 1 más», and «Revisar» opens the same pair', async ({ browser, request }) => {
         test.setTimeout(150_000);
         const stamp = Date.now();
         const name = `E2E Dos ${stamp}`;
@@ -116,20 +116,29 @@ test.describe('/my-adopters — people who filled a form', () => {
         const c = await submitForm(request, { name, email, phone });
         const id = (sub: string) => String(dbRows(`SELECT auto_adopter_id AS id FROM form_submissions WHERE id = '${sub}'`)[0].id);
         const [A, B, C] = [id(a), id(b), id(c)];
-        // C pairs with A and with B; make C–B the newest, C–A older.
+        // C pairs with A and with B. C–A is the STRONGER but older; C–B weaker and newest.
         const pairWhere = (x: string, y: string) => `(adopter1_id = '${x}' AND adopter2_id = '${y}') OR (adopter1_id = '${y}' AND adopter2_id = '${x}')`;
-        execD1(`UPDATE duplicate_candidates SET detected_at = strftime('%s','now','-2 days') WHERE ${pairWhere(C, A)}`);
-        execD1(`UPDATE duplicate_candidates SET detected_at = strftime('%s','now') WHERE ${pairWhere(C, B)}`);
+        execD1(`UPDATE duplicate_candidates SET score = 90, detected_at = strftime('%s','now','-2 days') WHERE ${pairWhere(C, A)}`);
+        execD1(`UPDATE duplicate_candidates SET score = 40, detected_at = strftime('%s','now') WHERE ${pairWhere(C, B)}`);
         const ctx = await browser.newContext({ storageState: '.auth/admin.json', viewport: { width: 390, height: 844 } });
         try {
             const page = await ctx.newPage();
             await page.goto('/my-adopters');
             await dismissCountryBanner(page);
             const card = page.locator('[data-testid="my-adopters-row"]:visible').filter({ has: page.locator(`a[href="/adopter/${C}?ref=my-adopters"]`) });
-            const bar = card.getByTestId('row-pending-dup-bar');
-            await expect(bar).toContainText(/1 more|1 más|1 mais/, { timeout: 30_000 });
-            const href = await bar.getByRole('link', { name: /Review|Revisar/ }).getAttribute('href');
-            expect(decodeURIComponent(href ?? '')).toContain(B);
+            const cardBar = card.getByTestId('row-pending-dup-bar');
+            await expect(cardBar).toContainText(/1 more|1 más|1 mais/, { timeout: 30_000 });
+            const cardNamed = await cardBar.getByTestId('row-pending-dup-bar-link').getAttribute('href');
+            const cardReview = await cardBar.getByRole('link', { name: /Review|Revisar/ }).getAttribute('href');
+
+            await page.goto(`/adopter/${C}`);
+            await dismissCountryBanner(page);
+            const profileBar = page.getByTestId('profile-pending-dup');
+            await expect(profileBar).toContainText(/1 more|1 más|1 mais/, { timeout: 30_000 });
+            // One rule on both screens (spec Goal 3): the strongest match is named, and «Revisar» opens it.
+            expect(cardNamed).toBe(`/adopter/${A}`);
+            expect(await profileBar.getByTestId('profile-pending-dup-link').getAttribute('href')).toBe(`/adopter/${A}`);
+            expect(await profileBar.getByRole('link', { name: /Review|Revisar/ }).getAttribute('href')).toBe(cardReview);
         } finally {
             await ctx.close();
         }

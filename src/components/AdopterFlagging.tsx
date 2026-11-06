@@ -452,7 +452,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                         {systemSuggestions.length > 0 && !searchTerm && (() => {
                                             const LOW_CONFIDENCE_THRESHOLD = 15;
                                             const sorted = [...systemSuggestions].sort((a, b) => b.confidencePercent - a.confidencePercent);
-                                            const visible = sorted.filter(s => s.confidencePercent >= LOW_CONFIDENCE_THRESHOLD);
+                                            const visible = sorted.filter(s => s.confidencePercent >= LOW_CONFIDENCE_THRESHOLD).slice(0, 5);
                                             const suppressed = sorted.filter(s => s.confidencePercent < LOW_CONFIDENCE_THRESHOLD);
                                             return (
                                                 <div className="mb-3">

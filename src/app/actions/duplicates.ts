@@ -275,7 +275,8 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
         const db = await getDb();
         if (!db) return [];
 
-        return await loadOpenPairs(db, adopterId, viewer, { includeLow: true });
+        // 20, not 5: the profile bar's «y N más» counts like the /my-adopters card does.
+        return await loadOpenPairs(db, adopterId, viewer, { includeLow: true, limit: 20 });
     } catch (error) {
         logger.warn('getDuplicateCandidates failed', {
             adopterId,

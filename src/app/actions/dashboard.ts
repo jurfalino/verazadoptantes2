@@ -105,7 +105,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         type FormRow = { id: string; userId: string; linkedAdopterId: string; autoAdopterId: string | null; createdAt: Date | number | null; selectedAnimalId: string | null };
         type ContractCountRow = { adopterId: string; count: number };
         type EditRow = { adopterId: string; changedBy: string | null; changedAt: number | Date | null };
-        type DupRow = { a1: string; a2: string; detectedAt: Date | number | null };
+        type DupRow = { a1: string; a2: string; score: number; detectedAt: Date | number | null };
 
         const allImages: ImageRow[] = [];
         const allFlags: FlagRow[] = [];
@@ -199,7 +199,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 // query that binds the id list TWICE (see D1_IN_CHUNK note).
                 // Weak (`low`) pairs are excluded: the chip links to the
                 // pending-dedup queue, which never lists them.
-                db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id, detectedAt: duplicateCandidates.detectedAt })
+                db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id, score: duplicateCandidates.score, detectedAt: duplicateCandidates.detectedAt })
                     .from(duplicateCandidates)
                     .where(and(
                         eq(duplicateCandidates.status, 'pending'),
@@ -244,7 +244,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             ? housemateAlertsFor(db, userEmail, withHome.slice(0, MY_ADOPTERS_HOUSEMATE_ROWS))
             : Promise.resolve({} as Record<string, HousemateAlertSummary>);
 
-        // Each row's open «same person?» questions, newest first — the card shows the
+        // Each row's open «same person?» questions, in the profile bar's order — the card shows the
         // profile's own bar (spec 2026-11-05). The other side's name and owner come
         // in chunks; a gone (merged-away) other side drops its pair, like loadOpenPairs.
         const pendingDupsP = pendingDuplicatesByAdopter(db, dupPairs, new Map((adoptersList as Array<{ id: string; addedBy: string | null }>).map(r => [r.id, r.addedBy])), userEmail)

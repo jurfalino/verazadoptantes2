@@ -60,8 +60,9 @@ export async function loadOpenPairs(
             sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
             ...(opts.includeLow ? [] : [sql`${duplicateCandidates.confidence} != 'low'`]),
         ))
-        // Strongest first, so weak pairs can't crowd a strong one out of the cap.
-        .orderBy(sql`${duplicateCandidates.score} DESC`)
+        // Strongest first, so weak pairs can't crowd a strong one out of the cap; then
+        // newest — the SAME order the /my-adopters card uses (pendingDuplicatesByAdopter).
+        .orderBy(sql`${duplicateCandidates.score} DESC`, sql`${duplicateCandidates.detectedAt} DESC`)
         .limit(opts.limit ?? 5);
 
     if (candidates.length === 0) return [];
@@ -141,12 +142,12 @@ export interface PendingDuplicateRef {
 
 /**
  * Per row, its open pairs (already filtered: pending, not low, not housemates),
- * newest first, with the other side's name. Other sides gone (merged away) drop
+ * strongest first then newest (the profile bar's order), with the other side's name. Other sides gone (merged away) drop
  * out. Names/owners are read in D1-safe chunks. Throws on a D1 error.
  */
 export async function pendingDuplicatesByAdopter(
     db: Db,
-    pairs: ReadonlyArray<{ a1: string; a2: string; detectedAt: Date | number | null }>,
+    pairs: ReadonlyArray<{ a1: string; a2: string; score: number; detectedAt: Date | number | null }>,
     ownerOf: ReadonlyMap<string, string | null>,
     viewer: string,
 ): Promise<Map<string, PendingDuplicateRef[]>> {
@@ -165,7 +166,9 @@ export async function pendingDuplicatesByAdopter(
     }
     const hidden = await loadHiddenPairKeys(db, viewer);
     const when = (d: Date | number | null) => (d instanceof Date ? d.getTime() : Number(d ?? 0));
-    const sorted = [...pairs].sort((x, y) => when(y.detectedAt) - when(x.detectedAt));
+    // The profile bar's order (loadOpenPairs): strongest first, then newest — so the
+    // card and the profile name the same person and «Revisar» opens the same pair.
+    const sorted = [...pairs].sort((x, y) => (y.score - x.score) || (when(y.detectedAt) - when(x.detectedAt)));
     for (const p of sorted) {
         for (const [self, other] of [[p.a1, p.a2], [p.a2, p.a1]] as const) {
             if (!ownerOf.has(self) || !people.has(self)) continue;
