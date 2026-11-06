@@ -176,7 +176,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                     <Tr k="contractResults.title" />
                 </h1>
                 <p className="text-sm text-stone-500 mt-1">
-                    <Tr k="contractResults.adopted_by" vars={{ animal: metadata.animalName ?? '', name: adopterDisplayName({ name: metadata.adopterName }, '—') }} />
+                    {metadata.adopterName?.trim()
+                        ? <Tr k="contractResults.adopted_by" vars={{ animal: metadata.animalName ?? '', name: adopterDisplayName({ name: metadata.adopterName }, '') }} />
+                        : <Tr k="contractResults.adopted_by_unnamed" vars={{ animal: metadata.animalName ?? '' }} />}
                 </p>
             </div>
 

@@ -1,7 +1,8 @@
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import { adopters, duplicateCandidates } from '@/db/schema';
 import { isAdminAsync } from '@/config/admins';
 import { keepOffered } from '@/domain/rejectedCandidates';
+import { searchFormDuplicates } from '@/lib/formDuplicates';
 import { logger } from '@/lib/logger';
 import { recordSeparatePairs } from '@/lib/mergeRequests';
 import { getOrgsForEmail, isOwnerOrOrgMate } from '@/lib/orgMembership';
@@ -125,4 +126,53 @@ export async function settleNotSamePerson(db: Db, input: {
         }
     }
     return result();
+}
+
+export type AnswerNotSamePersonResult =
+    | { ok: true; recorded: number; asked: Array<{ otherName: string; ownerLabels: string[] }> }
+    | { ok: false; error: 'not_authenticated' | 'invalid' | 'not_found' | 'failed'; errorId?: string };
+
+/**
+ * The «No, es otra persona» about `adopterId` once it exists: re-run the duplicate search
+ * the screen ran (the typed contact, else the profile itself), keep only ids it offers,
+ * then settleNotSamePerson. Shared by the answerNotSamePerson action and the spreadsheet
+ * import. Inputs must already be validated (ids trimmed, ≤10, not adopterId). Throws on D1 errors.
+ */
+export async function answerNotSamePersonFor(db: Db, actor: string, input: {
+    adopterId: string; rejectedIds: string[]; typed?: { type: string; value: string } | null;
+}): Promise<AnswerNotSamePersonResult> {
+    const { adopterId, rejectedIds } = input;
+    const typed = input.typed ?? null;
+    const ctx = { actor, adopterId, rejected: rejectedIds.length, typed: typed?.type ?? null };
+    const self = await db.select({ name: adopters.name, contactEntries: adopters.contactEntries })
+        .from(adopters).where(and(eq(adopters.id, adopterId), isNull(adopters.deletedAt))).get() as { name: string; contactEntries: string | null } | undefined;
+    if (!self) return { ok: false, error: 'not_found' };
+    if (rejectedIds.length === 0) return { ok: true, recorded: 0, asked: [] };
+
+    // What the screen searched with: the typed contact (the contact window), else the profile itself.
+    let entries: Array<{ type: string; value: string }> = [];
+    if (typed) entries = [typed];
+    else {
+        try { entries = JSON.parse(self.contactEntries || '[]'); } catch (e) {
+            logger.warn('answerNotSamePerson: unreadable contact entries, searching by name only', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+        }
+    }
+    const of = (t: string) => entries.filter(e => e && e.type === t && typeof e.value === 'string').map(e => e.value);
+    const offered = await searchFormDuplicates(
+        { name: typed ? '' : self.name, phones: of('phone'), emails: of('email'), socials: of('social'), documentIds: of('id'), excludeAdopterId: adopterId },
+        { limit: 20, allowContactOnly: true },
+        async () => actor,
+    );
+    if (offered.failed) {
+        return { ok: false, error: 'failed', errorId: logger.error('answerNotSamePerson: duplicate search failed, answer not saved', new Error('search failed'), ctx) };
+    }
+    const settled = await settleNotSamePerson(db, {
+        actor, adopterId, rejectedIds,
+        offered: offered.results.map(r => ({ adopterId: r.adopterId, matchTypes: r.matchTypes })), ctx,
+        // A typed contact proves nothing about `adopterId`: only its owner's team (or an admin) settles.
+        settleBy: typed ? 'subject' : 'either',
+    });
+    logger.info('answerNotSamePerson: answered', { ...ctx, recorded: settled.recorded.length, asked: settled.asked.length, dropped: settled.dropped, failed: settled.failed.length });
+    if (settled.failed.length) return { ok: false, error: 'failed', ...(settled.errorId ? { errorId: settled.errorId } : {}) };
+    return { ok: true, recorded: settled.recorded.length, asked: settled.asked.map(a => ({ otherName: a.otherName, ownerLabels: a.ownerLabels })) };
 }

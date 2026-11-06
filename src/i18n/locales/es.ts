@@ -1546,6 +1546,7 @@ export const es = {
         no_adopted_animals: 'Sin animales adoptados aún',
         no_adopted_desc: 'Los animales que hayan sido adoptados aparecerán aquí.',
         adopted_by: 'Adoptado por',
+        adopted_by_unnamed: '{animal} — adoptado por una persona sin nombre',
         in_foster_with: 'En tránsito con',
         view_signed_contract: 'Ver Contrato Firmado',
         view_contract: 'Ver contrato',
@@ -1840,10 +1841,9 @@ export const es = {
         pending_d_confirm_flip_access: 'Se conserva el tuyo. {name} va a seguir viendo sus datos.',
         pending_d_confirm_joins: 'se le suma',
         pending_d_confirm_action: 'Unir',
-        pending_d_identity_title: '¿Es la misma persona?',
+        pending_d_identity_title: '¿Seguro que es la misma persona?',
         pending_d_identity_body: 'Coinciden los datos de contacto, pero los nombres son distintos: {a} y {b}.',
         pending_d_identity_household_hint: 'Si es alguien de su hogar, los perfiles quedan separados y lo agregamos a su hogar.',
-        pending_d_identity_household: 'No, es alguien de su hogar',
         pending_d_household_done: 'Quedaron separados: lo agregamos a su hogar',
         pending_d_write_title: 'Escribirle a {name}',
         pending_d_write_about: 'Sobre {name}',
@@ -2383,6 +2383,7 @@ export const es = {
         no: 'No, es otra persona',
         concept_one: 'Posible duplicado',
         concept_many: 'Posibles duplicados',
+        household: 'No, es alguien de su hogar',
     },
     // The spreadsheet import's Duplicados step (step 3: moved to i18n, one way to ask).
     sheetDedup: {

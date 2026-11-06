@@ -2388,7 +2388,8 @@ export default function ImportWizard() {
                             disabled={!selectedMatch || (needsIdentityChoice(selectedMatch) && !mergeAs)}
                             className={mergeLeads ? `${BTN_PRIMARY} w-full` : secondary}
                         >
-                            {t('samePerson.yes')}
+                            {/* The answer the rescuer just picked: «Un familiar…» is not "the same person" (step 3 review). */}
+                            {t(mergeAs === 'relative' && selectedMatch && needsIdentityChoice(selectedMatch) ? 'samePerson.household' : 'samePerson.yes')}
                         </button>
                     );
                     const createBtn = (

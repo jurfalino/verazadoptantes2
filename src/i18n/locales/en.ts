@@ -1540,6 +1540,7 @@ export const en = {
         no_adopted_animals: 'No animals adopted yet',
         no_adopted_desc: 'Animals that have been adopted by someone will appear here.',
         adopted_by: 'Adopted by',
+        adopted_by_unnamed: '{animal} — adopted by someone with no name',
         in_foster_with: 'In foster with',
         view_signed_contract: 'View Signed Contract',
         view_contract: 'View contract',
@@ -1834,10 +1835,9 @@ export const en = {
         pending_d_confirm_flip_access: 'Yours stays. {name} will still see its details.',
         pending_d_confirm_joins: 'joins it',
         pending_d_confirm_action: 'Join',
-        pending_d_identity_title: 'Is it the same person?',
+        pending_d_identity_title: 'Are you sure it\'s the same person?',
         pending_d_identity_body: 'The contact details match, but the names differ: {a} and {b}.',
         pending_d_identity_household_hint: 'If it’s someone from their household, the profiles stay separate and we add them to the household.',
-        pending_d_identity_household: 'No, someone from their household',
         pending_d_household_done: 'Kept separate: added to their household',
         pending_d_write_title: 'Write to {name}',
         pending_d_write_about: 'About {name}',
@@ -2376,6 +2376,7 @@ export const en = {
         no: 'No, it\'s someone else',
         concept_one: 'Possible duplicate',
         concept_many: 'Possible duplicates',
+        household: 'No, someone from their household',
     },
     // The spreadsheet import's Duplicados step (step 3: moved to i18n, one way to ask).
     sheetDedup: {

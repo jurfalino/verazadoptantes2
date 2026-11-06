@@ -118,7 +118,7 @@ test.describe('One shared reality (D48–D52)', () => {
             const rp = requester.page;
             let row = await openRow(rp, NAME);
             await row.getByTestId('dedup-keep-new').click();
-            await expect(row.getByTestId('dedup-merge')).toHaveText(/^(Ask to join|Pedir unir|Pedir para unir)$/);
+            await expect(row.getByTestId('dedup-merge')).toHaveText(/^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/);
             await row.getByTestId('dedup-merge').click();
             await expect(row).toHaveAttribute('data-group', 'sent', { timeout: 30_000 });
             await expect.poll(() => pairRequests().length, { timeout: 30_000 }).toBe(1);

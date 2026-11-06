@@ -46,7 +46,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
             <div className="px-4 py-2.5 bg-amber-100 border-b border-amber-300 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                 <h3 className="text-sm font-bold text-amber-900">
-                    {t('adopter.dup_strong_strip_title') || 'Likely exact match'}
+                    {t('adopter.dup_strong_strip_title') || 'Possible duplicate'}
                 </h3>
             </div>
             <ul className="divide-y divide-amber-200">

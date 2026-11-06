@@ -120,3 +120,24 @@ describe('answerNotSamePerson — one «no es esta persona» for the contact win
         expect((res as { errorId?: string }).errorId).toBeTruthy();
     });
 });
+
+describe('spreadsheet import — a row answered «No, es otra persona» (step 3 review: the label promises an answer)', () => {
+    const row = (index: number, rejectedAdopterId?: string) => ({
+        index, action: 'create' as const, name: 'Rosa Diaz',
+        contactEntries: JSON.stringify([{ id: `x${index}`, type: 'phone', value: PHONE }]),
+        adoption: { animalName: null, species: null, recordType: 'observation', rating: null, date: null, details: 'nota', onBehalfOf: null },
+        ...(rejectedAdopterId ? { rejectedAdopterId } : {}),
+    });
+    it('the new profile and the rejected one are saved as two people', async () => {
+        const { importAdoptersBatch } = await import('./importBatch');
+        const [res] = await importAdoptersBatch([row(0, 'r1')], 'run-nsp-1');
+        expect(res.status).toBe('created');
+        expect(pair(res.id!, 'r1')).toEqual(['dismissed']);
+    });
+    it('a row created without that answer (bulk «Crear todas como nuevas», a default) records nothing', async () => {
+        const { importAdoptersBatch } = await import('./importBatch');
+        const [res] = await importAdoptersBatch([row(1)], 'run-nsp-2');
+        expect(res.status).toBe('created');
+        expect(pair(res.id!, 'r1')).toEqual([]);
+    });
+});

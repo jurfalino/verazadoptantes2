@@ -250,6 +250,18 @@ export default function SpreadsheetImportWizard() {
     // profiles showed only one, so «Actualizar» left the other a silent duplicate).
     const [otherMatches, setOtherMatches] = useState<Record<number, RowMatch[]>>({});
     const [rowAction, setRowAction] = useState<Record<number, RowAction>>({});
+    // Rows the rescuer answered «No, es otra persona» ON THE ROW, with the profile it was about.
+    // Only these save the answer on import (bulk «Crear todas como nuevas» and defaults answer nothing).
+    const [answeredNo, setAnsweredNo] = useState<Record<number, string>>({});
+    const answerRow = (index: number, a: RowAction) => {
+        setRowAction(prev => ({ ...prev, [index]: a }));
+        setAnsweredNo(prev => {
+            const next = { ...prev };
+            const about = matches[index]?.adopterId;
+            if (a === 'create' && about) next[index] = about; else delete next[index];
+            return next;
+        });
+    };
     // "Por qué" expansion on the Duplicados triage row: which row (by index) is
     // expanded. The comparison card loads the profile's details itself.
     const [expandedMatchRow, setExpandedMatchRow] = useState<number | null>(null);
@@ -822,6 +834,8 @@ export default function SpreadsheetImportWizard() {
                 adoption: built.body.adoption,
                 isPublic,
                 matchedAdopterId: action === 'upsert' ? (match?.adopterId ?? null) : null,
+                // Still about the profile the row shows now (a re-analysis can change the match).
+                rejectedAdopterId: action === 'create' && match?.adopterId && answeredNo[index] === match.adopterId ? match.adopterId : null,
                 matchedAdopterName: match?.adopterName ?? null,
                 matchConfidence: match?.relevancePercent ?? null,
             },
@@ -1086,9 +1100,10 @@ export default function SpreadsheetImportWizard() {
         setMatches(prev => ({ ...prev, [index]: chosen }));
         setOtherMatches(prev => ({ ...prev, [index]: [...(current ? [current] : []), ...(prev[index] ?? []).filter(m => m.adopterId !== chosen.adopterId)] }));
         setRowAction(prev => ({ ...prev, [index]: 'upsert' }));
+        setAnsweredNo(prev => { const next = { ...prev }; delete next[index]; return next; });
     };
 
-    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setOtherMatches({}); setRowAction({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
+    const reset = () => { setStep('upload'); setParsed(null); setMap(null); setInterpreted([]); setMode('mapping'); setResults([]); setImportDone(false); setOverrides({}); setDeselected(new Set()); setSearch(''); setFilter('all'); setTypeFilter('all'); setRatingFilter('all'); setMatches({}); setOtherMatches({}); setRowAction({}); setAnsweredNo({}); setDetectionDone(false); setDetectProgress({ done: 0, total: 0 }); setFailureByIndex({}); setExpandedMatchRow(null); setExpandedFieldsRow(null); setFocusPending(false); setFocusWorklist(null); setDetectFailedRows(new Set()); setFoldSummary(null); setSplitGroups(new Set()); };
 
     // Duplicados step (Step 3): the focused triage is ONLY the selected rows that
     // actually matched something — everything else auto-creates, so it never
@@ -1447,7 +1462,7 @@ export default function SpreadsheetImportWizard() {
                     {/* TODO(wave1c-mobile): reflow to card-per-record ≤sm (single-DOM CSS reflow) */}
                     <RecordGrid rows={filtered} groupOf={reviewGroups} onSplitGroup={key => setSplitGroups(s => { const n = new Set(s); for (const i of reviewGroups.get(key)?.members ?? [key]) n.add(i); return n; })}
                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
-                        matches={matches} otherMatches={otherMatches} onChooseMatch={chooseMatch} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
+                        matches={matches} otherMatches={otherMatches} onChooseMatch={chooseMatch} rowAction={rowAction} onAction={answerRow}
                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                         expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
@@ -1555,7 +1570,7 @@ export default function SpreadsheetImportWizard() {
                                         RowView, so a matched record shows identically here and in Revisar. */}
                                     <RecordGrid rows={dedupVisibleRows}
                                         editingCell={editingCell} onEditCell={(index, field) => setEditingCell(field ? { index, field } : null)}
-                                        matches={matches} otherMatches={otherMatches} onChooseMatch={chooseMatch} rowAction={rowAction} onAction={(index, a) => setRowAction(prev => ({ ...prev, [index]: a }))}
+                                        matches={matches} otherMatches={otherMatches} onChooseMatch={chooseMatch} rowAction={rowAction} onAction={answerRow}
                                         failureByIndex={failureByIndex} onSetSelected={setGroupSelected} onChange={setOverride}
                                         expandedMatchRow={expandedMatchRow} onToggleWhy={toggleMatchExpand}
                                         expandedFieldsRow={expandedFieldsRow} onToggleFields={toggleFieldsExpand}
@@ -1747,10 +1762,11 @@ function ActionToggle({ action, onAction }: { action: RowAction; onAction: (a: R
     const { t } = useLanguage();
     return (
         <div className="inline-flex flex-wrap items-center gap-1.5">
-            <div className="inline-flex flex-wrap rounded-lg border border-stone-200 overflow-hidden">
+            {/* One line, never broken mid-phrase: the grid scrolls sideways on a phone (overflow-x-auto). */}
+            <div className="inline-flex rounded-lg border border-stone-200 overflow-hidden">
                 {(['upsert', 'create', 'skip'] as const).map(a => (
                     <button key={a} type="button" onClick={() => onAction(a)}
-                        className={`px-2 py-0.5 ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
+                        className={`px-2 py-0.5 whitespace-nowrap ${action === a ? 'bg-teal-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
                         title={t(a === 'upsert' ? 'sheetDedup.title_yes' : a === 'create' ? 'sheetDedup.title_no' : 'sheetDedup.title_skip')}>
                         {t(a === 'upsert' ? 'samePerson.yes' : a === 'create' ? 'samePerson.no' : 'sheetDedup.skip')}
                     </button>

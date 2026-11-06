@@ -77,14 +77,13 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
 }
 
 /**
- * «Es la misma persona» (primary, optional), «Ver perfil completo →» (secondary
- * link) and «No es esta persona» (secondary, optional) — or a caller's own
- * primary label for the same slot (e.g. «Continuar con este perfil»).
+ * «Sí, es la misma persona» (primary, optional), the profile link and «No, es otra
+ * persona» (secondary, optional) — the same two answers on every screen (step 3:
+ * one way to ask). What a «Sí» does is said by the caller's confirmation.
  */
 export type MatchCardActionsProps = {
     profileId: string;
     onSame?: () => void;
-    sameLabel?: string;
     onNotThis?: () => void;
     busy?: boolean;
     newTab?: boolean;
@@ -93,7 +92,7 @@ export type MatchCardActionsProps = {
     notThisTestId?: string;
 };
 
-export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy = false, newTab = false, sameTestId, viewTestId, notThisTestId }: MatchCardActionsProps) {
+export function MatchCardActions({ profileId, onSame, onNotThis, busy = false, newTab = false, sameTestId, viewTestId, notThisTestId }: MatchCardActionsProps) {
     const { t } = useLanguage();
     const layout = 'w-full sm:w-auto';
     return (
@@ -101,7 +100,7 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
             {onSame && (
                 <Button type="button" size="compact" onClick={onSame} disabled={busy} data-testid={sameTestId} layoutClassName={layout}
                     icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
-                    {sameLabel || t('samePerson.yes')}
+                    {t('samePerson.yes')}
                 </Button>
             )}
             {newTab

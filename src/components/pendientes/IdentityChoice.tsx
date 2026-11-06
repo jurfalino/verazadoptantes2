@@ -20,7 +20,7 @@ export default function IdentityChoice({ nameA, nameB, busy, onSame, onHousehold
     t: T;
 }) {
     return (
-        <PendientesDialog title={t('myAdopters.pending_d_identity_title') || '¿Es la misma persona?'} onClose={onCancel} busy={busy} testId="dedup-identity-dialog" t={t}>
+        <PendientesDialog title={t('myAdopters.pending_d_identity_title') || '¿Seguro que es la misma persona?'} onClose={onCancel} busy={busy} testId="dedup-identity-dialog" t={t}>
             <p className={`text-[15px] ${T_PRIMARY}`}>
                 {fill(t('myAdopters.pending_d_identity_body') || 'Coinciden los datos de contacto, pero los nombres son distintos: {a} y {b}.', { a: nameA, b: nameB })}
             </p>
@@ -32,7 +32,7 @@ export default function IdentityChoice({ nameA, nameB, busy, onSame, onHousehold
                     {t('samePerson.yes')}
                 </Button>
                 <Button type="button" variant="secondary" data-testid="dedup-identity-household" onClick={onHousehold} disabled={busy} fullWidth>
-                    {t('myAdopters.pending_d_identity_household') || 'No, es alguien de su hogar'}
+                    {t('samePerson.household')}
                 </Button>
             </div>
         </PendientesDialog>

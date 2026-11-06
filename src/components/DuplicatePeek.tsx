@@ -96,7 +96,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                 type="button"
                 onClick={() => count > 0 && setExpanded(true)}
                 disabled={count === 0}
-                aria-label={count === 0 ? (t('adopter.dup_peek_pill_searching') || 'Searching...') : (t('adopter.dup_peek_panel_title') || 'Possible matches')}
+                aria-label={count === 0 ? (t('adopter.dup_peek_pill_searching') || 'Searching...') : (t('adopter.dup_peek_panel_title') || 'Possible duplicates')}
                 className={[
                     'sticky top-0 z-20 -mx-5 -mt-5 mb-4 w-[calc(100%+2.5rem)]',
                     'flex items-center justify-between gap-3 px-5 py-3',
@@ -117,8 +117,8 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                             <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                             <span className="truncate">
                                 {count === 1
-                                    ? (t('adopter.dup_peek_pill_one') || '1 possible match — Review')
-                                    : (t('adopter.dup_peek_pill_many') || '{n} possible matches — Review').replace('{n}', String(count))}
+                                    ? (t('adopter.dup_peek_pill_one') || '1 possible duplicate — Review')
+                                    : (t('adopter.dup_peek_pill_many') || '{n} possible duplicates — Review').replace('{n}', String(count))}
                             </span>
                         </>
                     )}
@@ -138,7 +138,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                     className="fixed inset-0 z-[60]"
                     role="dialog"
                     aria-modal="true"
-                    aria-label={t('adopter.dup_peek_panel_title') || 'Possible matches'}
+                    aria-label={t('adopter.dup_peek_panel_title') || 'Possible duplicates'}
                     onClick={() => setExpanded(false)}
                 >
                     <div className="absolute inset-0 bg-stone-900/30 backdrop-blur-sm animate-in fade-in duration-200" />
@@ -155,7 +155,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                         <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-center justify-between">
                             <div>
                                 <h3 className="font-semibold text-stone-900">
-                                    {t('adopter.dup_peek_panel_title') || 'Possible matches'}
+                                    {t('adopter.dup_peek_panel_title') || 'Possible duplicates'}
                                 </h3>
                                 <p className="text-xs text-stone-500 mt-0.5">
                                     {count === 1 ? t('adopter.dup_peek_count_one') : t('adopter.dup_peek_count_many').replace('{n}', String(count))}

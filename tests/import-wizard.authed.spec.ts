@@ -354,10 +354,13 @@ test.describe('Import wizard — duplicates', () => {
         if ((await card.getAttribute('aria-checked')) !== 'true') await card.click();
         const choice = page.getByTestId('import-identity-choice');
         await expect(choice).toBeVisible();
-        const merge = page.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ });
+        const merge = page.getByTestId('import-merge-selected');
+        await expect(merge).toHaveText(/^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/);
         await expect(merge).toBeDisabled();
         await choice.getByRole('radio', { name: /relative|familiar/i }).check();
         await expect(merge).toBeEnabled();
+        // «Un familiar…» is not "the same person": the button says the answer picked (step 3 review).
+        await expect(merge).toHaveText(/^(No, someone from their household|No, es alguien de su hogar|Não, é alguém do lar)$/);
     });
 
     test('a name-only match is not pre-selected, and "create new" leads', async ({ page }) => {

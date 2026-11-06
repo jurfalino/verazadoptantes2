@@ -1659,7 +1659,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 (audit B8) with the shared match cards (audit B6) — the same header, order and actions as
                 the «Posibles coincidencias» panel. */}
             {saveDuplicateModal && (
-                <Modal title={t('import.saveModal_title') || 'Possible duplicate profiles'} onClose={() => setSaveDuplicateModal(null)} testId="save-duplicate-modal" size="lg">
+                <Modal title={t('import.saveModal_title') || 'Possible duplicates'} onClose={() => setSaveDuplicateModal(null)} testId="save-duplicate-modal" size="lg">
                     <ModalText>{t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}</ModalText>
                     <ul className="space-y-2">
                         {saveDuplicateModal.matches.map((result) => (
