@@ -24,6 +24,12 @@ All notable changes to BuenAdoptante are documented here.
 - The profile bar «Posible duplicado de X» looks the same for everyone (it used to be blue for
   people who can't answer); only «Revisar» depends on whether you can.
 - The contract results page and the spreadsheet import's «Duplicados» step are now translated (en/pt).
+- Spreadsheet import: answering «No, es otra persona» on a row is now saved like on every other screen,
+  once the new profile is created (in the background; a failure is logged). «Crear todas como nuevas»
+  and the defaults still answer nothing.
+- Post import: when you pick «Un familiar o alguien que vive con esa persona», the button says
+  «No, es alguien de su hogar» (it used to say yes). In «Pendientes», the follow-up when the names
+  differ now reads «¿Seguro que es la misma persona?» instead of asking the same question twice.
 
 ## [2.58.30] - 2026-11-06
 
