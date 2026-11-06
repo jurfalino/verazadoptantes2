@@ -111,6 +111,29 @@ account); 0 form or contract submissions ever. 14 screens ask "same person?", an
 Not changed: the contact-already-on-another-profile window's «No es esta persona» stays local (Jon 2026-10-29).
 Revisit it in step 3 if Jon wants.
 
+## Consistency rule (Jon 2026-11-06: "functionality should be CONSISTENT"; "don't cut the scope, do it right")
+
+**Any «no, it's not this person» about a specific profile is saved the same way — permanently, for
+everyone — as soon as both profiles exist.** Buttons that only move on («Continuar con el perfil
+nuevo», «Crear igualmente») answer nothing and save nothing.
+
+**Who may answer** (same as «Mantener separados» today): the person who loaded either profile, or an
+admin. Step 2 widens this to their teammates. Someone who may not answer can still move on: their
+«No» doesn't settle the pair, the question goes to the owners' «Pendientes», and they are told so.
+
+| Screen | Before | After |
+|---|---|---|
+| «Pendientes» «Mantener separados» | saved | saved |
+| Form / contract «No es esta persona» | saved (step 1) | saved; button only for who may answer |
+| Household «No, es otra persona» | saved (step 1) | saved when they may answer; otherwise the pair is opened for the owners and the helper sees «Agregamos a {name}. Le preguntamos a {owners} si es la misma persona que {other}.» |
+| Contact already on another profile («Ya está en otro perfil» → «No es esta persona») | forgotten on reload (Jon 2026-10-29: local only) | saved. **Reverses the 2026-10-29 decision** (Jon OK'd 2026-11-06). Who may not answer: as the household case |
+| Post import «No es esta persona» | forgotten | saved for each rejected profile once «Crear un perfil nuevo» has created the person |
+| New-profile form «No es esta persona» | forgotten | saved for each rejected profile once the new profile is saved |
+
+Confirmed by Jon 2026-11-06 with examples: (1) a form match that the duplicate check no longer finds
+stops asking, as every other pair does; (2) a helper's household «No» doesn't settle a pair whose two
+profiles they didn't load.
+
 ## Known edge, accepted
 
 The admin Scan rebuilds every pending pair by its own rules. A form pair the Scan's rules don't
