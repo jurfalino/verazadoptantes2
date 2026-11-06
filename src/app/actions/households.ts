@@ -68,9 +68,7 @@ import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintPairMatches, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
 import { ratingAfterMerge } from '@/domain/ratings';
 import { realOwner } from '@/domain/dedupPair';
-import { keepOffered } from '@/domain/rejectedCandidates';
-import { recordSeparatePairs } from '@/lib/mergeRequests';
-import { isAdminAsync } from '@/config/admins';
+import { settleNotSamePerson } from '@/lib/notSamePerson';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
@@ -130,6 +128,8 @@ export type AddHouseholdPersonResult =
         ok: true; profileId: string; membershipId: string; createdProfile: boolean; autoRequestFiled: boolean;
         /** The person is placed, but a later step (history, notices…) failed: logged under this id. */
         warningErrorId?: string;
+        /** «No, es otra persona» the actor may not settle: opened for these owners (consistency rule). */
+        asked?: Array<{ otherName: string; ownerLabels: string[] }>;
     }
     | Fail;
 
@@ -553,32 +553,26 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 if (res.autoRequestFiled) autoRequestFiled = true;
             }
         }
-        // «No, es otra persona»: the new profile and each rejected one are two people (spec 2026-11-05).
+        // «No, es otra persona» (spec 2026-11-05/06): one rule with every other «no» — saved when the
+        // actor loaded either profile (or is an admin), otherwise opened for the owners, who are named.
+        let asked: Array<{ otherName: string; ownerLabels: string[] }> | undefined;
         if (createdProfile && Array.isArray(input.rejectedProfileIds) && input.rejectedProfileIds.length) {
             try {
                 const offered = await getHouseholdMatchCandidates({ name: name || undefined, contactEntries: input.contactEntries, anchorAdopterId: anchorId });
                 if (offered.failed) {
                     logger.warn('addHouseholdPerson: candidate re-check failed, «no» answers not recorded', { ...out, errorId: offered.errorId });
                 } else {
-                    const { kept, dropped } = keepOffered(input.rejectedProfileIds.slice(0, 10), offered.results.map(r => r.adopterId));
-                    if (dropped) logger.warn('addHouseholdPerson: rejected id not offered, ignored', { ...out, dropped });
-                    // Who may answer a pair: the same rule as «Mantener separados» (dismissDuplicateCandidate) —
-                    // the actor loaded one of the two profiles, or is an admin. A contributor's «No» is not
-                    // recorded; the Scan keeps asking the owners (spec 2026-11-05 review, finding 6).
-                    const admin = await isAdminAsync(actor);
-                    const ownerOf = async (id: string) => (await db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get())?.addedBy ?? null;
-                    const mine = (owner: string | null) => !!owner && owner.trim().toLowerCase() === actor.trim().toLowerCase();
-                    const newIsMine = mine(await ownerOf(person.id));
-                    const allowed: string[] = [];
-                    for (const id of kept) if (admin || newIsMine || mine(await ownerOf(id))) allowed.push(id);
-                    if (allowed.length < kept.length) logger.info('addHouseholdPerson: «no» not recorded — the actor loaded neither profile', { ...out, skipped: kept.length - allowed.length });
-                    await recordSeparatePairs(db, person.id, allowed, actor, out);
+                    const settled = await settleNotSamePerson(db, {
+                        actor, adopterId: person.id, rejectedIds: input.rejectedProfileIds,
+                        offered: offered.results.map(r => ({ adopterId: r.adopterId, matchTypes: r.matchTypes })), ctx: out,
+                    });
+                    if (settled.asked.length) asked = settled.asked.map(a => ({ otherName: a.otherName, ownerLabels: a.ownerLabels }));
                 }
             } catch (e) {
                 logger.error('addHouseholdPerson: «no es la misma persona» not recorded (the add stands)', e, out);
             }
         }
-        return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled, ...(warningErrorId ? { warningErrorId } : {}) };
+        return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled, ...(warningErrorId ? { warningErrorId } : {}), ...(asked ? { asked } : {}) };
     } catch (e) {
         const errorId = logger.error('addHouseholdPerson failed', e, ctx);
         return { ok: false, error: 'failed', errorId };

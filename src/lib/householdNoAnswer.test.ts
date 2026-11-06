@@ -98,10 +98,14 @@ describe('household «No, es otra persona» is an answer that holds (spec 2026-1
         for (const r of ['r1', 'r2', 'r3', 'r4', 'r5']) expect(pairRows(created, r).map(x => x.status), r).toEqual(['dismissed']);
     });
 
-    it('a contributor who owns neither profile cannot settle the pair: nothing recorded, the Scan decides', async () => {
+    it('a contributor who owns neither profile cannot settle the pair: it opens for the owners, and the helper is told who', async () => {
         session.user = STRANGER;
-        expect(await addNew(['r1'])).toMatchObject({ ok: true, createdProfile: true });
+        const res = await addNew(['r1']);
+        expect(res).toMatchObject({ ok: true, createdProfile: true });
         const created = newProfileId('Rosa Diaz');
-        expect(pairRows(created, 'r1')).toEqual([]);
+        expect(pairRows(created, 'r1').map(r => r.status)).toEqual(['pending']);
+        expect((res as { asked?: Array<{ otherName: string; ownerLabels: string[] }> }).asked).toEqual([
+            expect.objectContaining({ otherName: 'Rosa Diaz', ownerLabels: expect.arrayContaining([expect.any(String)]) }),
+        ]);
     });
 });

@@ -264,6 +264,10 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                     ? fill(t('adopter.hh_added_body_others'), { host: hostName, others: joinNames(t, othersInHome) })
                     : fill(t('adopter.hh_added_body'), { host: hostName }));
             if (res.autoRequestFiled) toast.info(t('adopter.ce_add_toast_added_with_request'));
+            // A «No» this rescuer may not settle went to the owners (consistency rule): say who.
+            for (const a of res.asked ?? []) {
+                toast.info(fill(t('adopter.hh_asked_owners'), { owners: joinNames(t, a.ownerLabels), name: who, other: a.otherName }));
+            }
             fail.partial(res.warningErrorId);
             onDone();
             router.refresh();

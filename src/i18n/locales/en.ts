@@ -1138,6 +1138,8 @@ export const en = {
         hh_added_title: '{name} was added to the household',
         hh_added_body: 'They are now listed in {host}\'s household.',
         hh_added_body_others: 'They are now listed in {host}\'s household, and on {others}\'s profile too.',
+        hh_asked_owners: 'We asked {owners} whether {name} is the same person as {other}.',
+        dup_hint_asked_owners: 'We asked {owners} whether this is the same person as {other}.',
         hh_gift_form_title: 'Gift recipient (as the form says)',
         hh_gift_form_body: 'This is how {giver} wrote it in the form. We don\'t know whether the name and phone are that person\'s or {giver}\'s.',
         hh_gift_title: 'Gift recipient',

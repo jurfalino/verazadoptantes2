@@ -1146,6 +1146,8 @@ export const es = {
         hh_added_title: '{name} se agregó al hogar',
         hh_added_body: 'Ahora figura en el hogar de {host}.',
         hh_added_body_others: 'Ahora figura en el hogar de {host}, también en el perfil de {others}.',
+        hh_asked_owners: 'Le preguntamos a {owners} si {name} es la misma persona que {other}.',
+        dup_hint_asked_owners: 'Le preguntamos a {owners} si es la misma persona que {other}.',
         hh_gift_form_title: 'Destinatario del regalo (según el formulario)',
         hh_gift_form_body: 'Así lo escribió {giver} en el formulario. No sabemos si el nombre y el teléfono son de esa persona o de {giver}.',
         hh_gift_title: 'Destinatario del regalo',
