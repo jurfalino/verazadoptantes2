@@ -22,6 +22,8 @@ import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdPerson } from './households';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
+import { loadHiddenPairKeys, loadOpenPairs } from '@/lib/openPairs';
+import type { DuplicateCandidate } from '@/types/duplicates';
 import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, type CardHousehold } from '@/domain/households';
 
 /**
@@ -250,18 +252,7 @@ export async function markContractKeepNew(adopterId: string): Promise<{ success:
     }
 }
 
-export interface DuplicateCandidate {
-    id: string;
-    otherAdopterId: string;
-    otherAdopterName: string;
-    matchTypes: string[];
-    score: number;
-    confidence: string;
-    /** Normalised 0–100 confidence percentage derived from score / PRACTICAL_MAX_DUPLICATE. */
-    confidencePercent: number;
-    /** The pair is on the viewer's «Pendientes de revisar» list: they created either side and didn't take it off. */
-    onViewerList: boolean;
-}
+export type { DuplicateCandidate } from '@/types/duplicates';
 
 /**
  * Get pending duplicate candidates for a given adopter.
@@ -279,70 +270,7 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
         const db = await getDb();
         if (!db) return [];
 
-        const candidates = await db.select({
-            id: duplicateCandidates.id,
-            adopter1Id: duplicateCandidates.adopter1Id,
-            adopter2Id: duplicateCandidates.adopter2Id,
-            matchTypes: duplicateCandidates.matchTypes,
-            score: duplicateCandidates.score,
-            confidence: duplicateCandidates.confidence,
-        })
-            .from(duplicateCandidates)
-            .where(and(
-                eq(duplicateCandidates.status, 'pending'),
-                or(
-                    eq(duplicateCandidates.adopter1Id, adopterId),
-                    eq(duplicateCandidates.adopter2Id, adopterId),
-                ),
-                // A housemate is never a duplicate candidate (a pair detected before
-                // they shared a household). In SQL, so housemates can't fill the cap.
-                sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
-            ))
-            // Strongest first, so weak pairs can't crowd a strong one out of the cap.
-            .orderBy(sql`${duplicateCandidates.score} DESC`)
-            .limit(5);
-
-        if (candidates.length === 0) return [];
-
-        // Get names for the "other" adopter in each pair. A profile merged away
-        // (deletedAt set) or gone drops out: there is nothing left to open.
-        const otherIds = candidates.map((c: { adopter1Id: string; adopter2Id: string }) =>
-            c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id
-        );
-        const [otherAdopters, self, hidden] = await Promise.all([Promise.all(
-            otherIds.map((id: string) =>
-                db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy })
-                    .from(adopters)
-                    .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
-                    .get()
-            )
-        ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
-        loadHiddenPairKeys(db, viewer)]);
-        const nameMap = new Map<string, string>();
-        const ownerMap = new Map<string, string | null>();
-        for (const a of otherAdopters) {
-            if (a) { nameMap.set(a.id, a.name); ownerMap.set(a.id, a.addedBy); }
-        }
-        // The same test as the feed's `listed` (owns either side), minus the pairs the viewer hid.
-        const onViewerList = (otherId: string) =>
-            (self?.addedBy === viewer || ownerMap.get(otherId) === viewer) && !hidden.has(pairKey(adopterId, otherId));
-
-        return candidates
-            .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
-            .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
-                const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
-                return {
-                    id: c.id,
-                    otherAdopterId: otherId,
-                    otherAdopterName: nameMap.get(otherId)!,
-                    matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
-                    score: c.score,
-                    confidence: c.confidence,
-                    confidencePercent: storedScoreToPercent(c.score),
-                    onViewerList: onViewerList(otherId),
-                };
-            })
-            .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
+        return await loadOpenPairs(db, adopterId, viewer, { includeLow: true });
     } catch (error) {
         logger.warn('getDuplicateCandidates failed', {
             adopterId,
@@ -520,25 +448,6 @@ async function loadRequestsByPair(
     return byPair;
 }
 
-/**
- * The pairs this viewer took off their list («Quitar de la lista», D27). One
- * query. A failed lookup shows them again rather than taking out the feed.
- */
-async function loadHiddenPairKeys(
-    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-    actorEmail: string,
-): Promise<Set<string>> {
-    try {
-        const rows = await db.select({ pairKey: pendingPairHidden.pairKey }).from(pendingPairHidden)
-            .where(eq(pendingPairHidden.viewerEmail, normEmail(actorEmail))).all() as Array<{ pairKey: string }>;
-        return new Set(rows.map(r => r.pairKey));
-    } catch (e) {
-        logger.warn('getPendingDuplicatesForUser: hidden pairs unreadable, showing them', {
-            actorEmail, error: e instanceof Error ? e.message : String(e),
-        });
-        return new Set();
-    }
-}
 
 /**
  * Display names (else nothing — callers fall back to the email handle) for the
