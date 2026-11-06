@@ -5,7 +5,7 @@ import type { OpenAlertKind } from '@/domain/flags';
 import { photoLinks } from '@/domain/formPhotos';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
-import { notifications, adopters, formSubmissions, adopterImages, adoptions } from '@/db/schema';
+import { notifications, adopters, animals, formSubmissions, adopterImages, adoptions } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
@@ -14,6 +14,7 @@ import FormResultsContent from '@/components/FormResultsContent';
 import { canAccessFormSubmission } from '@/app/actions/_applicants';
 import { logger } from '@/lib/logger';
 import { loadOpenPairs } from '@/lib/openPairs';
+import { formBackLink } from '@/domain/formBackLink';
 import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
@@ -49,7 +50,7 @@ interface NotificationMetadata {
 
 
 
-export default async function FormResultsPage({ params }: { params: Promise<{ submissionId: string }> }) {
+export default async function FormResultsPage({ params, searchParams }: { params: Promise<{ submissionId: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
     const { submissionId } = await params;
     let currentUser = '';
     try {
@@ -342,8 +343,28 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         return { ...rest, photos: photoLinks(submission.id, photoKeys) };
     })() : submission;
 
+    // Back link: names the screen the rescuer came from (`?from=`), but only a
+    // profile or animal that belongs to THIS form gets named (spec 2026-11-05).
+    const fromParam = (await searchParams)?.from;
+    const from = typeof fromParam === 'string' ? fromParam : null;
+    const backNames: { adopter?: string | null; animal?: string | null } = {};
+    {
+        const [fromKind, fromId] = (from ?? '').split(':', 2);
+        try {
+            if (fromKind === 'adopter' && fromId && (fromId === submission?.linkedAdopterId || fromId === submission?.autoAdopterId)) {
+                backNames.adopter = (await db.select({ name: adopters.name }).from(adopters).where(and(eq(adopters.id, fromId), isNull(adopters.deletedAt))).get())?.name ?? null;
+            } else if (fromKind === 'animal' && fromId && fromId === ownerCheck?.selectedAnimalId) {
+                backNames.animal = (await db.select({ name: animals.name }).from(animals).where(eq(animals.id, fromId)).get())?.name ?? null;
+            }
+        } catch (e) {
+            logger.warn('form-results: back-link name lookup failed, back to Mis adoptantes', { submissionId, user: currentUser, from, error: e instanceof Error ? e.message : String(e) });
+        }
+    }
+    const back = formBackLink(from, backNames);
+
     return (
         <FormResultsContent
+            back={back}
             submitted={submitted}
             submission={submissionView}
             fullAnswers={fullAnswers}

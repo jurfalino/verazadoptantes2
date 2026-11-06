@@ -110,7 +110,7 @@ function FormLine({ form, onOpen, t }: {
     }
     return (
         <a
-            href={`/form-results/${form.submissionId}`}
+            href={`/form-results/${form.submissionId}?from=adopters`}
             onClick={(e) => { e.preventDefault(); onOpen(form.submissionId); }}
             className={`flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium hover:underline underline-offset-2 ${ROW_CONTROL}`}
         >
@@ -268,7 +268,7 @@ export default function MyAdoptersPage() {
         setFilterState(next);
         router.replace(next === 'all' ? '/my-adopters' : `/my-adopters?filtro=${FILTERS[next]}`, { scroll: false });
     };
-    const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}`);
+    const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}?from=adopters`);
     const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
     const [loading, setLoading] = useState(true);

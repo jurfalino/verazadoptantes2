@@ -65,6 +65,10 @@ test.describe('/my-adopters — people who filled a form', () => {
         const secondRow = rows.filter({ has: page.locator(`a[href*="/form-results/${secondId}"]`) });
         await secondRow.getByRole('link', { name: /General form|Formulario general|Formulário geral/ }).click();
         await expect(page).toHaveURL(new RegExp(`/form-results/${secondId}`), { timeout: 30_000 });
+        // «←» names where we came from (spec 2026-11-05), not «Mis animales».
+        const back = page.getByTestId('form-back-link');
+        await expect(back).toHaveText(/My adopters|Mis adoptantes|Meus adotantes/);
+        await expect(back).toHaveAttribute('href', '/my-adopters');
         await expect(page.getByTestId('form-status-banner')).toHaveAttribute('data-state', 'review_matches');
 
         // Back keeps the filter (it lives in the URL), and "Todos" shows everyone again.

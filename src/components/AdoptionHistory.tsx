@@ -497,7 +497,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         const formSubmissionId = adoption.sourceUrl!.replace('form:', '');
                                         return (
                                             <a
-                                                href={`/form-results/${formSubmissionId}`}
+                                                href={`/form-results/${formSubmissionId}?from=adopter:${encodeURIComponent(adopterId)}`}
                                                 className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
                                                 onClick={e => e.stopPropagation()}
                                             >

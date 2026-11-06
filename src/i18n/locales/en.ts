@@ -2396,6 +2396,8 @@ export const en = {
     },
     formResults: {
         back_to_animals: 'Back to My Animals',
+        back_to_adopters: 'My adopters',
+        back_to_name: '{name}',
         title: 'Form responses',
         completed_by: 'Completed by',
         status_linked: 'This response is linked to an adopter profile',

@@ -2403,6 +2403,8 @@ export const es = {
     },
     formResults: {
         back_to_animals: 'Mis animales',
+        back_to_adopters: 'Mis adoptantes',
+        back_to_name: '{name}',
         title: 'Respuestas del formulario',
         completed_by: 'Completado por',
         status_linked: 'Esta respuesta está vinculada a un perfil de adoptante',

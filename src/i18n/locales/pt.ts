@@ -2402,6 +2402,8 @@ export const pt = {
     },
     formResults: {
         back_to_animals: 'Meus animais',
+        back_to_adopters: 'Meus adotantes',
+        back_to_name: '{name}',
         title: 'Respostas do formulário',
         completed_by: 'Preenchido por',
         status_linked: 'Esta resposta está vinculada a um perfil de adotante',

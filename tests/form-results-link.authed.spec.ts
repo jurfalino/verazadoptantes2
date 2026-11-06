@@ -245,7 +245,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(tomas.getByTestId('household-member-label')).toContainText(/3 years old|3 años|3 anos/);
         await expect(tomas.getByTestId('minor-tag')).toBeVisible();
         await expect(tomas.getByTestId('household-member-profile-link')).toHaveAttribute('href', /\/adopter\//);
-        await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
+        await expect(page.locator(`a[href^="/form-results/${submissionId}"]`).first()).toBeVisible();
     });
 
     test("gift: only the fully named recipient reaches the giver's profile; the recipient's housemates stay on the form", async ({ page, request }) => {

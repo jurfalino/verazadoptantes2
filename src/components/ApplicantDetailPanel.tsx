@@ -148,7 +148,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         </span>
     ) : !applicant.adopterId ? (
         <Link
-            href={`/form-results/${applicant.submissionId}`}
+            href={`/form-results/${applicant.submissionId}?from=animal:${encodeURIComponent(animalId)}`}
             className="w-full flex items-center justify-center px-4 py-3 rounded-xl bg-stone-700 text-white font-semibold hover:bg-stone-600 transition-colors"
         >
             {t('myAnimals.applicants_view_form') || 'Ver formulario'}
@@ -332,7 +332,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                                 variant="inline"
                             />
                             <a
-                                href={`/form-results/${applicant.submissionId}`}
+                                href={`/form-results/${applicant.submissionId}?from=animal:${encodeURIComponent(animalId)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:text-teal-800 mt-1"
