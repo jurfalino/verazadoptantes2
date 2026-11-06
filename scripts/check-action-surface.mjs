@@ -403,9 +403,10 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // 175 = 174 + 1. 2026-11-06 answerNotSamePerson (src/app/actions/notSamePerson.ts; spec
 // .agents/plans/2026-11-05-form-matches-are-duplicates.md «Consistency rule»): session required;
 // adopterId must be a live profile; ids trimmed/capped (≤10, never itself); the server re-runs the
-// duplicate search for that profile (or the typed contact) and only ids it offers count; it settles a
-// pair only for whoever loaded either profile or an admin, otherwise it opens a pending pair for the
-// owners when none exists. Never touches a settled pair.
+// duplicate search for the given input (the profile's data, or the typed contact) and only ids it
+// offers count — proof the other looks like the INPUT. It settles a pair only for whoever loaded either
+// profile (with a typed contact: only adopterId's owner) or an admin; otherwise it opens a pending pair
+// for the owners when none exists — no more than flagAdopterAsDuplicate allows. Never touches a settled pair.
 const EXPECTED_ACTIONS = 175;
 
 let manifest;

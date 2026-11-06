@@ -20,10 +20,13 @@ export type AnswerNotSamePersonResult =
  * form (spec 2026-11-06, consistency rule): the same answer as «Mantener separados».
  *
  * Safe with arguments a stranger chooses: a session is required; `adopterId` must
- * be a live profile; the server re-runs the duplicate search for that profile (or
- * for the contact being `typed` on it) and only ids it offers count. Whether the
- * answer settles the pair or opens it for the owners is settleNotSamePerson's rule
- * (the person who loaded either profile, or an admin).
+ * be a live profile; the server re-runs the duplicate search for the given input —
+ * the profile's own data, or the contact being `typed` on it — and only ids that
+ * search offers count. That proves the other profile looks like the INPUT, not
+ * necessarily like `adopterId`, so with `typed` only whoever loaded `adopterId` (or
+ * an admin) settles; anyone else only opens the pair for the owners, which is no
+ * more than «Marcar como posible duplicado» already allows. Without `typed`, whoever
+ * loaded either profile settles (settleNotSamePerson).
  */
 export async function answerNotSamePerson(input: {
     adopterId: string;
@@ -67,8 +70,11 @@ export async function answerNotSamePerson(input: {
         const settled = await settleNotSamePerson(db, {
             actor, adopterId, rejectedIds,
             offered: offered.results.map(r => ({ adopterId: r.adopterId, matchTypes: r.matchTypes })), ctx,
+            // A typed contact proves nothing about `adopterId`: only its owner (or an admin) settles.
+            settleBy: typed ? 'subject' : 'either',
         });
-        logger.info('answerNotSamePerson: answered', { ...ctx, recorded: settled.recorded.length, asked: settled.asked.length, dropped: settled.dropped });
+        logger.info('answerNotSamePerson: answered', { ...ctx, recorded: settled.recorded.length, asked: settled.asked.length, dropped: settled.dropped, failed: settled.failed.length });
+        if (settled.failed.length) return { ok: false, error: 'failed', ...(settled.errorId ? { errorId: settled.errorId } : {}) };
         return { ok: true, recorded: settled.recorded.length, asked: settled.asked.map(a => ({ otherName: a.otherName, ownerLabels: a.ownerLabels })) };
     } catch (e) {
         return { ok: false, error: 'failed', errorId: logger.error('answerNotSamePerson failed', e, ctx) };

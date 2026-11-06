@@ -67,4 +67,18 @@ describe('settleNotSamePerson', () => {
         expect(r.asked).toEqual([]);
         expect(rows()).toEqual([{ a: 'new', b: 'old', status: 'merged', confidence: 'low' }]);
     });
+
+    it('a failed write is reported with an error id, never counted as saved', async () => {
+        sqlite.prepare('DROP TABLE duplicate_candidates').run();
+        const r = await run('north@x.org', ['old']);
+        expect(r.recorded).toEqual([]);
+        expect(r.failed).toEqual(['old']);
+        expect(r.errorId).toBeTruthy();
+    });
+
+    it('the contact being typed: only who loaded THIS profile (or an admin) settles; the other side\'s owner only asks', async () => {
+        const r = await settleNotSamePerson(db as never, { actor: 'east@x.org', adopterId: 'new', rejectedIds: ['old'], offered, ctx: {}, settleBy: 'subject' });
+        expect(r.recorded).toEqual([]);
+        expect(rows()).toEqual([{ a: 'new', b: 'old', status: 'pending', confidence: 'medium' }]);
+    });
 });

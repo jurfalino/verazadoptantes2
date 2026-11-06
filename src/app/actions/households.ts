@@ -567,6 +567,8 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                         offered: offered.results.map(r => ({ adopterId: r.adopterId, matchTypes: r.matchTypes })), ctx: out,
                     });
                     if (settled.asked.length) asked = settled.asked.map(a => ({ otherName: a.otherName, ownerLabels: a.ownerLabels }));
+                    // The person is added; a «no» we couldn't save is said with its id (fail.partial).
+                    if (settled.failed.length) warningErrorId = settled.errorId ?? warningErrorId;
                 }
             } catch (e) {
                 logger.error('addHouseholdPerson: «no es la misma persona» not recorded (the add stands)', e, out);

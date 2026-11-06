@@ -41,7 +41,8 @@ async function ownerLabel(email: string | null, viewer: string): Promise<string 
  * - Anyone else: the pair is opened for the owners (a pending, medium row, so it shows
  *   in «Pendientes») when none exists yet, and the caller is told who was asked.
  * - A pair already settled (dismissed / merged) is never touched.
- * Never throws: a failure is logged with `ctx`; the caller's own action stands.
+ * Never throws: an id it could not save comes back in `failed` with the logged errorId,
+ * so the caller says so; the caller's own action stands.
  */
 export async function settleNotSamePerson(db: Db, input: {
     actor: string;
@@ -49,23 +50,44 @@ export async function settleNotSamePerson(db: Db, input: {
     rejectedIds: readonly unknown[] | undefined;
     offered: ReadonlyArray<{ adopterId: string; matchTypes?: string[] }>;
     ctx: Record<string, unknown>;
-}): Promise<{ recorded: string[]; asked: NotSamePersonAsked[]; dropped: number }> {
+    /**
+     * Who may settle: 'either' (default) — whoever loaded either profile, as «Mantener
+     * separados»; 'subject' — only whoever loaded `adopterId` (or an admin). The contact
+     * window uses 'subject': its search runs on a contact the caller typed, which proves
+     * nothing about `adopterId`, so the other side's owner may only ask (review 2026-11-06).
+     */
+    settleBy?: 'either' | 'subject';
+}): Promise<{ recorded: string[]; asked: NotSamePersonAsked[]; dropped: number; failed: string[]; errorId?: string }> {
     const { actor, adopterId, ctx } = input;
     const { kept, dropped } = keepOffered((input.rejectedIds ?? []).slice(0, 10), input.offered.map(o => o.adopterId).filter(id => id !== adopterId));
     if (dropped) logger.warn('settleNotSamePerson: rejected id not offered, ignored', { ...ctx, actor, adopterId, dropped });
     const recorded: string[] = [];
     const asked: NotSamePersonAsked[] = [];
-    if (kept.length === 0) return { recorded, asked, dropped };
+    const failed: string[] = [];
+    let errorId: string | undefined;
+    const result = () => ({ recorded, asked, dropped, failed, ...(errorId ? { errorId } : {}) });
+    if (kept.length === 0) return result();
+    const row = (id: string) => db.select({ name: adopters.name, addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get() as Promise<{ name: string; addedBy: string | null } | undefined>;
+    let self: { name: string; addedBy: string | null } | undefined;
+    let admin = false;
     try {
-        const row = (id: string) => db.select({ name: adopters.name, addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get() as Promise<{ name: string; addedBy: string | null } | undefined>;
-        const [self, admin] = await Promise.all([row(adopterId), isAdminAsync(actor)]);
-        if (!self) return { recorded, asked, dropped };
-        for (const otherId of kept) {
+        [self, admin] = await Promise.all([row(adopterId), isAdminAsync(actor)]);
+    } catch (e) {
+        failed.push(...kept);
+        errorId = logger.error('settleNotSamePerson: profiles unreadable, «no» not saved', e, { ...ctx, actor, adopterId });
+        return result();
+    }
+    if (!self) return result();
+    // One id at a time: a failure on one never skips the rest, and each is reported.
+    for (const otherId of kept) {
+        try {
             const other = await row(otherId);
             if (!other) continue;
-            if (admin || sameEmail(self.addedBy, actor) || sameEmail(other.addedBy, actor)) {
-                await recordSeparatePairs(db, adopterId, [otherId], actor, { ...ctx, adopterId });
-                recorded.push(otherId);
+            const settles = admin || sameEmail(self.addedBy, actor) || (input.settleBy !== 'subject' && sameEmail(other.addedBy, actor));
+            if (settles) {
+                const wrote = await recordSeparatePairs(db, adopterId, [otherId], actor, { ...ctx, adopterId });
+                if (wrote.failed.length) { failed.push(otherId); errorId = wrote.errorId ?? errorId; }
+                else recorded.push(otherId);
                 continue;
             }
             const existing = await db.select({ id: duplicateCandidates.id }).from(duplicateCandidates)
@@ -82,9 +104,10 @@ export async function settleNotSamePerson(db: Db, input: {
             });
             const labels = (await Promise.all([ownerLabel(self.addedBy, actor), ownerLabel(other.addedBy, actor)])).filter((l): l is string => !!l);
             asked.push({ otherId, otherName: other.name, ownerLabels: [...new Set(labels)] });
+        } catch (e) {
+            failed.push(otherId);
+            errorId = logger.error('settleNotSamePerson: «no es la misma persona» not saved', e, { ...ctx, actor, adopterId, otherId });
         }
-    } catch (e) {
-        logger.error('settleNotSamePerson: «no es la misma persona» not saved', e, { ...ctx, actor, adopterId });
     }
-    return { recorded, asked, dropped };
+    return result();
 }

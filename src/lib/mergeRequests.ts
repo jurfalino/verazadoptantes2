@@ -371,7 +371,8 @@ async function settleOtherRequestsOnPair(db: Db, req: RequestRow, actor: string,
  * profile the rescuer rejected are two people. An open pair is dismissed; with
  * no row yet, a dismissed one is written — so the Scan (which skips dismissed
  * keys) and the save-time matcher (which skips existing pairs) never ask again.
- * Settled pairs (dismissed / merged) are left alone. Never throws: the add stands.
+ * Settled pairs (dismissed / merged) are left alone. Never throws: the ids it could not
+ * write come back in `failed`, with the logged errorId, for the caller to say so.
  */
 export async function recordSeparatePairs(
     db: Db,
@@ -379,7 +380,9 @@ export async function recordSeparatePairs(
     otherIds: readonly string[],
     actor: string,
     ctx: Record<string, unknown> = {},
-): Promise<void> {
+): Promise<{ failed: string[]; errorId?: string }> {
+    const failed: string[] = [];
+    let errorId: string | undefined;
     for (const other of otherIds) {
         if (!other || other === newId) continue;
         try {
@@ -406,9 +409,11 @@ export async function recordSeparatePairs(
                 resolvedBy: actor, resolvedAt: new Date(),
             });
         } catch (e) {
-            logger.error('recordSeparatePairs: «no es la misma persona» not recorded', e, { ...ctx, actor, newId, otherId: other });
+            failed.push(other);
+            errorId = logger.error('recordSeparatePairs: «no es la misma persona» not recorded', e, { ...ctx, actor, newId, otherId: other });
         }
     }
+    return { failed, ...(errorId ? { errorId } : {}) };
 }
 
 /**

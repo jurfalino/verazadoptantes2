@@ -105,4 +105,18 @@ describe('answerNotSamePerson — one «no es esta persona» for the contact win
         expect(await answerNotSamePerson({ adopterId: 'mine', rejectedIds: ['r1'] })).toEqual({ ok: false, error: 'not_authenticated' });
         expect(pair('mine', 'r1')).toEqual([]);
     });
+
+    it('the typed contact proves nothing about the profile: the other side\'s owner only asks, never settles', async () => {
+        session.user = OTHER; // loaded r1, not «bare»
+        const res = await answerNotSamePerson({ adopterId: 'bare', rejectedIds: ['r1'], typed: { type: 'phone', value: PHONE } });
+        expect(res).toMatchObject({ ok: true, recorded: 0 });
+        expect(pair('bare', 'r1')).toEqual(['pending']);
+    });
+
+    it('a failed write is an error with its id — never a silent success', async () => {
+        sqlite.prepare('DROP TABLE duplicate_candidates').run();
+        const res = await answerNotSamePerson({ adopterId: 'mine', rejectedIds: ['r1'] });
+        expect(res).toMatchObject({ ok: false, error: 'failed' });
+        expect((res as { errorId?: string }).errorId).toBeTruthy();
+    });
 });
