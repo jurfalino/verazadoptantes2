@@ -393,7 +393,14 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // replaces already answered. Never logs a value.
 // 172 = 171 + 1.
 // 173 = 172 + 1. 2026-11-02 matchImportRow — sheet import identity verdict (spec docs/superpowers/specs/2026-11-02-identity-verdict-design.md).
-const EXPECTED_ACTIONS = 173;
+// 175 = 173 + 2. 2026-11-04 homepage modules (.agents/plans/2026-11-04-home-modules.md),
+// src/app/actions/homeModules.ts: +getHomeModules() — session required (null without one);
+// reads only what /my-adopters, /my-animals and the «Pendientes de revisar» section already
+// show the caller, with the same scopes (getOrgMemberEmails / myAnimalsScope /
+// getPendingDuplicatesForUser), counts + ≤3 rows per card; +hideHomeFirstSteps() — session
+// required, takes no input, writes only the caller's own user_profiles.home_prefs.
+// 174 = 175 − 1. 2026-11-05 hideHomeFirstSteps removed with the «Ocultar» button (Jon).
+const EXPECTED_ACTIONS = 174;
 
 let manifest;
 try {

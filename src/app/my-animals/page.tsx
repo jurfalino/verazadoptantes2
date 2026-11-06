@@ -9,8 +9,6 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { actorLabel } from '@/lib/userDisplay';
-import { interpolate } from '@/lib/interpolate';
-import { dueWhenText } from '@/lib/dueWhenText';
 import { formatAge } from '@/lib/ageUtils';
 import ShareFormMenu from '@/components/ShareFormMenu';
 import AnimalShareSheet from '@/components/AnimalShareSheet';
@@ -18,7 +16,8 @@ import AnimalListingToggle from '@/components/AnimalListingToggle';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
-import { myAnimalsTabCount } from '@/lib/myAnimalsTabCount';
+import { myAnimalsTabCount, type MyAnimalsTabCounts } from '@/lib/myAnimalsTabCount';
+import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
 
 interface AnimalImage {
@@ -86,8 +85,11 @@ export default function MyAnimalsPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [speciesFilter, setSpeciesFilter] = useState<string>('all');
-    /** Both tabs' totals, so the tab you are not on shows a number, not "...". */
-    const [tabCounts, setTabCounts] = useState<{ available: number; adopted: number } | null>(null);
+    /** Every tab's total, so the tab you are not on shows a number, not "...". */
+    const [tabCounts, setTabCounts] = useState<MyAnimalsTabCounts | null>(null);
+    /** «Con controles pendientes»: comes with every tab's list (x-pending-count), not with ?counts=1. */
+    const [pendingCount, setPendingCount] = useState<number | null>(null);
+    const counts: MyAnimalsTabCounts | null = tabCounts ? { ...tabCounts, ...(pendingCount != null ? { pending: pendingCount } : {}) } : null;
 
     useEffect(() => {
         async function fetchAnimals() {
@@ -104,6 +106,8 @@ export default function MyAnimalsPage() {
                     const unique = Array.from(new Map(data.map(a => [a.id, a])).values());
                     setAnimals(unique);
                     setLoadedView(view);
+                    const pending = res.headers.get('x-pending-count');
+                    if (pending != null) setPendingCount(Number(pending));
                 } else {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
@@ -122,7 +126,7 @@ export default function MyAnimalsPage() {
                     console.warn('my-animals: tab counts unavailable', { view, status: res.status });
                     return;
                 }
-                setTabCounts(await res.json() as { available: number; adopted: number });
+                setTabCounts(await res.json() as MyAnimalsTabCounts);
             } catch (e) {
                 console.warn('my-animals: tab counts failed', { view, error: e instanceof Error ? e.message : String(e) });
             }
@@ -249,7 +253,7 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        🏠 {t('dashboard.available') || 'Available'} ({myAnimalsTabCount('available', view, loadedView, animals.length, tabCounts)})
+                        🏠 {t('dashboard.available') || 'Available'} ({myAnimalsTabCount('available', view, loadedView, animals.length, counts)})
                     </Link>
                     <Link
                         href="/my-animals?view=adopted"
@@ -258,8 +262,38 @@ export default function MyAnimalsPage() {
                             : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
                             }`}
                     >
-                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({myAnimalsTabCount('adopted', view, loadedView, animals.length, tabCounts)})
+                        ✅ {t('dashboard.already_adopted') || 'Already Adopted'} ({myAnimalsTabCount('adopted', view, loadedView, animals.length, counts)})
                     </Link>
+                    {/* «Todos»: both tabs, newest activity first — where the homepage's
+                        «Ver los N animales» lands. */}
+                    <Link
+                        href="/my-animals?view=todos"
+                        data-testid="tab-todos"
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'todos'
+                            ? 'bg-stone-800 text-white shadow-sm'
+                            : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
+                            }`}
+                    >
+                        {t('dashboard.all_animals_tab') || 'Todos'} ({myAnimalsTabCount('todos', view, loadedView, animals.length, counts)})
+                    </Link>
+                    {/* «Con controles pendientes»: where the homepage's «N animales más con
+                        controles pendientes» lands — those animals are otherwise split
+                        between the two tabs above. Only while there is one (or you are on it). */}
+                    {(view === 'pendientes' || (pendingCount ?? 0) > 0) && (
+                        <Link
+                            href="/my-animals?view=pendientes"
+                            data-testid="tab-pendientes"
+                            className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'pendientes'
+                                ? 'bg-stone-800 text-white shadow-sm'
+                                : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
+                                }`}
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {t('dashboard.pending_followups_tab') || 'Con controles pendientes'} ({myAnimalsTabCount('pendientes', view, loadedView, animals.length, counts)})
+                        </Link>
+                    )}
                 </div>
 
                 {/* Search & Filters */}
@@ -323,18 +357,22 @@ export default function MyAnimalsPage() {
                             <span className="text-3xl">🐾</span>
                         </div>
                         <h3 className="text-xl font-semibold text-stone-900 mb-2">
-                            {view === 'available'
+                            {view === 'available' || view === 'todos'
                                 ? (t('dashboard.no_animals_title') || 'No animals listed yet')
-                                : (t('dashboard.no_adopted_animals') || 'No animals adopted yet')
+                                : view === 'pendientes'
+                                    ? (t('dashboard.no_pending_followups_title') || 'No hay controles pendientes')
+                                    : (t('dashboard.no_adopted_animals') || 'No animals adopted yet')
                             }
                         </h3>
                         <p className="text-stone-500 mb-6">
-                            {view === 'available'
+                            {view === 'available' || view === 'todos'
                                 ? (t('dashboard.no_animals_desc') || 'Add animals you want to give for adoption and share the adoption contract with potential adopters.')
-                                : (t('dashboard.no_adopted_desc') || 'Animals that have been adopted by someone will appear here.')
+                                : view === 'pendientes'
+                                    ? (t('dashboard.no_pending_followups_desc') || 'Cuando venza un control de un animal adoptado o en tránsito, aparece acá.')
+                                    : (t('dashboard.no_adopted_desc') || 'Animals that have been adopted by someone will appear here.')
                             }
                         </p>
-                        {view === 'available' && (
+                        {(view === 'available' || view === 'todos') && (
                             <Link
                                 href="/my-animals/new"
                                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-700 text-white font-semibold rounded-xl hover:bg-teal-600 transition-colors shadow-lg shadow-teal-700/20"
@@ -508,22 +546,7 @@ export default function MyAnimalsPage() {
                                             className="flex items-start gap-1.5 w-full px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
                                             data-testid={`due-badge-${animal.id}`}
                                         >
-                                            {(() => {
-                                                // Name the action instead of only counting it: "1 pendiente"
-                                                // made the rescuer open the animal just to find out what.
-                                                const top = animal.dueTop;
-                                                const extra = animal.dueFollowups - 1;
-                                                if (!top) {
-                                                    return `${animal.dueFollowups} ${animal.dueFollowups === 1
-                                                        ? (t('followups.pending_one') || 'pendiente')
-                                                        : (t('followups.pending_many') || 'pendientes')}`;
-                                                }
-                                                const label = (top.copyKey === 'checkin_custom' || top.copyKey === 'foster_checkin')
-                                                    ? interpolate(t(`followups.${top.copyKey}`) || '{days}', { days: top.offsetDays ?? '' })
-                                                    : (t(`followups.${top.copyKey}`) || top.copyKey);
-                                                const when = dueWhenText(t, top.dueDate, Date.now());
-                                                return `${label} · ${when}${extra > 0 ? ` +${extra}` : ''}`;
-                                            })()}
+                                            {followupBadgeLabel(t, animal.dueFollowups, animal.dueTop, Date.now())}
                                         </Link>
                                     )}
                                     {/* Sits with the card's other state rows («Adoptado por»,

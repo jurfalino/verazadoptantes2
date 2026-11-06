@@ -5,13 +5,14 @@ import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { FileText, AlertCircle, Search } from 'lucide-react';
+import { FileText, AlertCircle, Search, Share2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 // formatShortDate dropped in v2.19.13 — the provenance cell uses relative
-// time (timeAgo helper below) so absolute dates moved to tooltips.
+// time (src/lib/timeAgo.ts) so absolute dates moved to tooltips.
 import { useShowToast } from '@/components/ui/Toast';
+import { timeAgo, timeAgoSeconds } from '@/lib/timeAgo';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { AdopterName } from '@/components/AdopterName';
@@ -70,10 +71,17 @@ interface Adopter {
     latestForm?: { submissionId: string; submittedAt: number; animalName: string | null; ownedByViewer: boolean } | null;
     /** Someone in their home (getMyAdopters → housemateAlertsFor): the two chip answers only, never names. Null when none. */
     housemateAlert?: HousemateAlertSummary | null;
+    /** Has a record that came from a social post (domain/homeModules isPostRecord). */
+    fromPost?: boolean;
 }
 
-/** `?filtro=formularios` — kept in the URL so Back and shared links keep the view. */
-const FORMS_FILTER = 'formularios';
+/**
+ * `?filtro=formularios` / `por-revisar` / `posts` — kept in the URL so Back,
+ * shared links and the homepage cards («N formularios por revisar», «Ver las
+ * N personas») open the list already filtered, with the same count.
+ */
+const FILTERS = { forms: 'formularios', review: 'por-revisar', posts: 'posts' } as const;
+type Filter = 'all' | keyof typeof FILTERS;
 
 /**
  * The person's newest form as a provenance event: "Formulario para Luna ·
@@ -276,65 +284,22 @@ function ProvenanceLine({
     );
 }
 
-/**
- * v2.19.13 relative-time helper for the provenance cell. Compact strings —
- * "ahora", "hace 12 min", "hace 3 h", "hace 5 d", "hace 2 sem", "hace 4 mes",
- * "hace 1 año" — keep the cell at a glance and the tooltip carries the
- * absolute timestamp for precision.
- *
- * v2.19.14 PROD HOTFIX: input can also be a string. Drizzle columns with
- * `mode: 'timestamp'` return Date objects server-side, but
- * `NextResponse.json()` serialises Dates to ISO strings, so the client
- * receives `createdAt` / `updatedAt` as strings — not numbers, not Dates.
- * The Adopter interface previously typed these as `number | null` which
- * was the lie that crashed prod with "getTime is not a function". Now
- * we accept all three input shapes and normalise to seconds-epoch.
- */
-function timeAgoSeconds(input: number | Date | string | null | undefined): number {
-    if (input === null || input === undefined || input === '') return 0;
-    if (typeof input === 'number') return input;
-    if (input instanceof Date) return Math.floor(input.getTime() / 1000);
-    // string: try ISO first, then epoch-as-string
-    const isoMs = Date.parse(input);
-    if (Number.isFinite(isoMs)) return Math.floor(isoMs / 1000);
-    const asNum = Number(input);
-    return Number.isFinite(asNum) ? asNum : 0;
-}
-
-function timeAgo(input: number | Date | string | null | undefined, isEs: boolean): string {
-    const sec = timeAgoSeconds(input);
-    if (!sec) return '';
-    const now = Math.floor(Date.now() / 1000);
-    const diff = Math.max(0, now - sec);
-    const mins = Math.floor(diff / 60);
-    const hrs = Math.floor(mins / 60);
-    const days = Math.floor(hrs / 24);
-    const weeks = Math.floor(days / 7);
-    const months = Math.floor(days / 30);
-    const years = Math.floor(days / 365);
-    if (mins < 1) return isEs ? 'ahora' : 'just now';
-    if (mins < 60) return isEs ? `hace ${mins} min` : `${mins}m ago`;
-    if (hrs < 24) return isEs ? `hace ${hrs} h` : `${hrs}h ago`;
-    if (days < 7) return isEs ? `hace ${days} d` : `${days}d ago`;
-    if (weeks < 5) return isEs ? `hace ${weeks} sem` : `${weeks}w ago`;
-    if (months < 12) return isEs ? `hace ${months} mes` : `${months}mo ago`;
-    return isEs ? `hace ${years} año${years === 1 ? '' : 's'}` : `${years}y ago`;
-}
-
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
     const router = useRouter();
     const toast = useShowToast();
-    const [formsOnly, setFormsOnly] = useState(false);
+    const [filter, setFilterState] = useState<Filter>('all');
     // Read once from the URL (not useSearchParams: that would force a
     // Suspense boundary onto this whole client page).
     useEffect(() => {
-        setFormsOnly(new URLSearchParams(window.location.search).get('filtro') === FORMS_FILTER);
+        const param = new URLSearchParams(window.location.search).get('filtro');
+        const found = (Object.keys(FILTERS) as Array<keyof typeof FILTERS>).find(k => FILTERS[k] === param);
+        setFilterState(found ?? 'all');
     }, []);
-    const setFilter = (on: boolean) => {
-        setFormsOnly(on);
-        router.replace(on ? `/my-adopters?filtro=${FORMS_FILTER}` : '/my-adopters', { scroll: false });
+    const setFilter = (next: Filter) => {
+        setFilterState(next);
+        router.replace(next === 'all' ? '/my-adopters' : `/my-adopters?filtro=${FILTERS[next]}`, { scroll: false });
     };
     const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}`);
     const currentEmail = session?.user?.email || '';
@@ -399,7 +364,22 @@ export default function MyAdoptersPage() {
     const withForms = adopters
         .filter(a => (a.formCount ?? 0) > 0)
         .sort((a, b) => (b.latestForm?.submittedAt ?? 0) - (a.latestForm?.submittedAt ?? 0));
-    const visible = formsOnly ? withForms : adopters;
+    // «Desde un post»: everyone with a record from a social post, same order as «Todos».
+    const fromPosts = adopters.filter(a => a.fromPost);
+    // «Por revisar»: the people whose form still needs a decision — the rows with the pill.
+    const toReview = withForms.filter(a => a.formNeedsReview);
+    const visible = filter === 'forms' ? withForms : filter === 'review' ? toReview : filter === 'posts' ? fromPosts : adopters;
+    // Few accounts import posts; the chip shows only when it has someone (or is the open view).
+    const chips: Array<[Filter, string, number]> = [
+        ['all', t('myAdopters.filter_all') || 'Todos', adopters.length],
+        ['forms', t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
+        ...(toReview.length > 0 || filter === 'review'
+            ? [['review', t('myAdopters.form_needs_review') || 'Por revisar', toReview.length] as [Filter, string, number]]
+            : []),
+        ...(fromPosts.length > 0 || filter === 'posts'
+            ? [['posts', t('myAdopters.filter_posts') || 'Desde un post', fromPosts.length] as [Filter, string, number]]
+            : []),
+    ];
 
     return (
         <div className="min-h-screen bg-stone-50 py-8 px-4">
@@ -443,24 +423,24 @@ export default function MyAdoptersPage() {
 
                 {adopters.length > 0 && (
                     <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
-                        {([
-                            [false, t('myAdopters.filter_all') || 'Todos', adopters.length],
-                            [true, t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
-                        ] as const).map(([on, label, count]) => (
+                        {chips.map(([key, label, count]) => (
                             <button
-                                key={String(on)}
+                                key={key}
                                 type="button"
-                                aria-pressed={formsOnly === on}
-                                onClick={() => setFilter(on)}
-                                className={`inline-flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors ${formsOnly === on
+                                data-testid={`filter-${key}`}
+                                aria-pressed={filter === key}
+                                onClick={() => setFilter(key)}
+                                className={`inline-flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors ${filter === key
                                     ? 'bg-teal-600 text-white border-transparent'
                                     // Not hover:bg-stone-100: hover variants have no [data-theme]
                                     // remap and flash a white chip in Azul Noche.
                                     : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
                             >
-                                {on && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
+                                {key === 'forms' && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
+                                {key === 'review' && <AlertCircle className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
+                                {key === 'posts' && <Share2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
                                 {label}
-                                <span className={`text-xs font-semibold px-1.5 rounded-full ${formsOnly === on ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
+                                <span data-testid={`filter-${key}-count`} className={`text-xs font-semibold px-1.5 rounded-full ${filter === key ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
                             </button>
                         ))}
                     </div>
@@ -479,8 +459,12 @@ export default function MyAdoptersPage() {
                         <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
                             <FileText className="w-7 h-7" strokeWidth={1.5} aria-hidden="true" />
                         </div>
-                        <p className="text-stone-600 mb-6 text-sm">{t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.'}</p>
-                        <button type="button" onClick={() => setFilter(false)} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
+                        <p className="text-stone-600 mb-6 text-sm">{filter === 'posts'
+                            ? (t('myAdopters.posts_empty') || 'Todavía no hay perfiles desde un post.')
+                            : filter === 'review'
+                            ? (t('myAdopters.review_empty') || 'No hay formularios por revisar.')
+                            : (t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.')}</p>
+                        <button type="button" onClick={() => setFilter('all')} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
                             {t('myAdopters.forms_empty_cta') || 'Ver todos'}
                         </button>
                     </div>

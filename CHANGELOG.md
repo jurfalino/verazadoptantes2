@@ -2,6 +2,72 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.29] - 2026-11-05
+
+### Changed — homepage «Mis animales»: one list, what needs you first
+- The card shows up to 3 animals: those with a check-up due first (most overdue), then the most
+  recently updated ones (available or adopted). An animal never appears twice. With nothing due,
+  it simply shows the 3 most recently updated.
+- «N animales más con controles pendientes» appears only when more than 3 are due;
+  «Ver los N animales» appears when there are animals the card doesn't show and opens the new tab.
+- /my-animals has a new «Todos» tab (available + adopted, most recently updated first), so the
+  card's number and order match the page it opens. «Disponibles» and «Ya adoptados» are unchanged.
+
+## [2.58.28] - 2026-11-05
+
+### Changed — homepage: no «Ocultar»; due check-ups show the animal
+- The «Para empezar» / «También podés» card no longer has «Ocultar». It shows while a step is
+  still undone and goes away by itself once every step is done. Removes `hideHomeFirstSteps`
+  (action surface 175 → 174) and the `home_prefs` read/write; the column (migration 0102) stays,
+  unused. Anyone who had hidden the card on staging sees it again.
+- Mis animales: each animal with a check-up due is now a row like the available ones — photo
+  (or the species placeholder), name, and the check-up in amber underneath («Castración · venció
+  hace 119 días»). The homepage uses a short wording when one exists (`followups.*_short`);
+  /my-animals keeps the full one. Photos load only for the rows shown.
+
+## [2.58.27] - 2026-11-05
+
+### Changed — homepage cards side by side on desktop
+- On screens 768 px and wider, the homepage cards sit in two columns inside the page's own width
+  (option A of the desktop prototype), read left to right; the third card drops to a second row.
+  Each card keeps its own height. A lone card stays full width. Phones are unchanged.
+
+## [2.58.26] - 2026-11-05
+
+### Fixed — homepage cards: dates and load time
+- A person created more than 30 days ago showed «Creado» with no date on the Mis adoptantes
+  card. The cards now use the same compact wording as /my-adopters («hace 4 sem»), now shared
+  in `src/lib/timeAgo.ts`.
+- The cards took ~4.8 s to appear on staging: their reads ran one after another. Independent
+  reads now run side by side (the «Pendientes de revisar» count, the listed rows, the forms
+  count, the animals' check-ins and listed animals). Each load logs `getHomeModules timings`
+  with the time per card.
+
+## [2.58.25] - 2026-11-05
+
+### Added — homepage modules: Mis adoptantes, Mis animales, Posts de redes
+With the minimal homepage OFF (staging), a signed-in rescuer sees three cards under the search
+instead of the action cards; visitors keep the cards. With it ON (production), the homepage does
+not change. Every number on a card is the number on the page it opens:
+- **Mis adoptantes**: the total, «N pendientes de revisar», «N formularios por revisar», the
+  newest people, «Ver los N adoptantes». Contacts import lives here now (only where it works).
+- **Mis animales**: one amber row per animal with an overdue check-in (same words as its card),
+  «N animales más con controles pendientes», then the animals still looking for a home.
+- **Posts de redes**: «N personas desde posts», only if the team imported a post in the last 30 days.
+- Empty sections join one «Para empezar» / «También podés» card; «Ocultar» hides it for the
+  account on every device (`user_profiles.home_prefs`, migration 0102).
+Design: `.agents/plans/2026-11-04-home-modules.md`. Tests: `src/domain/homeModules.test.ts`,
+`tests/home-modules.user.spec.ts`.
+
+### Added — on the pages the cards open (live whatever the homepage setting)
+- /my-animals: a «Con controles pendientes» tab, shown while some animal has one.
+- /my-adopters: «Por revisar» and «Desde un post» filters, shown when they have someone.
+
+### Changed
+- /my-adopters shows the group name on a row only to people in two or more groups.
+- The homepage «Registrar adopción» / «Dejar una observación» cards are the visitors' homepage
+  only; their test runs as a visitor, and the picker test moved to an animal's «Registrar adopción».
+
 ## [2.58.24] - 2026-11-04
 
 ### Fixed — every «Conocido/a como» in one place

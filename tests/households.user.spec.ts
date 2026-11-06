@@ -22,7 +22,7 @@ import {
  *   5. A minor's profile is tagged and has «¿Qué pasó con …?» like anyone's
  *      (marker only — Jon, 2026-10-28); editing them in the household keeps the
  *      mark (the forms enter no age or «Es menor de edad» — Jon, 2026-10-29);
- *      the homepage picker picks them.
+ *      the adopter picker (the animal page's «Registrar adopción») picks them.
  *   6. «Quitar del hogar» → «No vive acá» removes the person on every profile.
  *   7. At 390px nothing scrolls sideways.
  *   8. On the viewer's own household: «Eliminar perfil», «Pedir eliminación»
@@ -47,6 +47,8 @@ const MARTA_PHONE = `11 5${s.slice(-3)}-${s.slice(-7, -3)}`;
 const ROSA_PHONE = `11 6${s.slice(-3)}-${s.slice(-7, -3)}`;
 
 const FOSTER_ANIMAL = `test-hh-fixture-an-${stamp}`;
+// 5b: an animal of the viewer's, waiting for a home — its «Registrar adopción» opens the adopter picker.
+const PICK_ANIMAL = `test-hh-fixture-pick-${stamp}`;
 // Test 10's fixture (own household of two siblings, plus two more homes the owner also lives in), made once in beforeAll.
 const [A1_OWN, A1_M1, A1_M2, A1_A, A1_B] = ['own', 'm1', 'm2', 'a', 'b'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
 const [A1_HH_OWN, A1_HH_A, A1_HH_B] = ['own', 'ha', 'hb'].map(r => `test-hh-fixture-a1-${r}-${stamp}`);
@@ -70,6 +72,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
             // Rosa fosters an animal right now: a transit on her «Actividad», so on her household row too.
             `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${FOSTER_ANIMAL}', 'Michi ${stamp}', 'cat', '${ADMIN_EMAIL}', strftime('%s','now','-3 days'), strftime('%s','now','-3 days'))`,
             `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('test-hh-fixture-pl-${stamp}', '${FOSTER_ANIMAL}', '${ROSA}', 'foster', strftime('%s','now','-2 days'), '${ADMIN_EMAIL}')`,
+            `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${PICK_ANIMAL}', 'Firulais ${stamp}', 'dog', '${USER_EMAIL}', strftime('%s','now','-1 days'), strftime('%s','now','-1 days'))`,
             // Test 10 (audit A1): one fixture for both of its viewports, written in this same batch.
             profileSql({ id: A1_OWN, name: `Dueno Menu ${stamp}`, owner: USER_EMAIL }),
             profileSql({ id: A1_M1, name: `Primero Menu ${stamp}`, owner: USER_EMAIL }),
@@ -92,7 +95,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         } finally {
             try {
                 execD1Batch([
-                    `DELETE FROM animals WHERE id = '${FOSTER_ANIMAL}'`,
+                    `DELETE FROM animals WHERE id IN ('${FOSTER_ANIMAL}', '${PICK_ANIMAL}')`,
                     `DELETE FROM notifications WHERE type = 'profile_renamed' AND body LIKE '%${stamp}%'`,
                 ]);
             } finally {
@@ -319,19 +322,21 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         await expect(page.getByTestId('minor-note')).toHaveCount(0);
     });
 
-    test('5b. the homepage picker shows the minor tagged and picks them for a record', async ({ page }) => {
+    // The homepage «Registrar adopción» card is gone for signed-in rescuers (homepage modules,
+    // 2026-11-04); the same AdopterPicker opens from an animal's «Registrar adopción».
+    test('5b. the adopter picker shows the minor tagged and picks them for a record', async ({ page }) => {
         test.setTimeout(150_000);
-        const tomas = profileNamed(TOMAS_NAME)!;
-        await page.goto('/');
+        await page.goto(`/my-animals/${PICK_ANIMAL}`);
         await dismissCountryBanner(page);
-        await page.getByTestId('adoption-wizard-btn').click();
+        await page.getByTestId('profile-record-adoption').click();
         await page.getByTestId('picker-search').fill(TOMAS_NAME);
         const row = page.getByTestId('picker-result').filter({ hasText: TOMAS_NAME });
         await expect(row).toHaveCount(1, { timeout: 30_000 });
         await expect(row.getByTestId('picker-minor-tag')).toBeVisible();
         await row.getByTestId('picker-pick').click();
-        await page.waitForURL(new RegExp(`/adopter/${tomas.id}\\?newAdoption=adoption`), { timeout: 30_000 });
-        await expect(page.getByTestId('wizard-next-step1')).toBeVisible({ timeout: 30_000 });
+        await page.waitForURL(/newAdoption=adoption/, { timeout: 30_000 });
+        // The animal is already known, so the record wizard opens on step 2.
+        await expect(page.getByTestId('wizard-next-step2')).toBeVisible({ timeout: 30_000 });
     });
 
     test('6. «Quitar del hogar» → «No vive acá» removes Marta from the household on every profile', async ({ page }) => {
