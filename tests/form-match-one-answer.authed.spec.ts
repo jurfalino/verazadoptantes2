@@ -83,7 +83,7 @@ test.describe('form match = one shared answer', () => {
         expect(isDbNull(rows(`SELECT deleted_at FROM adopters WHERE id = '${f.formProfileId}'`)[0].deleted_at)).toBe(true);
     });
 
-    test('a teammate sees the match but has no «No es esta persona» (step 2 widens who answers)', async ({ browser, request }) => {
+    test('a teammate answers too: «No es esta persona» is offered and saved (step 2, the team acts as one)', async ({ browser, request }) => {
         test.setTimeout(120_000);
         const f = await samePersonTwice(request, 'mate');
         const orgId = `test-oneanswer-org-${Date.now()}`;
@@ -93,8 +93,11 @@ test.describe('form match = one shared answer', () => {
         try {
             const page = await ctx.newPage();
             await openForm(page, f.submissionId);
-            await expect(page.locator('article').filter({ hasText: f.firstName })).toBeVisible();
-            await expect(page.getByTestId('form-match-not-this')).toHaveCount(0);
+            const card = page.locator('article').filter({ hasText: f.firstName });
+            await expect(card).toBeVisible();
+            await card.getByTestId('form-match-not-this').click();
+            await expect(card).toHaveCount(0, { timeout: 30_000 });
+            expect(rows(`SELECT status, resolved_by ${pairSql(f.formProfileId, f.existingId)}`)[0]).toMatchObject({ status: 'dismissed', resolved_by: USER_EMAIL });
         } finally {
             await ctx.close();
             execD1(`DELETE FROM org_members WHERE org_id = '${orgId}'`);

@@ -475,3 +475,15 @@ INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, creat
 ('test-adopter-fixture-contract-new', 'Firmante Contratofixture', 'Tel: 4555 0377, Email: firmante@example.com', '5', 'test-seed', strftime('%s','now','-1 days'), strftime('%s','now','-1 days'));
 INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES
 ('test-dup-fixture-contract-mate', 'test-adopter-fixture-contract-new', 'test-adopter-fixture-apl-match', '["phone","name_word"]', '{}', 70, 'high', 'pending', strftime('%s','now','-1 days'));
+
+-- ============================================================
+-- STEP 2 — THE TEAM ANSWERS «¿MISMA PERSONA?» (tests/team-same-person.spec.ts)
+-- Side A loaded by the admin (Vero's org-mate in Refugio E2E), side B by
+-- test-seed (nobody's team). Vero answers it; the xorg viewer may not.
+-- ============================================================
+INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES
+('test-adopter-fixture-team-a', 'Teodora Equipofixture', 'Tel: 4555 0611', '5', 'gatitosolivos@gmail.com', strftime('%s','now','-3 days'), strftime('%s','now','-3 days')),
+('test-adopter-fixture-team-b', 'Teodora Ekipofixture', 'Tel: 4555 0611', '5', 'test-seed', strftime('%s','now','-2 days'), strftime('%s','now','-2 days'));
+
+INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES
+('test-dup-fixture-team', 'test-adopter-fixture-team-a', 'test-adopter-fixture-team-b', '["phone","name_word"]', '{}', 70, 'high', 'pending', strftime('%s','now','-1 days'));
