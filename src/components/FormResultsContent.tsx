@@ -67,6 +67,10 @@ interface MatchedAdopter {
     matchTypes: string[];
     /** Search score; stored on notifications since 2026-10-25, admins only. */
     score?: number;
+    /** The open pair behind this match (null for an unlinked form's recorded matches or the chosen profile). */
+    candidateId: string | null;
+    /** The viewer may answer «No es esta persona» (the pair is on their list). */
+    canAnswer: boolean;
 }
 
 interface MatchedProfile {
@@ -383,6 +387,8 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     canLink={view.canLinkMatches}
                                     linked={linkKind === 'linked_existing' && match.id === linkedId}
                                     willMerge={linkKind === 'new_profile' && !!linkedProfile}
+                                    candidateId={match.candidateId}
+                                    canAnswer={match.canAnswer}
                                     onDismiss={() => setDismissedMatchIds((ids) => [...ids, match.id])}
                                 />
                             );

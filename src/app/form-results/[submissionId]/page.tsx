@@ -13,6 +13,7 @@ import { markNotificationRead } from '@/app/actions/notifications';
 import FormResultsContent from '@/components/FormResultsContent';
 import { canAccessFormSubmission } from '@/app/actions/_applicants';
 import { logger } from '@/lib/logger';
+import { loadOpenPairs } from '@/lib/openPairs';
 import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
@@ -174,7 +175,28 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         autoAdopterId: submission?.autoAdopterId ?? null,
     });
     const linkedId = submission?.linkedAdopterId ?? null;
-    const matchIds = (metadata.matchedAdopters ?? []).map(a => a.id);
+    // A form match is an ordinary duplicate pair (spec 2026-11-05): the cards are
+    // the form profile's OPEN PAIRS, so an answer given anywhere («Mantener
+    // separados», another tab) clears them here too. The notification's
+    // recorded matches only stand in for a form that never got a profile.
+    type MatchRow = { id: string; name: string; matchTypes: string[]; score?: number; candidateId: string | null; canAnswer: boolean };
+    let matchList: MatchRow[] = [];
+    if (linkKind === 'new_profile' && submission?.autoAdopterId) {
+        try {
+            const pairs = await loadOpenPairs(db, submission.autoAdopterId, currentUser, { limit: 20 });
+            matchList = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList }));
+        } catch (e) {
+            const errorId = logger.error('form-results: open pairs unreadable', e, { submissionId, user: currentUser, adopterId: submission.autoAdopterId });
+            return <ErrorState message="No pudimos cargar este formulario. Probá de nuevo en un rato." errorId={errorId} />;
+        }
+    } else if (linkKind === 'linked_existing' && linkedId) {
+        // The chosen profile's card, so «which did I pick?» is answered on open.
+        const recorded = (metadata.matchedAdopters ?? []).find(a => a.id === linkedId);
+        matchList = [{ id: linkedId, name: recorded?.name ?? '', matchTypes: recorded?.matchTypes ?? [], score: recorded?.score, candidateId: null, canAnswer: false }];
+    } else if (linkKind === 'unlinked') {
+        matchList = (metadata.matchedAdopters ?? []).map(a => ({ ...a, candidateId: null, canAnswer: false }));
+    }
+    const matchIds = matchList.map(a => a.id);
     const profileIds = [...new Set([...matchIds, ...(linkedId ? [linkedId] : [])])];
 
     type ProfileRow = {
@@ -261,7 +283,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         // Soft-deleted (merged-away) matches are dropped at read time, so a
         // notification recorded before a merge still renders correctly.
         // Sort by match strength (more matchTypes first), preserving order of metadata.matchedAdopters for ties
-        const order = new Map((metadata.matchedAdopters ?? []).map((a, i) => [a.id, { count: a.matchTypes?.length ?? 0, index: i }]));
+        const order = new Map(matchList.map((a, i) => [a.id, { count: a.matchTypes?.length ?? 0, index: i }]));
         matchedProfiles = (rows as Row[])
             .filter(r => order.has(r.id) && !r.deletedAt)
             .map(withImage)
@@ -296,7 +318,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         }
     }
 
-    const hasMatches = (metadata.matchCount ?? 0) > 0;
+    const hasMatches = matchList.length > 0;
     const submitted = metadata.submittedData;
     let fullAnswers: Record<string, any> = (metadata.submittedData as any) || {};
     try {
@@ -327,8 +349,8 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             fullAnswers={fullAnswers}
             householdItems={householdItems}
             hasMatches={hasMatches}
-            matchCount={metadata.matchCount ?? 0}
-            matchedAdopters={metadata.matchedAdopters}
+            matchCount={matchList.length}
+            matchedAdopters={matchList}
             matchedProfiles={matchedProfiles}
             linkKind={linkKind}
             linkedProfile={linkedProfile}

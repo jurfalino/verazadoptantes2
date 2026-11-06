@@ -12,6 +12,7 @@ import { createNotification, resolveDisplayName } from './notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdmin } from '@/config/admins';
 import { planFormLink, canLinkSubmissionDirectly } from '@/domain/formLink';
+import { formMatchIds } from '@/lib/openPairs';
 import { answerNoteLines } from '@/domain/formNotes';
 import { logger, generateErrorId } from '@/lib/logger';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
@@ -139,8 +140,10 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
         // Gate on the submission's form-link owner (read by id first, so the
         // UPDATE below is keyed by id alone — a `user_id = <viewer>` clause
         // would silently no-op for a teammate).
-        const owner = await db.select({ userId: formSubmissions.userId, selectedAnimalId: formSubmissions.selectedAnimalId })
-            .from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
+        const owner = await db.select({
+            userId: formSubmissions.userId, selectedAnimalId: formSubmissions.selectedAnimalId,
+            linkedAdopterId: formSubmissions.linkedAdopterId, autoAdopterId: formSubmissions.autoAdopterId,
+        }).from(formSubmissions).where(eq(formSubmissions.id, submissionId)).get();
         const { canAccessFormSubmission } = await import('./_applicants');
         if (!owner || !(await canAccessFormSubmission(db, owner, currentUser))) {
             return { success: false, error: 'Submission not found or not owned' };
@@ -169,13 +172,22 @@ export async function linkFormSubmissionToAdopter(submissionId: string, adopterI
                 submissionId, adopterId, actorEmail: currentUser, error: e instanceof Error ? e.message : String(e),
             });
         }
+        // The form profile's open pairs (spec 2026-11-05): one record for "same person?".
+        let openPairIds: string[] = [];
+        try {
+            openPairIds = await formMatchIds(db, owner, recordedMatchIds, currentUser);
+        } catch (e) {
+            logger.warn('linkFormSubmissionToAdopter: open pairs unreadable, only full-visibility targets allowed', {
+                submissionId, adopterId, actorEmail: currentUser, error: e instanceof Error ? e.message : String(e),
+            });
+        }
         const { resolveAdopterVisibility } = await import('@/lib/piiAccessServer');
         const visibility = target
             ? await resolveAdopterVisibility(currentUser, { id: target.id, addedBy: target.addedBy })
             : null;
         const decision = canLinkSubmissionDirectly({
             targetLive: !!target && !target.deletedAt,
-            isOpenPair: recordedMatchIds.includes(adopterId),
+            isOpenPair: openPairIds.includes(adopterId),
             callerFullySees: !!visibility?.nothingMasked,
         });
         if (!decision.ok) {
@@ -289,11 +301,20 @@ export async function linkFormToExistingAdopter(
                 submissionId, adopterId, actorEmail, error: e instanceof Error ? e.message : String(e),
             });
         }
+        // The form profile's open pairs (spec 2026-11-05): a pair answered anywhere
+        // («Mantener separados», another tab) is no longer a target here.
+        let openPairIds: string[];
+        try {
+            openPairIds = await formMatchIds(db, sub, recordedMatchIds, actorEmail);
+        } catch (e) {
+            const errorId = logger.error('linkFormToExistingAdopter: open pairs unreadable', e, { submissionId, adopterId, actorEmail });
+            return { success: false, error: 'Could not check the matches', errorId };
+        }
 
         const plan = planFormLink({
             row: { linkedAdopterId: sub.linkedAdopterId, autoAdopterId: sub.autoAdopterId },
             targetId: adopterId,
-            openPairIds: recordedMatchIds,
+            openPairIds,
             targetLive: !!target && !target.deletedAt,
             autoLive: !!auto && !auto.deletedAt,
         });

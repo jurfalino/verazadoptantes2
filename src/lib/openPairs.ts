@@ -106,3 +106,27 @@ export async function loadOpenPairs(
         })
         .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
 }
+
+/**
+ * The profiles a form may be linked to as "the same person": the other side of
+ * every open pair of the form's own (auto-created) profile. A form that never
+ * got a profile (`unlinked`) has no pairs and keeps the ids recorded at submit;
+ * one already linked to an existing profile offers nothing. Server-side only —
+ * never trust ids from the client. Throws on a D1 error; callers log.
+ */
+export async function formMatchIds(
+    db: Db,
+    form: { linkedAdopterId: string | null; autoAdopterId: string | null },
+    recordedIds: readonly string[],
+    viewer: string,
+): Promise<string[]> {
+    const { formLinkKind } = await import('@/domain/formLink');
+    switch (formLinkKind(form)) {
+        case 'unlinked': return [...recordedIds];
+        case 'linked_existing': return [];
+        case 'new_profile': {
+            const pairs = await loadOpenPairs(db, form.autoAdopterId!, viewer, { limit: 20 });
+            return pairs.map(p => p.otherAdopterId);
+        }
+    }
+}

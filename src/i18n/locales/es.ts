@@ -2484,6 +2484,7 @@ export const es = {
         linking: 'Vinculando…',
         link_error_already_linked: 'Esta solicitud ya está vinculada a otro perfil.',
         link_error_unavailable: 'Ese perfil ya no existe. Recargá la página para ver las coincidencias actuales.',
+        link_error_answered: 'Alguien ya respondió esta coincidencia. Te mostramos cómo quedó.',
         link_error_busy: 'Esta solicitud se está vinculando en otra pestaña. Recargá la página en unos segundos.',
     },
     // One comparison card on every "same person?" screen (Jon, 2026-10-25)

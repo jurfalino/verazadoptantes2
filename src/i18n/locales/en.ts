@@ -2478,6 +2478,7 @@ export const en = {
         linking: 'Linking…',
         link_error_already_linked: 'This request is already linked to another profile.',
         link_error_unavailable: 'That profile no longer exists. Reload the page to see the current matches.',
+        link_error_answered: 'Someone already answered this match. Here\'s where it stands now.',
         link_error_busy: 'This request is being linked in another tab. Reload the page in a few seconds.',
     },
     // One comparison card on every "same person?" screen (Jon, 2026-10-25)
