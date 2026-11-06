@@ -74,6 +74,10 @@ beforeEach(() => {
     sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, status, linked_adopter_id, auto_adopter_id, created_at) VALUES ('sub-1', ?, 'Carla Gomez', 'pending', 's-orphan', 's-orphan', 1)`).run(STRANGER);
     sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, metadata, created_at) VALUES ('n-form', ?, 'form_submission', 't', 'b', ?, 1)`)
         .run(STRANGER, JSON.stringify({ submissionId: 'sub-1', matchedAdopters: [{ id: 'o-match' }] }));
+    // The submit wrote the pair too (findAndPersistDuplicateCandidates): the screens and both
+    // actions read the OPEN PAIR, not the notification's list (spec 2026-11-05).
+    sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at)
+        VALUES ('dc-1', 's-orphan', 'o-match', '["name_full"]', '{}', 30, 'medium', 'pending', 1)`).run();
     session.user = STRANGER;
 });
 

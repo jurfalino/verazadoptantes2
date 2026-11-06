@@ -1751,7 +1751,6 @@ export const en = {
         duplicateUrl: 'This Facebook post was already imported. Existing Profile:',
     },
     myAdopters: {
-        review_empty: 'No forms to review.',
         filter_posts: 'From a post',
         posts_empty: 'No profiles from a post yet.',
         filter_label: 'Filter adopters',
@@ -1759,8 +1758,6 @@ export const en = {
         filter_forms: 'Via form',
         form_line_for: 'Form for {animal}',
         form_line_general: 'General form',
-        form_needs_review: 'To review',
-        form_needs_review_tooltip: 'There are similar profiles: decide whether it is the same person',
         forms_empty: 'Nobody has filled in your form yet.',
         forms_empty_cta: 'Show all',
         created_by_self: 'You',
@@ -2395,7 +2392,6 @@ export const en = {
         hide_map: 'Hide map',
     },
     formResults: {
-        back_to_animals: 'Back to My Animals',
         back_to_adopters: 'My adopters',
         back_to_name: '{name}',
         title: 'Form responses',
@@ -3696,8 +3692,6 @@ export const en = {
         adopters_many: '{n} adopters',
         pending_review_one: '1 to review',
         pending_review_many: '{n} to review',
-        forms_review_one: '1 form to review',
-        forms_review_many: '{n} forms to review',
         see_adopters: 'See all {n} adopters',
         created: 'Created {when}',
         created_by: 'Created by {name} · {when}',

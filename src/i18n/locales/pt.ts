@@ -1756,7 +1756,6 @@ export const pt = {
         duplicateUrl: 'Este post do Facebook já foi importado. Perfil existente:',
     },
     myAdopters: {
-        review_empty: 'Nenhum formulário para revisar.',
         filter_posts: 'De um post',
         posts_empty: 'Ainda não há perfis de um post.',
         filter_label: 'Filtrar adotantes',
@@ -1764,8 +1763,6 @@ export const pt = {
         filter_forms: 'Por formulário',
         form_line_for: 'Formulário para {animal}',
         form_line_general: 'Formulário geral',
-        form_needs_review: 'Para revisar',
-        form_needs_review_tooltip: 'Há perfis parecidos: decida se é a mesma pessoa',
         forms_empty: 'Ninguém preencheu seu formulário ainda.',
         forms_empty_cta: 'Ver todos',
         created_by_self: 'Você',
@@ -2401,7 +2398,6 @@ export const pt = {
         hide_map: 'Ocultar mapa',
     },
     formResults: {
-        back_to_animals: 'Meus animais',
         back_to_adopters: 'Meus adotantes',
         back_to_name: '{name}',
         title: 'Respostas do formulário',
@@ -3701,8 +3697,6 @@ export const pt = {
         adopters_many: '{n} adotantes',
         pending_review_one: '1 pendente de revisão',
         pending_review_many: '{n} pendentes de revisão',
-        forms_review_one: '1 formulário para revisar',
-        forms_review_many: '{n} formulários para revisar',
         see_adopters: 'Ver os {n} adotantes',
         created: 'Criado {when}',
         created_by: 'Criado por {name} · {when}',

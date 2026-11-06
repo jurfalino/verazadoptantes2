@@ -77,8 +77,7 @@ interface Adopter {
 
 /**
  * `?filtro=formularios` / `posts` — kept in the URL so Back,
- * shared links and the homepage cards («N formularios por revisar», «Ver las
- * N personas») open the list already filtered, with the same count.
+ * shared links and the homepage cards («Ver las N personas») open the list already filtered, with the same count.
  */
 const FILTERS = { forms: 'formularios', posts: 'posts' } as const;
 type Filter = 'all' | keyof typeof FILTERS;

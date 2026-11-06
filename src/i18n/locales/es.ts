@@ -1757,7 +1757,6 @@ export const es = {
         duplicateUrl: 'Este post de Facebook ya fue importado. Perfil existente:',
     },
     myAdopters: {
-        review_empty: 'No hay formularios por revisar.',
         filter_posts: 'Desde un post',
         posts_empty: 'Todavía no hay perfiles desde un post.',
         filter_label: 'Filtrar adoptantes',
@@ -1765,8 +1764,6 @@ export const es = {
         filter_forms: 'Por formulario',
         form_line_for: 'Formulario para {animal}',
         form_line_general: 'Formulario general',
-        form_needs_review: 'Por revisar',
-        form_needs_review_tooltip: 'Hay perfiles parecidos: decidí si es la misma persona',
         forms_empty: 'Nadie completó tu formulario todavía.',
         forms_empty_cta: 'Ver todos',
         created_by_self: 'Vos',
@@ -2402,7 +2399,6 @@ export const es = {
         hide_map: 'Ocultar mapa',
     },
     formResults: {
-        back_to_animals: 'Mis animales',
         back_to_adopters: 'Mis adoptantes',
         back_to_name: '{name}',
         title: 'Respuestas del formulario',
@@ -3702,8 +3698,6 @@ export const es = {
         adopters_many: '{n} adoptantes',
         pending_review_one: '1 pendiente de revisar',
         pending_review_many: '{n} pendientes de revisar',
-        forms_review_one: '1 formulario por revisar',
-        forms_review_many: '{n} formularios por revisar',
         see_adopters: 'Ver los {n} adoptantes',
         created: 'Creado {when}',
         created_by: 'Creado por {name} · {when}',
