@@ -13,10 +13,8 @@ export type HomePersonRow = {
 export type HomeAdoptersData = {
     /** Same number as /my-adopters «Todos». */
     total: number;
-    /** Same number as the «Pendientes de revisar» section header. */
+    /** Same number as the «Pendientes de revisar» section header — form matches included (spec 2026-11-05). */
     pendingReview: number;
-    /** Same number as the «Por revisar» chip (/my-adopters?filtro=por-revisar). */
-    formsToReview: number;
     /** Newest created first, as /my-adopters lists them. */
     recent: Array<HomePersonRow & {
         createdAt: number;

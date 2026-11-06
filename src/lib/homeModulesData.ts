@@ -60,9 +60,7 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
         import('@/app/actions/notifications'),
     ]);
 
-    // Two independent chains, run side by side: the rows the card lists, and
-    // the «Por revisar» count (which only ever depends on the viewer's own
-    // forms — summarizeAdopterForms).
+    // The rows the card lists, beside the total and the «pendientes» count.
     const rowsP = (async () => {
         const [recentRows, viewerOrgs] = await Promise.all([
             db.select({ id: adopters.id, name: adopters.name, source: adopters.source, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
@@ -99,7 +97,7 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
         rowsP,
         pendingReview,
     ]);
-    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending, formsToReview: 0, recent };
+    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending, recent };
 }
 
 export async function loadHomePosts(db: Db, userEmail: string, memberEmails: string[]): Promise<HomePostsData> {

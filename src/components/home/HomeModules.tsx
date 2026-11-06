@@ -164,7 +164,7 @@ function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<Home
         return <ModuleShell icon="people" title={t('homeModules.adopters_title')} href="/my-adopters" testId="home-adopters"><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
     const d = section.data;
-    const hasTodo = d.pendingReview > 0 || d.formsToReview > 0;
+    const hasTodo = d.pendingReview > 0;
     const rows = d.recent.slice(0, homeListLimit(hasTodo));
     const meta = (r: HomeAdoptersData['recent'][number]) => r.viaForm
         ? interpolate(t('homeModules.via_form'), { when: rel(r.createdAt) })
@@ -178,11 +178,6 @@ function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<Home
                     {d.pendingReview > 0 && (
                         <TodoRow href="/my-adopters#pendientes" testId="home-adopters-pending">
                             {count(t, d.pendingReview, 'homeModules.pending_review_one', 'homeModules.pending_review_many')}
-                        </TodoRow>
-                    )}
-                    {d.formsToReview > 0 && (
-                        <TodoRow href="/my-adopters?filtro=por-revisar" testId="home-adopters-forms">
-                            {count(t, d.formsToReview, 'homeModules.forms_review_one', 'homeModules.forms_review_many')}
                         </TodoRow>
                     )}
                 </div>
@@ -369,7 +364,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         ? ({ ok: true, data: { ...data.posts.data, people: 0, recent: [] } } as HomeSection<HomePostsData>)
         : data.posts;
     const { cards, steps, firstSteps } = orderHomeModules({
-        adopters: stateOf(data.adopters, d => d.pendingReview > 0 || d.formsToReview > 0, d => d.total > 0),
+        adopters: stateOf(data.adopters, d => d.pendingReview > 0, d => d.total > 0),
         animals: stateOf(data.animals, d => d.dueCount > 0, d => d.total > 0),
         posts: stateOf(posts, () => false, d => d.people > 0),
     });

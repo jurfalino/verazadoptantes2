@@ -70,6 +70,20 @@ test.describe.serial('homepage modules', () => {
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
     });
 
+    test('Mis adoptantes: a form that looks like someone already registered counts as «pendientes de revisar», never as a form to review', async ({ page, request }) => {
+        test.setTimeout(120_000);
+        const s = String(Date.now());
+        const person = { name: `Formulario Home ${s}`, email: `e2e-home-form-${s}@example.com`, phone: `19${s.slice(-8)}`, address: '1 Home St', intent: 'self' };
+        for (let i = 0; i < 2; i++) {
+            const res = await request.post('/api/form/test-user-id/submit', { data: person });
+            expect(res.ok(), await res.text()).toBeTruthy();
+        }
+        await page.goto('/');
+        await dismissCountryBanner(page);
+        await expect(page.getByTestId('home-adopters-pending')).toBeVisible({ timeout: 60_000 });
+        await expect(page.getByTestId('home-adopters-forms')).toHaveCount(0);
+    });
+
     test('Posts de redes: the card counts people, the same as «Desde un post»', async ({ page }) => {
         test.setTimeout(240_000);
         await openHome(page);
