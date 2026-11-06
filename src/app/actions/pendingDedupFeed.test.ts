@@ -132,13 +132,11 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
     });
 
     it("a teammate of the asked owner sees the request though they created neither profile (D16)", async () => {
-        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
+        // Step 2: the teammate already sees OWNER's pairs (the team acts as one)…
+        expect((await feed(MATE)).total).toBe((await feed(OWNER)).total);
         await mergePendingDedupPair('cand-older-mine'); // STRANGER asks OWNER
-        const { pairs, total } = await feed(MATE);
-        expect(total).toBe(1);
-        expect(pairs).toHaveLength(1);
-        const [p] = pairs;
-        expect(p.candidateId).toBe('cand-older-mine');
+        // …and now with the request on it, received.
+        const p = pairOf((await feed(MATE)).pairs, 'cand-older-mine');
         expect(p.request).toMatchObject({ id: requestId(), direction: 'received', counterpartName: 'stranger', toAdmins: false });
         // Neither side is MATE's, so both name their creator.
         expect(p.newAdopter.createdByName).toBe('Olga Dueña');
@@ -206,7 +204,7 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect((await feed(OWNER)).pairs.map(p => p.candidateId)).not.toContain('cand-low');
         await mergePendingDedupPair('cand-low'); // STRANGER's s-low is older → request to OWNER
         const res = await feed(MATE);
-        expect(res.pairs.map(p => p.candidateId)).toEqual(['cand-low']);
+        expect(res.pairs.map(p => p.candidateId)).toContain('cand-low');
         expect(res.lowHidden).toBe(0);
         expect((await feed(OWNER)).lowHidden).toBe(0);
     });
@@ -214,9 +212,8 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
     it("the request's candidate row is gone: the pair still shows, built from the request", async () => {
         await mergePendingDedupPair('cand-older-mine');
         sqlite.prepare(`DELETE FROM duplicate_candidates WHERE id = 'cand-older-mine'`).run();
-        const { pairs, total } = await feed(MATE);
-        expect(total).toBe(1);
-        expect(pairs[0]).toMatchObject({
+        const { pairs } = await feed(MATE);
+        expect(pairOf(pairs, 'cand-older-mine')).toMatchObject({
             candidateId: 'cand-older-mine',
             newAdopter: { id: 'o-new' }, existingAdopter: { id: 's-old' },
             request: { direction: 'received' },
@@ -229,7 +226,6 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         for (const who of [STRANGER, OWNER, MATE]) {
             expect((await feed(who)).pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
         }
-        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
     });
 
     it('a request on a flag outside the listed flags: shown while the flag is open, not once it is settled', async () => {
@@ -242,17 +238,18 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at) VALUES ('flag-x', 'f-o', ?, 'duplicate', 'f-s', NULL, 1)`).run(STRANGER);
         expect(await mergePendingDedupPair('flag-x')).toMatchObject({ success: true, outcome: 'requested' });
         expect((await feed(STRANGER, true)).pairs.map(p => p.candidateId)).toContain('flag-x');
-        expect((await feed(MATE)).pairs).toEqual([expect.objectContaining({ candidateId: 'flag-x', source: 'flagged', request: expect.objectContaining({ direction: 'received' }) })]);
+        expect(pairOf((await feed(MATE)).pairs, 'flag-x')).toMatchObject({ source: 'flagged', request: expect.objectContaining({ direction: 'received' }) });
         sqlite.prepare(`UPDATE adopter_flags SET details = 'Merged into f-s by x' WHERE id = 'flag-x'`).run();
-        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
+        expect((await feed(MATE)).pairs.map(p => p.candidateId)).not.toContain('flag-x');
     });
 
     it('a rescan replaced the candidate: the request attaches to the pair, whatever its id', async () => {
         await mergePendingDedupPair('cand-older-mine');
         sqlite.prepare(`UPDATE duplicate_candidates SET id = 'cand-rescan', adopter1_id = 's-old', adopter2_id = 'o-new' WHERE id = 'cand-older-mine'`).run();
         const { pairs } = await feed(MATE);
-        expect(pairs.map(p => p.candidateId)).toEqual(['cand-rescan']);
-        expect(pairs[0].request).toMatchObject({ direction: 'received' });
+        expect(pairs.map(p => p.candidateId)).toContain('cand-rescan');
+        expect(pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
+        expect(pairOf(pairs, 'cand-rescan').request).toMatchObject({ direction: 'received' });
     });
 
     it('a requested profile is deleted by its owner: the request closes and the pair leaves every list', async () => {
@@ -260,7 +257,9 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         const id = requestId();
         expect(await as(OWNER, () => deleteOwnAdopter('o-new'))).toEqual({ success: true });
         expect(sqlite.prepare('SELECT status FROM merge_requests WHERE id = ?').get(id)!.status).toBe('closed');
-        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
+        const mate = await feed(MATE);
+        expect(mate.pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
+        expect(mate.total).toBe(mate.pairs.length);
         const mine = await feed(STRANGER);
         expect(mine.pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
         expect(mine.total).toBe(mine.pairs.length);
@@ -270,7 +269,9 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         await mergePendingDedupPair('cand-older-mine');
         sqlite.prepare(`DELETE FROM duplicate_candidates WHERE adopter1_id = 'o-new' OR adopter2_id = 'o-new'`).run();
         sqlite.prepare(`DELETE FROM adopters WHERE id = 'o-new'`).run();
-        expect(await feed(MATE)).toEqual({ pairs: [], total: 0, lowHidden: 0 });
+        const mate = await feed(MATE);
+        expect(mate.pairs.map(p => p.candidateId)).not.toContain('cand-older-mine');
+        expect(mate.total).toBe(mate.pairs.length);
         expect(sqlite.prepare(`SELECT status FROM merge_requests`).get()!.status).toBe('pending'); // the feed only reads
         sqlite.prepare('DELETE FROM merge_requests').run();
 
@@ -455,7 +456,7 @@ describe('getPendingDuplicatesForUser — layout D (groups, summary, admin score
         const p = pairOf((await feed(STRANGER)).pairs, 'cand-anon');
         expect(p.newAdopter.isMine).toBe(false);
         expect(p.existingAdopter.isMine).toBe(true);
-        const q = pairOf((await feed(MATE)).pairs.concat((await feed(OWNER)).pairs), 'cand-older-mine');
+        const q = pairOf((await feed(OWNER)).pairs, 'cand-older-mine');
         expect([q.newAdopter.isMine, q.existingAdopter.isMine]).toEqual([true, false]);
     });
 
@@ -641,8 +642,8 @@ describe('«Revisar» on a «posible duplicado» notice never lands on an empty 
         expect(pairOf(r.pairs, 'flag-i4')).toMatchObject({ source: 'flagged' });
         // The flagger (the other side's owner) sees it too.
         expect((await feed(STRANGER, true)).pairs.map(p => p.candidateId)).toContain('flag-i4');
-        // Someone with no profile on it and no request on it: not on their list.
-        expect((await feed(MATE, true)).pairs.map(p => p.candidateId)).not.toContain('flag-i4');
+        // Someone whose team has no profile on it and no request on it: not on their list.
+        expect((await feed('outsider@example.com', true)).pairs.map(p => p.candidateId)).not.toContain('flag-i4');
     });
 
     it("over 100 newer SETTLED flags on the viewer's own profiles never push out an open one (review 2026-11-01)", async () => {
@@ -671,5 +672,33 @@ describe('«Revisar» on a «posible duplicado» notice never lands on an empty 
 
         const { pairs } = await feed(MATE, true);
         expect(pairs).toContainEqual(expect.objectContaining({ candidateId: 'flag-w', source: 'flagged', request: expect.objectContaining({ id: 'mr-w', direction: 'received' }) }));
+    });
+});
+
+describe('step 2 — the team acts as one (Jon 2026-11-05: teammates answer both ways)', () => {
+    const OUTSIDER = 'outsider@example.com';
+    it("a teammate of the loader gets the loader's pairs, with the same choices", async () => {
+        const mine = await feed(OWNER);
+        const mate = await feed(MATE); // one at a time: `as` swaps a shared session
+        const view = (r: Awaited<ReturnType<typeof feed>>) => r.pairs.map(p => [p.candidateId, p.mergeAction, p.actionByKeep]).sort();
+        expect(mate.total).toBe(mine.total);
+        expect(view(mate)).toEqual(view(mine));
+        expect(mate.pairs.map(p => p.candidateId)).toContain('cand-older-mine');
+    });
+
+    it('a teammate settles «Mantener separados»: dismissed, by them', async () => {
+        expect(await as(MATE, () => dismissDuplicateCandidate('cand-older-mine'))).toEqual({ success: true });
+        expect(sqlite.prepare(`SELECT status, resolved_by AS by FROM duplicate_candidates WHERE id = 'cand-older-mine'`).get()).toEqual({ status: 'dismissed', by: MATE });
+    });
+
+    it("a teammate's «Combinar» does what the loader's would (the newer side is the team's → merged)", async () => {
+        expect(await as(MATE, () => mergePendingDedupPair('cand-older-mine'))).toMatchObject({ success: true, outcome: 'merged' });
+    });
+
+    it('someone outside the team: no pairs, may not dismiss, may not merge', async () => {
+        expect((await feed(OUTSIDER)).total).toBe(0);
+        expect(await as(OUTSIDER, () => dismissDuplicateCandidate('cand-older-mine'))).toMatchObject({ success: false, code: 'not_authorized' });
+        expect(await as(OUTSIDER, () => mergePendingDedupPair('cand-older-mine'))).toMatchObject({ success: false, error: 'not_yours' });
+        expect(sqlite.prepare(`SELECT status FROM duplicate_candidates WHERE id = 'cand-older-mine'`).get()).toEqual({ status: 'pending' });
     });
 });

@@ -1032,12 +1032,16 @@ export async function getPendingDuplicatesForUser(
         // /my-adopters rendered two error toasts and no duplicates at all.
         //
         // The fan-out is now bounded by pageSize instead of corpus size.
+        // Step 2 (Jon 2026-11-05): the team acts as one — the sides the viewer OR a teammate
+        // loaded (mayAnswerPair's rule; OR of bound scalars, never an IN array).
+        const teamList = [...new Set([normEmail(viewer), ...teamKeys])].filter(Boolean);
+        const byTeam = (col: typeof adopters.addedBy) => or(...teamList.map(e => sql`lower(${col}) = ${e}`))!;
         const ownRows = await db.select({ id: adopters.id }).from(adopters)
-            .where(and(eq(adopters.addedBy, viewer), isNull(adopters.deletedAt))).all();
+            .where(and(byTeam(adopters.addedBy), isNull(adopters.deletedAt))).all();
         const ownIds = new Set((ownRows as Array<{ id: string }>).map(r => r.id));
         if (ownIds.size === 0 && requests.size === 0) return EMPTY;
 
-        // The actor must own at least one side of the pair — or be party to
+        // The actor's team must own at least one side of the pair — or be party to
         // an open request on it (filed it, or is on the asked owner's team).
         const listed = (a: string, b: string) => ownIds.has(a) || ownIds.has(b) || requests.has(pairKey(a, b));
         const hasRequest = (c: { adopter1Id: string; adopter2Id: string }) => requests.has(pairKey(c.adopter1Id, c.adopter2Id));
@@ -1062,7 +1066,7 @@ export async function getPendingDuplicatesForUser(
         // below rather than a fan-out of their own.
         //
         // Only flags that can pass `listed` are read, in SQL (EM I4): a side the
-        // viewer loaded (ownIds' rule: added_by = viewer, live), or a pair with
+        // viewer's team loaded (ownIds' rule: added_by on the team, live), or a pair with
         // a merge request the viewer is party to (loadRequestsByPair's rule:
         // they filed it, or it asks them or a teammate). It used to read the
         // 100 newest duplicate flags platform-wide and filter afterwards: once
@@ -1072,8 +1076,9 @@ export async function getPendingDuplicatesForUser(
         // Correlated EXISTS with bound scalars — never a bound id array (D1
         // does not expand IN).
         try {
+            const teamSql = sql.join(teamList.map(e => sql`lower(o.added_by) = ${e}`), sql` OR `);
             const ownSide = (id: typeof adopterFlags.adopterId | typeof adopterFlags.targetAdopterId) =>
-                sql`EXISTS (SELECT 1 FROM adopters o WHERE o.id = ${id} AND o.added_by = ${viewer} AND o.deleted_at IS NULL)`;
+                sql`EXISTS (SELECT 1 FROM adopters o WHERE o.id = ${id} AND (${teamSql}) AND o.deleted_at IS NULL)`;
             const party = sql.join([
                 sql`r.requester_email = ${normEmail(viewer)}`,
                 ...team.map(e => sql`r.owner_email = ${normEmail(e)}`),
@@ -1496,8 +1501,13 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
             db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter2Id)).get(),
         ]);
 
-        const isOwner = (a?.addedBy === actorEmail) || (b?.addedBy === actorEmail);
-        const isAdminUser = await isAdminAsync(actorEmail);
+        // Step 2 (Jon 2026-11-05): the team acts as one — the loader of either side or an
+        // org-mate of theirs answers (case-insensitive, isOwnerOrOrgMate), or an admin.
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        const [teamA, teamB, isAdminUser] = await Promise.all([
+            isOwnerOrOrgMate(actorEmail, a?.addedBy), isOwnerOrOrgMate(actorEmail, b?.addedBy), isAdminAsync(actorEmail),
+        ]);
+        const isOwner = teamA || teamB;
 
         if (!isOwner && !isAdminUser) {
             return { success: false, code: 'not_authorized', error: 'Not authorized to dismiss this pair' };

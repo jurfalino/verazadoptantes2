@@ -14,6 +14,11 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/config/admins', () => ({ isAdminAsync: vi.fn(async (e: string) => e === 'admin@x.org') }));
 vi.mock('@/lib/orgMembership', async (orig) => ({
     ...(await orig()),
+    // Step 2: mate@x.org is north@x.org's teammate (the team acts as one).
+    isOwnerOrOrgMate: vi.fn(async (viewer: string, owner: string | null) => {
+        const v = (viewer ?? '').toLowerCase(), o = (owner ?? '').toLowerCase();
+        return !!v && !!o && (v === o || (['north@x.org', 'mate@x.org'].includes(v) && ['north@x.org', 'mate@x.org'].includes(o)));
+    }),
     // Rescate Norte: north@x.org and its member mate@x.org.
     getOrgsForEmail: vi.fn(async (email: string) => (['north@x.org', 'mate@x.org'].includes(email) ? [{ id: 'o1', name: 'Rescate Norte' }] : [])),
 }));
@@ -85,8 +90,11 @@ describe('settleNotSamePerson', () => {
     });
 
     it('a member of the owner\'s group sees the group\'s name', async () => {
-        const r = await run('mate@x.org', ['old']);
-        expect(r.asked[0].ownerLabels).toEqual(['Rescate Norte', 'east']);
+        // Since step 2 a teammate settles instead of asking; they are asked only on the contact
+        // window ('subject') when their team loaded the OTHER side.
+        sqlite.prepare(`UPDATE adopters SET added_by = CASE id WHEN 'new' THEN 'east@x.org' ELSE 'north@x.org' END`).run();
+        const r = await settleNotSamePerson(db as never, { actor: 'mate@x.org', adopterId: 'new', rejectedIds: ['old'], offered, ctx: {}, settleBy: 'subject' });
+        expect(r.asked[0].ownerLabels).toEqual(['east', 'Rescate Norte']);
     });
 
     it('profiles with no owner: no label (the screen says «los administradores»)', async () => {
@@ -95,3 +103,26 @@ describe('settleNotSamePerson', () => {
         expect(r.asked).toEqual([{ otherId: 'old', otherName: 'Rosa Díaz', ownerLabels: [] }]);
     });
 });
+
+describe('step 2 — a teammate answers like the one who loaded it', () => {
+    it("a teammate of the profile's loader settles: dismissed, nobody asked", async () => {
+        const r = await run('mate@x.org', ['old']);
+        expect(r).toMatchObject({ recorded: ['old'], asked: [] });
+        expect(rows()).toEqual([{ a: 'new', b: 'old', status: 'dismissed', confidence: 'low' }]);
+    });
+
+    it("an owner stored with capitals still counts for their team", async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'North@X.org' WHERE id = 'new'`).run();
+        expect((await run('mate@x.org', ['old'])).recorded).toEqual(['old']);
+    });
+
+    it("'subject': a teammate of only the OTHER side's loader asks, never settles", async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = 'east@x.org' WHERE id = 'new'`).run();
+        sqlite.prepare(`UPDATE adopters SET added_by = 'north@x.org' WHERE id = 'old'`).run();
+        const r = await settleNotSamePerson(db as never, { actor: 'mate@x.org', adopterId: 'new', rejectedIds: ['old'], offered, ctx: {}, settleBy: 'subject' });
+        expect(r.recorded).toEqual([]);
+        expect(r.asked).toHaveLength(1);
+        expect(rows()).toEqual([{ a: 'new', b: 'old', status: 'pending', confidence: 'medium' }]);
+    });
+});
+

@@ -4,6 +4,7 @@ import { isAdminAsync } from '@/config/admins';
 import { keepOffered } from '@/domain/rejectedCandidates';
 import { logger } from '@/lib/logger';
 import { recordSeparatePairs } from '@/lib/mergeRequests';
+import { getOrgsForEmail, isOwnerOrOrgMate } from '@/lib/orgMembership';
 import type { getDb } from '@/lib/db';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -19,14 +20,16 @@ export interface NotSamePersonAsked {
     ownerLabels: string[];
 }
 
-const sameEmail = (a: string | null | undefined, b: string) => !!a && a.trim().toLowerCase() === b.trim().toLowerCase();
+/** The actor or a teammate loaded it (step 2: the team acts as one; case-insensitive). */
+async function teamLoaded(actor: string, addedBy: string | null | undefined): Promise<boolean> {
+    return isOwnerOrOrgMate(actor, addedBy);
+}
 
 async function ownerLabel(email: string | null, viewer: string): Promise<string | null> {
     if (!email || email === 'anonymous') return null;
     try {
         // The owner's group is named only to someone in it — the profile byline's rule
         // (v2.18.15: strangers see a name, never org membership). Otherwise a display name.
-        const { getOrgsForEmail } = await import('@/lib/orgMembership');
         const [ownerOrgs, viewerOrgs] = await Promise.all([getOrgsForEmail(email), getOrgsForEmail(viewer)]);
         const shared = ownerOrgs.find(o => viewerOrgs.some(v => v.id === o.id));
         if (shared?.name) return shared.name;
@@ -43,8 +46,8 @@ async function ownerLabel(email: string | null, viewer: string): Promise<string 
  * existing profile is ONE answer, saved the same way on every screen.
  *
  * - Only ids the server's own search `offered` count (keepOffered): a forged id writes nothing.
- * - Who settles it: the person who loaded either profile, or an admin — the rule of
- *   «Mantener separados» (step 2 widens it to their teams). Settled = a dismissed pair.
+ * - Who settles it: the team (the loader or an org-mate) of either profile, or an admin —
+ *   the rule of «Mantener separados» (step 2: the team acts as one). Settled = a dismissed pair.
  * - Anyone else: the pair is opened for the owners (a pending, medium row, so it shows
  *   in «Pendientes») when none exists yet, and the caller is told who was asked.
  * - A pair already settled (dismissed / merged) is never touched.
@@ -58,8 +61,8 @@ export async function settleNotSamePerson(db: Db, input: {
     offered: ReadonlyArray<{ adopterId: string; matchTypes?: string[] }>;
     ctx: Record<string, unknown>;
     /**
-     * Who may settle: 'either' (default) — whoever loaded either profile, as «Mantener
-     * separados»; 'subject' — only whoever loaded `adopterId` (or an admin). The contact
+     * Who may settle: 'either' (default) — the team of either profile's loader, as «Mantener
+     * separados»; 'subject' — only the team of `adopterId`'s loader (or an admin). The contact
      * window uses 'subject': its search runs on a contact the caller typed, which proves
      * nothing about `adopterId`, so the other side's owner may only ask (review 2026-11-06).
      */
@@ -90,7 +93,8 @@ export async function settleNotSamePerson(db: Db, input: {
         try {
             const other = await row(otherId);
             if (!other) continue;
-            const settles = admin || sameEmail(self.addedBy, actor) || (input.settleBy !== 'subject' && sameEmail(other.addedBy, actor));
+            const settles = admin || await teamLoaded(actor, self.addedBy)
+                || (input.settleBy !== 'subject' && await teamLoaded(actor, other.addedBy));
             if (settles) {
                 const wrote = await recordSeparatePairs(db, adopterId, [otherId], actor, { ...ctx, adopterId });
                 if (wrote.failed.length) { failed.push(otherId); errorId = wrote.errorId ?? errorId; }

@@ -3,7 +3,8 @@ import { adopters, duplicateCandidates, pendingPairHidden } from '@/db/schema';
 import { pairKey } from '@/domain/dedupPair';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { logger } from '@/lib/logger';
-import { normEmail } from '@/lib/orgMembership';
+import { getTeamEmails, normEmail } from '@/lib/orgMembership';
+import { mayAnswerPair } from '@/domain/pairAnswer';
 import { storedScoreToPercent } from '@/lib/scoring';
 import type { getDb } from '@/lib/db';
 import type { DuplicateCandidate } from '@/types/duplicates';
@@ -25,6 +26,15 @@ export async function loadHiddenPairKeys(db: Db, actorEmail: string): Promise<Se
         });
         return new Set();
     }
+}
+
+/**
+ * The viewer and their org-mates, normalized — whose pairs the viewer answers (step 2,
+ * mayAnswerPair). getTeamEmails fails open to the viewer alone, so a lookup failure
+ * narrows to the viewer's own pairs, never wider.
+ */
+export async function viewerTeam(viewer: string): Promise<Set<string>> {
+    return new Set([normEmail(viewer), ...(await getTeamEmails(viewer)).map(normEmail)].filter(Boolean));
 }
 
 /**
@@ -81,14 +91,15 @@ export async function loadOpenPairs(
         )
     ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
     loadHiddenPairKeys(db, viewer)]);
+    const team = await viewerTeam(viewer);
     const nameMap = new Map<string, string>();
     const ownerMap = new Map<string, string | null>();
     for (const a of otherAdopters) {
         if (a) { nameMap.set(a.id, a.name); ownerMap.set(a.id, a.addedBy); }
     }
-    // The same test as the feed's `listed` (owns either side), minus the pairs the viewer hid.
+    // The same test as the feed's `listed` (the viewer's team loaded either side), minus the pairs the viewer hid.
     const onViewerList = (otherId: string) =>
-        (self?.addedBy === viewer || ownerMap.get(otherId) === viewer) && !hidden.has(pairKey(adopterId, otherId));
+        mayAnswerPair(team, self?.addedBy, ownerMap.get(otherId)) && !hidden.has(pairKey(adopterId, otherId));
 
     return candidates
         .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
@@ -136,7 +147,7 @@ export async function formMatchIds(
 export interface PendingDuplicateRef {
     otherAdopterId: string;
     otherAdopterName: string;
-    /** On the viewer's «Pendientes» list (they loaded a side, didn't hide it) — the bar offers «Revisar». */
+    /** On the viewer's «Pendientes» list (their team loaded a side, they didn't hide it) — the bar offers «Revisar». */
     onViewerList: boolean;
 }
 
@@ -164,7 +175,7 @@ export async function pendingDuplicatesByAdopter(
             .all() as Array<{ id: string; name: string; addedBy: string | null }>;
         for (const r of rows) people.set(r.id, { name: r.name, addedBy: r.addedBy });
     }
-    const hidden = await loadHiddenPairKeys(db, viewer);
+    const [hidden, team] = await Promise.all([loadHiddenPairKeys(db, viewer), viewerTeam(viewer)]);
     const when = (d: Date | number | null) => (d instanceof Date ? d.getTime() : Number(d ?? 0));
     // The profile bar's order (loadOpenPairs): strongest first, then newest — so the
     // card and the profile name the same person and «Revisar» opens the same pair.
@@ -179,7 +190,7 @@ export async function pendingDuplicatesByAdopter(
             list.push({
                 otherAdopterId: other,
                 otherAdopterName: o.name,
-                onViewerList: (ownerOf.get(self) === viewer || o.addedBy === viewer) && !hidden.has(pairKey(self, other)),
+                onViewerList: mayAnswerPair(team, ownerOf.get(self), o.addedBy) && !hidden.has(pairKey(self, other)),
             });
             out.set(self, list);
         }
