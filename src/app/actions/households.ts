@@ -70,6 +70,7 @@ import { ratingAfterMerge } from '@/domain/ratings';
 import { realOwner } from '@/domain/dedupPair';
 import { keepOffered } from '@/domain/rejectedCandidates';
 import { recordSeparatePairs } from '@/lib/mergeRequests';
+import { isAdminAsync } from '@/config/admins';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
@@ -556,10 +557,23 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
         if (createdProfile && Array.isArray(input.rejectedProfileIds) && input.rejectedProfileIds.length) {
             try {
                 const offered = await getHouseholdMatchCandidates({ name: name || undefined, contactEntries: input.contactEntries, anchorAdopterId: anchorId });
-                const { kept, dropped } = keepOffered(input.rejectedProfileIds.slice(0, 10), offered.results.map(r => r.adopterId));
-                if (dropped) logger.warn('addHouseholdPerson: rejected id not offered, ignored', { ...out, dropped });
-                if (offered.failed) logger.warn('addHouseholdPerson: candidate re-check failed, «no» answers not recorded', { ...out, errorId: offered.errorId });
-                await recordSeparatePairs(db, person.id, kept, actor, out);
+                if (offered.failed) {
+                    logger.warn('addHouseholdPerson: candidate re-check failed, «no» answers not recorded', { ...out, errorId: offered.errorId });
+                } else {
+                    const { kept, dropped } = keepOffered(input.rejectedProfileIds.slice(0, 10), offered.results.map(r => r.adopterId));
+                    if (dropped) logger.warn('addHouseholdPerson: rejected id not offered, ignored', { ...out, dropped });
+                    // Who may answer a pair: the same rule as «Mantener separados» (dismissDuplicateCandidate) —
+                    // the actor loaded one of the two profiles, or is an admin. A contributor's «No» is not
+                    // recorded; the Scan keeps asking the owners (spec 2026-11-05 review, finding 6).
+                    const admin = await isAdminAsync(actor);
+                    const ownerOf = async (id: string) => (await db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get())?.addedBy ?? null;
+                    const mine = (owner: string | null) => !!owner && owner.trim().toLowerCase() === actor.trim().toLowerCase();
+                    const newIsMine = mine(await ownerOf(person.id));
+                    const allowed: string[] = [];
+                    for (const id of kept) if (admin || newIsMine || mine(await ownerOf(id))) allowed.push(id);
+                    if (allowed.length < kept.length) logger.info('addHouseholdPerson: «no» not recorded — the actor loaded neither profile', { ...out, skipped: kept.length - allowed.length });
+                    await recordSeparatePairs(db, person.id, allowed, actor, out);
+                }
             } catch (e) {
                 logger.error('addHouseholdPerson: «no es la misma persona» not recorded (the add stands)', e, out);
             }
