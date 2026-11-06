@@ -1,6 +1,6 @@
 # A form match is a possible duplicate
 
-**Status:** design, awaiting Jon's approval · 2026-11-05 · branch `feature/form-match-is-duplicate`
+**Status:** approved by Jon 2026-11-05 (with the five CX additions below) · build step 1 first · branch `feature/form-match-is-duplicate`
 
 ## Why
 
@@ -29,7 +29,7 @@ Jon's direction (2026-11-05): **a form match is just another possible duplicate.
 ## Non-goals
 
 - No change to how pairs are detected or scored, how merges work, or the cross-team «Pedir unir» flow.
-- No new wording for «Pendientes de revisar» / «Posible duplicado». The labels proposed earlier in the conversation are a separate decision.
+- Rewording the other surfaces is step 3 (below), not part of step 1.
 - No change to what the form screen shows besides the match banner and the back link (answers, semáforo, contract stay).
 
 ## Anti-goals (would be a failure even if it "works")
@@ -42,7 +42,7 @@ Jon's direction (2026-11-05): **a form match is just another possible duplicate.
 
 | Case | Today | After |
 |---|---|---|
-| Form arrives, looks like an existing profile | Row: «Por revisar» → form screen. Profile: nothing. Home: «1 formulario por revisar» | Row: «Posible duplicado» → «Pendientes de revisar», scrolled to that pair. Profile: «Posible duplicado de Jonathan Urfalino · Revisar». Home: counted in «N pendientes de revisar». Form screen: still shows «Encontramos un perfil parecido» with the same pair |
+| Form arrives, looks like an existing profile | Row: «Por revisar» → form screen. Profile: nothing. Home: «1 formulario por revisar» | Row: the profile's own bar «Posible duplicado de Jonathan Urfalino · Revisar» (44 px button) → «Pendientes de revisar», scrolled to that pair. Profile: «Posible duplicado de Jonathan Urfalino · Revisar». Home: counted in «N pendientes de revisar». Form screen: still shows «Encontramos un perfil parecido» with the same pair |
 | Rescuer says «No es esta persona» on the form screen | Hides the card until reload; nothing saved | Same as «Mantener separados»: the pair is dismissed. Gone from the form screen, the list, the profile, the pill and the homepage |
 | Rescuer says «Mantener separados» in the list (Pedro's case) | Form still says «Por revisar» | Form screen shows no pending match; nothing else marks Pedro |
 | Rescuer says «Es la misma persona» / «Unir perfiles» | Merges (unchanged) | Unchanged |
@@ -74,7 +74,42 @@ Removed: the «Por revisar» filter and pill on /my-adopters, and the homepage l
 
   Today both `getPendingDuplicatesForUser` and `dismissDuplicateCandidate` are scoped to the person who loaded a side; both widen to that person's team (OR of `eq`, no `IN`, failing closed on an empty team). This applies on every surface, not just forms. It is security-adjacent, so **an independent review must come back before production**.
 - **Contract «¿Ninguna coincide? → Continuar con el perfil nuevo» records nothing** (as today). Walked through four cases: recording on that click helps only when every match is clearly someone else, and costs only a few clicks there; when it's wrong it is permanent (a dismissed pair is never suggested again and can't be reopened) and decides for other teams. Matches stay pending until someone answers each one.
-7. **No data migration.** Production has 0 form submissions; staging has 13 (2 still on their own profile). Pairs for them already exist or were dismissed; nothing to backfill.
+- **No data migration** (builder's call 7): Production has 0 form submissions; staging has 13 (2 still on their own profile). Pairs for them already exist or were dismissed; nothing to backfill.
+
+
+## CX additions (Jon approved 2026-11-05, prototype `proto-shots/misma-persona/index.html`)
+
+Evidence (production, last 60 days, excluding Jon): Mis adoptantes opened 4× by 1 person; 4 pair answers by
+rescuers, 2 by the admin; 0 merge requests ever; 126 open visible pairs (110 inside the Catpuccino import
+account); 0 form or contract submissions ever. 14 screens ask "same person?", and only «Pendientes» saves a «no».
+
+1. **One bar on the card and on the profile.** A person with an open pair shows, on their /my-adopters card,
+   the same component as the profile bar (`AdopterProfileV2` «Posible duplicado de X · Revisar», 44 px
+   button) instead of the 23 px pill. «Revisar» opens that pair in «Pendientes de revisar» (newest pair when
+   several). The «Por revisar» filter/pill go.
+2. **Household «No, es otra persona» is saved.** Today nothing records it, and the next Scan pairs the new
+   profile with the very candidate the rescuer rejected (seen in production: pairs detected ~10 min after
+   household adds; one shares a document, phone and full name). The rejected candidate ids travel with the add;
+   once the new profile exists, each (new, rejected) pair is written `dismissed` (resolved_by = actor), so the
+   Scan's dismissed-key skip and the factory's existing-pair skip both hold. «Sí» unchanged.
+3. **Measure the answers.** One PostHog event per answer, `same_person_answered`, with
+   `{ surface, answer: 'same' | 'different', own: boolean }`. No names, ids or contact values.
+   Surfaces in step 1: pendientes, form_results, contract_results, household, profile_bar (the «Revisar» click,
+   as `opened`).
+4. **Ship in three steps.**
+   - **Step 1 (now):** the design above, plus additions 1–3.
+   - **Step 2:** teammates answer both ways. This includes the «Pendientes» section and the profile bar's
+     «Revisar» for team pairs. Today a teammate sees «Posible duplicado» in the list, but has no «Pendientes»
+     section and gets a blue bar with no «Revisar». It ships after an independent security review returns.
+   - **Step 3:** wording (copy only; see addition 5).
+5. **One way to ask (step 3).** Question «¿Es la misma persona?», concept «Posible duplicado», buttons
+   «Sí, es la misma persona» / «No, es otra persona» on all 14 screens. The consequence (merge, add data, keep
+   separate) stays in the confirmation. The profile bar looks the same for every viewer. /contract-results and
+   the sheet import's Duplicados step move to i18n. Jon OK'd the page's proposal ("ok proceed"); exact strings
+   are re-confirmed when step 3 starts.
+
+Not changed: the contact-already-on-another-profile window's «No es esta persona» stays local (Jon 2026-10-29).
+Revisit it in step 3 if Jon wants.
 
 ## Known edge, accepted
 
@@ -92,10 +127,15 @@ and it is the price of one shared answer.
 - `src/lib/homeModulesData.ts`, `src/components/home/HomeModules.tsx`, `src/types/homeModules.ts`: remove `formsToReview`
 - Entry links: `my-adopters/page.tsx`, `AdoptionHistory.tsx`, `AnimalApplicants.tsx`, `ApplicantDetailPanel.tsx`, `OrphanSubmissionsSection.tsx`, notification URL in `api/form/[userId]/submit/route.ts`
 - i18n es/en/pt: remove `myAdopters.form_needs_review*`, `homeModules.forms_review_*`, `myAdopters.review_empty`; add back-link labels
+- Household: `src/components/household/PersonForms.tsx` (pass rejected ids), `src/lib/householdPeople.ts` / `src/app/actions/households.ts` (write dismissed pairs)
+- Card bar: `src/app/my-adopters/page.tsx` (reuse the profile bar component, extracted)
+- Events: a small `trackSamePersonAnswer` helper next to the existing PostHog calls
 - Tests: `src/domain/formLink.test.ts`, `tests/my-adopters-forms.authed.spec.ts`, `tests/form-results-link.authed.spec.ts`, homepage spec; new e2e: answer on one screen, check it's gone on the others
 
 ## Verification
 
 - e2e: a form that matches an existing profile → the row shows «Posible duplicado», the profile shows the banner, the form screen shows the match. «No es esta persona» on the form screen → all three gone after reload. Same starting from «Mantener separados» in the list.
 - Back link from each of the 4 entry points.
+- Household: «No» on a candidate → no pending pair between the two, even after a Scan.
+- Card bar: 44 px «Revisar», measured at 390 px.
 - Staging: Pedro Paez shows no pending match; his row has no «Por revisar».
