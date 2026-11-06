@@ -702,3 +702,10 @@ describe('step 2 — the team acts as one (Jon 2026-11-05: teammates answer both
         expect(sqlite.prepare(`SELECT status FROM duplicate_candidates WHERE id = 'cand-older-mine'`).get()).toEqual({ status: 'pending' });
     });
 });
+
+describe('step 2 review — the feed and the bar agree on stored owners with spaces or capitals', () => {
+    it("a teammate lists a pair whose loader is stored as ' Owner@Example.com '", async () => {
+        sqlite.prepare(`UPDATE adopters SET added_by = ' Owner@Example.com ' WHERE id = 'o-new'`).run();
+        expect((await feed(MATE)).pairs.map(p => p.candidateId)).toContain('cand-older-mine');
+    });
+});

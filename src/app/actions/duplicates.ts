@@ -1034,8 +1034,10 @@ export async function getPendingDuplicatesForUser(
         // The fan-out is now bounded by pageSize instead of corpus size.
         // Step 2 (Jon 2026-11-05): the team acts as one — the sides the viewer OR a teammate
         // loaded (mayAnswerPair's rule; OR of bound scalars, never an IN array).
+        // lower(trim()) — the same normalization as mayAnswerPair / normEmail, so the list and the bar agree.
         const teamList = [...new Set([normEmail(viewer), ...teamKeys])].filter(Boolean);
-        const byTeam = (col: typeof adopters.addedBy) => or(...teamList.map(e => sql`lower(${col}) = ${e}`))!;
+        if (teamList.length === 0) return EMPTY; // unreachable (getUser guarantees an email); never "everyone"
+        const byTeam = (col: typeof adopters.addedBy) => or(...teamList.map(e => sql`lower(trim(${col})) = ${e}`))!;
         const ownRows = await db.select({ id: adopters.id }).from(adopters)
             .where(and(byTeam(adopters.addedBy), isNull(adopters.deletedAt))).all();
         const ownIds = new Set((ownRows as Array<{ id: string }>).map(r => r.id));
@@ -1076,9 +1078,11 @@ export async function getPendingDuplicatesForUser(
         // Correlated EXISTS with bound scalars — never a bound id array (D1
         // does not expand IN).
         try {
-            const teamSql = sql.join(teamList.map(e => sql`lower(o.added_by) = ${e}`), sql` OR `);
-            const ownSide = (id: typeof adopterFlags.adopterId | typeof adopterFlags.targetAdopterId) =>
-                sql`EXISTS (SELECT 1 FROM adopters o WHERE o.id = ${id} AND (${teamSql}) AND o.deleted_at IS NULL)`;
+            // ONE EXISTS for both sides: the team list is bound once (≤30 params), keeping the query
+            // well under D1's 100 bound parameters with a full team (step 2 review).
+            const teamSql = sql.join(teamList.map(e => sql`lower(trim(o.added_by)) = ${e}`), sql` OR `);
+            const eitherSideTeamOwned = sql`EXISTS (SELECT 1 FROM adopters o
+                WHERE (o.id = ${adopterFlags.adopterId} OR o.id = ${adopterFlags.targetAdopterId}) AND (${teamSql}) AND o.deleted_at IS NULL)`;
             const party = sql.join([
                 sql`r.requester_email = ${normEmail(viewer)}`,
                 ...team.map(e => sql`r.owner_email = ${normEmail(e)}`),
@@ -1102,7 +1106,7 @@ export async function getPendingDuplicatesForUser(
                 sql`${adopterFlags.targetAdopterId} IS NOT NULL AND ${adopterFlags.targetAdopterId} <> ${adopterFlags.adopterId}`,
                 sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
                     AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
-                sql`(${ownSide(adopterFlags.adopterId)} OR ${ownSide(adopterFlags.targetAdopterId)} OR ${requestOnPair})`,
+                sql`(${eitherSideTeamOwned} OR ${requestOnPair})`,
             )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));

@@ -88,13 +88,17 @@ export async function settleNotSamePerson(db: Db, input: {
         return result();
     }
     if (!self) return result();
+    // The subject's side is the same for every id: checked once (the review's minor).
+    let selfTeam = false;
+    try { selfTeam = admin || await teamLoaded(actor, self.addedBy); } catch (e) {
+        logger.warn('settleNotSamePerson: team check failed, solo rule', { ...ctx, actor, adopterId, error: e instanceof Error ? e.message : String(e) });
+    }
     // One id at a time: a failure on one never skips the rest, and each is reported.
     for (const otherId of kept) {
         try {
             const other = await row(otherId);
             if (!other) continue;
-            const settles = admin || await teamLoaded(actor, self.addedBy)
-                || (input.settleBy !== 'subject' && await teamLoaded(actor, other.addedBy));
+            const settles = selfTeam || (input.settleBy !== 'subject' && await teamLoaded(actor, other.addedBy));
             if (settles) {
                 const wrote = await recordSeparatePairs(db, adopterId, [otherId], actor, { ...ctx, adopterId });
                 if (wrote.failed.length) { failed.push(otherId); errorId = wrote.errorId ?? errorId; }

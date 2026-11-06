@@ -82,7 +82,7 @@ export async function loadOpenPairs(
     const otherIds = candidates.map((c: { adopter1Id: string; adopter2Id: string }) =>
         c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id
     );
-    const [otherAdopters, self, hidden] = await Promise.all([Promise.all(
+    const [otherAdopters, self, hidden, team] = await Promise.all([Promise.all(
         otherIds.map((id: string) =>
             db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy })
                 .from(adopters)
@@ -90,8 +90,7 @@ export async function loadOpenPairs(
                 .get()
         )
     ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
-    loadHiddenPairKeys(db, viewer)]);
-    const team = await viewerTeam(viewer);
+    loadHiddenPairKeys(db, viewer), viewerTeam(viewer)]);
     const nameMap = new Map<string, string>();
     const ownerMap = new Map<string, string | null>();
     for (const a of otherAdopters) {
