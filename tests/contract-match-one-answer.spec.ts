@@ -49,7 +49,7 @@ test('contract: «No es esta persona» is saved for the pair and the card stays 
         await page.reload();
         await expect(page.getByTestId('contract-match-not-this')).toHaveCount(0, { timeout: 30_000 });
         // Someone did match: once answered, the page must not claim there were no records.
-        await expect(page.locator('main')).not.toContainText('No se encontraron registros previos');
+        await expect(page.locator('main')).not.toContainText(/No se encontraron registros previos|No previous records found|Não encontramos registros anteriores/);
     } finally {
         await ctxA.close();
         await ctxB.close();

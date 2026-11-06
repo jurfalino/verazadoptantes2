@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.32] - 2026-11-06
+
+### Fixed
+- Tests only: three checks on the contract screen looked for the Spanish text, which the English test
+  browser no longer shows now that the screen is translated. They now accept es/en/pt. No app change;
+  2.58.31's staging deploy was blocked by this and never went live.
+
 ## [2.58.31] - 2026-11-06
 
 ### Changed — your team answers «¿Es la misma persona?» as one (step 2)

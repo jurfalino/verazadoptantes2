@@ -14,13 +14,13 @@ test.describe('shared notification links for non-owners', () => {
         await page.goto('/form-results/test-formsub-fixture-teammate-1');
         // The form results render (this fixture has no notification, so no submitter line).
         await expect(page.getByRole('heading', { name: /Form responses|Respuestas del formulario|Respostas do formulário/ })).toBeVisible({ timeout: 30000 });
-        await expect(page.locator('body')).not.toContainText(/No tenés permiso/);
+        await expect(page.locator('body')).not.toContainText(/No tenés permiso|You don't have permission|Você não tem permissão/);
         await expect(page.getByTestId('not-found-page')).toHaveCount(0);
     });
 
     test('contract-results of a teammate: "no permission", not the 404', async ({ page }) => {
         await page.goto('/contract-results/test-notif-fixture-teammate-1');
-        await expect(page.locator('body')).toContainText(/No tenés permiso/, { timeout: 30000 });
+        await expect(page.locator('body')).toContainText(/No tenés permiso|You don't have permission|Você não tem permissão/, { timeout: 30000 });
         await expect(page.getByTestId('not-found-page')).toHaveCount(0);
     });
 
