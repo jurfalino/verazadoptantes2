@@ -32,8 +32,9 @@
  *     - 'pending' (already up for review): only said.
  *     - 'settled' (already recorded as two people: a shared home, «Mantener
  *       separados», «Viven juntos»): «Ya figuran como personas distintas.»
- *   Always: «No es esta persona» → closes the window and drops that row while
- *   the typed value stays the same (local only, no server write, no toast);
+ *   Always: «No es esta persona» → closes the window, drops that row, and saves the
+ *   answer (answerNotSamePerson — the consistency rule, 2026-11-06): settled when the
+ *   viewer loaded either profile, else opened for the owners, who are named in a toast;
  *   «Abrir perfil ↗» (OpenProfileLink) → writes the search-match grant
  *   (grantSearchMatchAccess) so the new tab renders unmasked, then opens it.
  *
@@ -48,6 +49,8 @@ import { getDuplicateHintMatches, grantSearchMatchAccess, flagAdopterAsDuplicate
 import type { DupHintMatch } from '@/app/actions/households';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
+import { answerNotSamePerson } from '@/app/actions/notSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -445,9 +448,29 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
     if (visible.length === 0) return null;
     const open = openId ? visible.find(m => m.adopterId === openId) ?? null : null;
 
+    // «No es esta persona» is an answer, saved like «Mantener separados» (spec 2026-11-06,
+    // consistency rule — reverses 2026-10-29's "local only"). Hidden on the spot; saved on the server,
+    // which settles it (the viewer loaded either profile) or opens it for the owners and names them.
     const handleNotThis = (adopterId: string) => {
         setDismissed(prev => dismissDupHintMatch(prev, value, adopterId));
         setOpenId(null);
+        if (!excludeAdopterId) return;
+        const typed = isDupHintType(type) ? { type: type as 'phone' | 'email' | 'social' | 'id', value } : undefined;
+        void answerNotSamePerson({ adopterId: excludeAdopterId, rejectedIds: [adopterId], ...(typed ? { typed } : {}) })
+            .then(res => {
+                if (!res.ok) {
+                    toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), res.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${res.error}`), 'DuplicateHint.notThis'));
+                    return;
+                }
+                trackSamePersonAnswer('dup_hint', 'different', res.recorded > 0);
+                for (const a of res.asked) {
+                    toast.info(t('adopter.dup_hint_asked_owners').replace('{owners}', a.ownerLabels.join(', ')).replace('{other}', a.otherName));
+                }
+            })
+            .catch(e => {
+                if (handledAsStale(e)) return;
+                toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'DuplicateHint.notThis'));
+            });
     };
 
     const handleOpenFull = async (adopterId: string) => {

@@ -110,8 +110,12 @@ test.describe.serial('composer duplicate hint (option B)', () => {
         await expect(rowsInBox).toHaveCount(1);
         await expect(dos).toHaveCount(0);
         await expect(input).toHaveValue(PHONE);
-        // Nothing was written for «No es esta persona».
+        // «No es esta persona» is an answer (spec 2026-11-06, consistency rule; reverses 2026-10-29's
+        // "local only"). This viewer loaded neither profile, so it doesn't settle the pair: it opens it
+        // for the two owners, and the viewer is told who was asked. No flag is written.
         expect(rows(`SELECT id FROM adopter_flags WHERE adopter_id = '${ANCHOR}'`)).toHaveLength(0);
+        await expect(page.getByText(/We asked|Le preguntamos|Perguntamos/).first()).toBeVisible({ timeout: 30_000 });
+        await expect.poll(() => rows(`SELECT status FROM duplicate_candidates WHERE (adopter1_id = '${ANCHOR}' AND adopter2_id = '${DOS_ID}') OR (adopter1_id = '${DOS_ID}' AND adopter2_id = '${ANCHOR}')`).map(r => r.status), { timeout: 30_000 }).toEqual(['pending']);
 
         // 3. «Marcar como posible duplicado» on the other one.
         await uno.getByTestId('dup-hint-view').click();

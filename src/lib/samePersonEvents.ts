@@ -1,7 +1,7 @@
 import { zarazTrack } from '@/lib/zaraz';
 
 /** Where a «same person?» answer was given (spec 2026-11-05, CX addition 3). */
-export type SamePersonSurface = 'pendientes' | 'form_results' | 'contract_results' | 'household' | 'profile_bar';
+export type SamePersonSurface = 'pendientes' | 'form_results' | 'contract_results' | 'household' | 'profile_bar' | 'dup_hint' | 'import' | 'new_profile';
 
 /**
  * One event per answer, so we can see which screens people answer on, which
