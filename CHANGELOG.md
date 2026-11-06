@@ -15,10 +15,14 @@ All notable changes to BuenAdoptante are documented here.
 - Homepage: «N formularios por revisar» is gone; those matches count in «N pendientes de revisar».
 - The form screen's back link names where you came from (Mis adoptantes, the profile, the animal),
   instead of always «Mis animales».
-- Adding a household member: «No, es otra persona» is saved, so the duplicate scan doesn't ask the
-  same question again later. Only someone who loaded one of the two profiles (or an admin) records it.
+- One rule for every «no, it's not this person» (Jon 2026-11-06): it is saved — permanently, for
+  everyone — as soon as both profiles exist, on every screen: «Pendientes», form, contract, adding a
+  household member, the «Ya está en otro perfil» window (was "local only" since 2026-10-29), the post
+  import and the new-profile form. Only someone who loaded one of the two profiles (or an admin)
+  settles it; anyone else's «No» sends the question to the owners' «Pendientes», and they're told who
+  was asked. The server only accepts a «No» about a profile its own duplicate search offers.
 - After every match is answered, the form and contract screens no longer claim "no previous records".
-- New analytics event `same_person_answered` (screen, yes/no, own profile or not — no names).
+- New analytics event `same_person_answered` (screen, yes/no, own profile or not — no names), on every screen above.
 - Teammates answering each other's matches is the next step (needs a security review first).
 
 ## [2.58.29] - 2026-11-05
