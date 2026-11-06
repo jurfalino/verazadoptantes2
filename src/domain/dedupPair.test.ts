@@ -10,6 +10,8 @@ const MINE_NEW = side('mine-new', ME, 3_000, true);
 const FOREIGN_OLD = side('foreign-old', 'other@example.com', 500, false);
 const FOREIGN_NEW = side('foreign-new', 'other@example.com', 2_000, false);
 const MATE_NEW = side('mate-new', 'mate@example.com', 2_000, true);
+/** The same two records as a stranger sees them: neither is on the stranger's team (teamOwned is caller-relative). */
+const asStranger = (s: DedupSide): DedupSide => ({ ...s, teamOwned: false });
 
 describe('decideDedupMerge', () => {
     it('anonymous: refused', () => {
@@ -17,7 +19,7 @@ describe('decideDedupMerge', () => {
     });
 
     it('a rescuer who created neither side: refused', () => {
-        expect(decideDedupMerge('stranger@example.com', MINE_OLD, FOREIGN_NEW)).toEqual({ ok: false, reason: 'not_yours' });
+        expect(decideDedupMerge('stranger@example.com', asStranger(MINE_OLD), FOREIGN_NEW)).toEqual({ ok: false, reason: 'not_yours' });
     });
 
     it('both sides hers: allowed, the older survives', () => {
@@ -94,7 +96,7 @@ describe('decideDedupAction', () => {
     it('refuses like decideDedupMerge: unauthenticated / not_found / not_yours', () => {
         expect(decideDedupAction(null, MINE_OLD, MINE_NEW, 'detected')).toEqual({ kind: 'refuse', reason: 'unauthenticated' });
         expect(decideDedupAction(ME, MINE_OLD, null as unknown as DedupSide, 'detected')).toEqual({ kind: 'refuse', reason: 'not_found' });
-        expect(decideDedupAction('stranger@example.com', MINE_OLD, FOREIGN_NEW, 'detected')).toEqual({ kind: 'refuse', reason: 'not_yours' });
+        expect(decideDedupAction('stranger@example.com', asStranger(MINE_OLD), FOREIGN_NEW, 'detected')).toEqual({ kind: 'refuse', reason: 'not_yours' });
     });
 
     it('both sides team-owned: merge, older survives, nobody to notify (detected and flag)', () => {
@@ -258,7 +260,7 @@ describe('decideDedupAction with a chosen survivor (keepId, D24/D41/D42)', () =>
 
     it('the earlier refusals still come first', () => {
         expect(decideDedupAction(null, MINE_OLD, FOREIGN_NEW, 'detected', 'mine-old')).toEqual({ kind: 'refuse', reason: 'unauthenticated' });
-        expect(decideDedupAction('stranger@example.com', MINE_OLD, FOREIGN_NEW, 'detected', 'mine-old')).toEqual({ kind: 'refuse', reason: 'not_yours' });
+        expect(decideDedupAction('stranger@example.com', asStranger(MINE_OLD), FOREIGN_NEW, 'detected', 'mine-old')).toEqual({ kind: 'refuse', reason: 'not_yours' });
     });
 });
 
@@ -276,7 +278,7 @@ describe('keepOptions', () => {
     });
     it('a pair the viewer may not merge at all: neither', () => {
         expect(keepOptions(null, MINE_OLD, FOREIGN_NEW)).toEqual({ a: false, b: false });
-        expect(keepOptions('stranger@example.com', MINE_OLD, FOREIGN_NEW)).toEqual({ a: false, b: false });
+        expect(keepOptions('stranger@example.com', asStranger(MINE_OLD), FOREIGN_NEW)).toEqual({ a: false, b: false });
         expect(keepOptions(ME, MINE_OLD, null)).toEqual({ a: false, b: false });
     });
 });
@@ -364,7 +366,7 @@ describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and t
             keepOptions: { new: true, existing: true }, actionByKeep: { new: 'merge', existing: 'merge' }, defaultKeep: 'existing',
         });
         // …but not on a pair they created neither side of.
-        expect(pairChoices('admin@example.com', FOREIGN_NEW, MINE_OLD, 'detected', admin).keepOptions).toEqual({ new: false, existing: false });
+        expect(pairChoices('admin@example.com', FOREIGN_NEW, asStranger(MINE_OLD), 'detected', admin).keepOptions).toEqual({ new: false, existing: false });
     });
 
     it('a pair rebuilt from a request: nothing the click could honour', () => {
@@ -376,7 +378,7 @@ describe('pairChoices — the «¿Cuál se conserva?» switch, for the row and t
     });
 
     it('a viewer who created neither side: nothing allowed', () => {
-        expect(pairChoices('stranger@example.com', FOREIGN_NEW, MINE_OLD, 'detected', NONE).actionByKeep).toEqual({ new: null, existing: null });
+        expect(pairChoices('stranger@example.com', FOREIGN_NEW, asStranger(MINE_OLD), 'detected', NONE).actionByKeep).toEqual({ new: null, existing: null });
     });
 });
 
@@ -453,3 +455,18 @@ describe('keepByAge — the side a merge proposes to keep, on every screen', () 
         expect(keepByAge({ id: 'a' }, { id: 'b', createdAt: 5 }).id).toBe('a');
     });
 });
+
+describe('step 2 — a teammate answers like the one who loaded it', () => {
+    // Vero sees ME's profile as team-owned (ME is her org-mate) and a foreign one as not.
+    const VERO = 'vero@example.com';
+    it('teammate, foreign newer side: asks its owner (as ME would), not refused', () => {
+        expect(decideDedupAction(VERO, MINE_OLD, FOREIGN_NEW, 'detected')).toEqual({ kind: 'request', primaryId: 'mine-old', secondaryId: 'foreign-new', ownerEmail: 'other@example.com' });
+    });
+    it('teammate, both sides the team’s: merges straight away', () => {
+        expect(decideDedupAction(VERO, MINE_OLD, MATE_NEW, 'detected')).toEqual({ kind: 'merge', primaryId: 'mine-old', secondaryId: 'mate-new', notifyOwner: null });
+    });
+    it('teammate keeps the foreign side: merges and tells its owner (as ME would)', () => {
+        expect(decideDedupAction(VERO, FOREIGN_OLD, MINE_NEW, 'detected', 'foreign-old')).toEqual({ kind: 'merge', primaryId: 'foreign-old', secondaryId: 'mine-new', notifyOwner: 'other@example.com' });
+    });
+});
+
