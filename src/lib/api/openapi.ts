@@ -106,21 +106,26 @@ La respuesta dice dos cosas por separado:
 \`rating\` es el promedio (con un decimal) de todas las calificaciones; \`ratingLevel\` es ese promedio redondeado.
 
 ### Marcas (\`flags\`)
+Algo del perfil que puede necesitar una acción (por ejemplo, revisar si es la misma persona que otro perfil). No dicen nada de si la persona es confiable: eso son las alertas.
+
 | Marca | Qué significa |
 |---|---|
-| \`inaccurate\` | Alguien marcó que los datos de esa persona no son confiables. |
 | \`duplicate\` | Un rescatista marcó el perfil como duplicado de otro y todavía no se resolvió. Cuando se combinan los dos perfiles o se decide mantenerlos separados, la marca deja de aparecer: es lo mismo que muestra BuenAdoptante en el perfil. |
 | \`possible_duplicate\` | BuenAdoptante detectó que puede ser la misma persona que otro perfil. |
 
 \`profile.flags\` puede traer además \`verified_identity\` y \`verified_address\` (identidad o domicilio verificados): son buenas señales y por eso no aparecen en \`risk\`.
 
 ### Alertas (\`alerts\`)
-Lo que BuenAdoptante calcula de la actividad de la persona. Cada alerta trae \`type\`, \`count\` y \`periodDays\`:
+Razones para no confiarle un animal, que BuenAdoptante calcula. Cada alerta trae su \`type\` y los campos de ese tipo:
 
-| \`type\` | Qué significa |
-|---|---|
-| \`too_many_requests\` | Pidió adoptar en muchos rescates **distintos** en poco tiempo: \`count\` rescates en \`periodDays\` días (varias solicitudes a un mismo rescate cuentan una vez). |
-| \`too_many_adoptions\` | Adoptó muchos animales en poco tiempo: \`count\` adopciones en \`periodDays\` días. |
+| \`type\` | Campos | Qué significa |
+|---|---|---|
+| \`too_many_requests\` | \`count\`, \`periodDays\` | Pidió adoptar en muchos rescates **distintos** en poco tiempo: \`count\` rescates en \`periodDays\` días (varias solicitudes a un mismo rescate cuentan una vez). |
+| \`too_many_adoptions\` | \`count\`, \`periodDays\` | Adoptó muchos animales en poco tiempo: \`count\` adopciones en \`periodDays\` días. |
+| \`housemate_low_rating\` | \`rating\`, \`ratingLevel\`, \`ratingLabel\` | Alguien que vive con esta persona está calificado 1★ o 2★: la más baja de esas calificaciones. |
+| \`housemate_alerts\` | — | Alguien que vive con esta persona tiene una alerta propia (\`too_many_requests\` o \`too_many_adoptions\`). |
+
+Mirá \`type\` antes de leer los demás campos: puede haber tipos nuevos.
 
 \`profile.alerts\` son las de esa persona; \`risk.alerts\` junta las de **todos** los perfiles que coincidieron, cada una con su \`profileId\`. Si no pudimos leer las calificaciones, la respuesta es \`503 temporarily_unavailable\` y no se guarda nada: nunca te respondemos «sin calificar» por un error nuestro.
 

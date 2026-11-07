@@ -768,7 +768,7 @@ export type PeriodAlertReader = {
     alertsOf: (profileId: string, ctx: Record<string, unknown>) => Promise<PeriodAlerts>;
 };
 
-export function periodAlertReader(db: Db, op: string, budget?: QueryBudget): PeriodAlertReader {
+export function periodAlertReader(db: Db, op: string, budget?: QueryBudget, opts: { strict?: boolean } = {}): PeriodAlertReader {
     const memo = new Map<string, Promise<PeriodAlerts>>();
     let configP: Promise<AdoptionConfig> | null = null;
     let rescueKeysP: Promise<Map<string, string>> | null = null;
@@ -794,7 +794,7 @@ export function periodAlertReader(db: Db, op: string, budget?: QueryBudget): Per
                     const keys = rows.some(r => r.recordType === RECORD_TYPES.REQUEST) ? await rescueKeys() : new Map<string, string>();
                     return periodAlerts(withRescueKeys(rows, keys), await config());
                 } catch (e) {
-                    if (isBudgetSpent(e)) throw e;
+                    if (isBudgetSpent(e) || opts.strict) throw e;
                     logger.warn('households: housemate alerts read failed, none shown for them', { ...ctx, profileId, error: errMsg(e) });
                     return NO_PERIOD_ALERTS;
                 }
@@ -972,7 +972,7 @@ type CardChips = { alert: HousemateAlertSummary; liveIds: Set<string>; anyDelete
  * at most MAX_CARD_ALERT_READS (logged when cut), stopping at the first found.
  * A failed read is logged and answers null; a spent budget is rethrown.
  */
-async function cardChips(db: Db, reader: PeriodAlertReader, budget: QueryBudget, adopterId: string, ctx: Record<string, unknown>): Promise<CardChips | null> {
+async function cardChips(db: Db, reader: PeriodAlertReader, budget: QueryBudget, adopterId: string, ctx: Record<string, unknown>, strict = false): Promise<CardChips | null> {
     try {
         budget.spend(1);
         const { rows, capped } = await housemateStandings(db, adopterId, ctx);
@@ -995,7 +995,7 @@ async function cardChips(db: Db, reader: PeriodAlertReader, budget: QueryBudget,
         }
         return { alert: { lowRating, hasAlerts }, liveIds: new Set(live.map(r => r.id)), anyDeleted: rows.some(r => !r.live) };
     } catch (e) {
-        if (isBudgetSpent(e)) throw e;
+        if (isBudgetSpent(e) || strict) throw e;
         logger.warn('households: card chip read failed, the chips answer from the listed housemates only', { ...ctx, error: errMsg(e) });
         return null;
     }
@@ -1143,37 +1143,47 @@ export async function householdLinesFor(
  * same per-card read as a search card's chips (cardChips: everyone in a
  * non-gift home, screened alert reads), under the same one budget per call
  * (HOUSEHOLD_QUERY_BUDGET), the first HOUSEHOLD_LINE_CARDS rows paid first.
- * Callers pass only rows that are in a home at all. An id gets an entry when
+ * /my-adopters passes only rows that are in a home at all; the API passes every
+ * matched profile (someone in no home costs one indexed read). An id gets an entry when
  * it was answered (NO_HOUSEMATE_ALERT when nothing is wrong, or when its read
  * failed — logged); none when households are off or the budget ran out first
  * (logged once). Never throws.
+ *
+ * `strict` (the public API, which FAILS CLOSED — api/profiles.ts): a failed read
+ * or a spent budget throws instead, so a caller can never answer «no housemate
+ * alerts» because of our error. Households switched off still answer `{}`.
  */
 export async function housemateAlertsFor(
     db: Db,
     viewer: string | null | undefined,
     adopterIds: string[],
-    opts: { budget?: number } = {},
+    opts: { budget?: number; strict?: boolean } = {},
 ): Promise<Record<string, HousemateAlertSummary>> {
     const log = { op: 'housemateAlertsFor', viewer: viewer ?? null };
+    const strict = !!opts.strict;
     try {
         if (adopterIds.length === 0) return {};
         const budget = queryBudget(Math.max(1, opts.budget ?? HOUSEHOLD_QUERY_BUDGET));
         budget.spend(1);
         if (!(await getFeatureFlag('ENABLE_HOUSEHOLD_MEMBERS', { onReadError: true }))) return {};
-        const reader = periodAlertReader(db, 'housemateAlertsFor', budget);
+        const reader = periodAlertReader(db, 'housemateAlertsFor', budget, { strict });
         const ids = [...new Set(adopterIds)];
         const answered = await inWaves(ids, budget, log, async (adopterId): Promise<HousemateAlertSummary | null> => {
             try {
-                return (await cardChips(db, reader, budget, adopterId, { adopterId, viewer: viewer ?? null }))?.alert ?? NO_HOUSEMATE_ALERT;
+                const chips = await cardChips(db, reader, budget, adopterId, { adopterId, viewer: viewer ?? null }, strict);
+                return chips?.alert ?? NO_HOUSEMATE_ALERT;
             } catch (e) {
                 if (isBudgetSpent(e)) return null;
+                if (strict) throw e;
                 // cardChips logs and answers null itself; anything else is unexpected — logged, no chips.
                 logger.warn('households: row chip read failed, the row shows no housemate chips', { ...log, adopterId, error: errMsg(e) });
                 return NO_HOUSEMATE_ALERT;
             }
         });
+        if (strict && answered.length < ids.length) throw new HouseholdBudgetSpent();
         return Object.fromEntries(answered);
     } catch (e) {
+        if (strict) throw e;
         logger.warn('households: housemate chips read failed, no row shows them', { ...log, rows: adopterIds.length, error: errMsg(e) });
         return {};
     }

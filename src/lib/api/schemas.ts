@@ -200,14 +200,37 @@ const ratingSchema = z.object({
     ratingLabel: z.enum(['not_rated', 'dangerous', 'poor', 'average', 'good', 'excellent']),
 });
 
-export const ALERT_TYPES = ['too_many_requests', 'too_many_adoptions'] as const;
-export const PROFILE_FLAGS = ['inaccurate', 'duplicate', 'possible_duplicate', 'verified_identity', 'verified_address'] as const;
-export const RISK_FLAGS = ['inaccurate', 'duplicate', 'possible_duplicate'] as const;
-const alertSchema = z.object({
-    type: z.enum(ALERT_TYPES).meta({ description: 'too_many_requests: asked to adopt at many DIFFERENT rescues in a short period (count = rescues; several requests to one rescue count once). too_many_adoptions: adopted many animals in a short period (count = adoptions).' }),
+export const PERIOD_ALERT_TYPES = ['too_many_requests', 'too_many_adoptions'] as const;
+export const HOUSEMATE_ALERT_TYPES = ['housemate_low_rating', 'housemate_alerts'] as const;
+export const ALERT_TYPES = [...PERIOD_ALERT_TYPES, ...HOUSEMATE_ALERT_TYPES] as const;
+/**
+ * Flags: something on the profile may need doing (Jon, 2026-11-07 — never a
+ * reason not to trust the person; that is an alert). `inaccurate` is not
+ * returned: like the app, the API shows it to nobody but the admins.
+ */
+export const PROFILE_FLAGS = ['duplicate', 'possible_duplicate', 'verified_identity', 'verified_address'] as const;
+export const RISK_FLAGS = ['duplicate', 'possible_duplicate'] as const;
+const periodAlertShape = {
+    type: z.enum(PERIOD_ALERT_TYPES).meta({ description: 'too_many_requests: asked to adopt at many DIFFERENT rescues in a short period (count = rescues; several requests to one rescue count once). too_many_adoptions: adopted many animals in a short period (count = adoptions).' }),
     count: z.number().int(),
     periodDays: z.number().int(),
-});
+};
+const housemateLowRatingShape = {
+    type: z.literal('housemate_low_rating').meta({ description: 'Someone who lives with this person is rated 1★ or 2★: the lowest of those ratings.' }),
+    ...ratingSchema.shape,
+};
+const housemateAlertsShape = {
+    type: z.literal('housemate_alerts').meta({ description: 'Someone who lives with this person has an alert of their own (too_many_requests or too_many_adoptions).' }),
+};
+/** One shape per alert type, with or without the profile it belongs to (risk.alerts carries it). */
+function alertUnion<E extends z.ZodRawShape>(extra: E) {
+    return z.discriminatedUnion('type', [
+        z.object({ ...periodAlertShape, ...extra }),
+        z.object({ ...housemateLowRatingShape, ...extra }),
+        z.object({ ...housemateAlertsShape, ...extra }),
+    ]);
+}
+const alertSchema = alertUnion({});
 export type ApiAlert = z.infer<typeof alertSchema>;
 
 export const profileSummarySchema = ratingSchema.extend({
@@ -217,8 +240,8 @@ export const profileSummarySchema = ratingSchema.extend({
         .meta({ description: 'Which of the identifiers you sent this profile holds. social: one of the accounts in person.socials.' }),
     nameMatchedAs: z.enum(['profile', 'alias', 'household_member']).optional()
         .meta({ description: 'Which of the profile\'s names fits the name you sent: its own name (profile) or one it is also known by (alias). household_member is no longer returned: each person in a household is a profile of their own.' }),
-    flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile: inaccurate, duplicate, possible_duplicate (bad signs) and verified_identity, verified_address (good signs). duplicate is an open report only: once the two profiles are merged or kept separate it is no longer listed.' }),
-    alerts: z.array(alertSchema).meta({ description: 'Activity alerts BuenAdoptante computed for this person: too_many_requests, too_many_adoptions. Empty when none.' }),
+    flags: z.array(z.enum(PROFILE_FLAGS)).meta({ description: 'Marks on the profile, things that may need doing: duplicate, possible_duplicate and verified_identity, verified_address (good signs). duplicate is an open report only: once the two profiles are merged or kept separate it is no longer listed.' }),
+    alerts: z.array(alertSchema).meta({ description: 'Alerts BuenAdoptante computed for this person — reasons not to trust them with an animal: too_many_requests, too_many_adoptions (their own activity), housemate_low_rating, housemate_alerts (someone they live with). Empty when none.' }),
     records: z.partialRecord(z.enum(API_CONTEXTS), z.number().int()).meta({ description: 'Number of records per type.' }),
     lastRecordAt: z.string().nullable().meta({ description: 'Date (YYYY-MM-DD, UTC) of the latest record.' }),
     createdAt: z.string().nullable().meta({ description: 'Date (YYYY-MM-DD, UTC) the profile was created.' }),
@@ -268,8 +291,8 @@ export interface SavedActivity { activityId: string; activityUrl: string; profil
 
 const riskSchema = z.object({
     worstRating: ratingSchema,
-    flags: z.array(z.enum(RISK_FLAGS)).meta({ description: 'Every negative mark on any matched profile: inaccurate, duplicate (an open report only), possible_duplicate.' }),
-    alerts: z.array(alertSchema.extend({ profileId: z.string() })).meta({ description: 'Every activity alert of any matched profile (too_many_requests, too_many_adoptions), with the profile it belongs to.' }),
+    flags: z.array(z.enum(RISK_FLAGS)).meta({ description: 'Every duplicate mark on any matched profile: duplicate (an open report only), possible_duplicate.' }),
+    alerts: z.array(alertUnion({ profileId: z.string() })).meta({ description: 'Every alert of any matched profile (too_many_requests, too_many_adoptions, housemate_low_rating, housemate_alerts), with the profile it belongs to.' }),
     profilesMatched: z.number().int(),
 }).meta({ description: 'Always present: the worst signal across EVERY profile your email / phone / document matched, whatever the result. Check this before handing over an animal.' });
 export type ApiRisk = z.infer<typeof riskSchema>;

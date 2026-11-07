@@ -1,22 +1,28 @@
 /**
- * The public API's `flags` follow the app (Jon, 2026-10-28): `inaccurate` and
- * `duplicate` are the person's open alerts by the profile header's one rule
- * (openAlertKinds). A duplicate report counts only while it is open — it names
- * the other profile and nobody has merged them or kept them separate; one
- * closed by a merge or a «mantener separados» is history and is not reported.
+ * The public API's `flags` follow the app (Jon, 2026-10-28): `duplicate` by the
+ * profile header's one rule (openAlertKinds) — a report counts only while it is
+ * open: it names the other profile and nobody has merged them or kept them
+ * separate; one closed by a merge or a «mantener separados» is history and is
+ * not reported. `inaccurate` is never returned: as in the app, only admins see
+ * it (Jon, 2026-11-07). The API's `alerts` carry the search card's two housemate
+ * chips, read strictly: a failed read is a 503, never «no alerts».
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 
-const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
+const { state } = vi.hoisted(() => ({ state: { db: null as unknown, households: true } }));
 vi.mock('@/app/actions/_db', () => ({ getDb: async () => state.db, getUser: async () => 'api@example.com' }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/lib/logger', async (orig) => ({ ...(await orig<typeof import('@/lib/logger')>()), logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') }, generateErrorId: () => 'gen12345' }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
 vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: {} }) }));
+vi.mock('@/config/features', async (orig) => {
+    const real = await orig<typeof import('@/config/features')>();
+    return { ...real, getFeatureFlag: vi.fn(async (flag: Parameters<typeof real.getFeatureFlag>[0], o?: { onReadError?: boolean }) => flag === 'ENABLE_HOUSEHOLD_MEMBERS' ? state.households : real.getFeatureFlag(flag, o)) };
+});
 
 import { buildProfileSummaries } from './profiles';
-import { openAlertKindsOfRows } from '@/domain/flags';
+import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { MERGED_FLAG_DETAILS_PREFIX, KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 
 type Row = Record<string, unknown>;
@@ -71,18 +77,61 @@ describe('the API flags follow the app (open duplicate reports only)', () => {
         expect((await summaries()).get('untargeted')?.flags).toEqual([]);
     });
 
-    it('inaccurate: the current reason and the legacy one, as the profile header counts them', async () => {
+    it('inaccurate — the current reason and the legacy one — is never returned: only admins see it, as in the app', async () => {
         const s = await summaries();
-        expect(s.get('current')?.flags).toEqual(['inaccurate']);
-        expect(s.get('legacy')?.flags).toEqual(['inaccurate']);
+        expect(s.get('current')?.flags).toEqual([]);
+        expect(s.get('legacy')?.flags).toEqual([]);
     });
 
-    it('every profile: the API says exactly what the profile header draws', async () => {
+    it('every profile: the API says exactly what the profile header draws for a rescuer', async () => {
         const s = await summaries();
         const rows = sqlite.prepare(`SELECT adopter_id AS adopterId, reason, target_adopter_id AS targetAdopterId, details FROM adopter_flags`).all() as Array<{ adopterId: string; reason: string; targetAdopterId: string | null; details: string | null }>;
         for (const id of PEOPLE) {
-            const header = openAlertKindsOfRows(rows.filter(r => r.adopterId === id));
-            expect(s.get(id)?.flags.filter(f => f === 'inaccurate' || f === 'duplicate'), id).toEqual(header);
+            const header = rescuerFlagKinds(openAlertKindsOfRows(rows.filter(r => r.adopterId === id)));
+            expect(s.get(id)?.flags.filter(f => f === 'duplicate'), id).toEqual(header);
         }
+    });
+});
+
+describe('the API alerts carry the housemate chips (Jon, 2026-11-07)', () => {
+    const OWNER = 'o@example.com';
+    beforeEach(async () => {
+        state.households = true;
+        // «open» lives with «merged» (rated 2★ and 1★ → the lowest) and with «kept», who asked at 3 rescues in 3 days.
+        // Records without an animal (the `adoptions` view reads them from adopter_events).
+        const rec = sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, date, recorded_by) VALUES (?, ?, ?, ?, ?, ?)`);
+        rec.run('p1', 'merged', 'observation', 2, 1000, OWNER);
+        rec.run('p2', 'merged', 'observation', 1, 1000, OWNER);
+        const now = Math.floor(Date.now() / 1000);
+        for (const [i, by] of ['r1@example.com', 'r2@example.com', 'r3@example.com'].entries()) rec.run(`q${i}`, 'kept', 'adoption_request', null, now - i * 86400, by);
+        sqlite.prepare(`INSERT INTO households (id, created_by, created_at) VALUES ('hh-1', ?, 1000)`).run(OWNER);
+        const member = sqlite.prepare(`INSERT INTO household_memberships (id, household_id, adopter_id, added_by, added_at) VALUES (?, 'hh-1', ?, ?, 1000)`);
+        for (const p of ['open', 'merged', 'kept']) member.run(`m-${p}`, p, OWNER);
+    });
+
+    it('someone in the home rated 1★ or 2★ → housemate_low_rating with the lowest rating; one with an alert → housemate_alerts', async () => {
+        const s = await summaries();
+        expect(s.get('open')?.alerts).toEqual([
+            { type: 'housemate_low_rating', rating: 1.5, ratingLevel: 2, ratingLabel: 'poor' },
+            { type: 'housemate_alerts' },
+        ]);
+        // «kept» has the alert of its own, and lives with the 1.5★ person.
+        expect(s.get('kept')?.alerts.map(a => a.type)).toEqual(['too_many_requests', 'housemate_low_rating']);
+        // Nobody in a home: no housemate alert.
+        expect(s.get('other')?.alerts).toEqual([]);
+    });
+
+    it('households switched off: no housemate alerts', async () => {
+        state.households = false;
+        expect((await summaries()).get('open')?.alerts).toEqual([]);
+    });
+
+    it('a failed housemate read fails the call (503), never answers «no alerts»', async () => {
+        const real = sqlite.prepare.bind(sqlite);
+        sqlite.prepare = ((q: string) => {
+            if (/household_memberships/.test(q) && /json_object/.test(q)) throw new Error('D1 hiccup');
+            return real(q);
+        }) as typeof sqlite.prepare;
+        await expect(summaries()).rejects.toMatchObject({ status: 503 });
     });
 });
