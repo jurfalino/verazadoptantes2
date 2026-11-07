@@ -2452,7 +2452,7 @@ export default function ImportWizard() {
                                             {/* The shared match card (audit B6). Selecting is the card itself (the radio mark);
                                                 the action follows below the list. */}
                                             <MatchCard newTab headTestId="import-match-head"
-                                                person={{ id: match.id, name: match.name || '', rating: match.standing?.rating, openAlerts: match.standing?.openAlerts, isMinor: !!match.standing?.isMinor, households: match.standing?.households }}
+                                                person={{ id: match.id, name: match.name || '', rating: match.standing?.rating, openFlags: match.standing?.openFlags, isMinor: !!match.standing?.isMinor, households: match.standing?.households }}
                                                 showStanding={!!match.standing}
                                                 leading={(
                                                     <span aria-hidden="true" className={`mt-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-teal-600 bg-teal-600' : 'border-stone-300'}`}>

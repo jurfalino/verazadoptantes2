@@ -15,7 +15,7 @@
  * positioned, so it paints above the stretched name link.
  */
 import { AlertPill } from '@/components/AlertPill';
-import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
+import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
 import { formatRating } from '@/domain/ratings';
 import { HOUSEHOLD_SECTION_HREF, type HousemateAlertSummary } from '@/domain/profileHouseholds';
 import type { AdopterFlags } from '@/types/adopter';
@@ -39,23 +39,23 @@ export function MyAdoptersFlagBadges({ flags, housemateAlert, adopterId, personN
     if (flags.tooManyAdoptions) {
         badges.push(
             <AlertPill key="too_many_adoptions" kind="too_many_adoptions">
-                {t('flags.too_many_adoptions').replace('{count}', String(flags.tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays))))}
+                {t('alerts.too_many_adoptions').replace('{count}', String(flags.tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyAdoptions.actualSpanDays || flags.tooManyAdoptions.periodDays))))}
             </AlertPill>
         );
     }
     if (flags.tooManyRequests) {
         badges.push(
             <AlertPill key="too_many_requests" kind="too_many_requests">
-                {t('flags.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
+                {t('alerts.too_many_requests').replace('{count}', String(flags.tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(flags.tooManyRequests.actualSpanDays || flags.tooManyRequests.periodDays))))}
             </AlertPill>
         );
     }
 
     const href = myAdoptersHouseholdHref(adopterId);
     // «Conviviente con alertas — {person}»: the visible words first (label-in-name), then whose profile it opens.
-    const named = (words: string) => t('flags.housemate_chip_of').replace('{chip}', words).replace('{name}', personName);
+    const named = (words: string) => t('alerts.housemate_chip_of').replace('{chip}', words).replace('{name}', personName);
     if (housemateAlert?.lowRating != null) {
-        const words = t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateAlert.lowRating));
+        const words = t('alerts.housemate_low_rating').replace('{rating}', formatRating(housemateAlert.lowRating));
         badges.push(
             <AlertPill key="housemate_low_rating" kind="housemate_low_rating" wrap href={href} ariaLabel={named(words)} testId="my-adopters-housemate-alert-rating">
                 {words}
@@ -64,13 +64,13 @@ export function MyAdoptersFlagBadges({ flags, housemateAlert, adopterId, personN
     }
     if (housemateAlert?.hasAlerts) {
         badges.push(
-            <AlertPill key="housemate_alerts" kind="housemate_alerts" wrap href={href} ariaLabel={named(t('flags.housemate_alerts'))} testId="my-adopters-housemate-alert-alerts">
-                {t('flags.housemate_alerts')}
+            <AlertPill key="housemate_alerts" kind="housemate_alerts" wrap href={href} ariaLabel={named(t('alerts.housemate_alerts'))} testId="my-adopters-housemate-alert-alerts">
+                {t('alerts.housemate_alerts')}
             </AlertPill>
         );
     }
 
-    for (const kind of rescuerFlagKinds(openAlertKinds(flags))) {
+    for (const kind of rescuerFlagKinds(openFlagKinds(flags))) {
         badges.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
     }
 

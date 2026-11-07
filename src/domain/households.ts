@@ -6,7 +6,7 @@
  */
 import type { Relationship } from '@/lib/householdMembers';
 import { realOwner } from './dedupPair';
-import type { OpenAlertKind } from './flags';
+import type { OpenFlagKind } from './flags';
 import { isLowRating } from './ratings';
 import type { PeriodAlerts } from './periodAlerts';
 
@@ -193,8 +193,8 @@ export type HouseholdLine = {
     name: string;
     profileId: string;
     rating: number | null;
-    /** Open FLAGS, one per kind (openAlertKinds). Not shown on the card line, never decides it. */
-    openAlerts: OpenAlertKind[];
+    /** Open FLAGS, one per kind (openFlagKinds). Not shown on the card line, never decides it. */
+    openFlags: OpenFlagKind[];
     /** The ALERTS the app computes («N adopciones en N días», «Pidió en N rescates…») — periodAlerts, the search card's own rule. */
     alerts: PeriodAlerts;
     isMinor: boolean;

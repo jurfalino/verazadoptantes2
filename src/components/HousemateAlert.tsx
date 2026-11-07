@@ -83,12 +83,12 @@ export function HousemateAlertChips({ household, open, onToggle, listId, testId 
             {low != null && (
                 // A button with its 44px touch area (AlertPill's TAP_TARGET_44).
                 <AlertPill kind="housemate_low_rating" wrap onClick={click} expanded={open} controls={listId} testId={`${testId}-rating`}>
-                    {t('flags.housemate_low_rating').replace('{rating}', formatRating(low))}{hint}
+                    {t('alerts.housemate_low_rating').replace('{rating}', formatRating(low))}{hint}
                 </AlertPill>
             )}
             {alerts && (
                 <AlertPill kind="housemate_alerts" wrap onClick={click} expanded={open} controls={listId} testId={`${testId}-alerts`}>
-                    {t('flags.housemate_alerts')}{hint}
+                    {t('alerts.housemate_alerts')}{hint}
                 </AlertPill>
             )}
         </>

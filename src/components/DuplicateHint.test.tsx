@@ -52,7 +52,7 @@ function match(id: string, name: string, over: Partial<DupHintMatch> = {}): DupH
         matchSnippet: null, contactProtected: true, visibilityBadge: null, avgRating: null, thumbnail: null,
         stats: { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 },
         flags: { inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false, tooManyAdoptions: null, tooManyRequests: null } as DupHintMatch['flags'],
-        household: NO_CARD_HOUSEHOLD, openAlerts: [], activity: {}, rating: null, matchedEntryIndexes: [0], action: 'continue', alreadyPending: false,
+        household: NO_CARD_HOUSEHOLD, openFlags: [], activity: {}, rating: null, matchedEntryIndexes: [0], action: 'continue', alreadyPending: false,
         ...over,
     };
 }
@@ -62,8 +62,8 @@ const jonatan = match('b', 'Jonatan Urfalino', {
     rating: 4,
     household: {
         lines: [
-            { name: 'Pedro Paez', profileId: 'p', rating: 1, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
-            { name: 'Delia Urfalino', profileId: 'd', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
+            { name: 'Pedro Paez', profileId: 'p', rating: 1, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
+            { name: 'Delia Urfalino', profileId: 'd', rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
         ],
         more: 0,
         alert: { lowRating: 1, hasAlerts: false },

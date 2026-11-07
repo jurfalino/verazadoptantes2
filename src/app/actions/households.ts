@@ -33,7 +33,7 @@
  * codes (the UI translates them); a failure carries an errorId.
  */
 import { eq } from 'drizzle-orm';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import { getDb, getUser } from './_db';
 import { adopterHistory, adopters } from '@/db/schema';
 import { logger } from '@/lib/logger';
@@ -136,8 +136,8 @@ export type AddHouseholdPersonResult =
 export type HouseholdMatchCandidate = DiscoveryMatch & {
     /** The card's home. UNSET = not read (households off, or the query budget cut this card): the card says nothing about a home, never «nobody lives there». */
     household?: CardHousehold;
-    /** Open alerts, counted exactly as the household line counts them (ProfileCounts / openAlertKinds — final fix P6). */
-    openAlerts: OpenAlertKind[];
+    /** Open flags, counted exactly as the household line counts them (ProfileCounts / openFlagKinds — final fix P6). */
+    openFlags: OpenFlagKind[];
     /** Activity by record type, counted as the candidate's own «Actividad» header and a household row count it (countsFor). */
     activity: ActivityCounts;
     /** The rating as a household row reads it (countsFor); null = not rated. */
@@ -753,7 +753,7 @@ export async function removeHouseholdMembership(
 /**
  * Card-ready candidates: each match's household line (it already rides on a
  * hydrated match — read here only for one that came without it), and its
- * rating, open alerts and activity counted as a household row counts them.
+ * rating, open flags and activity counted as a household row counts them.
  */
 async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ctx: Record<string, unknown>): Promise<HouseholdMatchCandidate[]> {
     const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
@@ -763,7 +763,7 @@ async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ct
     ]);
     return matches.map((r, i) => ({
         ...r, household: r.households ?? lines[r.adopter.id],
-        openAlerts: counts[i].openAlerts, activity: counts[i].activity, rating: counts[i].rating,
+        openFlags: counts[i].openFlags, activity: counts[i].activity, rating: counts[i].rating,
     }));
 }
 

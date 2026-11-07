@@ -12,7 +12,7 @@ import { deserializeContactEntries } from '@/lib/contactEntries';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { getRatingDisplayLevel, getRatingLabelKey } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
 import { housemateAlertsFor } from '@/lib/households';
 import { normalizeDocumentId, type CandidateNames } from '@/domain/apiExactMatch';
 import { foldHolderName, MAX_NAMES_PER_IDENTIFIER, type IdentifierKind, type SharedIdentifier } from '@/domain/identityVerdict';
@@ -300,10 +300,10 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             if (t !== null && (last === null || t > last)) last = t;
         }
         const f = e?.flags;
-        // An open duplicate report, by the app's one rule (openAlertKinds — the profile
+        // An open duplicate report, by the app's one rule (openFlagKinds — the profile
         // header's): never one closed by a merge or a «mantener separados» (Jon, 2026-10-28).
         // `inaccurate` is left out: as in the app, only admins see it (Jon, 2026-11-07).
-        const flags: ProfileSummary['flags'] = openAlertKinds(f).filter((k): k is 'duplicate' => k === 'duplicate');
+        const flags: ProfileSummary['flags'] = openFlagKinds(f).filter((k): k is 'duplicate' => k === 'duplicate');
         const home = housemates[id];
         if (f?.systemDuplicate) flags.push('possible_duplicate');
         if (f?.verified_identity) flags.push('verified_identity');

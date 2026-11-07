@@ -16,7 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
-import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
+import { openFlagKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import { HOUSEHOLD_SECTION_HREF, type HousemateAlertSummary } from '@/domain/profileHouseholds';
@@ -113,12 +113,12 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     }, [adopterId]);
 
     // The open flags, by the one rule every surface draws them with
-    // (openAlertKindsOfRows, then rescuerFlagKinds): «Duplicado» only for an
+    // (openFlagKindsOfRows, then rescuerFlagKinds): «Duplicado» only for an
     // OPEN duplicate question — a merged flag ("Merged into … by …") or a
     // declined merge request ("Kept separate: …") is settled, and its details
     // are bookkeeping. «Inexacto» is never drawn here, for any viewer (Jon,
     // 2026-11-01: only admins care about it, in the admin UI).
-    const flagKinds = rescuerFlagKinds(openAlertKindsOfRows(existingFlags.map(f => ({ adopterId, ...f }))));
+    const flagKinds = rescuerFlagKinds(openFlagKindsOfRows(existingFlags.map(f => ({ adopterId, ...f }))));
     const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
     const isFlaggedAsDuplicate = flagKinds.includes('duplicate');
 
@@ -290,14 +290,14 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         {/* Too Many Adoptions Warning */}
                         {tooManyAdoptions && (
                             <AlertPill kind="too_many_adoptions" size="md" onClick={() => setShowAdoptionsHint(!showAdoptionsHint)} pressed={showAdoptionsHint}>
-                                {t('flags.too_many_adoptions').replace('{count}', String(tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))))}
+                                {t('alerts.too_many_adoptions').replace('{count}', String(tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))))}
                             </AlertPill>
                         )}
 
                         {/* Too Many Requests Warning */}
                         {tooManyRequests && (
                             <AlertPill kind="too_many_requests" size="md" onClick={() => setShowRequestsHint(!showRequestsHint)} pressed={showRequestsHint}>
-                                {t('flags.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
+                                {t('alerts.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
                             </AlertPill>
                         )}
 
@@ -305,12 +305,12 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             a real link, so focus moves there too — onHousemateAlert smooths the scroll)… */}
                         {housemateLow != null && (
                             <AlertPill kind="housemate_low_rating" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-rating">
-                                {t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateLow))}
+                                {t('alerts.housemate_low_rating').replace('{rating}', formatRating(housemateLow))}
                             </AlertPill>
                         )}
                         {housemateAlerts && (
                             <AlertPill kind="housemate_alerts" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-alerts">
-                                {t('flags.housemate_alerts')}
+                                {t('alerts.housemate_alerts')}
                             </AlertPill>
                         )}
 
@@ -346,21 +346,21 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         {showAdoptionsHint && tooManyAdoptions && (
                             <div className="w-full mt-1 p-3 bg-orange-50 border border-orange-100 rounded-lg text-xs leading-relaxed text-orange-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
                                 <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-orange-100"></div>
-                                <span className="font-semibold text-orange-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
-                                {t('flags.adoptions_warning_p1') || 'Registró '}{tooManyAdoptions.count}{t('flags.adoptions_warning_p2') || ' adopciones en '}{Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || 0))}{t('flags.adoptions_warning_p3') || ' días'}
+                                <span className="font-semibold text-orange-900 block mb-0.5">{t('alerts.hint_title') || 'Por qué está marcado'}</span>
+                                {t('alerts.adoptions_warning_p1') || 'Registró '}{tooManyAdoptions.count}{t('alerts.adoptions_warning_p2') || ' adopciones en '}{Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || 0))}{t('alerts.adoptions_warning_p3') || ' días'}
                                 {tooManyAdoptions.startDate && tooManyAdoptions.endDate && (
-                                    <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyAdoptions.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyAdoptions.endDate)})</>
-                                )}. {t('flags.adoptions_risk') || 'Una frecuencia inusualmente alta indica un posible riesgo de acumulación o falta de capacidad de seguimiento.'}
+                                    <> {t('alerts.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyAdoptions.startDate)} {t('alerts.and') || 'y'} {formatShortDate(tooManyAdoptions.endDate)})</>
+                                )}. {t('alerts.adoptions_risk') || 'Una frecuencia inusualmente alta indica un posible riesgo de acumulación o falta de capacidad de seguimiento.'}
                             </div>
                         )}
                         {showRequestsHint && tooManyRequests && (
                             <div className="w-full mt-1 p-3 bg-purple-50 border border-purple-100 rounded-lg text-xs leading-relaxed text-purple-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
                                 <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-purple-100"></div>
-                                <span className="font-semibold text-purple-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
-                                {t('flags.requests_warning_p1') || 'Registró '}{tooManyRequests.count}{t('flags.requests_warning_p2') || ' solicitudes en '}{Math.max(1, Math.round(tooManyRequests.actualSpanDays || 0))}{t('flags.requests_warning_p3') || ' días'}
+                                <span className="font-semibold text-purple-900 block mb-0.5">{t('alerts.hint_title') || 'Por qué está marcado'}</span>
+                                {t('alerts.requests_warning_p1') || 'Registró '}{tooManyRequests.count}{t('alerts.requests_warning_p2') || ' solicitudes en '}{Math.max(1, Math.round(tooManyRequests.actualSpanDays || 0))}{t('alerts.requests_warning_p3') || ' días'}
                                 {tooManyRequests.startDate && tooManyRequests.endDate && (
-                                    <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyRequests.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyRequests.endDate)})</>
-                                )}. {t('flags.requests_risk') || 'Solicitar múltiples animales de forma simultánea requiere verificación adicional.'}
+                                    <> {t('alerts.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyRequests.startDate)} {t('alerts.and') || 'y'} {formatShortDate(tooManyRequests.endDate)})</>
+                                )}. {t('alerts.requests_risk') || 'Solicitar múltiples animales de forma simultánea requiere verificación adicional.'}
                             </div>
                         )}
                     </div>

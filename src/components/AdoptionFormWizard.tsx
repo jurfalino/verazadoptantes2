@@ -131,9 +131,9 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     adopterName?: string;
     /** Average rating from prior records (1-5). Drives rating-bucket guidance copy. null when unrated. */
     avgRating?: number | null;
-    /** Density flag: too many completed adoptions in a recent window (or null when below threshold). */
+    /** Period alert: too many completed adoptions in a recent window (or null when below threshold). */
     tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number } | null;
-    /** Density flag: too many open adoption_requests in a recent window (or null when below threshold). */
+    /** Period alert: too many open adoption_requests in a recent window (or null when below threshold). */
     tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number } | null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableAnimals?: any[];

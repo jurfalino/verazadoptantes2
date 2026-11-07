@@ -486,7 +486,7 @@ export default function MyAdoptersPage() {
                                         {/* Calificación — avgRating from activity history (legacy `status` is deprecated).
                                             Flag badges stack underneath the rating badge in v2.19.6 so the
                                             severity signal and rating live together (a 5-star adopter with a
-                                            density flag now reads in one glance instead of jumping to a
+                                            period alert now reads in one glance instead of jumping to a
                                             separate column). Min-height pins both states to row height. */}
                                         {/* With a housemate chip (a link with a 44px touch area around its 22px pill), 12px under
                                             the rating keeps that area off the rating's own hint (review fix 6). */}

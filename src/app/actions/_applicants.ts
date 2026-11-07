@@ -15,6 +15,7 @@ import { photoLinks } from '@/domain/formPhotos';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
+import { NO_PERIOD_ALERTS } from '@/domain/periodAlerts';
 import { applicantScopeWhere } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
 import type { ApplicantSummary, ApplicantAdopterContext } from './applicants';
@@ -247,7 +248,8 @@ export async function loadApplicantsForAnimal(
             // applicant would add another N queries with no UI consumer (panel
             // surfaces flag pills, not the system-duplicate badge). If we ever
             // surface it, add a third parallel query above.
-            flags = buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0);
+            // Flags only: the applicants list shows no alerts (Jon, 2026-11-07: «not for now»).
+            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0), ...NO_PERIOD_ALERTS };
         }
 
         // Already signed? — the animal is adopted by this specific adopter.

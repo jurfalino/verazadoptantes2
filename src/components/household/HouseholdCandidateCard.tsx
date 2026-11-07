@@ -11,7 +11,7 @@
  */
 import { Check, HelpCircle, Home, Info } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { useLanguage } from '@/context/LanguageContext';
 import { PersonStanding, PersonActivity } from '@/components/PersonStanding';
@@ -57,12 +57,12 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
     const entries = deserializeContactEntries(a.contactEntries).filter(e => SUMMARY_CONTACT_TYPES.includes(e.type));
     const shown = entries.slice(0, MAX_SUMMARY_CONTACTS);
     // The same count as the household line (final fix P6).
-    const alerts = candidate.openAlerts ?? openAlertKinds(candidate.flags);
+    const flagKinds = candidate.openFlags ?? openFlagKinds(candidate.flags);
     const homes = householdLineGroups(candidate.household?.lines ?? []);
     const minor = !!candidate.isMinor;
     return (
         // A question, not a warning (audit B15): the neutral info look, and the person drawn as every other person
-        // (the household row's teal initial); the alerts, if any, are the person's own AlertPill.
+        // (the household row's teal initial); the flags, if any, are the person's own pills.
         <div className="rounded-xl border overflow-hidden bg-white" style={{ borderColor: 'var(--status-info-border)' }} data-testid={testId}>
             <div className="px-4 py-2.5 border-b" style={{ background: 'var(--status-info-bg)', borderColor: 'var(--status-info-border)' }}>
                 <div className="flex items-center gap-2">
@@ -81,7 +81,7 @@ export function HouseholdCandidateCard({ candidate, busy, onYes, onNo, testId = 
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                             <a href={`/adopter/${encodeURIComponent(candidate.adopterId)}`} target="_blank" rel="noopener noreferrer"
                                 data-testid={`${testId}-link`} className={`font-semibold text-[15px] text-teal-700 hover:underline break-words ${TAP_TARGET_44}`}>{name}</a>
-                            <PersonStanding rating={candidate.rating ?? candidate.avgRating} openAlerts={alerts} isMinor={minor} alertsTestId={`${testId}-alerts`}
+                            <PersonStanding rating={candidate.rating ?? candidate.avgRating} openFlags={flagKinds} isMinor={minor} flagsTestId={`${testId}-flags`}
                                 alerts={<HousemateAlert household={candidate.household} personId={candidate.adopterId} testId={`${testId}-housemate-alert`} />} />
                             {candidate.activity && <PersonActivity activity={candidate.activity} testId={`${testId}-activity`} />}
                         </div>

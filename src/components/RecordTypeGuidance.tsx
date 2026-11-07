@@ -60,9 +60,9 @@ function renderBody(body: string, historyLinkLabel: string): React.ReactNode[] {
     return nodes;
 }
 
-// Density flag shape — matches the existing AdopterFlags fields used by AdopterFlagging /
+// Period alert shape — matches the existing AdopterFlags fields used by AdopterFlagging /
 // AdminAdopterList. We accept a minimal subset since we only need count + actualSpanDays.
-export interface DensityFlag {
+export interface PeriodAlertInfo {
     count: number;
     actualSpanDays?: number;
     periodDays: number;
@@ -76,8 +76,8 @@ interface AlertSpec {
 
 function buildAlerts(
     recordType: RecordType,
-    tooManyAdoptions: DensityFlag | null | undefined,
-    tooManyRequests: DensityFlag | null | undefined,
+    tooManyAdoptions: PeriodAlertInfo | null | undefined,
+    tooManyRequests: PeriodAlertInfo | null | undefined,
 ): AlertSpec[] {
     if (recordType !== 'adoption' && recordType !== 'adoption_request' && recordType !== 'foster' && recordType !== 'follow_up') return [];
     const alerts: AlertSpec[] = [];
@@ -126,10 +126,10 @@ export default function RecordTypeGuidance({
     recordType: RecordType;
     adopterName: string;
     avgRating: number | null;
-    /** Density flag — `null` when below threshold. */
-    tooManyAdoptions?: DensityFlag | null;
-    /** Density flag — `null` when below threshold. */
-    tooManyRequests?: DensityFlag | null;
+    /** Period alert — `null` when below threshold. */
+    tooManyAdoptions?: PeriodAlertInfo | null;
+    /** Period alert — `null` when below threshold. */
+    tooManyRequests?: PeriodAlertInfo | null;
 }) {
     const { t, locale } = useLanguage();
     const name = adopterName?.trim() || (locale === 'en' ? 'this person' : 'esta persona');

@@ -1,7 +1,7 @@
 export const runtime = 'edge';
 
 import { selfieUrlColumn } from '@/lib/selfieLink';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import { photoLinks } from '@/domain/formPhotos';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
@@ -205,7 +205,7 @@ export default async function FormResultsPage({ params, searchParams }: { params
         /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
         isMinor?: boolean; households?: CardHousehold;
         /** Their own standing on the match card (audit B6). */
-        rating?: number | null; openAlerts?: OpenAlertKind[];
+        rating?: number | null; openFlags?: OpenFlagKind[];
     };
     let matchedProfiles: ProfileRow[] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
@@ -301,7 +301,7 @@ export default async function FormResultsPage({ params, searchParams }: { params
             // Each card's own rating and alerts (audit B6), the same counts a household line shows; countsFor
             // never throws (a failure logs and shows «Sin calificación»). One query per card, capped like the lines.
             const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { submissionId, user: currentUser }, { activity: false })));
-            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openAlerts: standing[i].openAlerts } : p));
+            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openFlags: standing[i].openFlags } : p));
         }
 
         // A form linked to a profile that was later merged away (before merges

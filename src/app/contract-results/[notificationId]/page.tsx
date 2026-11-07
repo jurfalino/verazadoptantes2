@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { AlertTriangle, CheckCircle2, FileSignature, Search, User } from 'lucide-react';
 import { redirect, notFound } from 'next/navigation';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import { getDb } from '@/lib/db';
 import { notifications, adopters } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
@@ -96,7 +96,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     }
 
     // Fetch full adopter profiles for matches
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: CardHousehold; rating?: number | null; openAlerts?: OpenAlertKind[] }> = [];
+    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: CardHousehold; rating?: number | null; openFlags?: OpenFlagKind[] }> = [];
     if (matchList.length > 0) {
         const adopterIds = matchList.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
@@ -143,7 +143,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             matchedProfiles = matchedProfiles.map(p => (homes[p.id] ? { ...p, households: homes[p.id] } : p));
             // Each card's own rating and alerts (audit B6); countsFor never throws (it logs and shows «Sin calificación»).
             const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { notificationId, user: currentUser }, { activity: false })));
-            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openAlerts: standing[i].openAlerts } : p));
+            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openFlags: standing[i].openFlags } : p));
         }
     }
 

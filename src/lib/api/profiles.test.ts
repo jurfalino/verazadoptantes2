@@ -1,6 +1,6 @@
 /**
  * The public API's `flags` follow the app (Jon, 2026-10-28): `duplicate` by the
- * profile header's one rule (openAlertKinds) — a report counts only while it is
+ * profile header's one rule (openFlagKinds) — a report counts only while it is
  * open: it names the other profile and nobody has merged them or kept them
  * separate; one closed by a merge or a «mantener separados» is history and is
  * not reported. `inaccurate` is never returned: as in the app, only admins see
@@ -22,7 +22,7 @@ vi.mock('@/config/features', async (orig) => {
 });
 
 import { buildProfileSummaries } from './profiles';
-import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
+import { openFlagKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { MERGED_FLAG_DETAILS_PREFIX, KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from '@/domain/dedupPair';
 
 type Row = Record<string, unknown>;
@@ -87,7 +87,7 @@ describe('the API flags follow the app (open duplicate reports only)', () => {
         const s = await summaries();
         const rows = sqlite.prepare(`SELECT adopter_id AS adopterId, reason, target_adopter_id AS targetAdopterId, details FROM adopter_flags`).all() as Array<{ adopterId: string; reason: string; targetAdopterId: string | null; details: string | null }>;
         for (const id of PEOPLE) {
-            const header = rescuerFlagKinds(openAlertKindsOfRows(rows.filter(r => r.adopterId === id)));
+            const header = rescuerFlagKinds(openFlagKindsOfRows(rows.filter(r => r.adopterId === id)));
             expect(s.get(id)?.flags.filter(f => f === 'duplicate'), id).toEqual(header);
         }
     });

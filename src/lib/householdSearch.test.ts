@@ -9,7 +9,7 @@
  * Real SQL (every drizzle/*.sql replayed), the real token index, search engine,
  * scan route and exact matcher.
  *
- * Pedro (★1, one open alert), Marta (★4) and Lucas (12, minor) live together;
+ * Pedro (★1, one open flag), Marta (★4) and Lucas (12, minor) live together;
  * Lucas also lives with Ana (★3) in another home. Rosa is nobody's housemate.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -104,7 +104,7 @@ beforeEach(async () => {
     insert.run('lucas', 'Lucas Paez', OWNER, phone('lc', LUCAS_PHONE, OWNER), null, 12, '2026-01-01');
     insert.run('ana', 'Ana Gómez', OTHER, phone('ac', '+54 9 11 5555 1212', OTHER), null, null, null);
     insert.run('rosa', 'Rosa Diaz', OTHER, phone('rc', '+54 9 11 7777 8888', OTHER), null, null, null);
-    // Ratings live on records; Pedro also has an open alert.
+    // Ratings live on records; Pedro also has an open flag.
     const animal = sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES (?, ?, ?)`);
     for (const [id, name] of [['an1', 'Tom'], ['an2', 'Kiki'], ['an3', 'Bolt']]) animal.run(id, name, OWNER);
     const rate = sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating) VALUES (?, ?, ?, 'adoption', ?)`);
@@ -146,9 +146,9 @@ describe("search returns only the people who match, each with its household line
         const lucas = (res.results as DiscoveryMatch[])[0];
         expect(lucas.isMinor).toBe(true);
         expect(lucas.households?.lines).toEqual([
-            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
-            { name: 'Marta Paez', profileId: 'marta', rating: 4, openAlerts: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
-            { name: 'Ana Gómez', profileId: 'ana', rating: 3, openAlerts: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-ana' },
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openFlags: ['inaccurate'], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
+            { name: 'Marta Paez', profileId: 'marta', rating: 4, openFlags: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-pedro' },
+            { name: 'Ana Gómez', profileId: 'ana', rating: 3, openFlags: [], alerts: { tooManyAdoptions: null, tooManyRequests: null }, isMinor: false, isGift: false, householdId: 'hh-ana' },
         ]);
     });
 
@@ -477,9 +477,9 @@ describe('final fix P6 — «¿Es este perfil?» counts alerts as the household 
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason) VALUES ('f2', 'pedro', ?, 'inaccurate_information')`).run(ADMIN);
         const { results } = await getHouseholdMatchCandidates({ name: 'Pedro Paez', contactEntries: [{ type: 'phone', value: HOME_PHONE }] });
         const pedro = results.find(r => r.adopterId === 'pedro')!;
-        expect(pedro.openAlerts).toEqual(['inaccurate']);
+        expect(pedro.openFlags).toEqual(['inaccurate']);
         const line = (await householdLinesFor(db(), OWNER, ['marta'])).marta.lines.find(l => l.profileId === 'pedro')!;
-        expect(line.openAlerts).toEqual(pedro.openAlerts);
+        expect(line.openFlags).toEqual(pedro.openFlags);
         // Flags are not alerts (option B, Jon 2026-10-28): the card line shows his period alerts only — none here.
         expect(line.alerts).toEqual({ tooManyAdoptions: null, tooManyRequests: null });
     });

@@ -373,6 +373,12 @@ export const pt = {
         view_original: 'Ver Original',
         confirm_unverify: 'Remover esta verificação?',
         unverify_error: 'Não foi possível remover a verificação. Você só pode remover verificações que tenha adicionado.',
+        possible_duplicate: 'Possível duplicado',
+    },
+    // ALERTS (Jon, 2026-11-07): reasons not to trust a person with an animal, computed by the system.
+    // Not flags (`flags`: something on the profile that may need doing).
+    alerts: {
+        hint_title: 'Por que está marcado',
         too_many_adoptions: '{count} adoções em {days} dias',
         too_many_requests: 'Pediu em {count} resgates em {days} dias',
         housemate_low_rating: 'Coabitante com avaliação {rating}',
@@ -388,7 +394,6 @@ export const pt = {
         requests_warning_p1: 'Pediu para adotar em ',
         requests_warning_p2: ' resgates diferentes em ',
         requests_warning_p3: ' dias',
-        possible_duplicate: 'Possível duplicado',
     },
     duplicates: {
         comparison: 'Comparação',

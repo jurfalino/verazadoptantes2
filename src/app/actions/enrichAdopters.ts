@@ -162,9 +162,8 @@ async function _enrichAdoptersImpl(
         const adoptionCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.ADOPTION).length;
         const requestCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.REQUEST).length;
 
-        const flags = buildFlags(adopterFlagRecords, systemDupCount);
-        // The period alerts: one rule (periodAlerts), also on a housemate's household line.
-        Object.assign(flags, periodAlerts(adopterAdoptions, adoptionConfig));
+        // The profile's flags, and next to them its period alerts: one rule (periodAlerts), also on a housemate's household line.
+        const flags = { ...buildFlags(adopterFlagRecords, systemDupCount), ...periodAlerts(adopterAdoptions, adoptionConfig) };
 
         const stats: EnrichmentResult['stats'] = computeStats(adopterStatRecords, adopterAdoptions);
         stats.adoptions = adoptionCount;

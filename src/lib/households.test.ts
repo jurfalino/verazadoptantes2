@@ -68,7 +68,7 @@ beforeEach(() => {
     insert.run('ana', 'Ana Gift', OWNER, null, null, null, 0, null);
     insert.run('gone', 'Merged Away', OWNER, null, null, null, 0, 5000);
     sqlite.prepare(`INSERT INTO user (id, name, email) VALUES ('u1', 'Gatitos Olivos', ?)`).run(OWNER);
-    // Pedro is rated 1 with one open alert.
+    // Pedro is rated 1 with one open flag.
     sqlite.prepare(`INSERT INTO animals (id, name, added_by) VALUES ('an1', 'Luna', ?)`).run(OWNER);
     sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, rating) VALUES ('p1', 'an1', 'pedro', 'adoption', 1)`).run();
     sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason) VALUES ('f1', 'pedro', ?, 'inaccurate_information')`).run(MATE);
@@ -259,7 +259,7 @@ describe('getHouseholdsFor', () => {
         expect(view.members.map(m => m.profileId).sort()).toEqual(['marta', 'pedro']);
         const pedro = view.members.find(m => m.profileId === 'pedro')!;
         const marta = view.members.find(m => m.profileId === 'marta')!;
-        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openAlerts: ['inaccurate'], activity: { adoption: 1 }, label: null, addedByName: null, isMinor: false });
+        expect(pedro).toMatchObject({ name: 'Pedro Paez', rating: 1, openFlags: ['inaccurate'], activity: { adoption: 1 }, label: null, addedByName: null, isMinor: false });
         expect(pedro).not.toHaveProperty('ownerName'); // «Perfil cargado por …» is not on household rows (addendum 2026-10-27)
         // ↑ Pedro's own (anchor) row has no adder (Task 2 fix 1): no «según …» on it.
         expect(pedro.linkId).toBe(pedro.membershipId);
@@ -294,8 +294,8 @@ describe('getHouseholdsFor', () => {
         const own = sqlite.prepare(`SELECT record_type AS recordType FROM adoptions WHERE adopter_id = 'marta'`).all() as Array<{ recordType: string }>;
         expect(countActivity(own)).toEqual(marta.activity);
         // Card lines read rating and alerts only: no activity listed, the rating from the same pass.
-        expect(await countsFor(db(), 'pedro', {}, { activity: false })).toEqual({ rating: 1, openAlerts: ['inaccurate'], activity: {} });
-        expect(await countsFor(db(), 'marta', {})).toEqual({ rating: null, openAlerts: [], activity: marta.activity });
+        expect(await countsFor(db(), 'pedro', {}, { activity: false })).toEqual({ rating: 1, openFlags: ['inaccurate'], activity: {} });
+        expect(await countsFor(db(), 'marta', {})).toEqual({ rating: null, openFlags: [], activity: marta.activity });
     });
 
     it("Task 8: the viewed profile's own place («Lucas figura como hijo/a de Pedro · según …»), anchor rows, the viewer's own adds and profiles", async () => {
@@ -445,12 +445,12 @@ describe('householdLinesFor', () => {
         expect(Object.keys(homes).sort()).toEqual(['ana', 'gone', 'lucas', 'marta', 'nobody']);
         const lines = Object.fromEntries(Object.entries(homes).map(([k, v]) => [k, v.lines]));
         expect(lines.lucas).toEqual(expect.arrayContaining([
-            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openAlerts: ['inaccurate'], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
-            { name: 'Marta Paez', profileId: 'marta', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
+            { name: 'Pedro Paez', profileId: 'pedro', rating: 1, openFlags: ['inaccurate'], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
+            { name: 'Marta Paez', profileId: 'marta', rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: hh },
         ]));
         expect(lines.lucas).toHaveLength(2);
-        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: true, isGift: false, householdId: hh });
-        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: true, householdId: 'gift1' }]);
+        expect(lines.marta.find(l => l.profileId === 'lucas')).toEqual({ name: 'Lucas Paez', profileId: 'lucas', rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: true, isGift: false, householdId: hh });
+        expect(lines.ana).toEqual([{ name: 'Rosa Diaz', profileId: 'rosa', rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: true, householdId: 'gift1' }]);
         expect(lines.nobody).toEqual([]);
         expect(lines.gone).toEqual([]);
     });
@@ -473,7 +473,7 @@ describe('householdLinesFor', () => {
         expect(line.alerts.tooManyAdoptions).toMatchObject({ count: 2, threshold: 2, periodDays: 90 });
         expect(line.alerts.tooManyRequests).toMatchObject({ count: 2, threshold: 2, periodDays: 30 });
         // Flags stay what they were: Marta has none, Pedro's «Inexacto» is not an alert.
-        expect(line.openAlerts).toEqual([]);
+        expect(line.openFlags).toEqual([]);
         const pedroLine = (await householdLinesFor(db(), OWNER, ['marta'])).marta.lines.find(l => l.profileId === 'pedro')!;
         expect(pedroLine.alerts).toEqual(NO_PERIOD_ALERTS);
     });

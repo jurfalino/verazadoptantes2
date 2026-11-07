@@ -52,7 +52,7 @@ describe('AdopterFlagging — the header\'s housemate chips', () => {
         const own = html.indexOf('data-alert="too_many_adoptions"');
         const low = html.indexOf('data-testid="profile-housemate-alert-rating"');
         const alerts = html.indexOf('data-testid="profile-housemate-alert-alerts"');
-        const flag = html.indexOf('data-alert="duplicate"');
+        const flag = html.indexOf('data-flag="duplicate"');
         expect(own).toBeGreaterThan(-1);
         expect(own).toBeLessThan(low);
         expect(low).toBeLessThan(alerts);

@@ -2,8 +2,8 @@
 
 export const runtime = 'edge';
 
-import { AlertSummary } from '@/components/AlertPill';
-import { openAlertKinds } from '@/domain/flags';
+import { FlagSummary } from '@/components/AlertPill';
+import { openFlagKinds } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { useRouter } from 'next/navigation';
@@ -85,7 +85,7 @@ export default function DemoProfilePage() {
                             <span className="text-xs px-2 py-1 rounded-full font-medium bg-teal-100 text-teal-700">✓ {t('flags.verified_identity')}</span>
                         )}
                         {/* Flags as every rescuer surface draws them: never «Inexacto» (rescuerFlagKinds). */}
-                        <AlertSummary kinds={openAlertKinds(flags)} />
+                        <FlagSummary kinds={openFlagKinds(flags)} />
                     </div>
 
                     {/* Contact Info */}

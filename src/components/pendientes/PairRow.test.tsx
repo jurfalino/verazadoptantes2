@@ -139,7 +139,7 @@ describe('PairRow — each side\'s standing row (dedup-side-standing, point C)',
         const alerts = mine.indexOf('data-testid="dedup-housemate-alert-mine-alerts"');
         expect(rating).toBeLessThan(low);
         expect(low).toBeLessThan(alerts);
-        expect(html).toContain(es.flags.housemate_low_rating.replace('{rating}', '1.5'));
+        expect(html).toContain(es.alerts.housemate_low_rating.replace('{rating}', '1.5'));
         // Theirs: rating not read (undefined) and no homes → nothing in the row, not «Sin calificación».
         expect(theirs).not.toContain('data-testid="rating-value"');
         expect(theirs).not.toContain('person-unrated');

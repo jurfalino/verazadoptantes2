@@ -23,7 +23,7 @@ import type { HouseholdMatchCandidate } from '@/app/actions/households';
 
 const base = {
     adopterId: 'a1', adopter: { id: 'a1', name: 'Marta Paez', contactEntries: null }, matchTypes: ['name'], matchValues: [],
-    openAlerts: [], activity: {}, rating: null,
+    openFlags: [], activity: {}, rating: null,
 } as unknown as HouseholdMatchCandidate;
 
 const render = (c: HouseholdMatchCandidate) => renderToStaticMarkup(<HouseholdCandidateCard candidate={c} busy={false} onYes={() => {}} onNo={() => {}} />);

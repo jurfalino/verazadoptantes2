@@ -1,6 +1,6 @@
 import { FLAG_REASONS } from './constants';
 import { isOpenDuplicateFlag, type DuplicateFlagRow } from './dedupPair';
-import type { AdopterFlags } from '@/types/adopter';
+import type { ProfileFlags } from '@/types/adopter';
 
 /**
  * An inaccuracy report, under either reason it has been stored with: today's
@@ -13,7 +13,7 @@ export function isInaccurateReason(reason: string | null | undefined): boolean {
 }
 
 /**
- * Build AdopterFlags from a profile's flag rows.
+ * Build a profile's FLAGS from its flag rows (never its alerts: periodAlerts).
  *
  * Uses FLAG_REASONS constants to prevent string mismatches
  * (e.g., 'inaccurate' vs 'inaccurate_information' bug).
@@ -24,66 +24,68 @@ export function isInaccurateReason(reason: string | null | undefined): boolean {
  * profile itself doesn't (audit fix round 2, item 9). The public API's
  * `flags: ['duplicate']` follows the same rule (Jon, 2026-10-28).
  *
- * Note: tooManyAdoptions/tooManyRequests are left null — callers
- * fill these from period-based threshold logic after calling this function.
+ * A result that also carries its period alerts spreads periodAlerts (or
+ * NO_PERIOD_ALERTS) next to this.
  */
 export function buildFlags(
     flagRows: readonly DuplicateFlagRow[],
     systemDuplicateCount: number
-): AdopterFlags {
+): ProfileFlags {
     return {
         inaccurate: flagRows.some(f => isInaccurateReason(f.reason)),
         duplicate: flagRows.some(f => isOpenDuplicateFlag(f)),
         systemDuplicate: systemDuplicateCount > 0,
         verified_identity: flagRows.some(f => f.reason === FLAG_REASONS.VERIFIED_IDENTITY),
         verified_address: flagRows.some(f => f.reason === FLAG_REASONS.VERIFIED_ADDRESS),
-        tooManyAdoptions: null,
-        tooManyRequests: null,
     };
 }
 
-/** A kind of open alert on a person: what the profile header draws a flag pill for. */
-export type OpenAlertKind = 'inaccurate' | 'duplicate';
+/**
+ * A kind of open FLAG on a person — something on the profile that may need
+ * doing (Jon, 2026-11-07) — what the profile header draws a flag pill for.
+ * Not an ALERT: alerts say the person may not be trustworthy to adopt
+ * (periodAlerts, the housemate chips) and are never counted here.
+ */
+export type OpenFlagKind = 'inaccurate' | 'duplicate';
 
 /**
- * The person's open alerts — ONE rule everywhere (audit fix round 2, item 9),
+ * The person's open flags — ONE rule everywhere (audit fix round 2, item 9),
  * the profile header's: one per KIND, in the header's order («Inexacto», then
- * «Duplicado»), never one per report (two inaccuracy reports are one alert).
- * Every count of a person's alerts — household rows, match cards, «¿Es este
- * perfil?», a card's household line, the applicants list — is the length of
- * this list; a single kind is drawn as that kind's own pill (AlertSummary).
- * The public API's `inaccurate` / `duplicate` flags are this list too
- * (lib/api/profiles.ts).
+ * «Duplicado»), never one per report (two inaccuracy reports are one flag).
+ * Every surface that shows a person's flags — household rows, match cards,
+ * «¿Es este perfil?», a card's household line, the applicants list — draws
+ * this list, each kind as its own pill (FlagSummary). The public API's
+ * `duplicate` flag is this list too, without `inaccurate` (lib/api/profiles.ts).
  *
  * The «N adopciones / pedidos en N días» warnings are not counted here: they
  * come from activity over a period, not from a flag, and are shown as their own
  * pills only where that period is computed (profile header, search card,
  * /my-adopters).
  */
-export function openAlertKinds(flags: { inaccurate?: boolean | null; duplicate?: boolean | null } | null | undefined): OpenAlertKind[] {
-    const kinds: OpenAlertKind[] = [];
+export function openFlagKinds(flags: { inaccurate?: boolean | null; duplicate?: boolean | null } | null | undefined): OpenFlagKind[] {
+    const kinds: OpenFlagKind[] = [];
     if (flags?.inaccurate) kinds.push('inaccurate');
     if (flags?.duplicate) kinds.push('duplicate');
     return kinds;
 }
 
 /** The same rule from a profile's flag rows (household lines, the profile header). */
-export function openAlertKindsOfRows(flagRows: readonly DuplicateFlagRow[]): OpenAlertKind[] {
-    return openAlertKinds(buildFlags(flagRows, 0));
+export function openFlagKindsOfRows(flagRows: readonly DuplicateFlagRow[]): OpenFlagKind[] {
+    return openFlagKinds(buildFlags(flagRows, 0));
 }
 
 /**
  * THE rule for which open FLAGS a rescuer-facing surface draws (Jon,
  * 2026-11-01) — the profile header, search cards, match cards and
- * «¿Es este perfil?» (AlertSummary / PersonStanding), household rows,
+ * «¿Es este perfil?» (FlagSummary / PersonStanding), household rows,
  * /my-adopters, an applicant's row and panel: every kind except «Inexacto»
  * (`inaccurate_information`, legacy `inaccurate`). "Only admins care about
  * that — in the admin UI": /admin keeps drawing it from its own rows, and the
- * data (openAlertKinds, the public API's `flags`) still carries it.
+ * data (openFlagKinds, the public API's `flags`) still carries it.
  *
- * A flag is a rescuer's report, not an alert: these are drawn as neutral flag
+ * A flag is not an alert (Jon, 2026-11-07): these are drawn as neutral flag
  * chips after the alerts, never counted as «N alertas».
  */
-export function rescuerFlagKinds(kinds: readonly OpenAlertKind[]): OpenAlertKind[] {
+export function rescuerFlagKinds(kinds: readonly OpenFlagKind[]): OpenFlagKind[] {
     return kinds.filter(kind => kind !== 'inaccurate');
 }

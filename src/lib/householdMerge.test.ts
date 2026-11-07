@@ -386,7 +386,7 @@ describe('a minor merges like anyone else (marker only — Jon, 2026-10-28)', ()
         person('kiddup', 'Tomas Gil', OTHER, { createdAt: 3000 });
     });
 
-    it('a minor survivor receives the absorbed side\'s records and open alerts', async () => {
+    it('a minor survivor receives the absorbed side\'s records and open flags', async () => {
         record('pl-1', 'kiddup');
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason) VALUES ('f1', 'kiddup', ?, 'inaccurate_information')`).run(OTHER);
         expect((await mergeAdopters('kid', 'kiddup', ADMIN)).success).toBe(true);

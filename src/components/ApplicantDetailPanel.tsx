@@ -30,7 +30,7 @@ import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import LocationMap from '@/components/LocationMap';
 import { AlertPill } from '@/components/AlertPill';
-import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
+import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
 
 interface Props {
     applicants: ApplicantSummary[];
@@ -134,7 +134,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         if (f.verified_identity) flagPills.push(<FlagBadge key="vid" icon="✓" label={t('flags.verified_identity') || 'Verified ID'} tone="ok" />);
         if (f.verified_address) flagPills.push(<FlagBadge key="vad" icon="✓" label={t('flags.verified_address') || 'Verified address'} tone="ok" />);
         // The flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01).
-        for (const kind of rescuerFlagKinds(openAlertKinds(f))) flagPills.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
+        for (const kind of rescuerFlagKinds(openFlagKinds(f))) flagPills.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
     }
 
     const fullAnswers = (() => {

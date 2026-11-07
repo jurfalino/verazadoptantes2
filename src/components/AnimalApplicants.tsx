@@ -21,8 +21,8 @@ import { createContractInvitation } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
-import { AlertSummary } from '@/components/AlertPill';
-import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
+import { FlagSummary } from '@/components/AlertPill';
+import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 // Sentinel: tracking the busy row by submissionId (always present) avoids the
@@ -258,8 +258,8 @@ export default function AnimalApplicants({
                     <ul className="divide-y divide-teal-100 border-t border-teal-100">
                         {applicants.map((a, idx) => {
                             const summary = summaryLine(a, t);
-                            // The person's open flags a rescuer sees (rescuerFlagKinds: never «Inexacto»), as AlertSummary draws them.
-                            const alertKinds = rescuerFlagKinds(openAlertKinds(a.flags));
+                            // The person's open flags a rescuer sees (rescuerFlagKinds: never «Inexacto»), as FlagSummary draws them.
+                            const flagKinds = rescuerFlagKinds(openFlagKinds(a.flags));
                             const verified = !!a.flags?.verified_identity;
                             return (
                                 <li
@@ -270,9 +270,9 @@ export default function AnimalApplicants({
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 min-w-0">
                                             <AdopterName adopter={{ name: a.adopterName }} className="font-medium text-sm text-stone-900 truncate" />
-                                            {alertKinds.length > 0 && (
+                                            {flagKinds.length > 0 && (
                                                 <span className="flex-shrink-0" title={t('myAnimals.applicants_row_flags_tooltip') || 'Alertas en el perfil'}>
-                                                    <AlertSummary kinds={alertKinds} testId="applicant-row-alerts" />
+                                                    <FlagSummary kinds={flagKinds} testId="applicant-row-flags" />
                                                 </span>
                                             )}
                                             {verified && (

@@ -9,7 +9,7 @@
  * - `PersonStanding`: «Menor de edad» first for a minor (an informational
  *   marker only — Jon, 2026-10-28), then the rating (★ + its word: colour is
  *   never the only signal) or «Sin calificación», and the open flags as
- *   neutral chips by name (AlertSummary: never «Inexacto», never counted as
+ *   neutral chips by name (FlagSummary: never «Inexacto», never counted as
  *   «N alertas» — Jon, 2026-11-01) — the same for everyone.
  * - `PersonActivity`: the person's activity counted as their own «Actividad»
  *   header counts it (ActivityCountsLine), «sin actividad» when none.
@@ -20,19 +20,19 @@
 import { useLanguage } from '@/context/LanguageContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import { MinorTag } from '@/components/MinorTag';
-import { AlertSummary } from '@/components/AlertPill';
-import type { OpenAlertKind } from '@/domain/flags';
+import { FlagSummary } from '@/components/AlertPill';
+import type { OpenFlagKind } from '@/domain/flags';
 import type { ReactNode } from 'react';
 import { ActivityCountsLine } from '@/components/ActivityCountsLine';
 import { activityParts, type ActivityCounts } from '@/domain/activityCounts';
 
-export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alertsTestId = 'person-alerts', alerts }: {
+export function PersonStanding({ rating, openFlags, isMinor, minorTestId, flagsTestId = 'person-flags', alerts }: {
     rating: number | null | undefined;
-    /** Open alerts, one per kind (openAlertKinds — the profile header's rule). */
-    openAlerts: readonly OpenAlertKind[];
+    /** Open flags, one per kind (openFlagKinds — the profile header's rule). */
+    openFlags: readonly OpenFlagKind[];
     isMinor: boolean;
     minorTestId?: string;
-    alertsTestId?: string;
+    flagsTestId?: string;
     /** The card's ALERTS about this person (the housemate chips), drawn before the flags. */
     alerts?: ReactNode;
 }) {
@@ -43,7 +43,7 @@ export function PersonStanding({ rating, openAlerts, isMinor, minorTestId, alert
             <RatingBadge rating={rating} />
             {alerts}
             {/* The flags, one neutral chip each by name — never «Inexacto», never «N alertas» (rescuerFlagKinds). */}
-            <AlertSummary kinds={openAlerts} testId={alertsTestId} />
+            <FlagSummary kinds={openFlags} testId={flagsTestId} />
         </>
     );
 }

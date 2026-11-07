@@ -63,7 +63,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
 import { SUMMARY_CONTACT_TYPES, MAX_SUMMARY_CONTACTS } from '@/domain/householdLinks';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
 import { NO_DISMISSED, dismissDupHintMatch, isDupHintType, visibleDupHintMatches, type DupHintDismissed } from '@/domain/dupHint';
 import { CONTACT_ENTRIES_FULL } from '@/lib/contactEntries';
 import { joinNames } from '@/lib/householdCopy';
@@ -197,7 +197,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
                 person={{
                     id: match.adopterId, name,
                     rating: match.rating ?? match.avgRating,
-                    openAlerts: match.openAlerts ?? openAlertKinds(match.flags),
+                    openFlags: match.openFlags ?? openFlagKinds(match.flags),
                     isMinor: !!match.isMinor,
                 }}
                 thumbnail={match.thumbnail}

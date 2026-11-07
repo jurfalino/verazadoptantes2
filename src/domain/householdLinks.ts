@@ -7,7 +7,7 @@
 import type { ContactEntry, ContactEntryType } from '@/lib/contactEntries';
 import type { ActivityCounts } from './activityCounts';
 import { realOwner } from './dedupPair';
-import type { OpenAlertKind } from './flags';
+import type { OpenFlagKind } from './flags';
 
 /** At most this many linked summaries per side of a profile page (bounded reads). */
 export const MAX_LINKED_SUMMARIES = 10;
@@ -34,8 +34,8 @@ export interface LinkedSummary {
     name: string;
     /** Average of the profile's ratings (same source as the profile page); null = not rated. */
     rating: number | null;
-    /** Open alerts, one per kind (openAlertKinds — the profile header's rule). */
-    openAlerts: OpenAlertKind[];
+    /** Open flags, one per kind (openFlagKinds — the profile header's rule). */
+    openFlags: OpenFlagKind[];
     /** Activity by record type, exactly as that profile's own «Actividad» header counts it (fosters and returns included). */
     activity: ActivityCounts;
     /** Contacts after the viewer's masking: a hidden one carries `masked: true`. */

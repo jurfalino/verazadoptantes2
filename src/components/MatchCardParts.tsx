@@ -20,7 +20,7 @@
  * (≥44px) with the same three labels wherever the step is the same.
  */
 import Link from 'next/link';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import type { ReactNode } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -35,7 +35,7 @@ export type MatchCardPerson = {
     name: string;
     /** The person's own average rating; null/undefined: «Sin calificación». */
     rating?: number | null;
-    openAlerts?: OpenAlertKind[];
+    openFlags?: OpenFlagKind[];
     isMinor?: boolean;
     households?: CardHousehold;
 };
@@ -67,7 +67,7 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
                     </a>
                     {/* The housemate alerts sit in the person's own alert row, before the flags (Jon 2026-11-01). */}
                     {showStanding
-                        ? <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`}
+                        ? <PersonStanding rating={person.rating ?? null} openFlags={person.openFlags ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} flagsTestId={`${testId}-flags`}
                             alerts={<HousemateAlert household={person.households} personId={person.id} testId={`${testId}-housemate-alert`} />} />
                         : <HousemateAlert household={person.households} personId={person.id} testId={`${testId}-housemate-alert`} />}
                 </div>
