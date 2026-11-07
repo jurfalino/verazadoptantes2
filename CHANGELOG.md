@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.33] - 2026-11-07
+
+### Changed — home cards polish (UI review 2026-11-07)
+- «Mis adoptantes» / «Posts de redes» rows: the rating now sits in its own column on the right, as on
+  «Mis adoptantes» (the page the card summarizes), on phone and desktop — no longer wherever the name
+  ends, so every row has the same shape and ratings read straight down. The group name can no longer
+  touch it.
+- The group chip («michis», a teammate's group) is ONE shared component on the home cards and on
+  «Mis adoptantes»: same size as the rating pill, a thin border (it vanished into the card in dark
+  mode), and a long name is cut to one line with the whole name on hover.
+- The person's photo is the size of the animals' photos and lines up with the name; «hace 39 días»
+  no longer breaks across lines; spacing of the orange rows and «También podés» is back on the 8px
+  grid; the loading placeholder is closer to the cards' real height, so the page jumps less.
+- «1 animal más con controles pendientes» (was «1 animales más») — es/en/pt.
+- The orange «pendiente» text is darker everywhere in the light theme (#8a5700, was #c67c00): 5.1:1 on
+  the orange strip and 5.5:1 on the card, up from 2.8:1 — readable at 12px.
+
+### Fixed
+- On phones the card column could grow wider than the screen when a row had a long group name; it now
+  always fits (checked at 320, 360 and 390px).
+
 ## [2.58.32] - 2026-11-06
 
 ### Fixed

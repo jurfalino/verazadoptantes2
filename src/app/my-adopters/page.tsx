@@ -16,6 +16,7 @@ import { timeAgo, timeAgoSeconds } from '@/lib/timeAgo';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
 import { PendingDupBar, type PendingDupBarPair } from '@/components/PendingDupBar';
+import { GroupChip } from '@/components/GroupChip';
 import { pairKey } from '@/domain/dedupPair';
 import { AdopterName } from '@/components/AdopterName';
 import { MyAdoptersFlagBadges, hasHousemateChip } from '@/components/MyAdoptersFlagBadges';
@@ -217,9 +218,6 @@ function ProvenanceLine({
     const verb = kind === 'created'
         ? (t('dashboard.provenance_created_by') || 'Creado por')
         : (t('dashboard.provenance_edited_by') || 'Editado por');
-    const chipClass = isSelf
-        ? 'bg-stone-100 text-stone-600'    // your own org — factual, not a callout
-        : 'bg-teal-50 text-teal-700';      // teammate's org — "this is a collaborator"
     const formatted = date ? timeAgo(date, isEs) : '';
     // v2.19.14 hotfix: same normalisation as timeAgo — date arrives as
     // string (ISO) for createdAt/updatedAt because Drizzle Date columns
@@ -233,11 +231,7 @@ function ProvenanceLine({
             <span className="font-medium text-stone-700 truncate max-w-[12rem]" title={name || undefined}>
                 {name}
             </span>
-            {org && (
-                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${chipClass} truncate max-w-[10rem]`} title={org}>
-                    {org}
-                </span>
-            )}
+            {org && <GroupChip name={org} self={isSelf} />}
             {kind === 'created' && sourceKind && sourceKind !== 'manual' && (
                 <SourcePill source={sourceKind} t={t} />
             )}

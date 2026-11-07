@@ -781,8 +781,11 @@ button {
   background-color: rgba(255, 159, 10, 0.2) !important;
 }
 
+/* #8a5700 (was #c67c00, 2.8:1): 5.5:1 on the card, 5.1:1 on the amber-100
+   tint — the «pendiente» rows and due lines are 12px, so AA needs 4.5:1
+   (home-cards review 2026-11-07, Jon OK'd). */
 [data-theme="light"] .text-amber-700 {
-  color: #c67c00 !important;
+  color: #8a5700 !important;
 }
 
 [data-theme="light"] .text-amber-800 {
