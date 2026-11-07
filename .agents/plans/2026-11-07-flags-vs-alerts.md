@@ -36,6 +36,14 @@ notification `type`s, audit actions, API field names, `'use server'` exports,
    type split; "density flags" comments → alerts; i18n alert keys out of `flags.*`
    (es + en + pt, every dynamic `t(\`…${kind}\`)` checked).
 
+## Open risk: the API's household budget (strict mode)
+A spent budget (HOUSEHOLD_QUERY_BUDGET = 400) is a 503 in strict mode, and unlike a D1 hiccup
+it repeats on retry. Worst case per profile: 1 standings read + up to MAX_CARD_ALERT_READS (30)
+housemate alert reads → a 50-result fuzzy call could need ~1,550. Production on 2026-11-07:
+37 people in households, biggest home 5, **0** housemates with ≥2 adoption/request records
+(the only ones read for alerts) → ~50 reads for a full page. Re-measure when households grow;
+if it gets close, give the API call its own larger budget (Worker ceiling: 1,000 queries).
+
 ## Verification
 tsc, lint ratchet, vitest, `npm run build`; Playwright for touched specs; independent
 review before production (partner-facing API).
