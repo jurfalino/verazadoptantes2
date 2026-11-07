@@ -21,6 +21,9 @@ export type PeriodAlert = NonNullable<AdopterFlags['tooManyAdoptions']>;
 
 export const NO_PERIOD_ALERTS: PeriodAlerts = { tooManyAdoptions: null, tooManyRequests: null };
 
+/** The thresholds when none are set in Admin (app_config) — getAdoptionConfig's fallback, and a screen's before its config arrives. */
+export const DEFAULT_ADOPTION_CONFIG: AdoptionConfig = { threshold: 5, periodDays: 90, requestsThreshold: 3, requestsPeriodDays: 30 };
+
 type PeriodRecord = { recordType?: string | null; date?: Date | number | string | null; addedBy?: string | null; rescueKey?: string | null };
 
 export function periodAlerts(records: readonly PeriodRecord[], config: AdoptionConfig): PeriodAlerts {

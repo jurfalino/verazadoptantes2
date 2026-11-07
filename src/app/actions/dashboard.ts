@@ -18,8 +18,7 @@ import { RECORD_TYPES } from '@/domain/constants';
 import { isPostRecord } from '@/domain/homeModules';
 import { loadFormContext } from '@/lib/adopterFormContext';
 import { summarizeAdopterForms, type AdopterFormRow } from '@/domain/formLink';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { housemateAlertsFor } from '@/lib/households';
@@ -391,32 +390,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             const stats = statsMap.get(adopter.id) || { searchHits: 0, profileViews: 0 };
 
             const adopterRecords = recordsByAdopter.get(adopter.id) || [];
-            const adoptionsDensity = computeMaxDensityPeriod(adopterRecords as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
-            const requestsDensity = computeRequestRescueDensity(adopterRecords, adoptionConfig.requestsPeriodDays);
-
-            const flagObj: AdopterFlags = buildFlags(flags, 0);
-            
-            flagObj.tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold
-                ? { 
-                    count: adoptionsDensity.count, 
-                    threshold: adoptionConfig.threshold, 
-                    periodDays: adoptionConfig.periodDays,
-                    actualSpanDays: adoptionsDensity.timeSpanDays,
-                    startDate: adoptionsDensity.startDate,
-                    endDate: adoptionsDensity.endDate
-                  }
-                : null;
-                
-            flagObj.tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold
-                ? { 
-                    count: requestsDensity.count, 
-                    threshold: adoptionConfig.requestsThreshold, 
-                    periodDays: adoptionConfig.requestsPeriodDays,
-                    actualSpanDays: requestsDensity.timeSpanDays,
-                    startDate: requestsDensity.startDate,
-                    endDate: requestsDensity.endDate
-                  }
-                : null;
+            // The row's flags, then its two period alerts by the one rule (periodAlerts; records keyed per rescue above).
+            const flagObj: AdopterFlags = { ...buildFlags(flags, 0), ...periodAlerts(adopterRecords, adoptionConfig) };
 
             // v2.19.12: enriched creator info for every row, viewer's own
             // included. The Created-by column is symmetric — your name + org

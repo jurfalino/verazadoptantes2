@@ -3,16 +3,12 @@
 import { appConfig } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { getDb } from './_db';
+import { DEFAULT_ADOPTION_CONFIG } from '@/domain/periodAlerts';
 
 export async function getAdoptionConfig() {
     try {
         const db = await getDb();
-        if (!db) return {
-            threshold: 5,
-            periodDays: 90,
-            requestsThreshold: 3,
-            requestsPeriodDays: 30
-        };
+        if (!db) return { ...DEFAULT_ADOPTION_CONFIG };
 
         const configRows = await db.select().from(appConfig).all();
         const config: Record<string, string> = {};
@@ -21,10 +17,10 @@ export async function getAdoptionConfig() {
         }
 
         return {
-            threshold: parseInt(config['too_many_adoptions_threshold'] || '5', 10),
-            periodDays: parseInt(config['too_many_adoptions_period_days'] || '90', 10),
-            requestsThreshold: parseInt(config['too_many_requests_threshold'] || '3', 10),
-            requestsPeriodDays: parseInt(config['too_many_requests_period_days'] || '30', 10)
+            threshold: parseInt(config['too_many_adoptions_threshold'] || String(DEFAULT_ADOPTION_CONFIG.threshold), 10),
+            periodDays: parseInt(config['too_many_adoptions_period_days'] || String(DEFAULT_ADOPTION_CONFIG.periodDays), 10),
+            requestsThreshold: parseInt(config['too_many_requests_threshold'] || String(DEFAULT_ADOPTION_CONFIG.requestsThreshold), 10),
+            requestsPeriodDays: parseInt(config['too_many_requests_period_days'] || String(DEFAULT_ADOPTION_CONFIG.requestsPeriodDays), 10)
         };
     } catch (error) {
         // Falls back to hardcoded defaults — log so a flaky DB doesn't silently
@@ -32,11 +28,6 @@ export async function getAdoptionConfig() {
         logger.error('getAdoptionConfig failed — falling back to hardcoded defaults', error, {
             fallbackUsed: true,
         });
-        return {
-            threshold: 5,
-            periodDays: 90,
-            requestsThreshold: 3,
-            requestsPeriodDays: 30
-        };
+        return { ...DEFAULT_ADOPTION_CONFIG };
     }
 }

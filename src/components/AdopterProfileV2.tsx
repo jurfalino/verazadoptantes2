@@ -2,8 +2,7 @@
 
 import { apiToolFromHistory, profileOrigin } from '@/domain/recordOrigin';
 import { useEffect, useMemo, useState } from 'react';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts, DEFAULT_ADOPTION_CONFIG } from '@/domain/periodAlerts';
 import { useRouter, useSearchParams } from 'next/navigation';
 import TransferOwnershipModal from '@/components/TransferOwnershipModal';
 import { AdopterForm } from '@/components/AdopterForm';
@@ -233,25 +232,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // activity on a profile (v2.14.8). After the wizard closes, the card
     // re-renders its options for the next record.
 
-    // Density flags for wizard step-1 alerts (mirrors AdopterForm's computation).
-    // Drives the optional "too many adoptions / too many requests" warnings shown
-    // alongside the rating-bucket guidance copy. null when below threshold.
-    const adoptionsThreshold = adoptionConfig?.threshold ?? 5;
-    const adoptionsPeriodDays = adoptionConfig?.periodDays ?? 90;
-    const requestsThreshold = adoptionConfig?.requestsThreshold ?? 3;
-    const requestsPeriodDays = adoptionConfig?.requestsPeriodDays ?? 30;
-    const tooManyAdoptions = useMemo(() => {
+    // The two period ALERTS for the wizard's step-1 warnings, by the one rule
+    // (periodAlerts — the profile header's and the search card's). null when below threshold.
+    const { tooManyAdoptions, tooManyRequests } = useMemo(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = computeMaxDensityPeriod(adoptions as any, 'adoption', adoptionsPeriodDays);
-        if (d.count < adoptionsThreshold) return null;
-        return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: adoptionsPeriodDays };
-    }, [adoptions, adoptionsThreshold, adoptionsPeriodDays]);
-    const tooManyRequests = useMemo(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = computeRequestRescueDensity(adoptions as any, requestsPeriodDays);
-        if (d.count < requestsThreshold) return null;
-        return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: requestsPeriodDays };
-    }, [adoptions, requestsThreshold, requestsPeriodDays]);
+        () => periodAlerts(adoptions as any, adoptionConfig ?? DEFAULT_ADOPTION_CONFIG),
+        [adoptions, adoptionConfig],
+    );
 
     const handleDeleteClick = async () => {
         setDeleteLoading(true);

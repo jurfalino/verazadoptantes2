@@ -48,8 +48,7 @@ import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts, DEFAULT_ADOPTION_CONFIG } from '@/domain/periodAlerts';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
@@ -179,19 +178,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         || (!!currentUser && !!initialData?.addedBy && currentUser.trim().toLowerCase() === initialData.addedBy.trim().toLowerCase())
     );
 
-    // Sliding window logic strictly memoized to avoid expensive sorting on every render
-    const periodDays = adoptionConfig?.periodDays || 90;
-    const threshold = adoptionConfig?.threshold || 5;
-    const requestsPeriodDays = adoptionConfig?.requestsPeriodDays || 30;
-    const requestsThreshold = adoptionConfig?.requestsThreshold || 3;
-
-    const adoptionsDensity = useMemo(() => {
-        return computeMaxDensityPeriod(adoptions, 'adoption', periodDays);
-    }, [adoptions, periodDays]);
-
-    const requestsDensity = useMemo(() => {
-        return computeRequestRescueDensity(adoptions, requestsPeriodDays);
-    }, [adoptions, requestsPeriodDays]);
+    // The header's two period ALERTS, by the one rule (periodAlerts), memoized
+    // (the sliding window sorts). A 0 / unset threshold falls back to the default, as before.
+    const { tooManyAdoptions, tooManyRequests } = useMemo(() => periodAlerts(adoptions, {
+        threshold: adoptionConfig?.threshold || DEFAULT_ADOPTION_CONFIG.threshold,
+        periodDays: adoptionConfig?.periodDays || DEFAULT_ADOPTION_CONFIG.periodDays,
+        requestsThreshold: adoptionConfig?.requestsThreshold || DEFAULT_ADOPTION_CONFIG.requestsThreshold,
+        requestsPeriodDays: adoptionConfig?.requestsPeriodDays || DEFAULT_ADOPTION_CONFIG.requestsPeriodDays,
+    }), [adoptions, adoptionConfig]);
 
     const [isEditing, setIsEditing] = useState(isNew);
     // True while the name's inline field is in edit mode — collapses the sibling
@@ -1538,8 +1532,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             existingFlags={flags}
                             hasVerifiedAdoption={adoptions.some(a => a.identityVerified === 1)}
                             hasVerifiedAddress={adoptions.some(a => a.verifiedAddress && a.verifiedAddress.trim() !== '')}
-                            tooManyAdoptions={adoptionsDensity.count >= threshold ? { count: adoptionsDensity.count, actualSpanDays: adoptionsDensity.timeSpanDays, periodDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate } : undefined}
-                            tooManyRequests={requestsDensity.count >= requestsThreshold ? { count: requestsDensity.count, actualSpanDays: requestsDensity.timeSpanDays, periodDays: requestsPeriodDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate } : undefined}
+                            tooManyAdoptions={tooManyAdoptions ?? undefined}
+                            tooManyRequests={tooManyRequests ?? undefined}
                             hasDuplicateBanner={hasDuplicateBanner}
                             compareSource={{ ...compareSource, kind: 'profile' }}
                             // The housemate alerts (Jon 2026-11-01): here a tap goes to the section that lists everyone.

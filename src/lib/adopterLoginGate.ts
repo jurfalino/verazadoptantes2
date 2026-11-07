@@ -12,13 +12,16 @@
  * Block conditions (any of these triggers a block on the matched adopter):
  *   - the profile's shown rating is 1★ «peligroso» (Jon, 2026-10-13: only a 1 bans
  *     from adopting; it was any average below 4 — now 2★–3★ sign in normally)
- *   - tooManyAdoptions flag set
- *   - tooManyRequests flag set
+ *   - the too_many_adoptions ALERT («N adopciones en N días»)
+ *   - the too_many_requests ALERT («Pidió en N rescates…») — both exactly as
+ *     the profile shows them (periodAlerts, the one rule; requests per rescue)
  *
  * Explicitly NOT blocked:
  *   - email doesn't match any adopter
- *   - email matches, avgRating is null (never rated) AND no density flags
- *   - email matches, shown rating 2★ or higher AND no density flags
+ *   - email matches, avgRating is null (never rated) AND no alerts
+ *   - email matches, shown rating 2★ or higher AND no alerts
+ *   - flags («Duplicado», «Inexacto», …) never block: they ask for an action,
+ *     they don't say the person can't be trusted (Jon, 2026-11-07)
  *
  * Match strategy: primarily via `duplicate_tokens` (normalized email tokens —
  * the existing duplicate-detection pipeline already maintains this for every
@@ -33,8 +36,7 @@ import { eq, and, like, isNull, desc } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { getAdoptionConfig } from '@/app/actions/config';
 
@@ -117,7 +119,7 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
             }).from(adopters).where(eq(adopters.id, adopterId)).get();
             if (!adopterRow) continue;
 
-            // Adoptions for rating + density flags
+            // Records for the rating and the two period alerts
             const adoptionRows = await db.select({
                 rating: adoptions.rating,
                 recordType: adoptions.recordType,
@@ -127,14 +129,11 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
 
             const avgRating = computeAvgRating(adoptionRows as { rating: number | null }[]);
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const adoptionsDensity = computeMaxDensityPeriod(adoptionRows as any, 'adoption', adoptionConfig.periodDays);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const rows = adoptionRows as Array<{ recordType: string | null; date: Date | null; addedBy: string | null }>;
-            const requestRows = withRescueKeys(rows, rows.some(r => r.recordType === 'adoption_request') ? await loadRescueKeys(db, 'adopterLoginGate') : new Map<string, string>());
-            const requestsDensity = computeRequestRescueDensity(requestRows, adoptionConfig.requestsPeriodDays);
-            const tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold;
-            const tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold;
+            const keyed = withRescueKeys(rows, rows.some(r => r.recordType === 'adoption_request') ? await loadRescueKeys(db, 'adopterLoginGate') : new Map<string, string>());
+            const alerts = periodAlerts(keyed, adoptionConfig);
+            const tooManyAdoptions = !!alerts.tooManyAdoptions;
+            const tooManyRequests = !!alerts.tooManyRequests;
 
             // Self-added skip (v2.17.1): a rescuer's own email landing in
             // their own contactInfo (test profile, tracking their own data,

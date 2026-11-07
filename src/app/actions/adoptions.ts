@@ -161,7 +161,9 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                         await db.insert(adopterFlags).values({
                             id: crypto.randomUUID(),
                             adopterId: data.adopterId,
-                            addedBy: changedBy,
+                            // `flaggedBy` (adopter_flags has no added_by): this was dropped and every
+                            // delivery-verified address was filed as 'anonymous'.
+                            flaggedBy: changedBy,
                             reason: 'verified_address',
                             details: `Address verified during pet delivery: ${data.verifiedAddress}`,
                             createdAt: new Date()
