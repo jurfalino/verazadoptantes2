@@ -398,8 +398,10 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
 
     // For follow_up / returned_pet, the picker should source from animals this
     // adopter has actually adopted — not the rescuer's unlinked inventory.
+    // Unnamed animals too (names are optional): skipping them hid the picker,
+    // so the event created a second adoption instead of attaching to this one.
     const previousAdoptionsForAdopter = isFollowUpOrReturn
-        ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption' && a.animalName)
+        ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption')
         : [];
     const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
     const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation && !isRequest;
@@ -429,7 +431,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const handleSelectExisting = (animalId: string) => {
         if (!animalId) return;
         const animal = effectiveAnimalsList.find(a => a.id === animalId);
-        if (animal) setFormData(prev => ({ ...prev, animalId: animal.id, animalName: animal.animalName, species: animal.species }));
+        // An unnamed animal carries null — the form keeps strings (submit trims them).
+        if (animal) setFormData(prev => ({ ...prev, animalId: animal.id, animalName: animal.animalName || '', species: animal.species || '' }));
     };
 
     const compressImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
