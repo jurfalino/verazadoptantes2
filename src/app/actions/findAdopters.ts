@@ -36,7 +36,7 @@ import type {
 import { enrichAdopters } from './enrichAdopters';
 import { normalizeConfidence, fuzzyNameScore, nameTokenMatches, SEARCH_SCORE_CEILING, PRACTICAL_MAX_DUPLICATE, DUPLICATE_MATCH_WEIGHTS, FUZZY_NAME_MATCH_TYPE } from '@/lib/scoring';
 import { classifyNameMatch, NAME_MATCH_WEIGHT, NAME_MATCH_TYPE, isNameLikeQuery, qualifiesForMainList } from '@/lib/searchRanking';
-import { phoneQueryPlan, phoneDuplicateTokens } from '@/domain/phoneNumber';
+import { phoneQueryPlan, phoneDuplicateTokens, readPhones } from '@/domain/phoneNumber';
 import { extractQueryIdentifiers } from '@/domain/queryIdentifiers';
 import { redactedError, redactedErrorFields } from '@/lib/redactedError';
 import type { PersonInput } from '@/lib/identityMatch';
@@ -605,7 +605,17 @@ async function runDuplicateMode(
     const contactLikeConditions: Array<ReturnType<typeof like>> = [];
     for (const phone of phones) {
         const d = phone.replace(/\D/g, '');
-        if (d.length >= 6) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(d.slice(-8))}%`));
+        if (d.length < 6) continue;
+        const reads = readPhones(phone, input.country);
+        if (reads.length === 0) { contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(d.slice(-8))}%`)); continue; }
+        // A complete number looks for its whole national number: its last 8 digits
+        // alone run into the area code, and Rosario's 341 412-3456 would find
+        // Córdoba's «3514123456» (S2). A number without area code keeps its local
+        // digits; an over-long one (a chip, a CUIT) proves nothing.
+        for (const r of reads) {
+            const needle = r.kind === 'complete' ? r.national : r.overlong ? null : r.local;
+            if (needle) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(needle)}%`));
+        }
     }
     for (const email of emails) {
         if (email.includes('@')) contactLikeConditions.push(like(adopters.contactInfo, `%${escapeLike(email.toLowerCase())}%`));

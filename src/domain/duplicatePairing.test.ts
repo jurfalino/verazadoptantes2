@@ -18,6 +18,10 @@ describe('pairsOnSharedToken', () => {
         expect(pairsOnSharedToken('phone', 50)).toBe(true);
         expect(pairsOnSharedToken('id_number', 50)).toBe(true);
     });
+    it('a shared last-8-digits suffix alone pairs nobody: two different area codes (S2)', () => {
+        // Same number → the two records also share the `phone` key, which pairs them.
+        expect(pairsOnSharedToken('phone_suffix', 2)).toBe(false);
+    });
 });
 
 describe('scorePair', () => {

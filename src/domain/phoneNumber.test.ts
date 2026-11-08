@@ -106,12 +106,50 @@ describe('phoneMatchesQuery — the reveal rule', () => {
 describe('phoneDuplicateTokens / samePhone', () => {
     it('a complete number also probes the local-only forms', () => {
         const values = phoneDuplicateTokens('11 6585 1333', 'AR').map(t => `${t.type}:${t.value}`);
-        expect(values).toEqual(expect.arrayContaining(['phone:541165851333', 'phone_suffix:65851333', 'phone:65851333']));
+        expect(values).toEqual(expect.arrayContaining(['phone:541165851333', 'phone:65851333']));
     });
     it('samePhone agrees across formats and with a local-only number', () => {
         expect(samePhone('+54 9 11 6585-1333', '1165851333', 'AR')).toBe(true);
         expect(samePhone('6585 1333', '011 15 6585 1333', 'AR')).toBe(true);
         expect(samePhone('351 412-3456', '341 412-3456', 'AR')).toBe(false);
+    });
+});
+
+describe('phoneDuplicateTokens — different area codes are different phones (S2)', () => {
+    const key = (t: { type: string; value: string }) => `${t.type}:${t.value}`;
+    /** Does a duplicate check for `query` hit a record that stored `stored`? (exact token lookups) */
+    const hits = (query: string, stored: string) => {
+        const indexed = new Set(phoneIndexTokens(stored, 'AR').map(key));
+        return phoneDuplicateTokens(query, 'AR').some(t => indexed.has(key(t)));
+    };
+
+    it('a complete number never probes the last-8-digits suffix', () => {
+        expect(phoneDuplicateTokens('+54 9 341 412-3456', 'AR').some(t => t.type === 'phone_suffix')).toBe(false);
+    });
+    it('Córdoba 351 412-3456 and Rosario 341 412-3456 do not match, in either direction', () => {
+        expect(hits('+54 9 341 412-3456', '+54 9 351 412-3456')).toBe(false);
+        expect(hits('351 412-3456', '0341 15 412-3456')).toBe(false);
+        expect(hits('11 3585-1333', '+54 9 223 585-1333')).toBe(false);   // Buenos Aires vs Mar del Plata
+    });
+    it('the same number in different formats still matches', () => {
+        expect(hits('+54 9 11 6585-1333', '011 15 6585-1333')).toBe(true);
+        expect(hits('011 15 6585-1333', '1165851333')).toBe(true);
+        expect(hits('5491165851333', '+54 11 6585 1333')).toBe(true);
+        expect(hits('0351 15 412-3456', '+54 9 351 412-3456')).toBe(true);
+    });
+    it('a number saved without its area code still matches, both ways', () => {
+        expect(hits('+54 9 11 6585-1333', '6585-1333')).toBe(true);     // stored local-only
+        expect(hits('+54 9 11 6585-1333', '15 6585-1333')).toBe(true);  // stored with the old 15
+        expect(hits('6585-1333', '+54 9 11 6585-1333')).toBe(true);     // searched local-only
+        expect(hits('15 6585-1333', '11 6585 1333')).toBe(true);
+        expect(hits('+54 9 351 412-3456', '15 412-3456')).toBe(true);    // inland, 7 digits
+    });
+    it('also probes the shapes a record not yet re-indexed may hold', () => {
+        const values = phoneDuplicateTokens('11 6585 1333', 'AR').map(key);
+        expect(values).toEqual(expect.arrayContaining(['phone:1165851333', 'phone:5491165851333', 'phone:01165851333']));
+    });
+    it('an over-long number (microchip, CUIT) never probes a suffix', () => {
+        expect(phoneDuplicateTokens('982012314123456', 'AR').some(t => t.type === 'phone_suffix')).toBe(false);
     });
 });
 

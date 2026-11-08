@@ -153,20 +153,35 @@ export function phoneIndexTokens(value: string, country?: string | null): PhoneT
     return out;
 }
 
+/** The `phone` values a record not yet re-indexed may still hold for a complete number (as typed). */
+function legacyPhoneValues(r: { key: string; national: string }): string[] {
+    const out = [r.national];
+    if (r.key.startsWith('54')) out.push(`549${r.national}`, `0${r.national}`);
+    return out;
+}
+
 /**
  * The phone values a duplicate check looks up exactly, for one phone it was given.
- * Mirrors `phoneIndexTokens`, plus the endings a local-only stored record could hold.
+ *
+ *   complete   → its `phone` key, the shapes an un-reindexed record may hold,
+ *                and the endings a record saved WITHOUT an area code could hold.
+ *                Never `phone_suffix`: a stored complete number that only shares
+ *                the last 8 digits has another area code — Córdoba 351 412-3456
+ *                is not Rosario 341 412-3456 (the same number shares the key).
+ *   incomplete → its local digits, plus `phone_suffix` when it is an 8-digit
+ *                local number: the one way to find the same number stored WITH
+ *                an area code. Never for an over-long value (a chip, a CUIT).
  */
 export function phoneDuplicateTokens(value: string, country?: string | null): PhoneToken[] {
     const out: PhoneToken[] = [];
     for (const r of readPhones(value, country)) {
         if (r.kind === 'incomplete') {
             out.push({ type: 'phone', value: r.local });
-            if (r.local.length === 8) out.push({ type: 'phone_suffix', value: r.local });
+            if (r.local.length === 8 && !r.overlong) out.push({ type: 'phone_suffix', value: r.local });
             continue;
         }
         out.push({ type: 'phone', value: r.key });
-        if (r.national.length >= MIN_NATIONAL_FOR_SUFFIX) out.push({ type: 'phone_suffix', value: r.national.slice(-8) });
+        for (const v of legacyPhoneValues(r)) out.push({ type: 'phone', value: v });
         for (const end of localEndings(r.national)) out.push({ type: 'phone', value: end });
     }
     return out;
@@ -220,8 +235,7 @@ export function phoneQueryPlan(query: string, country: string | null | undefined
         if (r.kind === 'complete') {
             exact.add(r.key);
             // A record not yet re-indexed may still hold the number as typed.
-            exact.add(r.national);
-            if (r.key.startsWith('54')) { exact.add(`549${r.national}`); exact.add(`0${r.national}`); }
+            for (const v of legacyPhoneValues(r)) exact.add(v);
             for (const end of localEndings(r.national)) exact.add(end);
         } else if (!r.overlong && r.local.length >= minDigits) {
             endsWith.set(r.local, (endsWith.get(r.local) ?? false) || r.local.length >= STRONG_PARTIAL_DIGITS);
