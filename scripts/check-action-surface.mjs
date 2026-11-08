@@ -414,11 +414,12 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // caller must be a member of orgId; target looked up AND deleted by id AND org_id (another
 // group's member id → member_not_found); removing yourself refused; audited, returns no member data.
 // 178 = 177 + 1. 2026-11-08 «Ya lo corregí» (H4, src/app/actions/inaccuracyReports.ts):
-// +markInaccuracyReportsFixed(adopterId) — session required (else unauthenticated); adopterId
-// trimmed, ≤64 chars; a missing or soft-deleted profile → not_found; the audience is re-checked on
+// +markInaccuracyReportsFixed(adopterId, reportIds) — session required (else unauthenticated); adopterId
+// trimmed, ≤64 chars; reportIds = the banner's shown ids (strings, deduped, ≤20; none → invalid); a missing or soft-deleted profile → not_found; the audience is re-checked on
 // the server with the page's own rule (canSeeInaccuracyReports: owner, an org-mate of the owner, or
 // admin/moderator; an ownerless profile is staff-only), anyone else → not_authorized with an errorId.
-// One UPDATE scoped to that adopter_id AND request_type='inaccuracy' AND status='pending' — never a
+// One UPDATE per shown id, each scoped to that id AND adopter_id AND request_type='inaccuracy' AND
+// status='pending' — a report filed after the page loaded stays open; never a
 // deletion request, another profile or an already-closed report; returns only a count; audited.
 const EXPECTED_ACTIONS = 178;
 
