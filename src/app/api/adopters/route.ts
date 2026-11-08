@@ -519,10 +519,13 @@ export async function POST(request: Request) {
         // Save media (images + videos) if any
         let savedImageCount = 0;
         // F1: images that could not be stored, said to the rescuer (the wizard's notice) — never skipped silently.
-        let imagesTotal = 0;
-        let imagesNotSaved = 0;
+        // At most 20 per save (as add-record); the rest are counted as not saved, never refused.
+        const MAX_IMAGES_PER_SAVE = 20;
+        const overCap = Array.isArray(images) ? Math.max(0, images.length - MAX_IMAGES_PER_SAVE) : 0;
+        let imagesTotal = overCap;
+        let imagesNotSaved = overCap;
         if (images && Array.isArray(images) && images.length > 0) {
-            for (let i = 0; i < images.length; i++) {
+            for (let i = 0; i < Math.min(images.length, MAX_IMAGES_PER_SAVE); i++) {
                 const img = images[i];
                 const isVideo = img.mimeType?.startsWith('video/');
                 if (!isVideo) imagesTotal++;

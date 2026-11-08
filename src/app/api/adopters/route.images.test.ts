@@ -74,6 +74,24 @@ describe('POST /api/adopters — big screenshots (F1)', () => {
         expect(urlsOf(json.id)).toHaveLength(2);
     });
 
+    it('past 20 images the profile is still saved: 20 are stored and the rest are counted', async () => {
+        const many = Array.from({ length: 22 }, (_, i) => ({ data: `c21hbGw${i}`, mimeType: 'image/jpeg' }));
+        const res = await save(many);
+        const json = await res.json() as { id: string; imagesNotSaved?: number; imagesTotal?: number };
+        expect(res.status).toBe(200);
+        expect(json).toMatchObject({ imagesNotSaved: 2, imagesTotal: 22 });
+        expect(urlsOf(json.id)).toHaveLength(20);
+    });
+
+    it('one image over the size cap does not refuse the whole save: it is counted as not saved', async () => {
+        r2.store.mockResolvedValue(null);
+        const res = await save([small, { data: 'A'.repeat(10_500_000), mimeType: 'image/jpeg' }]);
+        const json = await res.json() as { id: string; imagesNotSaved?: number; imagesTotal?: number };
+        expect(res.status).toBe(200);
+        expect(json).toMatchObject({ imagesNotSaved: 1, imagesTotal: 2 });
+        expect(urlsOf(json.id)).toHaveLength(1);
+    });
+
     it('a video is not counted among the images', async () => {
         r2.store.mockResolvedValue(null);
         const res = await save([big, { data: '', mimeType: 'video/mp4', originalUrl: 'https://video.example/v.mp4' }]);
