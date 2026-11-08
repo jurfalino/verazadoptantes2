@@ -40,7 +40,7 @@ import { phoneQueryPlan, phoneDuplicateTokens, readPhones } from '@/domain/phone
 import { extractQueryIdentifiers } from '@/domain/queryIdentifiers';
 import { redactedError, redactedErrorFields } from '@/lib/redactedError';
 import type { PersonInput } from '@/lib/identityMatch';
-import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue } from '@/lib/tokenizer';
+import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue, extractAddressWords } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
@@ -378,6 +378,34 @@ async function searchNameTokenMatches(db: any, tokens: string[]): Promise<string
         return rows.map((r: { adopterId: string }) => r.adopterId);
     } catch (e) {
         logger.warn('Name-token search error', { error: e instanceof Error ? e.message : String(e) });
+        return [];
+    }
+}
+
+/**
+ * Accent-insensitive street/place recall (S1). The profile LIKE runs on the
+ * verbatim columns, so «maipu» never fetched «Av. Maipú» (and «MAIPÚ» neither:
+ * SQLite folds case for ASCII only). The index already holds every address
+ * entry's words folded (`address_word`, tokenizer.extractAddressWords); the
+ * query is read by the SAME function and matched exactly. Recall only: a record
+ * found here is still scored, anchored and tiered like any LIKE hit (the scorer
+ * compares folded text), so a shared street word alone earns nothing extra.
+ */
+async function searchAddressTokenMatches(db: Parameters<typeof searchNameTokenMatches>[0], normalizedQuery: string): Promise<string[]> {
+    // Words with a letter: a bare number has no accent to miss (the LIKE finds it).
+    const words = [...new Set(extractAddressWords(normalizedQuery))].filter(w => /[a-z]/.test(w));
+    if (words.length === 0) return [];
+    try {
+        const rows = await db.select({ adopterId: duplicateTokens.adopterId })
+            .from(duplicateTokens)
+            .where(and(
+                eq(duplicateTokens.tokenType, 'address_word'),
+                or(...words.map(w => eq(duplicateTokens.tokenValue, w))),
+            ))
+            .limit(SEARCH_RESULT_LIMIT);
+        return rows.map((r: { adopterId: string }) => r.adopterId);
+    } catch (e) {
+        logger.warn('Address-token search error', { error: e instanceof Error ? e.message : String(e) });
         return [];
     }
 }
@@ -943,7 +971,7 @@ async function runDiscoveryMode(
     // still crowded it out — and surfaced under "Otras posibles coincidencias"
     // on nothing but an area code.
     const phoneShapedQuery = isPhoneLikeQuery(normalizedQuery);
-    const [directResults, historyMatches, adoptionMatches, phoneMatches, nameTokenIds, idTokenIds] = await Promise.all([
+    const [directResults, historyMatches, adoptionMatches, phoneMatches, nameTokenIds, idTokenIds, addressTokenIds] = await Promise.all([
         phoneShapedQuery
             ? Promise.resolve([] as typeof adopters.$inferSelect[])
             : db.select().from(adopters).where(and(...profileConds)).limit(SEARCH_ENRICHMENT_LIMIT),
@@ -957,6 +985,8 @@ async function runDiscoveryMode(
         // via the NFD-stripped name-token index (the direct LIKE is accent-sensitive).
         searchNameTokenMatches(db, tokens),
         searchIdTokenMatches(db, normalizedQuery),
+        // S1: accent-insensitive street/place recall («maipu» → «Av. Maipú»).
+        phoneShapedQuery ? Promise.resolve([] as string[]) : searchAddressTokenMatches(db, normalizedQuery),
     ]);
     // Phone and id hits are identifier matches: they justify a result on their own
     // (strong → main list). A short partial phone only earns the weak tier.
@@ -998,7 +1028,7 @@ async function runDiscoveryMode(
         logger.warn('findAdopters: onBehalfOf fetch fallback hit', { requestId: options.trace?.requestId, error: e instanceof Error ? e.message : String(e) });
     }
 
-    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...weakPhoneIds, ...nameTokenIds]);
+    const extraIds = new Set([...historyIds, ...adoptionIds, ...phoneTokenIds, ...weakPhoneIds, ...nameTokenIds, ...addressTokenIds]);
     directResults.forEach((r: any) => extraIds.delete(r.id));
 
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1

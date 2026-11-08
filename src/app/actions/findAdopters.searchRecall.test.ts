@@ -57,6 +57,38 @@ beforeEach(() => {
     sqlite = m.sqlite as unknown as Sqlite;
 });
 
+describe('S1 — searching without accents finds addresses', () => {
+    beforeEach(async () => {
+        await seed('marta', 'Marta Giménez', [
+            e('address', 'Av. Maipú 1200, Vicente López', { streetAndNumber: 'Av. Maipú 1200', locality: 'Vicente López' }),
+        ]);
+        await seed('rel', 'Pedro Sosa', [], 'Tía Mónica Ibáñez');
+    });
+
+    it.each(['maipu', 'Maipú', 'MAIPÚ', 'maipú'])('«%s» finds Av. Maipú', async q => {
+        expect(await found(q)).toContain('marta');
+    });
+
+    it('«maipu» lands in the same list as «Maipú»', async () => {
+        expect(await tiers('maipu')).toEqual(await tiers('Maipú'));
+    });
+
+    it('the locality too, with or without accents', async () => {
+        expect(await found('vicente lopez')).toContain('marta');
+        expect(await found('VICENTE LÓPEZ')).toContain('marta');
+    });
+
+    it('relatives were already found without accents', async () => {
+        expect(await found('ibanez')).toContain('rel');
+        expect(await found('IBÁÑEZ')).toContain('rel');
+    });
+
+    it('a street word alone does not bring in an unrelated record', async () => {
+        await seed('other', 'Juan Gómez', [e('address', 'Belgrano 300, Tigre', { streetAndNumber: 'Belgrano 300', locality: 'Tigre' })]);
+        expect(await found('maipu')).not.toContain('other');
+    });
+});
+
 describe('S2 — a phone from another area code is not the same phone', () => {
     const dup = async (phone: string, name = '') => {
         const res = await findAdopters({ name, phones: [phone], country: 'AR' }, { mode: 'duplicate', keepNameOnly: true, minRelevance: 5, limit: 20 });
