@@ -22,6 +22,7 @@ import { logger } from '@/lib/logger';
 import { getDb } from './_db';
 import { auth } from '@/auth';
 import type { AdopterFlags } from '@/types/adopter';
+import type { HousemateAlertSummary } from '@/domain/households';
 
 export interface ApplicantSubmissionPayload {
     email: string | null;
@@ -55,8 +56,14 @@ export interface ApplicantSummary {
     /** True when this applicant has already signed the contract for this animal. */
     isSigned: boolean;
     // ── v34 enrichment ──────────────────────────────────────────────
-    /** Same shape /my-adopters uses, so <FlagBadges> renders directly. Null for orphan submissions. */
+    /** Same shape /my-adopters uses, so <FlagBadges> renders directly. Null for orphan submissions.
+     *  Its period alerts are real only when `alertsChecked`. */
     flags: AdopterFlags | null;
+    /** True only when the person's alerts (period + housemates) were actually read (P2):
+     *  the panel says «Sin alertas en el perfil» only then. */
+    alertsChecked: boolean;
+    /** The housemate chips' answers («Conviviente con calificación N» / «con alertas»); none unless `alertsChecked`. */
+    housemateAlert: HousemateAlertSummary;
     adoptionCount: number;
     requestCount: number;
     /** Form-submission attribution signals for the row's 1-line summary. */
@@ -104,7 +111,7 @@ export async function getApplicantsForAnimal(animalId: string): Promise<Applican
 
         const { getTeamEmails } = await import('@/lib/orgMembership');
         const teamEmails = await getTeamEmails(animal.addedBy);
-        return await loadApplicantsForAnimal(db, { id: animalId, adopterId: animal.adopterId ?? null }, teamEmails);
+        return await loadApplicantsForAnimal(db, { id: animalId, adopterId: animal.adopterId ?? null }, teamEmails, userEmail);
     } catch (e) {
         logger.warn('getApplicantsForAnimal failed', {
             animalId, userEmail,

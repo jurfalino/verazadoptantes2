@@ -29,8 +29,9 @@ import { createContractInvitation } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import LocationMap from '@/components/LocationMap';
-import { AlertPill } from '@/components/AlertPill';
+import { AlertPill, PeriodAlertPills } from '@/components/AlertPill';
 import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
+import { formatRating } from '@/domain/ratings';
 
 interface Props {
     applicants: ApplicantSummary[];
@@ -127,6 +128,14 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         if (s === 'imported') return <span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold bg-stone-100 text-stone-600">📥 {t('myAdopters.source_imported') || 'Imported'}</span>;
         return null;
     })();
+
+    // The person's ALERTS, as the full profile shows them (P2): their period alerts, then the
+    // housemate chips — the same pills and words. Read on the server; when that read failed
+    // (`alertsChecked` false) the panel shows no alerts line at all, never «Sin alertas».
+    const housemate = applicant.housemateAlert;
+    const hasAlerts = applicant.alertsChecked && !!applicant.flags && (
+        !!applicant.flags.tooManyAdoptions || !!applicant.flags.tooManyRequests
+        || housemate.lowRating != null || housemate.hasAlerts);
 
     const flagPills: React.ReactNode[] = [];
     if (applicant.flags) {
@@ -256,11 +265,20 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                         </h3>
                         {applicant.adopterId ? (
                             <div className="space-y-2">
-                                {flagPills.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1">{flagPills}</div>
-                                ) : (
-                                    <p className="text-xs text-stone-400 italic">{t('myAnimals.applicants_panel_no_flags') || 'Sin alertas'}</p>
-                                )}
+                                {hasAlerts ? (
+                                    <div className="flex flex-wrap gap-1" data-testid="applicant-panel-alerts">
+                                        <PeriodAlertPills alerts={applicant.flags} />
+                                        {housemate.lowRating != null && (
+                                            <AlertPill kind="housemate_low_rating" wrap>
+                                                {t('alerts.housemate_low_rating').replace('{rating}', formatRating(housemate.lowRating))}
+                                            </AlertPill>
+                                        )}
+                                        {housemate.hasAlerts && <AlertPill kind="housemate_alerts" wrap>{t('alerts.housemate_alerts')}</AlertPill>}
+                                    </div>
+                                ) : applicant.alertsChecked ? (
+                                    <p className="text-xs text-stone-400 italic" data-testid="applicant-panel-no-alerts">{t('myAnimals.applicants_panel_no_flags') || 'Sin alertas'}</p>
+                                ) : null}
+                                {flagPills.length > 0 && <div className="flex flex-wrap gap-1">{flagPills}</div>}
                                 <p className="text-sm text-stone-700">
                                     📊 {(t('myAnimals.applicants_panel_activity') || '{adoptions} adopciones · {requests} pedidos')
                                         .replace('{adoptions}', String(applicant.adoptionCount))
