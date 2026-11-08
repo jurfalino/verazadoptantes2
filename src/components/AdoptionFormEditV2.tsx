@@ -20,7 +20,8 @@ import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
 import { isSaveBusyError, isAnimalAlreadyPlacedError } from '@/domain/fieldCollab';
-import { recordStoresIdentityCheck } from '@/domain/recordEditAccess';
+import { recordHandoverFields, splitDeliveryAddress, joinDeliveryAddress } from '@/domain/recordEditAccess';
+import DeliveryAddressBlock from '@/components/DeliveryAddressBlock';
 import { FieldConflictNotice } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage, animalAlreadyPlacedMessage } from '@/lib/collabCopy';
 
@@ -118,6 +119,11 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         verifiedAddress: initialData?.verifiedAddress || '',
         identityVerified: initialData?.identityVerified || false
     });
+    /* The delivery address as the two fields the form shows (F3). An old record's
+       single string is split on its last comma; `formData.verifiedAddress` stays
+       the stored string until the person edits a field, so an untouched address
+       is never re-sent. */
+    const [deliveryParts, setDeliveryParts] = useState(() => splitDeliveryAddress(initialData?.verifiedAddress));
 
     /* Editing an existing record: what the form loaded for each field it can
        change — sent with the save so a teammate's edit to another field is
@@ -183,6 +189,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         };
         baselineRef.current = initialData.id ? { id: initialData.id, values: baselineOf(initialData), shown: { ...filled } } : null;
         setFormData(filled);
+        setDeliveryParts(splitDeliveryAddress(filled.verifiedAddress));
         setIsOpen(true);
         setMode('new');
     }
@@ -417,6 +424,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     toast.info(updatedByOtherMessage(t, o.field, o.by));
                 }
                 if (others.length) setFormData(prev => ({ ...prev, ...Object.fromEntries(others.map(o => [o.field, asFormValue(o.field, o.value)])) }));
+                const otherAddress = others.find(o => o.field === 'verifiedAddress');
+                if (otherAddress) setDeliveryParts(splitDeliveryAddress(asFormValue('verifiedAddress', otherAddress.value) as string));
                 // Fields we both changed: nothing of theirs was overwritten.
                 // The form stays open with my values and a notice per field.
                 if (result.conflicts?.length) {
@@ -460,6 +469,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
             else {
                 setIsOpen(false);
                 setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 0, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+                setDeliveryParts(splitDeliveryAddress(''));
                 setPendingImages([]);
                 await new Promise(resolve => setTimeout(resolve, 100));
                 router.refresh();
@@ -513,6 +523,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
         ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption' && a.animalName && a.id !== initialData?.id)
         : [];
     const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
+    // What this record type asks about the handover (F3): one rule with the wizard.
+    const handover = recordHandoverFields(formData.recordType);
 
     // Hide switcher when wizard already made the new/existing choice (newAdoptionParam or continueToAdoption)
     // and always for observation records (no animal involved).
@@ -552,6 +564,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                                     (baselineRef.current.shown as Record<string, unknown>)[field] = asFormValue(field, c.value);
                                 }
                                 setFormData(prev => ({ ...prev, [field]: asFormValue(field, c.value) }));
+                                if (field === 'verifiedAddress') setDeliveryParts(splitDeliveryAddress(asFormValue(field, c.value) as string));
                                 setConflicts(cs => { const n = { ...cs }; delete n[field]; return n; });
                             }}
                             onKeepMine={() => {
@@ -753,60 +766,27 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         />
                     </div>
 
-                    {/* Delivered to Home - Only for adoption record type */}
-                    {formData.recordType === 'adoption' && (
-                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-lg">🚗</span>
-                                    <label className="text-sm font-medium text-blue-800">
-                                        {t('adoption.delivered_to_home') || 'Delivered to adopter\'s home?'}
-                                    </label>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const newDelivered = !formData.deliveredToHome;
-                                        setFormData({
-                                            ...formData,
-                                            deliveredToHome: newDelivered,
-                                            verifiedAddress: newDelivered ? (formData.verifiedAddress || extractAddressFromContact(adopterAddress)) : ''
-                                        });
-                                    }}
-                                    className={`relative w-12 h-6 rounded-full transition-colors ${formData.deliveredToHome ? 'bg-blue-500' : 'bg-stone-200'}`}
-                                >
-                                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.deliveredToHome ? 'translate-x-6' : 'translate-x-0'}`} />
-                                </button>
-                            </div>
-
-                            {/* Address Verification Section */}
-                            {formData.deliveredToHome && (
-                                <div className="mt-4 pt-4 border-t border-blue-100">
-                                    <label className="block text-xs font-semibold text-blue-800 mb-1.5 uppercase tracking-wider flex items-center gap-1">
-                                        <span>📍</span>
-                                        {t('adoption.verify_address') || 'Verify Address'}
-                                    </label>
-                                    <textarea
-                                        className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none text-base md:text-sm"
-                                        rows={2}
-                                        value={formData.verifiedAddress}
-                                        onChange={e => setFormData({ ...formData, verifiedAddress: e.target.value })}
-                                        placeholder={t('adoption.address_placeholder') || 'Enter or confirm the delivery address...'}
-                                    />
-                                    {formData.verifiedAddress && (
-                                        <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                            {t('adoption.address_will_be_verified') || 'Address will be verified on save'}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                    {/* Delivered to Home — where the record stores it: an adoption and a
+                        «Tránsito» alike (F3, recordHandoverFields), with the wizard's
+                        two-field address block. */}
+                    {handover.deliveredToHome && (
+                        <DeliveryAddressBlock
+                            value={{ delivered: !!formData.deliveredToHome, ...deliveryParts }}
+                            prefillStreet={extractAddressFromContact(adopterAddress)}
+                            onChange={next => {
+                                setDeliveryParts({ streetAndNumber: next.streetAndNumber, locality: next.locality });
+                                setFormData(prev => ({
+                                    ...prev,
+                                    deliveredToHome: next.delivered,
+                                    verifiedAddress: next.delivered ? joinDeliveryAddress(next) : '',
+                                }));
+                            }}
+                        />
                     )}
 
                     {/* Identity Verification Toggle — only on records that store it
                         (placements); a follow-up/return/observation would drop it (R2). */}
-                    {recordStoresIdentityCheck(formData.recordType) && (
+                    {handover.identityCheck && (
                     <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">

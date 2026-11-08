@@ -16,6 +16,8 @@ import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { useDateFormat } from '@/context/TimezoneContext';
 import AnimalSelectPicker from '@/components/AnimalSelectPicker';
+import DeliveryAddressBlock from '@/components/DeliveryAddressBlock';
+import { recordHandoverFields } from '@/domain/recordEditAccess';
 import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
@@ -404,6 +406,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
         ? safeAdopterAdoptions.filter(a => a && a.recordType === 'adoption')
         : [];
     const effectiveAnimalsList = isFollowUpOrReturn ? previousAdoptionsForAdopter : safeAvailableAnimals;
+    // What this record type asks about the handover (F3): one rule with the edit form.
+    const handover = recordHandoverFields(formData.recordType);
     const showModeSwitcher = !shouldOpenFromWizard && effectiveAnimalsList.length > 0 && !isObservation && !isRequest;
     /* v2.56.116: a URL-driven open hid the mode switcher and forced 'new' — so
        «Registrar devolución», which is always a link, always took the
@@ -931,73 +935,25 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 <textarea className="w-full p-3 rounded-lg border border-teal-200 bg-white text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-base md:text-sm" rows={3} value={formData.details} onChange={e => setFormData(d => ({ ...d, details: e.target.value }))} placeholder={t('adoption.notes_placeholder')} />
                             </div>
 
-                            {/* Conditional Delivery / Verification Toggles.
-                                v2.19.40: toggle now also appears for `foster`
-                                (tránsito) — same "delivered to the adopter's
-                                home" semantics, with the address persisted to
-                                the adopter's contact entries on save. */}
-                            {(formData.recordType === 'adoption' || formData.recordType === 'foster') && (
-                                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-lg">🚗</span>
-                                            <label className="text-sm font-medium text-stone-800">{t('adoption.delivered_to_home')}</label>
-                                        </div>
-                                        {/* Pre-fill behaviour: when turning the toggle ON, seed the
-                                            street field with whatever address we can derive from the
-                                            adopter's contactInfo (single string). The user can split
-                                            it across the two structured fields manually. When turning
-                                            OFF, clear all three so a follow-up activity doesn't carry
-                                            over a stale address. */}
-                                        <button type="button" onClick={() => {
-                                            const nd = !formData.deliveredToHome;
-                                            setFormData(d => ({
-                                                ...d,
-                                                deliveredToHome: nd,
-                                                verifiedStreetAndNumber: nd ? (d.verifiedStreetAndNumber || extractAddressFromContact(adopterAddress)) : '',
-                                                verifiedLocality: nd ? d.verifiedLocality : '',
-                                                verifiedAddress: nd ? d.verifiedAddress : '',
-                                            }));
-                                        }} className={`relative w-12 h-6 rounded-full transition-colors ${formData.deliveredToHome ? 'bg-blue-500' : 'bg-stone-200'}`}>
-                                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.deliveredToHome ? 'translate-x-6' : 'translate-x-0'}`} />
-                                        </button>
-                                    </div>
-                                    {formData.deliveredToHome && (
-                                        <div className="mt-4 pt-4 border-t border-blue-100 space-y-2">
-                                            <label className="block text-xs font-semibold text-stone-700 mb-1.5 uppercase tracking-wider flex items-center gap-1"><span>📍</span> {t('adoption.verify_address')}</label>
-                                            {/* v2.19.40: two structured inputs mirroring the
-                                                contact-entries address composer (street + locality).
-                                                Saved as separate fields on the new ContactEntry below
-                                                so masking + duplicate-detection keep working the way
-                                                they do for manually-added addresses. */}
-                                            <input
-                                                type="text"
-                                                value={formData.verifiedStreetAndNumber}
-                                                onChange={e => setFormData(d => ({ ...d, verifiedStreetAndNumber: e.target.value }))}
-                                                placeholder={t('adopter.ce_input_ph_address')}
-                                                className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
-                                            />
-                                            <input
-                                                type="text"
-                                                value={formData.verifiedLocality}
-                                                onChange={e => setFormData(d => ({ ...d, verifiedLocality: e.target.value }))}
-                                                placeholder={t('adopter.ce_input_ph_locality')}
-                                                className="w-full p-3 rounded-lg border border-blue-200 bg-white text-blue-950 placeholder-blue-800/40 font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none text-base md:text-sm"
-                                            />
-                                            <p className="text-xs text-stone-600 flex items-start gap-1.5 pt-1">
-                                                <svg className="w-3.5 h-3.5 mt-px shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">
-                                                    <rect x="5" y="11" width="14" height="9" rx="2" />
-                                                    <path strokeLinecap="round" d="M8 11V8a4 4 0 118 0v3" />
-                                                </svg>
-                                                <span>{t('adoption.verify_address_saved_hint')}</span>
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
+                            {/* Delivery + identity: asked where the record stores them —
+                                an adoption and a «Tránsito» alike (F3, recordHandoverFields),
+                                with the same address block as the edit form. */}
+                            {handover.deliveredToHome && (
+                                <DeliveryAddressBlock
+                                    value={{ delivered: formData.deliveredToHome, streetAndNumber: formData.verifiedStreetAndNumber, locality: formData.verifiedLocality }}
+                                    prefillStreet={extractAddressFromContact(adopterAddress)}
+                                    onChange={next => setFormData(d => ({
+                                        ...d,
+                                        deliveredToHome: next.delivered,
+                                        verifiedStreetAndNumber: next.streetAndNumber,
+                                        verifiedLocality: next.locality,
+                                        verifiedAddress: next.delivered ? d.verifiedAddress : '',
+                                    }))}
+                                />
                             )}
 
                             {/* R2: asked only where it is saved — follow-ups don't store it. */}
-                            {formData.recordType === 'adoption' && (
+                            {handover.identityCheck && (
                                 <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
@@ -1039,8 +995,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                         </p>
                                         <div className="mt-1 flex items-center gap-2">
                                             <StarRating value={formData.rating} size="sm" />
-                                            {formData.deliveredToHome && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">🚗 Delivered</span>}
-                                            {formData.recordType === 'adoption' && formData.identityVerified && <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">🪪 ID</span>}
+                                            {handover.deliveredToHome && formData.deliveredToHome && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">🚗 Delivered</span>}
+                                            {handover.identityCheck && formData.identityVerified && <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">🪪 ID</span>}
                                         </div>
                                     </div>
                                 </div>
