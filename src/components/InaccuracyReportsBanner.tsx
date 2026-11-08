@@ -37,7 +37,7 @@ export function InaccuracyReportsBanner({ adopterId, reports }: { adopterId: str
     async function markFixed() {
         setBusy(true);
         try {
-            const res = await markInaccuracyReportsFixed(adopterId);
+            const res = await markInaccuracyReportsFixed(adopterId, reports.map(r => r.id));
             if (res.ok) {
                 setClosed(true);
                 router.refresh();

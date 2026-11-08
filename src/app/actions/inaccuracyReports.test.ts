@@ -51,6 +51,8 @@ const report = (id: string, opts: { adopterId?: string; type?: string; status?: 
                     VALUES (?, ?, 'Marta', ?, ?, ?, ?, ?, ?)`)
         .run(id, opts.adopterId ?? 'juan', REPORTER, opts.type ?? 'inaccuracy', opts.details === undefined ? 'El teléfono es de la hermana, no de él.' : opts.details,
             opts.status ?? 'pending', opts.at ?? 1_762_400_000, opts.resolvedBy ?? null);
+/** Every id the older cases use — incl. rows that must NOT close (deletion, another profile, already closed): passing them proves the per-id scoping still holds. */
+const ALL = ['r1', 'a', 'b', 'mine', 'i', 'deletion', 'elsewhere', 'closed'];
 const rowOf = (id: string) => sqlite.prepare('SELECT status, resolved_at, resolved_by FROM data_requests WHERE id = ?').get(id)!;
 
 /** What the page decides for a viewer (mirrors src/app/adopter/[id]/page.tsx). */
@@ -80,7 +82,7 @@ describe('the profile is the home: with the notice deleted (or never written), t
         const shown = await loadPendingInaccuracyReports('juan');
         expect(shown).toEqual([{ id: 'r1', reporterName: 'Marta', createdAt: 1_762_400_000_000, details: 'El teléfono es de la hermana, no de él.' }]);
 
-        expect(await markInaccuracyReportsFixed('juan')).toEqual({ ok: true, resolved: 1 });
+        expect(await markInaccuracyReportsFixed('juan', ALL)).toEqual({ ok: true, resolved: 1 });
         expect(rowOf('r1')).toMatchObject({ status: 'resolved', resolved_by: OWNER });
         expect(rowOf('r1').resolved_at).not.toBeNull();
         expect(await loadPendingInaccuracyReports('juan')).toEqual([]);
@@ -120,7 +122,7 @@ describe('who sees the banner (the page) and who may close the reports (the serv
         it(`${who}: sees it and closes every open report`, async () => {
             report('a'); report('b', { at: 1_762_500_000 });
             expect(await pageShows(who)).toBe(true);
-            expect(await as(who, () => markInaccuracyReportsFixed('juan'))).toEqual({ ok: true, resolved: 2 });
+            expect(await as(who, () => markInaccuracyReportsFixed('juan', ALL))).toEqual({ ok: true, resolved: 2 });
             expect(rowOf('a')).toMatchObject({ status: 'resolved', resolved_by: who });
             expect(rowOf('b')).toMatchObject({ status: 'resolved', resolved_by: who });
             expect(audit).toEqual([expect.objectContaining({ userEmail: who, action: 'inaccuracy_reports_resolved', target: 'juan', details: { requestIds: expect.arrayContaining(['a', 'b']) } })]);
@@ -131,7 +133,7 @@ describe('who sees the banner (the page) and who may close the reports (the serv
         it(`${who}: does not see it, and closes nothing`, async () => {
             report('a');
             expect(await pageShows(who)).toBe(false);
-            expect(await as(who, () => markInaccuracyReportsFixed('juan'))).toEqual({ ok: false, error: 'not_authorized', errorId: 'gen12345' });
+            expect(await as(who, () => markInaccuracyReportsFixed('juan', ALL))).toEqual({ ok: false, error: 'not_authorized', errorId: 'gen12345' });
             expect(rowOf('a')).toMatchObject({ status: 'pending', resolved_by: null });
             expect(audit).toEqual([]);
         });
@@ -139,23 +141,50 @@ describe('who sees the banner (the page) and who may close the reports (the serv
 
     it('signed out: refused', async () => {
         report('a');
-        expect(await as(null, () => markInaccuracyReportsFixed('juan'))).toMatchObject({ ok: false, error: 'unauthenticated' });
+        expect(await as(null, () => markInaccuracyReportsFixed('juan', ALL))).toMatchObject({ ok: false, error: 'unauthenticated' });
         expect(rowOf('a').status).toBe('pending');
     });
 
     it('an ownerless (imported) profile: only staff close', async () => {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('imp', 'Importado', '5', 'import', 1000, 1000)`).run();
         report('i', { adopterId: 'imp' });
-        expect(await as(OWNER, () => markInaccuracyReportsFixed('imp'))).toMatchObject({ ok: false, error: 'not_authorized' });
-        expect(await as(ADMIN, () => markInaccuracyReportsFixed('imp'))).toEqual({ ok: true, resolved: 1 });
+        expect(await as(OWNER, () => markInaccuracyReportsFixed('imp', ALL))).toMatchObject({ ok: false, error: 'not_authorized' });
+        expect(await as(ADMIN, () => markInaccuracyReportsFixed('imp', ALL))).toEqual({ ok: true, resolved: 1 });
     });
 
     it('a missing or deleted profile: not_found', async () => {
-        expect(await markInaccuracyReportsFixed('nope')).toMatchObject({ ok: false, error: 'not_found' });
+        expect(await markInaccuracyReportsFixed('nope', ALL)).toMatchObject({ ok: false, error: 'not_found' });
         sqlite.prepare(`UPDATE adopters SET deleted_at = 2000 WHERE id = 'juan'`).run();
         report('a');
-        expect(await markInaccuracyReportsFixed('juan')).toMatchObject({ ok: false, error: 'not_found' });
+        expect(await markInaccuracyReportsFixed('juan', ALL)).toMatchObject({ ok: false, error: 'not_found' });
         expect(rowOf('a').status).toBe('pending');
+    });
+});
+
+describe('«Ya lo corregí» closes only the reports the banner showed (review I1)', () => {
+    it('a report filed after the page loaded stays open for the admins', async () => {
+        report('seen');
+        const shown = (await loadPendingInaccuracyReports('juan')).map(r => r.id);
+        report('later', { at: 1_762_600_000 }); // filed while the owner read the banner
+        expect(await markInaccuracyReportsFixed('juan', shown)).toEqual({ ok: true, resolved: 1 });
+        expect(rowOf('seen')).toMatchObject({ status: 'resolved', resolved_by: OWNER });
+        expect(rowOf('later')).toMatchObject({ status: 'pending', resolved_by: null });
+    });
+
+    it('beyond the banner\'s limit: only the lines shown are closed', async () => {
+        for (let i = 0; i < PENDING_INACCURACY_REPORTS_MAX + 3; i++) report(`r${i}`, { at: 1_762_400_000 + i });
+        const shown = (await loadPendingInaccuracyReports('juan')).map(r => r.id);
+        expect(shown).toHaveLength(PENDING_INACCURACY_REPORTS_MAX);
+        expect(await markInaccuracyReportsFixed('juan', shown)).toEqual({ ok: true, resolved: PENDING_INACCURACY_REPORTS_MAX });
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM data_requests WHERE status = 'pending'`).get()!.n).toBe(3);
+    });
+
+    it('an id of another profile, or not a list: closes nothing', async () => {
+        report('elsewhere', { adopterId: 'otro' });
+        expect(await markInaccuracyReportsFixed('juan', ['elsewhere'])).toEqual({ ok: true, resolved: 0 });
+        expect(rowOf('elsewhere').status).toBe('pending');
+        expect(await markInaccuracyReportsFixed('juan', 'elsewhere' as unknown as string[])).toMatchObject({ ok: false, error: 'invalid' });
+        expect(await markInaccuracyReportsFixed('juan', [])).toMatchObject({ ok: false, error: 'invalid' });
     });
 });
 
@@ -165,7 +194,7 @@ describe('«Ya lo corregí» touches only this profile\'s open inaccuracy report
         report('deletion', { type: 'deletion' });
         report('elsewhere', { adopterId: 'otro' });
         report('closed', { status: 'resolved', resolvedBy: ADMIN });
-        expect(await as(MATE, () => markInaccuracyReportsFixed('juan'))).toEqual({ ok: true, resolved: 1 });
+        expect(await as(MATE, () => markInaccuracyReportsFixed('juan', ALL))).toEqual({ ok: true, resolved: 1 });
         expect(rowOf('mine')).toMatchObject({ status: 'resolved', resolved_by: MATE });
         expect(rowOf('deletion')).toMatchObject({ status: 'pending', resolved_by: null });
         expect(rowOf('elsewhere')).toMatchObject({ status: 'pending', resolved_by: null });
@@ -173,7 +202,7 @@ describe('«Ya lo corregí» touches only this profile\'s open inaccuracy report
     });
 
     it('nothing open: succeeds with 0 and writes no audit entry', async () => {
-        expect(await markInaccuracyReportsFixed('juan')).toEqual({ ok: true, resolved: 0 });
+        expect(await markInaccuracyReportsFixed('juan', ALL)).toEqual({ ok: true, resolved: 0 });
         expect(audit).toEqual([]);
     });
 });

@@ -2,7 +2,7 @@
 
 /**
  * «Ya lo corregí» on the profile's «Reportaron información incorrecta» banner
- * (H4): the owner team closes every open inaccuracy report on the profile they
+ * (H4): the owner team closes the open inaccuracy reports the banner showed on the profile they
  * fixed. Before, only an admin could close one (resolveDataRequest).
  *
  * Browser-callable: the session is the only actor. The server checks the same
@@ -19,13 +19,22 @@ import { logAudit } from '@/lib/audit';
 import { isOrgMate } from '@/lib/orgMembership';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { canSeeInaccuracyReports } from '@/domain/inaccuracyReports';
+import { PENDING_INACCURACY_REPORTS_MAX } from '@/lib/inaccuracyReports';
 
 export type MarkInaccuracyReportsFixedResult =
     | { ok: true; resolved: number }
     | { ok: false; error: 'unauthenticated' | 'invalid' | 'not_found' | 'not_authorized' | 'failed'; errorId: string };
 
-export async function markInaccuracyReportsFixed(adopterId: string): Promise<MarkInaccuracyReportsFixedResult> {
+/**
+ * `reportIds` = the lines the banner showed. Only those close (review I1): a
+ * report filed after the page loaded, or past the banner's limit, stays open
+ * for the admins instead of being closed unread.
+ */
+export async function markInaccuracyReportsFixed(adopterId: string, reportIds: string[]): Promise<MarkInaccuracyReportsFixedResult> {
     const id = typeof adopterId === 'string' ? adopterId.trim().slice(0, 64) : '';
+    const ids = Array.isArray(reportIds)
+        ? [...new Set(reportIds.filter((r): r is string => typeof r === 'string').map(r => r.trim().slice(0, 64)).filter(Boolean))].slice(0, PENDING_INACCURACY_REPORTS_MAX)
+        : [];
     let actor: string | null = null;
     const refuse = (error: 'unauthenticated' | 'invalid' | 'not_found' | 'not_authorized') => {
         const errorId = generateErrorId();
@@ -35,7 +44,7 @@ export async function markInaccuracyReportsFixed(adopterId: string): Promise<Mar
     try {
         try { actor = (await getUser()).trim().toLowerCase(); } catch { actor = null; /* anonymous: refused below */ }
         if (!isRealActorEmail(actor)) { actor = null; return refuse('unauthenticated'); }
-        if (!id) return refuse('invalid');
+        if (!id || ids.length === 0) return refuse('invalid');
         const db = await getDb();
         if (!db) throw new Error('No database');
 
@@ -50,16 +59,20 @@ export async function markInaccuracyReportsFixed(adopterId: string): Promise<Mar
             return refuse('not_authorized');
         }
 
-        // One statement, scoped to this profile's OPEN inaccuracy reports: a closed
-        // one keeps who closed it, a deletion request stays for the admins.
-        const closed = await db.update(dataRequests)
-            .set({ status: 'resolved', resolvedAt: new Date(), resolvedBy: actor })
+        // One statement per shown report (D1: no IN (array); at most
+        // PENDING_INACCURACY_REPORTS_MAX), each scoped to this profile's OPEN
+        // inaccuracy reports: a closed one keeps who closed it, a deletion request
+        // or another profile's report is never touched.
+        const now = new Date();
+        const closed = (await Promise.all(ids.map(reportId => db.update(dataRequests)
+            .set({ status: 'resolved', resolvedAt: now, resolvedBy: actor })
             .where(and(
+                eq(dataRequests.id, reportId),
                 eq(dataRequests.adopterId, id),
                 eq(dataRequests.requestType, 'inaccuracy'),
                 eq(dataRequests.status, 'pending'),
             ))
-            .returning({ id: dataRequests.id }) as Array<{ id: string }>;
+            .returning({ id: dataRequests.id }) as Promise<Array<{ id: string }>>))).flat();
 
         logger.info('markInaccuracyReportsFixed: closed', { adopterId: id, actor, resolved: closed.length });
         if (closed.length > 0) {
