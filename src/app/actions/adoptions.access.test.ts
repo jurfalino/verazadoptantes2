@@ -15,6 +15,17 @@ vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => und
 vi.mock('@/lib/pendingSearchLog', () => ({ closePendingSearchesForAdopter: vi.fn(async () => undefined) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
+// P1: the profile's PII verdict, as getAdopter resolves it — OWNER's team and
+// admins see contact data in full; everyone else is masked.
+vi.mock('@/lib/piiAccessServer', async () => {
+    const { NO_ACCESS_VISIBILITY } = await import('@/lib/piiAccess');
+    const full = { ...NO_ACCESS_VISIBILITY, tier: 'full', privileged: true, nothingMasked: true };
+    return {
+        isPiiGatingEnabled: async () => true,
+        resolveAdopterVisibility: async (viewer: string) => ([OWNER, MATE, ADMIN].includes(viewer) ? full : NO_ACCESS_VISIBILITY),
+        buildMaskOptions: async () => ({ adopterIsPublic: false }),
+    };
+});
 
 import { saveAdoption, getAdoptions } from './adoptions';
 
@@ -122,5 +133,33 @@ describe('getAdoptions — the pencil shows exactly where the save works (T4)', 
         session.user = STRANGER;
         await saveAdoption({ id: 'ev-out', details: 'Sigue bien' } as never);
         expect(sqlite.prepare("SELECT details FROM adopter_events WHERE id = 'ev-out'").get()!.details).toBe('Sigue bien');
+    });
+});
+
+describe('getAdoptions — the delivery address is contact data (P1)', () => {
+    beforeEach(() => {
+        const m = migratedDb();
+        state.db = m.db;
+        sqlite = m.sqlite as unknown as typeof sqlite;
+        seed();
+        sqlite.prepare("UPDATE placements SET verified_address = 'Av. Siempre Viva 742, Lanús' WHERE id = 'an1-plc'").run();
+        // An outside rescuer's own adoption on OWNER's profile, with the address she verified.
+        sqlite.prepare(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('an2', 'Tom', 'cat', ?, 1000, 1000)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, status, recorded_by, verified_address)
+            VALUES ('an2-plc', 'an2', 'ad1', 'adoption', 1500, 'completed', ?, 'Otra Calle 55, Quilmes')`).run(STRANGER);
+    });
+
+    const addresses = async () => Object.fromEntries((await getAdoptions('ad1') as Array<Record<string, unknown>>).map(r => [r.id, r.verifiedAddress]));
+
+    it('outside the team: masked like the profile\'s contacts — except the record she wrote herself', async () => {
+        session.user = STRANGER;
+        expect(await addresses()).toEqual({ an1: '•••••, Lanús', an2: 'Otra Calle 55, Quilmes' });
+    });
+
+    it('the team and admins: in full', async () => {
+        for (const who of [OWNER, MATE, ADMIN]) {
+            session.user = who;
+            expect(await addresses()).toEqual({ an1: 'Av. Siempre Viva 742, Lanús', an2: 'Otra Calle 55, Quilmes' });
+        }
     });
 });
