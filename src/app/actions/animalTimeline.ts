@@ -46,6 +46,8 @@ export type AnimalTimelineItem = {
     comments: string | null;
     /** A signed contract in private storage for this placement (placements.contract_key; the key itself never leaves the server). */
     hasContract?: boolean;
+    /** H1: the signature behind that contract — opens «Datos y posibles duplicados». */
+    signedContractId?: string;
     recordedBy: string | null;
     /** Ended spans: length in days (placement_end items). */
     spanDays: number | null;
@@ -229,6 +231,11 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
         scope: im.scope ?? null,
     }));
 
+    // H1: each contract's signature (one query; fails open to the PDF alone).
+    const { signedContractIdsForPlacements } = await import('@/lib/signedContractIds');
+    const signedByPlacement = await signedContractIdsForPlacements(db, animalId,
+        (spans as any[]).map(p => ({ id: p.id, animalId, contractKey: p.contractKey ?? null })), { op: 'getAnimalProfile', userEmail });
+
     const items: AnimalTimelineItem[] = [];
     // The origin of the line of life: when (and by whom) the animal was
     // registered. Even a fresh available animal has a first event.
@@ -244,6 +251,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
             id: p.id, kind: 'placement_start', type: p.recordType, date: toMs(p.startedAt),
             adopterId: p.adopterId, adopterName: nameMap.get(p.adopterId) ?? null, placementId: p.id,
             rating: p.rating ?? null, details: null, comments: p.comments ?? null, hasContract: !!p.contractKey,
+            ...(signedByPlacement.has(p.id) ? { signedContractId: signedByPlacement.get(p.id) } : {}),
             recordedBy: p.recordedBy ?? null, spanDays: null, images: [],
         });
         // Synthetic "span ended" item — suppressed when a returned_pet event

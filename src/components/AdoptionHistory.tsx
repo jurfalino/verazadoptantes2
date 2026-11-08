@@ -2,7 +2,8 @@
 
 import OriginTag from './OriginTag';
 import { activityOrigin } from '@/domain/recordOrigin';
-import { contractHref } from '@/lib/contractLink';
+import { contractHref, contractResultsHref } from '@/lib/contractLink';
+import SignedContractLinks from '@/components/SignedContractLinks';
 import FormAnswers from './FormAnswers';
 import { useState, useEffect, type ComponentType } from 'react';
 import { ClipboardList, Pencil } from 'lucide-react';
@@ -33,6 +34,8 @@ interface Adoption {
     details: string | null;
     comments: string | null;
     hasContract?: number | null;
+    /** H1: the signature's id — opens «Datos y posibles duplicados». */
+    signedContractId?: string | null;
     date: Date | null;
     addedBy: string | null;
 
@@ -473,27 +476,10 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         );
                                     })()}
 
-                                    {/* Contract screenshot link (for adoptions) */}
+                                    {/* Signed contract: the PDF + its data and possible duplicates (H1) */}
                                     {(adoption.hasContract || adoption.comments) && (() => {
-                                        try {
-                                            const href = contractHref(adoption.id, adoption.hasContract, adoption.comments);
-                                            if (href) {
-                                                return (
-                                                    <a
-                                                        href={href}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
-                                                        onClick={e => e.stopPropagation()}
-                                                    >
-                                                        <svg className="w-4 h-4 text-teal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" /></svg>
-                                                        <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
-                                                        <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                    </a>
-                                                );
-                                            }
-                                        } catch { /* not JSON, ignore */ }
-                                        return null;
+                                        const href = contractHref(adoption.id, adoption.hasContract, adoption.comments);
+                                        return href ? <SignedContractLinks className="mt-2.5" pdfHref={href} resultsHref={contractResultsHref(adoption.signedContractId, { adopter: adopterId })} /> : null;
                                     })()}
 
                                     {/* Form link (for adoption_requests) */}

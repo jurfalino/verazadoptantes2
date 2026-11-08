@@ -595,7 +595,9 @@ export async function getMyAdoptions(filter: 'all' | 'adoption' | 'adoption_requ
             addedByName: adoption.addedBy ? (addedByNames.get(adoption.addedBy.toLowerCase()) ?? null) : null,
         }));
 
-        return adoptionsWithDetails;
+        // H1: each signed contract's id, for «Datos y posibles duplicados» (batched; fails open to the PDF alone).
+        const { attachSignedContractIds } = await import('@/lib/signedContractIds');
+        return await attachSignedContractIds(db, adoptionsWithDetails, { op: 'getMyAdoptions', userEmail });
     } catch (error) {
         logger.error('getMyAdoptions failed', error, { userEmail, filter, sort });
         return [];

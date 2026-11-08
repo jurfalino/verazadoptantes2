@@ -48,3 +48,28 @@ export async function canViewerAccessContractResult(
     if (recipient && await deps.isOrgMate(viewer, recipient)) return true;
     return deps.isAdmin(viewer);
 }
+
+/**
+ * H1: a contract result opened by its SIGNED-CONTRACT id (the record's
+ * «Datos y posibles duplicados») follows the signed PDF's rule
+ * (/api/files/contract): the animal's CURRENT rescue — its owner or someone
+ * in a directly shared organization (`sameRescueDirect`) — and admins. After
+ * a transfer that is the new rescue; the old notice id keeps today's rule.
+ */
+export interface SignedContractAccessDeps {
+    /** sameRescueDirect(viewer, animalOwner, membership). */
+    sameRescue(viewer: string, animalOwner: string): Promise<boolean>;
+    isAdmin(viewer: string): Promise<boolean>;
+}
+
+export async function canViewerAccessSignedContract(
+    viewerEmail: string | null | undefined,
+    animalOwner: string | null | undefined,
+    deps: SignedContractAccessDeps,
+): Promise<boolean> {
+    const viewer = norm(viewerEmail);
+    if (!viewer) return false;
+    const owner = norm(animalOwner);
+    if (owner && await deps.sameRescue(viewer, owner)) return true;
+    return deps.isAdmin(viewer);
+}

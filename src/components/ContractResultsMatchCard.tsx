@@ -17,7 +17,8 @@ import type { CardHousehold } from '@/domain/households';
 
 interface ContractResultsMatchCardProps {
     matchId: string;
-    notificationId: string;
+    /** The id the result was opened with: a notice id or a signed-contract id (H1). */
+    resultId: string;
     profile: {
         id: string;
         name: string;
@@ -46,7 +47,7 @@ interface ContractResultsMatchCardProps {
 
 export default function ContractResultsMatchCard({
     matchId,
-    notificationId,
+    resultId,
     profile,
     matchTypes,
     score,
@@ -74,7 +75,7 @@ export default function ContractResultsMatchCard({
     const handleConfirm = async () => {
         setLinking(true);
         try {
-            const result = await attachContractToExistingAdopter(notificationId, matchId);
+            const result = await attachContractToExistingAdopter(resultId, matchId);
             if (result.success) {
                 trackSamePersonAnswer('contract_results', 'same', canAnswer);
                 toast.success(

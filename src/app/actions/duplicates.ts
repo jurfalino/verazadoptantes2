@@ -10,7 +10,6 @@ import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domai
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import type { Visibility } from '@/lib/piiAccess';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
-import { canViewerAccessContractResult, CONTRACT_RESULT_TYPE } from '@/lib/contractResultAccess';
 import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
@@ -32,8 +31,9 @@ import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, typ
  * removing the auto-created orphan adopter. Self-service merge for the rescuer who
  * received the contract-result notification.
  *
- * Auth: the notification recipient, their team or an admin (T1 — the team acts
- * as one; src/lib/contractResultAccess.ts). Cross-creator merge is allowed
+ * Auth: opened by a notice id — the notification recipient, their team or an
+ * admin (T1 — the team acts as one); by a signed-contract id (H1) — the
+ * animal's rescue or an admin (src/lib/contractResultAccess.ts). Cross-creator merge is allowed
  * (the matched profile may be owned by a different rescuer); the original creator
  * is notified so they can review.
  *
@@ -44,7 +44,8 @@ import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, typ
  * matched profile's original creator (skipped when actor is the creator or admin).
  */
 export async function attachContractToExistingAdopter(
-    notificationId: string,
+    /** H1: a notice id (old pages and links) OR a signed-contract id — resolved here. */
+    resultId: string,
     matchAdopterId: string,
 ): Promise<{ success: boolean; error?: string; errorId?: string; primaryName?: string; matchedProfileUrl?: string }> {
     let actorEmail = 'unknown';
@@ -58,26 +59,24 @@ export async function attachContractToExistingAdopter(
         const db = await getDb();
         if (!db) return { success: false, error: 'Database not available' };
 
-        const { notifications } = await import('@/db/schema');
-
-        // Fetch notification and validate ownership + shape
-        const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
-        if (!notification) return { success: false, error: 'Notification not found' };
-        // The recipient, their team or an admin — the same rule the page applies (src/lib/contractResultAccess.ts).
-        // Strict lookups: a D1 failure throws into the catch below (errorId), never reads as "stranger".
-        // Before the type check, so a stranger learns nothing about someone else's notification.
-        const { isOrgMateStrict } = await import('@/lib/orgMembership');
-        const { isAdminAsyncStrict } = await import('@/config/admins');
-        if (!(await canViewerAccessContractResult(actorEmail, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict }))) {
-            logger.info('attachContractToExistingAdopter: denied', { notificationId, matchAdopterId, actorEmail });
+        // The same lookup and rule the page applies (src/lib/contractResult.ts):
+        // a notice → its recipient, their team or an admin; a signed contract →
+        // the animal's rescue or an admin. Strict lookups: a D1 failure throws
+        // into the catch below (errorId), never reads as "stranger". A stranger
+        // learns nothing about someone else's notification.
+        const { loadContractResult } = await import('@/lib/contractResult');
+        const found = await loadContractResult(db, resultId, actorEmail);
+        if (found.status === 'not_found') return { success: false, error: 'Notification not found' };
+        if (found.status === 'denied') {
+            logger.info('attachContractToExistingAdopter: denied', { resultId, matchAdopterId, actorEmail });
             return { success: false, error: 'Not authorized for this notification' };
         }
-        if (notification.type !== CONTRACT_RESULT_TYPE) return { success: false, error: 'Notification is not a contract result' };
+        if (found.status === 'not_contract') return { success: false, error: 'Notification is not a contract result' };
+        const view = found.view;
 
-        const metadata = notification.metadata ? JSON.parse(notification.metadata) : {};
-        const orphanAdopterId: string | undefined = metadata.adopterId;
-        const animalId: string | undefined = metadata.animalId;
-        const animalName: string | undefined = metadata.animalName;
+        const orphanAdopterId: string | undefined = view.adopterId ?? undefined;
+        const animalId: string | undefined = view.animalId ?? undefined;
+        const animalName: string | undefined = view.animalName || undefined;
         if (!orphanAdopterId) return { success: false, error: 'Notification missing orphan adopter id' };
 
         // The target must be an OPEN PAIR of the contract's new profile (spec
@@ -87,7 +86,7 @@ export async function attachContractToExistingAdopter(
         try {
             openPairIds = new Set((await loadOpenPairs(db, orphanAdopterId, actorEmail, { limit: 20 })).map(p => p.otherAdopterId));
         } catch (e) {
-            const errorId = logger.error('attachContractToExistingAdopter: open pairs unreadable', e, { notificationId, matchAdopterId, orphanAdopterId, actorEmail });
+            const errorId = logger.error('attachContractToExistingAdopter: open pairs unreadable', e, { resultId, matchAdopterId, orphanAdopterId, actorEmail });
             return { success: false, error: 'Could not check the matches', errorId };
         }
         if (!openPairIds.has(matchAdopterId)) {
@@ -106,7 +105,7 @@ export async function attachContractToExistingAdopter(
         // the rescuer asks them from the «Pendientes» row.
         if (await refuseDisputedMerge(db, { keepId: matchAdopterId, absorbedId: orphanAdopterId, actor: actorEmail })) {
             const errorId = generateErrorId();
-            logger.warn('attachContractToExistingAdopter: refused, the admins decide this pair', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, errorId });
+            logger.warn('attachContractToExistingAdopter: refused, the admins decide this pair', { resultId, matchAdopterId, orphanAdopterId, actor: actorEmail, errorId });
             return { success: false, error: 'pair_disputed', errorId };
         }
 
@@ -115,7 +114,7 @@ export async function attachContractToExistingAdopter(
         if (!mergeResult.success) {
             // A merge rule's refusal (minor survivor; household data not converted yet) is expected: warn with an id.
             const errorId = generateErrorId();
-            logger.warn('attachContractToExistingAdopter: merge refused or failed', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, reason: mergeResult.error, errorId });
+            logger.warn('attachContractToExistingAdopter: merge refused or failed', { resultId, matchAdopterId, orphanAdopterId, actor: actorEmail, reason: mergeResult.error, errorId });
             return { success: false, error: mergeResult.error, errorId };
         }
 
@@ -128,7 +127,8 @@ export async function attachContractToExistingAdopter(
                 action: 'contract_link_to_existing',
                 target: matchAdopterId,
                 details: JSON.stringify({
-                    notificationId,
+                    notificationId: view.notificationId,
+                    signedContractId: view.signedContractId,
                     mergedOrphanId: orphanAdopterId,
                     animalId,
                     animalName,
@@ -138,7 +138,7 @@ export async function attachContractToExistingAdopter(
             });
         } catch (e) {
             logger.warn('attachContractToExistingAdopter: audit log insert failed (non-blocking)', {
-                notificationId,
+                resultId,
                 matchAdopterId,
                 actor: actorEmail,
                 error: e instanceof Error ? e.message : String(e),
@@ -157,7 +157,7 @@ export async function attachContractToExistingAdopter(
         } catch (e) {
             // Analytics insert failure is non-blocking — the merge itself succeeded.
             logger.warn('attachContractToExistingAdopter: contract_merged analytics insert failed (non-blocking)', {
-                notificationId,
+                resultId,
                 matchAdopterId,
                 actor: actorEmail,
                 error: e instanceof Error ? e.message : String(e),
@@ -185,7 +185,7 @@ export async function attachContractToExistingAdopter(
                     // Another rescuer's bell: the actor by name, never by email.
                     metadata: {
                         attachedByName: actorName,
-                        sourceNotificationId: notificationId,
+                        sourceNotificationId: view.notificationId,
                         animalId,
                         animalName,
                         auditId: mergeResult.auditId ?? null,
@@ -194,7 +194,7 @@ export async function attachContractToExistingAdopter(
             }
         } catch (e) {
             logger.warn('attachContractToExistingAdopter: creator notification failed (non-blocking)', {
-                notificationId,
+                resultId,
                 matchAdopterId,
                 actor: actorEmail,
                 error: e instanceof Error ? e.message : String(e),
@@ -208,7 +208,7 @@ export async function attachContractToExistingAdopter(
         };
     } catch (error) {
         const errorId = logger.error('attachContractToExistingAdopter failed', error, {
-            notificationId,
+            resultId,
             matchAdopterId,
             actor: actorEmail,
         });

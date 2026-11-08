@@ -1,6 +1,7 @@
 'use client';
 
-import { contractHref } from '@/lib/contractLink';
+import { contractHref, contractResultsHref } from '@/lib/contractLink';
+import SignedContractLinks from '@/components/SignedContractLinks';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveAdoption, getAdoptionImages, deleteImage } from '@/app/actions';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -706,26 +707,10 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     </div>
                     {/* End of Block 1 — animal-specific fields hidden for observations */}
 
-                    {/* Contract screenshot link */}
+                    {/* Signed contract: the PDF + its data and possible duplicates (H1) */}
                     {(initialData?.hasContract || initialData?.comments) && (() => {
-                        try {
-                            const href = contractHref(initialData.id, initialData.hasContract, initialData.comments);
-                            if (href) {
-                                return (
-                                    <a
-                                        href={href}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-2 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
-                                    >
-                                        <span className="text-sm">📋</span>
-                                        <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
-                                        <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                    </a>
-                                );
-                            }
-                        } catch { /* not JSON */ }
-                        return null;
+                        const href = contractHref(initialData.id, initialData.hasContract, initialData.comments);
+                        return href ? <SignedContractLinks pdfHref={href} resultsHref={contractResultsHref(initialData.signedContractId, { adopter: adopterId })} /> : null;
                     })()}
 
                     {/* Record type — read-only on edit. Changing the type after creation is rare
