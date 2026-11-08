@@ -214,6 +214,53 @@ export async function processImageForStorage(
 }
 
 /**
+ * Longest image data URL kept inline in D1 (~375 KB of image). A bigger one goes
+ * to R2 (storeLargeImageDataUrl) — it used to be skipped without a word (F1).
+ */
+export const MAX_INLINE_IMAGE_DATA_URL = 500_000;
+
+/**
+ * An image data URL too big for D1, into R2. Only real images are accepted: the
+ * bytes AND the declared type are the client's, and the bucket is public, so the
+ * magic bytes must be an image's (no HTML or SVG) and the type JPEG, PNG, GIF or WEBP.
+ * Returns the R2 URL, or null when it can't be stored (refused, or R2 failed — logged).
+ */
+export async function storeLargeImageDataUrl(
+    dataUrl: string,
+    adopterId: string,
+    imageId: string,
+): Promise<string | null> {
+    const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|gif|webp));base64,/i);
+    if (!match) {
+        logger.warn('[R2] Large data URL refused: not an image type', { adopterId, imageId });
+        return null;
+    }
+    try {
+        const head = atob(dataUrl.slice(match[0].length, match[0].length + 16));
+        const header = Uint8Array.from(head, c => c.charCodeAt(0));
+        if (!isAllowedImageBytes(header)) {
+            logger.warn('[R2] Large data URL refused: the bytes are not an image', { adopterId, imageId, mimeType: match[1] });
+            return null;
+        }
+        return await uploadDataUrlToR2(dataUrl, adopterId, imageId);
+    } catch (e) {
+        logger.error('[R2] Large image data URL not stored', e, { adopterId, imageId, size: dataUrl.length });
+        return null;
+    }
+}
+
+/** JPEG, PNG, GIF or WEBP magic bytes (isAllowedMediaType without the video types). */
+function isAllowedImageBytes(header: Uint8Array): boolean {
+    if (header.length < 4) return false;
+    if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) return true;
+    if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) return true;
+    if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x38) return true;
+    // RIFF....WEBP
+    return header.length >= 12 && header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46
+        && header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50;
+}
+
+/**
  * Decode a base64 data URL and upload it to R2.
  * Used for video uploads that are too large for D1.
  */

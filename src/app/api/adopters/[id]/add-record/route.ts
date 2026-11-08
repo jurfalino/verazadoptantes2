@@ -6,7 +6,7 @@ import { adopters, adopterImages } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
-import { processImageForStorage, uploadToR2 } from '@/lib/r2';
+import { processImageForStorage, uploadToR2, storeLargeImageDataUrl, MAX_INLINE_IMAGE_DATA_URL } from '@/lib/r2';
 import { resolveMergedAdopterId } from '@/lib/mergedAdopterRedirect';
 
 export async function POST(
@@ -113,25 +113,33 @@ export async function POST(
 
         // Save images linked to both adopter and adoption record
         let savedImageCount = 0;
+        // F1: images that could not be stored, said to the rescuer (the wizard's notice) — never skipped silently.
+        let imagesTotal = 0;
+        let imagesNotSaved = 0;
         if (images && Array.isArray(images) && images.length > 0) {
             for (let i = 0; i < images.length; i++) {
                 const img = images[i];
                 const imageUrl = img.originalUrl || `data:${img.mimeType};base64,${img.data}`;
-
-                // Skip oversized data URLs
-                if (imageUrl.startsWith('data:') && imageUrl.length > 500000) {
-                    logger.warn('Add record: skipping oversized image', {
-                        errorId, index: i, size: imageUrl.length, user: session.user.email
-                    });
-                    continue;
-                }
+                const isVideoMedia = img.mimeType?.startsWith('video/');
+                if (!isVideoMedia) imagesTotal++;
 
                 const imageId = crypto.randomUUID();
 
-                // Persist external URLs (Facebook CDN etc.) to R2
-                const persistedUrl = await processImageForStorage(imageUrl, adopterId, imageId);
+                // Too big to keep inline: to R2, as videos go (F1), instead of being skipped.
+                let largeUrl: string | null = null;
+                if (imageUrl.startsWith('data:') && imageUrl.length > MAX_INLINE_IMAGE_DATA_URL) {
+                    largeUrl = await storeLargeImageDataUrl(imageUrl, adopterId, imageId);
+                    if (!largeUrl) {
+                        logger.warn('Add record: oversized image not stored', {
+                            errorId, adopterId, index: i, size: imageUrl.length, user: session.user.email
+                        });
+                        if (!isVideoMedia) imagesNotSaved++;
+                        continue;
+                    }
+                }
 
-                const isVideoMedia = img.mimeType?.startsWith('video/');
+                // Persist external URLs (Facebook CDN etc.) to R2
+                const persistedUrl = largeUrl ?? await processImageForStorage(imageUrl, adopterId, imageId);
 
                 // Upload thumbnail if provided
                 let thumbnailUrl: string | null = null;
@@ -168,14 +176,17 @@ export async function POST(
             adoptionId,
             recordType: adoption.recordType,
             imageCount: savedImageCount,
+            imagesNotSaved,
             user: session.user.email
         });
 
+        // Extra fields only: an old tab ignores them.
         return NextResponse.json({
             success: true,
             adoptionId,
             adopterId,
-            adopterName: existingAdopter.name
+            adopterName: existingAdopter.name,
+            ...(imagesNotSaved ? { imagesNotSaved, imagesTotal, errorId } : {}),
         });
 
     } catch (error) {

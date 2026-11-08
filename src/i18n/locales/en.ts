@@ -2697,6 +2697,10 @@ export const en = {
         // Post-import toasts
         record_added_to_profile: 'Record added to profile',
         video_upload_failed: "Couldn't upload the video",
+        // F1: images the save could not store ({n} of {total}).
+        images_not_saved_only: "We couldn't save the image. Try uploading it again.",
+        images_not_saved_one: "We couldn't save 1 of the {total} images. Try uploading it again.",
+        images_not_saved_many: "We couldn't save {n} of the {total} images. Try uploading them again.",
         contact_merge_failed: "Couldn't join the contact data",
         // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.
         from_contacts_breadcrumb: 'Imported from your contacts',

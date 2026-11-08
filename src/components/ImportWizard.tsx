@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
+import { compressImage } from '@/lib/imageCompress';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import LegalConsent from '@/components/LegalConsent';
 import { extractVideoThumbnail, extractVideoThumbnailFromUrl } from '@/lib/videoThumbnail';
@@ -27,6 +28,11 @@ import { WarningIcon, CloseIcon, CheckIcon, AttachIcon, UploadIcon, VideoIcon, S
  * and the selection is built from the same list, so the two cannot drift.
  */
 const MAX_FETCHED_IMAGES = 12;
+/**
+ * The long side of a screenshot as it is SAVED (F1): small enough to store, big enough
+ * that the text in it stays readable. The AI still reads the original.
+ */
+const SAVED_IMAGE_MAX_PX = 1600;
 
 import { parseVcard, type ParsedVcardContact } from '@/lib/vcard';
 import { CONTACT_IMPORT_STASH_KEY } from '@/components/ContactPickerLauncher';
@@ -193,7 +199,8 @@ export default function ImportWizard() {
         }
         return '';
     });
-    const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string; file?: File; thumbnail?: string }>>([]);
+    /** `data` is the original (what the AI reads); `saveData` the shrunk JPEG that is saved (F1). */
+    const [manualImages, setManualImages] = useState<Array<{ data: string; mimeType: string; preview: string; file?: File; thumbnail?: string; saveData?: string }>>([]);
     const [sharedFrom, setSharedFrom] = useState<string | null>(null);
     // Contact-import (v2.16.0-33): true when this wizard run was hydrated from
     // a device contact (homepage CTA picker or PWA share-target vCard) instead
@@ -332,6 +339,17 @@ export default function ImportWizard() {
     // Empty by default — everything imports unless explicitly excluded here.
     const [excludedMedia, setExcludedMedia] = useState<Set<string>>(new Set());
     const isMediaExcluded = (key: string) => excludedMedia.has(key);
+    /** An upload as it is saved: the shrunk JPEG when there is one (F1), else the original. */
+    const savedImage = (img: { data: string; mimeType: string; saveData?: string }) =>
+        img.saveData ? { data: img.saveData, mimeType: 'image/jpeg' } : { data: img.data, mimeType: img.mimeType };
+    /** F1: images the save could not store, said once the profile is saved (never blocks). */
+    const warnImagesNotSaved = (r: { imagesNotSaved?: number; imagesTotal?: number; errorId?: string }) => {
+        const n = r.imagesNotSaved ?? 0;
+        if (n <= 0) return;
+        const total = Math.max(r.imagesTotal ?? n, n);
+        const key = total === 1 ? 'import.images_not_saved_only' : n === 1 ? 'import.images_not_saved_one' : 'import.images_not_saved_many';
+        toast.warning(fill(t(key), { n, total }), r.errorId ? `ID: ${r.errorId}` : undefined);
+    };
     const toggleMediaExcluded = (key: string) => setExcludedMedia(prev => {
         const next = new Set(prev);
         if (next.has(key)) next.delete(key); else next.add(key);
@@ -363,6 +381,20 @@ export default function ImportWizard() {
     const [fieldOverlapHints, setFieldOverlapHints] = useState<JudgedMatch[]>([]);
     const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false);
 
+    /**
+     * The copy of a screenshot that is saved (F1): shrunk with the helper the other photo
+     * screens use. If the browser can't shrink it, the original is saved (the server sends
+     * a big one to file storage) — said in the log, never in the way.
+     */
+    const savedCopyOf = async (blob: Blob): Promise<string | undefined> => {
+        try {
+            return (await compressImage(blob, SAVED_IMAGE_MAX_PX)).split(',')[1] || undefined;
+        } catch (e) {
+            logUxIssue('import: image could not be shrunk, the original is saved', { mimeType: blob.type, error: e instanceof Error ? e.message : String(e) });
+            return undefined;
+        }
+    };
+
     // Load shared images from Service Worker cache
     const loadSharedImages = async () => {
         try {
@@ -370,7 +402,7 @@ export default function ImportWizard() {
             const keys = await cache.keys();
             if (keys.length === 0) return;
 
-            const images: Array<{ data: string; mimeType: string; preview: string }> = [];
+            const images: Array<{ data: string; mimeType: string; preview: string; saveData?: string }> = [];
 
             for (const request of keys) {
                 const response = await cache.match(request);
@@ -389,7 +421,8 @@ export default function ImportWizard() {
                 });
 
                 const preview = `data:${mimeType};base64,${base64}`;
-                images.push({ data: base64, mimeType, preview });
+                const saveData = await savedCopyOf(blob);
+                images.push({ data: base64, mimeType, preview, ...(saveData ? { saveData } : {}) });
             }
 
             if (images.length > 0) {
@@ -784,15 +817,17 @@ export default function ImportWizard() {
                     thumbnail,
                 }]);
             } else if (file.type.startsWith('image/')) {
-                // Image: read as base64 for preview and sending in JSON
+                // Image: read as base64 for preview and sending in JSON; the saved copy is shrunk (F1).
                 const reader = new FileReader();
-                reader.onload = () => {
+                reader.onload = async () => {
                     const result = reader.result as string;
                     const base64 = result.split(',')[1];
+                    const saveData = await savedCopyOf(file);
                     setManualImages(prev => [...prev, {
                         data: base64,
                         mimeType: file.type,
                         preview: result,
+                        ...(saveData ? { saveData } : {}),
                     }]);
                 };
                 reader.readAsDataURL(file);
@@ -1127,7 +1162,7 @@ export default function ImportWizard() {
                     // Honor the review-step de-selection: a post image is
                     // excluded by `p:<i>`, an upload by `m:<i>`. Each is saved once (I1).
                     ...processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`)),
-                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType })),
+                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(savedImage),
                     ...videoPayloads,
                 ],
                 // v2.19.17: contacts-import path no longer auto-stamps an
@@ -1155,7 +1190,7 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { id: string; error?: string; code?: string; details?: string[]; errorId?: string };
+            const result = await response.json() as { id: string; error?: string; code?: string; details?: string[]; errorId?: string; imagesNotSaved?: number; imagesTotal?: number };
 
             if (!response.ok) {
                 // v2.19.66: surface the schema's per-field reason (`details`) and
@@ -1206,6 +1241,7 @@ export default function ImportWizard() {
             if (!fromContacts) {
                 toast.success(t('import.profile_created'), extractedData.name?.trim() || undefined);
             }
+            warnImagesNotSaved(result);
 
             // Clear persisted wizard state on completion so reopening starts
             // fresh at step 1. The step===4 clear in the persist effect never
@@ -1387,7 +1423,7 @@ export default function ImportWizard() {
                     // Honor the review-step de-selection: a post image is
                     // excluded by `p:<i>`, an upload by `m:<i>`. Each is saved once (I1).
                     ...processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`)),
-                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType })),
+                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(savedImage),
                     ...videoPayloads,
                 ],
             };
@@ -1398,7 +1434,7 @@ export default function ImportWizard() {
                 body: JSON.stringify(payload),
             });
 
-            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; errorId?: string };
+            const result = await response.json() as { adoptionId?: string; adopterId?: string; adopterName?: string; error?: string; errorId?: string; imagesNotSaved?: number; imagesTotal?: number };
 
             if (!response.ok) {
                 throw new Error(result.errorId ? `${result.error || 'Failed to add record'} (Error ID: ${result.errorId})` : (result.error || 'Failed to add record'));
@@ -1484,6 +1520,7 @@ export default function ImportWizard() {
 
             // Lands on the profile (decision B1), so no "→ Ver perfil" link.
             toast.success(t('import.record_added_to_profile'), adopterName);
+            warnImagesNotSaved(result);
 
             // Clear persisted wizard state on completion (see create path) so
             // reopening starts fresh instead of rehydrating the stale snapshot.
