@@ -52,4 +52,11 @@ describe('extract-from-post — images past the fifth are kept', () => {
         expect(json.processedImages.map(i => i.originalUrl)).toEqual(['https://cdn/ok.jpg']);
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('post image not downloaded'), expect.objectContaining({ status: 404 }));
     });
+
+    it('the answer says how many post images could not be downloaded (F2)', async () => {
+        const res = await call({ imageUrls: ['https://cdn/broken.jpg', 'https://cdn/ok.jpg', 'https://cdn/broken2.jpg'] });
+        expect(await res.json()).toMatchObject({ missingImages: 2 });
+        const allFine = await call({ imageUrls: ['https://cdn/ok.jpg'] });
+        expect(await allFine.json()).toMatchObject({ missingImages: 0 });
+    });
 });

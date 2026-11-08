@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
         // Combine all images. The AI reads the first MAX_AI_IMAGES; every one comes back to be
         // saved (I1) — past the fifth they used to be dropped without a word.
         const allImages: Array<{ data: string; mimeType: string; originalUrl?: string }> = [];
+        /** Post images that could not be downloaded: the wizard says so under the images (F2). */
+        let missingImages = 0;
 
         // Add uploaded images
         if (images) {
@@ -99,7 +101,10 @@ export async function POST(request: NextRequest) {
                 }
                 return null;
             }));
-            for (const img of fetched) if (img) allImages.push(img);
+            for (const img of fetched) {
+                if (img) allImages.push(img);
+                else missingImages++;
+            }
         }
         const aiImages = allImages.slice(0, MAX_AI_IMAGES);
 
@@ -108,6 +113,7 @@ export async function POST(request: NextRequest) {
             hasText: !!text?.trim(),
             imageCount: aiImages.length,
             savedImageCount: allImages.length,
+            missingImages,
         });
 
         // Precedence: explicit body.model (per-call override) → admin-set
@@ -146,6 +152,8 @@ export async function POST(request: NextRequest) {
             data: extracted,
             // Return processed images so they can be saved with the profile
             processedImages: allImages,
+            // An extra field: an old tab ignores it.
+            missingImages,
         });
 
     } catch (error) {

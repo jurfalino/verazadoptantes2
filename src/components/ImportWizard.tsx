@@ -333,6 +333,8 @@ export default function ImportWizard() {
     const [mergeAs, setMergeAs] = useState<'alias' | 'relative' | null>(null);
     const [contactEntries, setContactEntries] = useState<ContactEntry[]>([]);
     const [processedImages, setProcessedImages] = useState<Array<{ data: string; mimeType: string; originalUrl?: string }>>([]);
+    /** F2: the post's photos the extraction could not download — said under the images, never blocks. */
+    const [missingPostImages, setMissingPostImages] = useState(0);
     // Media the rescuer has de-selected in the review step so it is NOT imported.
     // Keys: `p:<i>` a processed (scraped) image, `m:<i>` a manual/uploaded item
     // (image or video, indexed into manualImages), `fv:<i>` a fetched video.
@@ -890,6 +892,7 @@ export default function ImportWizard() {
                 data?: ExtractedAdopterData;
                 error?: string;
                 processedImages?: Array<{ data: string; mimeType: string; originalUrl?: string }>;
+                missingImages?: number;
             };
 
             if (!response.ok || !result.success) {
@@ -953,6 +956,7 @@ export default function ImportWizard() {
             if (result.processedImages) {
                 setProcessedImages(result.processedImages.filter(img => img.originalUrl));
             }
+            setMissingPostImages(typeof result.missingImages === 'number' && result.missingImages > 0 ? result.missingImages : 0);
             trackImport('import_extract_succeeded', {
                 aiConfidence: typeof aiData.confidence === 'string' ? aiData.confidence : 'unknown',
                 aiFailed,
@@ -2274,6 +2278,11 @@ export default function ImportWizard() {
                             </div>
                         );
                     })()}
+                    {missingPostImages > 0 && (
+                        <p data-testid="import-missing-post-images" className="text-xs text-amber-800">
+                            {fill(t(missingPostImages === 1 ? 'import.post_images_missing' : 'import.post_images_missing_plural'), { n: missingPostImages })}
+                        </p>
+                    )}
 
                     <LegalConsent />
 

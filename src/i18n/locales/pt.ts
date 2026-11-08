@@ -2706,6 +2706,9 @@ export const pt = {
         images_not_saved_only: 'Não conseguimos salvar a imagem. Tente enviá-la de novo.',
         images_not_saved_one: 'Não conseguimos salvar 1 das {total} imagens. Tente enviá-la de novo.',
         images_not_saved_many: 'Não conseguimos salvar {n} das {total} imagens. Tente enviá-las de novo.',
+        // F2: post photos the extraction could not download.
+        post_images_missing: 'Não conseguimos trazer 1 foto da publicação. Se precisar dela, envie-a como captura de tela.',
+        post_images_missing_plural: 'Não conseguimos trazer {n} fotos da publicação. Se precisar delas, envie-as como capturas de tela.',
         contact_merge_failed: 'Não foi possível unir os dados de contato',
         go_to_profile_link: '→ Ver perfil',
         // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.

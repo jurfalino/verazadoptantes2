@@ -2701,6 +2701,9 @@ export const en = {
         images_not_saved_only: "We couldn't save the image. Try uploading it again.",
         images_not_saved_one: "We couldn't save 1 of the {total} images. Try uploading it again.",
         images_not_saved_many: "We couldn't save {n} of the {total} images. Try uploading them again.",
+        // F2: post photos the extraction could not download.
+        post_images_missing: "We couldn't get 1 photo from the post. If you need it, upload it as a screenshot.",
+        post_images_missing_plural: "We couldn't get {n} photos from the post. If you need them, upload them as screenshots.",
         contact_merge_failed: "Couldn't join the contact data",
         // Contact-import (v2.16.0-33) — homepage CTA + PWA share-target flow.
         from_contacts_breadcrumb: 'Imported from your contacts',
