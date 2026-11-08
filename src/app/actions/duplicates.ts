@@ -63,15 +63,16 @@ export async function attachContractToExistingAdopter(
         // Fetch notification and validate ownership + shape
         const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
         if (!notification) return { success: false, error: 'Notification not found' };
-        if (notification.type !== CONTRACT_RESULT_TYPE) return { success: false, error: 'Notification is not a contract result' };
         // The recipient, their team or an admin — the same rule the page applies (src/lib/contractResultAccess.ts).
         // Strict lookups: a D1 failure throws into the catch below (errorId), never reads as "stranger".
+        // Before the type check, so a stranger learns nothing about someone else's notification.
         const { isOrgMateStrict } = await import('@/lib/orgMembership');
         const { isAdminAsyncStrict } = await import('@/config/admins');
         if (!(await canViewerAccessContractResult(actorEmail, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict }))) {
             logger.info('attachContractToExistingAdopter: denied', { notificationId, matchAdopterId, actorEmail });
             return { success: false, error: 'Not authorized for this notification' };
         }
+        if (notification.type !== CONTRACT_RESULT_TYPE) return { success: false, error: 'Notification is not a contract result' };
 
         const metadata = notification.metadata ? JSON.parse(notification.metadata) : {};
         const orphanAdopterId: string | undefined = metadata.adopterId;

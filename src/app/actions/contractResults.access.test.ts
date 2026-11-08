@@ -93,7 +93,7 @@ describe('attachContractToExistingAdopter — who may answer a contract result',
     it('a teammate\'s notification of another type is not a contract result', async () => {
         sqlite.prepare(`UPDATE notifications SET type = 'form_submission' WHERE id = 'n-contract'`).run();
         session.user = MATE;
-        expect(await attachContractToExistingAdopter('n-contract', 'o-match')).toMatchObject({ success: false });
+        expect(await attachContractToExistingAdopter('n-contract', 'o-match')).toEqual({ success: false, error: 'Not authorized for this notification' });
         expect(deleted('s-orphan')).toBe(false);
     });
 });
