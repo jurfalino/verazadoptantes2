@@ -1234,6 +1234,7 @@ export const pt = {
         details: 'Detalhes',
         notes_placeholder: 'Detalhes sobre esta adoção...',
         submit: 'Registrar Adoção',
+        save_changes: 'Salvar alterações',
         saving: 'Salvando...',
         date: 'Data',
         date_label: 'Data:',

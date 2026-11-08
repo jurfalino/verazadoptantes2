@@ -1229,6 +1229,7 @@ export const en = {
         details: 'Details',
         notes_placeholder: 'Details about this adoption...',
         submit: 'Record Adoption',
+        save_changes: 'Save changes',
         saving: 'Recording...',
         date: 'Date',
         date_label: 'Date:',

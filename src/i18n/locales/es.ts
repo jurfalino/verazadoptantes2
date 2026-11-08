@@ -1235,6 +1235,7 @@ export const es = {
         details: 'Detalles',
         notes_placeholder: 'Detalles sobre esta adopción...',
         submit: 'Registrar Adopción',
+        save_changes: 'Guardar cambios',
         saving: 'Guardando...',
         date: 'Fecha',
         date_label: 'Fecha:',

@@ -975,7 +975,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         )}
                         <div className={`flex gap-3 ${(!onDelete || !initialData) ? 'w-full justify-end' : ''}`}>
                             <button type="button" onClick={handleCancel} className="px-4 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50 rounded-lg transition-colors">{t('common.cancel')}</button>
-                            <button type="submit" disabled={loading || uploading} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all active:scale-95">{loading ? t('adoption.saving') : t('adoption.submit')}</button>
+                            <button type="submit" disabled={loading || uploading} className="px-6 py-2 text-sm font-semibold text-white bg-teal-700 rounded-lg hover:bg-teal-600 shadow-md shadow-teal-700/20 disabled:opacity-50 transition-all active:scale-95">{loading ? t('adoption.saving') : t('adoption.save_changes')}</button>
                         </div>
                     </div>
                 </form>
