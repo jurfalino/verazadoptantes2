@@ -13,8 +13,8 @@
  * Every status change is compare-and-set.
  */
 
-import { and, asc, eq } from 'drizzle-orm';
-import { adopters, auditLog, mergeDisputes } from '@/db/schema';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { adopterHistory, adopters, auditLog, mergeDisputes } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { unmergeAdopters } from '@/lib/adopterMerge';
@@ -26,6 +26,7 @@ import { mergeSideParams } from '@/lib/mergeNotificationSides';
 import { keepSeparate } from '@/lib/mergeRequests';
 import { compareEntriesOf, pairMatchTypes, type CompareEntry } from '@/lib/mergeAdminCompare';
 import { notificationContent } from '@/domain/notificationTemplates';
+import { mergeRowsNewestFirst } from '@/domain/mergeHistory';
 import {
     decideMergeDisputeRaise,
     decideMergeDisputeResolution,
@@ -92,13 +93,15 @@ interface MergeFacts {
     survivorGone: boolean;
     survivorOwner: string | null;
     absorbedOwner: string | null;
+    /** The absorbed profile's name at the merge (the audit row's secondaryName). */
+    absorbedName: string | null;
 }
 
 /** The merge behind an audit id: an `adopter_merge` audit row and its two profiles' owners. Null for anything else. */
 async function loadMerge(db: Db, auditId: string): Promise<MergeFacts | null> {
     const row = await db.select().from(auditLog).where(eq(auditLog.id, auditId)).get();
     if (!row || row.action !== 'adopter_merge') return null;
-    let details: { primaryId?: unknown; secondaryId?: unknown; undoneAt?: unknown };
+    let details: { primaryId?: unknown; secondaryId?: unknown; secondaryName?: unknown; undoneAt?: unknown };
     try {
         details = JSON.parse(row.details || '{}');
     } catch (e) {
@@ -118,6 +121,7 @@ async function loadMerge(db: Db, auditId: string): Promise<MergeFacts | null> {
         survivorGone: !survivor || !!survivor.deletedAt,
         survivorOwner: realOwner(survivor?.addedBy),
         absorbedOwner: realOwner(absorbed?.addedBy),
+        absorbedName: typeof details.secondaryName === 'string' ? details.secondaryName : null,
     };
 }
 
@@ -159,6 +163,61 @@ export async function mergeDisputeOption(db: Db, auditId: string, viewer: string
     if (!decision.ok && decision.reason === 'not_found') return { canRaise: false, status: 'none' };
     const status = existing?.status as MergeDisputeStatus | undefined ?? (merge.undone ? 'undone' : 'none');
     return { canRaise: decision.ok && status !== 'open', status };
+}
+
+/** «Son dos personas distintas» on a profile's history (H2): the row it goes on, the merge, and what to show. */
+export interface ProfileMergeDispute {
+    historyId: string;
+    auditId: string;
+    /** 'can_raise': the button; 'open': «Un administrador está revisando esta unión». */
+    state: 'can_raise' | 'open';
+}
+
+/** How many «Perfiles unidos» rows are walked past undone merges before giving up. */
+const MERGE_ROWS_CHECKED = 3;
+
+/**
+ * The newest live merge on `adopterId`'s history and whether `viewer` may
+ * dispute it (H2) — so the dispute is reachable without the notice. Undone
+ * merges are skipped (by the audit row's undoneAt, the truth unmergeAdopters
+ * writes); the first live one decides: the same rule as the notice's prompt
+ * (mergeDisputeOption). Older merges never get the button. Rows written
+ * before the audit id was stored find it in audit_log, like the merged-profile
+ * redirect. Null when nothing is offered. Throws on DB failure.
+ */
+export async function mergeDisputeForProfile(
+    db: Db,
+    adopterId: string,
+    history: ReadonlyArray<{ id: string; changes?: unknown; changedAt?: unknown }>,
+    viewer: string,
+): Promise<ProfileMergeDispute | null> {
+    for (const row of mergeRowsNewestFirst(history).slice(0, MERGE_ROWS_CHECKED)) {
+        const audit = row.auditId
+            ? await db.select({ id: auditLog.id, action: auditLog.action, details: auditLog.details }).from(auditLog).where(eq(auditLog.id, row.auditId)).get()
+            : await db.select({ id: auditLog.id, action: auditLog.action, details: auditLog.details }).from(auditLog)
+                .where(and(
+                    eq(auditLog.action, 'adopter_merge'),
+                    eq(auditLog.target, adopterId),
+                    // json_valid guard: one malformed details row must not error the query.
+                    sql`CASE WHEN json_valid(${auditLog.details}) THEN json_extract(${auditLog.details}, '$.secondaryId') END = ${row.fromId}`,
+                ))
+                .orderBy(desc(auditLog.createdAt)).limit(1).get();
+        if (!audit || audit.action !== 'adopter_merge') return null;
+        let details: { primaryId?: unknown; undoneAt?: unknown };
+        try {
+            details = JSON.parse(audit.details || '{}');
+        } catch (e) {
+            logger.warn('mergeDisputeForProfile: merge audit row unreadable', { adopterId, auditId: audit.id, viewer, error: e instanceof Error ? e.message : String(e) });
+            return null;
+        }
+        if (details.primaryId !== adopterId) return null;
+        if (details.undoneAt) continue;
+        const option = await mergeDisputeOption(db, audit.id, viewer);
+        if (option.canRaise) return { historyId: row.historyId, auditId: audit.id, state: 'can_raise' };
+        if (option.status === 'open') return { historyId: row.historyId, auditId: audit.id, state: 'open' };
+        return null;
+    }
+    return null;
 }
 
 /**
@@ -268,6 +327,18 @@ export async function answerMergeDispute(db: Db, disputeId: string, actor: strin
         }
         // An admin decided they are two people: the pair leaves both lists.
         await keepSeparate(db, { a: dispute.survivorId, b: dispute.absorbedId }, actor, `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}dispute-${disputeId}`, ctx);
+    } else {
+        // «Mantener» (H2): the kept profile's history says so — not only a notice. Best-effort: the outcome stands.
+        await db.insert(adopterHistory).values({
+            id: crypto.randomUUID(),
+            adopterId: dispute.survivorId,
+            changedBy: actor,
+            changes: JSON.stringify({ merge_dispute_kept: { otherId: dispute.absorbedId, otherName: merge.absorbedName, disputeId, auditId: dispute.auditId } }),
+            changedAt: new Date(),
+            kind: 'edit',
+        }).catch((e: unknown) => {
+            logger.warn('answerMergeDispute: history line not written', { ...ctx, error: e instanceof Error ? e.message : String(e) });
+        });
     }
     logger.info('answerMergeDispute: resolved', { ...ctx, status: answer.nextStatus });
 
