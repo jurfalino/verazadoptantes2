@@ -5,6 +5,8 @@ import { PublicProfileSourceNotice } from '@/components/PublicProfileSourceNotic
 import PiiAccessGrantsDisclosure from '@/components/PiiAccessGrantsDisclosure';
 import type { AdopterPiiContext } from '@/lib/piiAccess';
 import type { VisibilityBadge } from '@/domain/visibilityBadge';
+import { useDateFormat } from '@/context/TimezoneContext';
+import PiiAccessHistoryNote, { type PiiAccessHistory } from '@/components/PiiAccessHistoryNote';
 
 interface VisibilityBadgeModalProps {
     open: boolean;
@@ -21,8 +23,10 @@ interface VisibilityBadgeModalProps {
     accessGrants: AdopterPiiContext['accessGrants'];
     /** Locked branch: a request is already pending for this viewer. */
     requestPending: boolean;
-    /** Locked branch: the viewer is in the post-denial cooldown window. */
-    requestCooldown: boolean;
+    /** Locked branch: epoch ms the post-denial wait ends, or null when not waiting. */
+    requestCooldownUntil: number | null;
+    /** Locked branch (H3): the turn-down note / «te quitaron el acceso». */
+    accessHistory?: PiiAccessHistory | null;
     /** Locked branch: the viewer may file a request (piiOptInEligible). */
     canRequest: boolean;
     /** Opens the existing RequestPiiAccessModal. */
@@ -59,6 +63,7 @@ const OPEN_LOCK = (
  */
 export default function VisibilityBadgeModal(props: VisibilityBadgeModalProps) {
     const { t } = useLanguage();
+    const { formatShortDate } = useDateFormat();
     if (!props.open) return null;
 
     let icon: React.ReactNode;
@@ -97,6 +102,7 @@ export default function VisibilityBadgeModal(props: VisibilityBadgeModalProps) {
                             {t('adopter.vis_modal_verify_btn')}
                         </button>
                     )}
+                    {!props.requestPending && <PiiAccessHistoryNote history={props.accessHistory ?? null} />}
                     {props.requestPending ? (
                         <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{t('adopter.vis_modal_request_pending')}</p>
                     ) : (props.canRequest && props.onRequestAccess) ? (
@@ -107,8 +113,10 @@ export default function VisibilityBadgeModal(props: VisibilityBadgeModalProps) {
                         >
                             {t('adopter.pii_modal_title')}
                         </button>
-                    ) : props.requestCooldown ? (
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{t('adopter.pii_request_cooldown_short')}</p>
+                    ) : props.requestCooldownUntil ? (
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            {t('adopter.pii_request_cooldown').replace('{date}', formatShortDate(new Date(props.requestCooldownUntil)))}
+                        </p>
                     ) : null}
                 </div>
             </div>

@@ -1169,8 +1169,13 @@ export interface PiiAccessRequestState {
     pending: boolean;
     /** Epoch ms until which a re-request is blocked by the denial cooldown, or null. */
     cooldownUntil: number | null;
-    /** Approver's note on the most recent denial, if any. */
+    /** Approver's note on the shown denial (`denied`), if they wrote one. */
     lastResolutionNote: string | null;
+    /** H3: the latest decided request was turned down and nothing newer was asked
+     *  or given — «Tu solicitud no fue aprobada.» (see domain/piiAccessNotice). */
+    denied?: boolean;
+    /** H3: epoch ms of «El responsable quitó tu acceso el …», or null. */
+    accessRevokedAt?: number | null;
 }
 
 /** A live `all_contact` grant as shown in the owner "who has access" disclosure. */

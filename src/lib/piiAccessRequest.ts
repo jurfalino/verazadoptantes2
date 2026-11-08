@@ -1,13 +1,17 @@
-import { piiAccessRequests, adopters, adopterHistory } from '@/db/schema';
+import { piiAccessRequests, piiAccessGrants, adopters, adopterHistory } from '@/db/schema';
 import { and, eq, desc } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
-import { isRealActorEmail, piiCooldownUntil, type RequestPiiAccessResult } from '@/lib/piiAccess';
+import { isRealActorEmail, piiCooldownUntil, type RequestPiiAccessResult, type PiiAccessRequestState } from '@/lib/piiAccess';
+import { piiAccessNotice } from '@/domain/piiAccessNotice';
 import { createNotification, resolveDisplayName } from '@/app/actions/notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { maskEmail } from '@/lib/dates';
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+const ms = (d: Date | number | null | undefined): number | null => d == null ? null : typeof d === 'number' ? d : d.getTime();
 
 /**
  * The core of "request access to a record's contact data", for a requester the
@@ -169,4 +173,44 @@ export async function fileAccessRequestFor(
         details: { requestId, activityLinked: !!opts.activityId, approverCount: recipients.length },
     });
     return { ok: true, status: 'created', requestId };
+}
+
+/**
+ * The viewer's own request situation on one profile — pending, the denial
+ * cooldown, and (H3) the turn-down note and «El responsable quitó tu acceso».
+ * Read only from the viewer's request + grant rows (two bounded queries), never
+ * from a notification: deleting the notice loses nothing. The caller has
+ * authenticated `viewer` and checked they lack full access.
+ */
+export async function loadViewerRequestState(db: Db, adopterId: string, viewer: string): Promise<PiiAccessRequestState> {
+    type GrantRow = Pick<typeof piiAccessGrants.$inferSelect, 'id' | 'scope' | 'origin' | 'createdAt' | 'revokedAt' | 'revokedByEmail'>;
+    const [rows, grants]: [Array<typeof piiAccessRequests.$inferSelect>, GrantRow[]] = await Promise.all([
+        db.select().from(piiAccessRequests)
+            .where(and(eq(piiAccessRequests.adopterId, adopterId), eq(piiAccessRequests.requesterEmail, viewer)))
+            .orderBy(desc(piiAccessRequests.createdAt)),
+        db.select({
+            id: piiAccessGrants.id, scope: piiAccessGrants.scope, origin: piiAccessGrants.origin,
+            createdAt: piiAccessGrants.createdAt, revokedAt: piiAccessGrants.revokedAt, revokedByEmail: piiAccessGrants.revokedByEmail,
+        }).from(piiAccessGrants)
+            .where(and(eq(piiAccessGrants.adopterId, adopterId), eq(piiAccessGrants.granteeEmail, viewer))),
+    ]);
+    const pending = rows.some(r => r.status === 'pending');
+    const lastDenied = rows.find(r => r.status === 'denied');
+    let cooldownUntil: number | null = null;
+    if (lastDenied?.resolvedAt) {
+        const until = piiCooldownUntil(lastDenied.resolvedAt).getTime();
+        if (until > Date.now()) cooldownUntil = until;
+    }
+    const notice = piiAccessNotice({
+        viewerEmail: viewer,
+        requests: rows.map(r => ({ status: r.status, createdAt: ms(r.createdAt), resolvedAt: ms(r.resolvedAt), resolutionNote: r.resolutionNote })),
+        grants: grants.map(g => ({ ...g, createdAt: ms(g.createdAt), revokedAt: ms(g.revokedAt) })),
+    });
+    return {
+        pending,
+        cooldownUntil,
+        lastResolutionNote: notice.denial?.note ?? null,
+        denied: !!notice.denial,
+        accessRevokedAt: notice.accessRevokedAt,
+    };
 }
