@@ -3070,6 +3070,7 @@ export const es = {
             inaccuracy_reported: 'Información incorrecta',
             deletion_request: 'Pedido de eliminación',
             member_joined: 'Nuevo miembro del equipo',
+            member_removed: 'Te quitaron de un grupo',
             adopter_login_blocked: 'Login bloqueado',
             adopter_merged: 'Perfiles unidos',
             merge_request: 'Pedido para unir',

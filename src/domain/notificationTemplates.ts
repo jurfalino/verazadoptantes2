@@ -30,6 +30,8 @@ export type MergeSides = {
 /** The params each template takes. Optional params change the wording, never leave a hole. */
 export interface NotificationTemplateParams {
     member_joined: { memberName: string; orgName?: string };
+    /** F6, to the removed person only: `actorName` (the remover's display name) took them out of `orgName`. */
+    member_removed: { actorName: string; orgName?: string };
     contact_entry_added: { actorName: string; adopterName?: string; entryType: string };
     /** `role`: 'to' (the new owner) or 'from' (the previous one). */
     ownership_transferred: { role: string; adopterName?: string; actorName: string; toName: string };
@@ -233,6 +235,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         es: p => ({ title: '👋 Nuevo miembro', body: `${p.memberName} se unió a ${p.orgName || 'la organización'}.` }),
         en: p => ({ title: '👋 New member', body: `${p.memberName} joined ${p.orgName || 'the organization'}.` }),
         pt: p => ({ title: '👋 Novo membro', body: p.orgName ? `${p.memberName} entrou em ${p.orgName}.` : `${p.memberName} entrou na organização.` }),
+    },
+    member_removed: {
+        required: ['actorName'],
+        es: p => ({ title: p.orgName ? `Ya no estás en «${p.orgName}»` : 'Ya no estás en el grupo', body: `${p.actorName} te quitó del grupo. Lo que cargaste sigue a tu nombre.` }),
+        en: p => ({ title: p.orgName ? `You're no longer in «${p.orgName}»` : "You're no longer in the group", body: `${p.actorName} removed you from the group. What you added stays under your name.` }),
+        pt: p => ({ title: p.orgName ? `Você não está mais em «${p.orgName}»` : 'Você não está mais no grupo', body: `${p.actorName} removeu você do grupo. O que você cadastrou continua no seu nome.` }),
     },
     contact_entry_added: {
         required: ['actorName', 'entryType'],

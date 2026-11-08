@@ -17,6 +17,7 @@ const sides = {
 /** One filled-in sample per key: the compiler checks every key is covered. */
 const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplate, { key: K }>['params'] } = {
     member_joined: { memberName: 'Ana', orgName: 'Patitas' },
+    member_removed: { actorName: 'Marta Giménez', orgName: 'Michis' },
     contact_entry_added: { actorName: 'Ana', adopterName: 'Carla Gómez', entryType: 'phone' },
     ownership_transferred: { role: 'to', adopterName: 'Carla', actorName: 'Admin', toName: 'Ana' },
     pii_access_approved: { adopterName: 'Carla' },
@@ -98,6 +99,9 @@ describe('renderNotification', () => {
         // contract submit through a personal link: no search ran, so no «Todo en orden» (D2, Jon)
         expect(renderNotification({ key: 'contract_result_signed', params: { adopterName: 'Juan Pérez', animalName: 'Luna' } }, 'es'))
             .toEqual({ title: 'Luna adoptado por Juan Pérez', body: 'Juan Pérez firmó el contrato de adopción de Luna.' });
+        // removed from a group (F6, Jon): who removed them, and their records stay theirs
+        expect(renderNotification({ key: 'member_removed', params: { actorName: 'Marta Giménez', orgName: 'Michis' } }, 'es'))
+            .toEqual({ title: 'Ya no estás en «Michis»', body: 'Marta Giménez te quitó del grupo. Lo que cargaste sigue a tu nombre.' });
         // form submit with an animal and matches (formSubmissionOwnerTitle)
         expect(renderNotification({ key: 'form_submission_owner', params: { submitterName: 'Juana', animalName: 'Luna', matchCount: '2' } }, 'es'))
             .toEqual({ title: 'Juana aplicó para Luna — 2 coincidencias', body: 'Se encontraron posibles registros previos. Tocá para revisar las respuestas y vincular.' });

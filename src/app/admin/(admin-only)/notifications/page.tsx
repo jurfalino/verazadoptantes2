@@ -63,6 +63,7 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
     'inaccuracy_reported': 'A quienes pueden editar un perfil (quien lo cargó, su equipo y los admins) cuando otra persona avisa que hay información incorrecta.',
     'deletion_request': 'A los admins cuando alguien pide eliminar un registro.',
     'member_joined': 'A los miembros de una organización cuando se suma alguien.',
+    'member_removed': 'A quien otro miembro quita de un grupo. Solo en la app, sin email.',
     'form_submission': 'Cuando un posible adoptante completa el formulario compartido.',
     'api_record': 'Al rescatista (y su organización) cuando una herramienta conectada guarda un registro con su clave.',
     'contract_attached': 'Cuando un contrato firmado se vincula a un perfil.',

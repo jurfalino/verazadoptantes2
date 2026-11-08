@@ -26,6 +26,8 @@ vi.mock('@/lib/logger', () => ({
 
 import { removeOrganizationMember, regenerateInviteLink, getInviteLink, joinOrganization, getInvitePreview } from './organizations';
 import { logAudit } from '@/lib/audit';
+import { runAfterResponse } from '@/lib/background';
+import { logger } from '@/lib/logger';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -108,6 +110,45 @@ describe('removeOrganizationMember — «Quitar del grupo»', () => {
     it('someone already gone: says so, removes nothing else', async () => {
         expect(await as(MATE, () => removeOrganizationMember('org-1', 'm-nobody'))).toEqual({ success: false, error: 'member_not_found' });
         expect(members('org-1')).toHaveLength(2);
+    });
+});
+
+describe('removeOrganizationMember — the removed person is told (F6)', () => {
+    const notices = () => sqlite.prepare('SELECT user_id, type, title, body, url FROM notifications ORDER BY user_id').all();
+
+    beforeEach(() => {
+        // Run the after-response work, as it runs outside Cloudflare.
+        vi.mocked(runAfterResponse).mockImplementation(async (_name, task) => { await task(); });
+        vi.mocked(logger.warn).mockClear();
+    });
+    afterEach(() => { vi.mocked(runAfterResponse).mockImplementation(async () => undefined); });
+
+    it('exactly one notice, to the removed person: the group, who removed them, a link to Grupos', async () => {
+        sqlite.prepare(`INSERT INTO user (id, email, name) VALUES ('u-mate', ?, 'Marta Giménez')`).run(MATE);
+        expect(await as(MATE, () => removeOrganizationMember('org-1', 'm-owner'))).toEqual({ success: true });
+        expect(notices()).toEqual([{
+            user_id: OWNER, type: 'member_removed', url: '/organizations',
+            title: 'Ya no estás en «Michis»', body: 'Marta Giménez te quitó del grupo. Lo que cargaste sigue a tu nombre.',
+        }]);
+    });
+
+    it('a remover with no name is their email handle, never the address', async () => {
+        await as(OWNER, () => removeOrganizationMember('org-1', 'm-mate'));
+        const [n] = notices();
+        expect(n).toMatchObject({ user_id: MATE, body: 'owner te quitó del grupo. Lo que cargaste sigue a tu nombre.' });
+    });
+
+    it('a refused removal tells nobody', async () => {
+        await as(OTHER, () => removeOrganizationMember('org-1', 'm-mate'));
+        expect(notices()).toEqual([]);
+    });
+
+    it('the notice failing does not undo the removal: still success, logged at warn with context', async () => {
+        sqlite.prepare('DROP TABLE notifications').run();
+        expect(await as(MATE, () => removeOrganizationMember('org-1', 'm-owner'))).toEqual({ success: true });
+        expect(members('org-1')).toEqual([MATE]);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('removeOrganizationMember'),
+            expect.objectContaining({ user: MATE, orgId: 'org-1', memberId: 'm-owner' }));
     });
 });
 

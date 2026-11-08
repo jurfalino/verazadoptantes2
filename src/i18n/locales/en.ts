@@ -3064,6 +3064,7 @@ export const en = {
             inaccuracy_reported: 'Wrong information',
             deletion_request: 'Deletion request',
             member_joined: 'New team member',
+            member_removed: 'Removed from a group',
             adopter_login_blocked: 'Blocked login',
             adopter_merged: 'Profiles joined',
             merge_request: 'Join request',

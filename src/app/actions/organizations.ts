@@ -328,6 +328,30 @@ export async function removeOrganizationMember(orgId: string, memberId: string):
             target: orgId,
             details: { orgId, memberId, removedEmail: target.userEmail },
         });
+
+        // F6: tell the removed person, in the app only (member_removed has no email
+        // twin). The removal already happened: a failed notice is logged, never undone.
+        await runAfterResponse('removeOrganizationMember.notifyRemoved', async () => {
+            try {
+                const [{ createNotification, resolveDisplayName }, { notificationContent }] = await Promise.all([
+                    import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+                ]);
+                const org = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, orgId)).get() as { name: string } | undefined;
+                const actorName = await resolveDisplayName(user);
+                const id = await createNotification({
+                    userId: target.userEmail,
+                    type: 'member_removed',
+                    ...notificationContent({ key: 'member_removed', params: { actorName, ...(org?.name ? { orgName: org.name } : {}) } }),
+                    url: '/organizations',
+                    metadata: { orgId, orgName: org?.name },
+                });
+                if (!id) logger.warn('removeOrganizationMember: notice to the removed person not created', { user, orgId, memberId });
+            } catch (e) {
+                logger.warn('removeOrganizationMember: notice to the removed person failed', {
+                    user, orgId, memberId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }, { user, orgId, memberId });
         return { success: true };
     } catch (error) {
         const errorId = logger.error('removeOrganizationMember failed', error, { user, orgId, memberId });

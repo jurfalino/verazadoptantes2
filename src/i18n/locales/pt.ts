@@ -3069,6 +3069,7 @@ export const pt = {
             inaccuracy_reported: 'Informação incorreta',
             deletion_request: 'Pedido de exclusão',
             member_joined: 'Novo membro da equipe',
+            member_removed: 'Removido de um grupo',
             adopter_login_blocked: 'Login bloqueado',
             adopter_merged: 'Perfis unidos',
             merge_request: 'Pedido para unir',
