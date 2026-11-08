@@ -407,7 +407,13 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // offers count — proof the other looks like the INPUT. It settles a pair only for whoever loaded either
 // profile (with a typed contact: only adopterId's owner) or an admin; otherwise it opens a pending pair
 // for the owners when none exists — no more than flagAdopterAsDuplicate allows. Never touches a settled pair.
-const EXPECTED_ACTIONS = 175;
+// 177 = 175 + 2. 2026-11-08 group membership (G1, src/app/actions/organizations.ts):
+// +regenerateInviteLink(orgId) — session required; caller must be a member of orgId (else
+// not_member); writes a new invite row for that group and deletes only that group's older rows,
+// returns only that group's URL. +removeOrganizationMember(orgId, memberId) — session required;
+// caller must be a member of orgId; target looked up AND deleted by id AND org_id (another
+// group's member id → member_not_found); removing yourself refused; audited, returns no member data.
+const EXPECTED_ACTIONS = 177;
 
 let manifest;
 try {
