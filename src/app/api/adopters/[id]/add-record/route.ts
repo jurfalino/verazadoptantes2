@@ -44,7 +44,11 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid JSON body', errorId }, { status: 400 });
     }
 
-    const { sourceUrl, notes, adoption, images } = body;
+    const { sourceUrl, notes, adoption } = body;
+    // Same cap as the create route (validation.ts: 20 per save); anything past it counts as not saved.
+    const MAX_IMAGES_PER_SAVE = 20;
+    const images = Array.isArray(body.images) ? body.images.slice(0, MAX_IMAGES_PER_SAVE) : body.images;
+    const imagesOverCap = Array.isArray(body.images) ? Math.max(0, body.images.length - MAX_IMAGES_PER_SAVE) : 0;
 
     if (!adoption) {
         return NextResponse.json({ error: 'Missing adoption data', errorId }, { status: 400 });
@@ -114,8 +118,8 @@ export async function POST(
         // Save images linked to both adopter and adoption record
         let savedImageCount = 0;
         // F1: images that could not be stored, said to the rescuer (the wizard's notice) — never skipped silently.
-        let imagesTotal = 0;
-        let imagesNotSaved = 0;
+        let imagesTotal = imagesOverCap;
+        let imagesNotSaved = imagesOverCap;
         if (images && Array.isArray(images) && images.length > 0) {
             for (let i = 0; i < images.length; i++) {
                 const img = images[i];

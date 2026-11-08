@@ -91,6 +91,13 @@ describe('POST /api/adopters/[id]/add-record — big screenshots (F1)', () => {
         expect(urls()).toEqual(['https://r2.example/big.png']);
     });
 
+    it('past 20 images (the create route\'s cap), the rest are not stored and are counted', async () => {
+        const small = Array.from({ length: 22 }, (_, i) => ({ data: `c21hbGw${i}`, mimeType: 'image/jpeg' }));
+        const res = await withImages(small);
+        expect(await res.json()).toMatchObject({ imagesNotSaved: 2, imagesTotal: 22 });
+        expect(urls()).toHaveLength(20);
+    });
+
     it('one that still cannot be stored is counted in the answer', async () => {
         vi.mocked(storeLargeImageDataUrl).mockResolvedValue(null);
         const res = await withImages([{ data: 'c21hbGw=', mimeType: 'image/jpeg' }, big]);

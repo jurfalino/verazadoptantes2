@@ -219,6 +219,9 @@ export async function processImageForStorage(
  */
 export const MAX_INLINE_IMAGE_DATA_URL = 500_000;
 
+/** The largest image data URL stored at all (~7.5 MB of image), matching the create route's per-image cap. */
+export const MAX_STORED_IMAGE_DATA_URL = 10_000_000;
+
 /**
  * An image data URL too big for D1, into R2. Only real images are accepted: the
  * bytes AND the declared type are the client's, and the bucket is public, so the
@@ -230,6 +233,10 @@ export async function storeLargeImageDataUrl(
     adopterId: string,
     imageId: string,
 ): Promise<string | null> {
+    if (dataUrl.length > MAX_STORED_IMAGE_DATA_URL) {
+        logger.warn('[R2] Large data URL refused: over the size cap', { adopterId, imageId, size: dataUrl.length });
+        return null;
+    }
     const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|gif|webp));base64,/i);
     if (!match) {
         logger.warn('[R2] Large data URL refused: not an image type', { adopterId, imageId });

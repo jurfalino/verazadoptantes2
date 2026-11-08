@@ -9,7 +9,7 @@ const { put, warn, error } = vi.hoisted(() => ({ put: vi.fn(), warn: vi.fn(), er
 vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: { IMAGES_BUCKET: { put } } }) }));
 vi.mock('@/lib/logger', () => ({ logger: { warn, error, info: vi.fn(), debug: vi.fn() } }));
 
-import { storeLargeImageDataUrl, R2_PUBLIC_URL } from './r2';
+import { storeLargeImageDataUrl, R2_PUBLIC_URL, MAX_STORED_IMAGE_DATA_URL } from './r2';
 
 const dataUrl = (mime: string, bytes: number[]) => `data:${mime};base64,${Buffer.from([...bytes, ...new Array(64).fill(7)]).toString('base64')}`;
 const JPEG = [0xFF, 0xD8, 0xFF, 0xE0];
@@ -38,6 +38,12 @@ describe('storeLargeImageDataUrl', () => {
     it('a type that is not a photo type is refused, even with image bytes (no HTML, no SVG)', async () => {
         expect(await storeLargeImageDataUrl(dataUrl('text/html', JPEG), 'ad1', 'img4')).toBeNull();
         expect(await storeLargeImageDataUrl(dataUrl('image/svg+xml', JPEG), 'ad1', 'img4')).toBeNull();
+        expect(put).not.toHaveBeenCalled();
+    });
+
+    it('an image over the size cap is refused, nothing is stored (the bucket is public; no unbounded uploads)', async () => {
+        const huge = dataUrl('image/jpeg', JPEG) + 'A'.repeat(MAX_STORED_IMAGE_DATA_URL);
+        expect(await storeLargeImageDataUrl(huge, 'ad1', 'img6')).toBeNull();
         expect(put).not.toHaveBeenCalled();
     });
 
