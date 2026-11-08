@@ -17,7 +17,9 @@ import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { isPostRecord } from '@/domain/homeModules';
 import { loadFormContext } from '@/lib/adopterFormContext';
-import { summarizeAdopterForms, type AdopterFormRow } from '@/domain/formLink';
+import { summarizeAdopterForms, newestAdopterForm, type AdopterFormRow } from '@/domain/formLink';
+import { openableSubmissionIds } from '@/lib/formSubmissionAccess';
+import { formSubmissionAccessLookups } from './_applicants';
 import { periodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { animalPrimaryFirst } from '@/lib/showcase';
@@ -296,6 +298,18 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         }
 
         const { formsByAdopter, animalNames } = await loadFormContext(db, allForms, userEmail);
+        // T2: the «Formulario para…» line is a link exactly when /form-results would let
+        // this viewer in — a teammate's form too (src/lib/formSubmissionAccess.ts).
+        const viewer = userEmail;
+        const openableForms = await openableSubmissionIds(
+            viewer,
+            [...formsByAdopter.values()].map(newestAdopterForm).filter((f): f is AdopterFormRow => f !== null),
+            memberEmails,
+            await formSubmissionAccessLookups(db),
+            (submissionId, e) => logger.warn('getMyAdopters: form access lookup failed, the form line stays plain text', {
+                userEmail: viewer, submissionId, error: e instanceof Error ? e.message : String(e),
+            }),
+        );
         const signedContractCountMap = new Map<string, number>();
         for (const row of allContractCounts as { adopterId: string; count: number }[]) {
             if (row.adopterId) signedContractCountMap.set(row.adopterId, row.count);
@@ -423,7 +437,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 requestCount: counts.requests,
                 searchHits: stats.searchHits,
                 profileViews: stats.profileViews,
-                ...formFields(formsByAdopter.get(adopter.id) ?? [], userEmail!, animalNames),
+                ...formFields(formsByAdopter.get(adopter.id) ?? [], openableForms, animalNames),
                 signedContractCount: signedContractCountMap.get(adopter.id) ?? 0,
                 pendingDuplicates: pendingDups.get(adopter.id) ?? [],
                 // «Desde un post»: the filter chip and the homepage posts card count the same rows.
@@ -463,8 +477,8 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 }
 
 /** The per-row form fields /my-adopters renders. */
-function formFields(forms: AdopterFormRow[], viewerEmail: string, animalNames: Map<string, string>) {
-    const summary = summarizeAdopterForms(forms, viewerEmail);
+function formFields(forms: AdopterFormRow[], openable: ReadonlySet<string>, animalNames: Map<string, string>) {
+    const summary = summarizeAdopterForms(forms, openable);
     return {
         formCount: summary.count,
         latestForm: summary.latest && {
