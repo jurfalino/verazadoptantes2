@@ -19,6 +19,7 @@ import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDel
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { historyKindFor } from '@/lib/profilePrivilege';
+import { DELIVERY_ADDRESS_COPY_PREFIX } from '@/domain/flags';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
 export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
@@ -165,7 +166,8 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                             // delivery-verified address was filed as 'anonymous'.
                             flaggedBy: changedBy,
                             reason: 'verified_address',
-                            details: `Address verified during pet delivery: ${data.verifiedAddress}`,
+                            // The street stays on the record, where it is masked per viewer (P1).
+                            details: DELIVERY_ADDRESS_COPY_PREFIX,
                             createdAt: new Date()
                         });
                     }

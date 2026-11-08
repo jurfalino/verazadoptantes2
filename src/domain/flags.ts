@@ -59,6 +59,18 @@ export function profileVerifications(
 export const DELIVERY_ADDRESS_COPY_PREFIX = 'Address verified during pet delivery:';
 
 /**
+ * Older delivery copies carry the full street after the prefix. Flag rows reach
+ * the browser for every viewer (getFlags), while the record's own address is
+ * masked for viewers outside the team — so the copy is cut back to the prefix,
+ * which is all profileVerifications reads. Other rows are returned untouched.
+ */
+export function redactDeliveryAddressCopies<T extends { reason?: string | null; details?: string | null }>(rows: readonly T[]): T[] {
+    return rows.map(r => (r.reason === FLAG_REASONS.VERIFIED_ADDRESS && r.details?.startsWith(DELIVERY_ADDRESS_COPY_PREFIX)
+        ? { ...r, details: DELIVERY_ADDRESS_COPY_PREFIX }
+        : r));
+}
+
+/**
  * Build a profile's FLAGS from its flag rows (never its alerts: periodAlerts).
  *
  * Uses FLAG_REASONS constants to prevent string mismatches

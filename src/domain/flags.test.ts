@@ -7,7 +7,7 @@
  * number of those kinds, and a single kind is drawn as that kind's pill.
  */
 import { describe, it, expect } from 'vitest';
-import { buildFlags, DELIVERY_ADDRESS_COPY_PREFIX, openFlagKinds, openFlagKindsOfRows, profileVerifications, rescuerFlagKinds } from './flags';
+import { buildFlags, DELIVERY_ADDRESS_COPY_PREFIX, redactDeliveryAddressCopies, openFlagKinds, openFlagKindsOfRows, profileVerifications, rescuerFlagKinds } from './flags';
 import { KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from './dedupPair';
 
 const row = (o: { reason: string | null; targetAdopterId?: string | null; details?: string | null }) => ({ adopterId: 'a', ...o });
@@ -103,5 +103,19 @@ describe('rescuerFlagKinds — which flags a rescuer-facing surface draws (Jon 2
         expect(kinds).toEqual(['inaccurate', 'duplicate']);
         expect(rescuerFlagKinds(kinds)).toEqual(['duplicate']);
         expect(kinds).toEqual(['inaccurate', 'duplicate']); // not mutated
+    });
+});
+
+describe('redactDeliveryAddressCopies — a delivery copy never carries the street to the browser', () => {
+    it('drops the address from the delivery copy, keeping the prefix the badge rule reads', () => {
+        const [out] = redactDeliveryAddressCopies([row({ reason: 'verified_address', details: `${DELIVERY_ADDRESS_COPY_PREFIX} Calle Falsa 123, Lanús` })]);
+        expect(out.details).toBe(DELIVERY_ADDRESS_COPY_PREFIX);
+        expect(JSON.stringify(out)).not.toContain('Calle Falsa');
+        expect(profileVerifications([out], []).verified_address).toBe(false);
+    });
+    it('leaves every other row as it was', () => {
+        const manual = row({ reason: 'verified_address', details: 'Verified by user' });
+        const dup = row({ reason: 'duplicate', details: 'same phone' });
+        expect(redactDeliveryAddressCopies([manual, dup])).toEqual([manual, dup]);
     });
 });
