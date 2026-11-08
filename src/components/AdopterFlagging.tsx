@@ -78,7 +78,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     );
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], verifiedIdentity?: boolean, verifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, verifiedIdentity = false, verifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -102,7 +102,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const [showAdoptionsHint, setShowAdoptionsHint] = useState(false);
     const [showRequestsHint, setShowRequestsHint] = useState(false);
     const [showIdentityHint, setShowIdentityHint] = useState(false);
-    const [_showAddressHint, _setShowAddressHint] = useState(false);
+    const [showAddressHint, setShowAddressHint] = useState(false);
 
     // Fetch system-detected duplicate candidates on mount
     useEffect(() => {
@@ -122,11 +122,11 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
     const isFlaggedAsDuplicate = flagKinds.includes('duplicate');
 
-    // Verification flags - include adoption-based verification
+    // The verification badges are decided by the caller with the one rule every surface uses
+    // (profileVerifications, src/domain/flags.ts); a filed identity mark only lends the hint its words.
     const identityVerifiedFlag = existingFlags.find(f => f.reason === 'verified_identity');
-    const identityVerified = identityVerifiedFlag || hasVerifiedAdoption;
-    const _addressVerifiedFlag = existingFlags.find(f => f.reason === 'verified_address');
-    const _addressVerified = _addressVerifiedFlag || _hasVerifiedAddress;
+    const identityVerified = verifiedIdentity;
+    const addressVerified = verifiedAddress;
 
 
 
@@ -367,7 +367,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                 )}
 
                 {/* ✓ Verifications: inline interactive pills */}
-                {(identityVerified) && (
+                {(identityVerified || addressVerified) && (
                     <div className="flex flex-wrap items-center gap-2 mt-2">
                         {identityVerified && (
                             <button
@@ -381,6 +381,18 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                 {t('flags.id_verified') || '✓ Identity'}
                             </button>
                         )}
+                        {addressVerified && (
+                            <button
+                                type="button"
+                                onClick={() => setShowAddressHint(!showAddressHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${showAddressHint ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-700 shadow-inner' : 'bg-transparent text-teal-700 dark:text-teal-300 border-transparent hover:bg-teal-50 dark:hover:bg-teal-900/20'}`}
+                            >
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showAddressHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                {t('flags.addr_verified') || 'Verified address'}
+                            </button>
+                        )}
 
                     </div>
                 )}
@@ -391,6 +403,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-teal-100 dark:border-b-stone-700"></div>
                         <span className="font-semibold text-teal-900 dark:text-teal-300 block mb-0.5">{t('flags.id_verified') || 'Identidad Verificada'}</span>
                         {identityVerifiedFlag?.details || t('flags.legend_verified') || 'Confirmamos que esta persona es quien dice ser.'}
+                    </div>
+                )}
+                {showAddressHint && addressVerified && (
+                    <div className="w-full mt-1 p-3 bg-teal-50 dark:bg-stone-800/80 border border-teal-100 dark:border-teal-900/50 rounded-lg text-xs leading-relaxed text-teal-800 dark:text-teal-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                        <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-teal-100 dark:border-b-stone-700"></div>
+                        <span className="font-semibold text-teal-900 dark:text-teal-300 block mb-0.5">{t('flags.addr_verified') || 'Dirección Verificada'}</span>
+                        {t('flags.legend_verified') || 'Confirmamos esta información mediante soporte documentario o visita.'}
                     </div>
                 )}
 

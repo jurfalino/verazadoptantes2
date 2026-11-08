@@ -15,7 +15,9 @@ import { photoLinks } from '@/domain/formPhotos';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
-import { NO_PERIOD_ALERTS } from '@/domain/periodAlerts';
+import { NO_PERIOD_ALERTS, periodAlerts } from '@/domain/periodAlerts';
+import { NO_HOUSEMATE_ALERT } from '@/domain/households';
+import { RECORD_TYPES } from '@/domain/constants';
 import { applicantScopeWhere } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
 import type { ApplicantSummary, ApplicantAdopterContext } from './applicants';
@@ -145,6 +147,8 @@ export async function loadApplicantsForAnimal(
     db: Db,
     animal: { id: string; adopterId: string | null },
     teamEmails: readonly string[],
+    /** Who is looking: the housemate chips are read as this viewer's search card reads them. */
+    viewerEmail: string | null | undefined,
 ): Promise<ApplicantSummary[]> {
     const animalId = animal.id;
     const where = applicantScopeWhere(animalId, teamEmails);
@@ -198,11 +202,15 @@ export async function loadApplicantsForAnimal(
         }
     };
 
+    // Each linked person's records, kept for their alerts (read below, once the list is built).
+    type AlertRecord = { recordType: string | null; date: Date | number | null; addedBy: string | null };
+    const recordsByAdopter = new Map<string, AlertRecord[]>();
+
     // Per-applicant enrichment. D1-safe — no inArray. Each linked adopter
     // gets parallel lookups for name+context, activity records (for both
     // rating + counts), flag rows, and contract-invite state. Orphan
     // submissions (linkedAdopterId=null) get a zeroed shape.
-    const enriched = await Promise.all(rows.map(async (row) => {
+    const enriched = await Promise.all(rows.map(async (row): Promise<ApplicantSummary> => {
         let adopterName = row.name;
         let adopterRating: number | null = null;
         let adoptionCount = 0;
@@ -221,10 +229,10 @@ export async function loadApplicantsForAnimal(
                     .from(adopters)
                     .where(eq(adopters.id, row.linkedAdopterId))
                     .get() as Promise<{ name: string; addedBy: string | null; source: string | null; country: string | null } | undefined>,
-                db.select({ rating: adoptions.rating, recordType: adoptions.recordType })
+                db.select({ rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy, identityVerified: adoptions.identityVerified, deliveredToHome: adoptions.deliveredToHome, verifiedAddress: adoptions.verifiedAddress })
                     .from(adoptions)
                     .where(eq(adoptions.adopterId, row.linkedAdopterId))
-                    .all() as Promise<Array<{ rating: number | null; recordType: string | null }>>,
+                    .all() as Promise<Array<{ rating: number | null; recordType: string | null; date: Date | number | null; addedBy: string | null; identityVerified: number | null; deliveredToHome: number | null; verifiedAddress: string | null }>>,
                 db.select({ reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                     .from(adopterFlags)
                     .where(eq(adopterFlags.adopterId, row.linkedAdopterId))
@@ -248,8 +256,9 @@ export async function loadApplicantsForAnimal(
             // applicant would add another N queries with no UI consumer (panel
             // surfaces flag pills, not the system-duplicate badge). If we ever
             // surface it, add a third parallel query above.
-            // Flags only: the applicants list shows no alerts (Jon, 2026-11-07: «not for now»).
-            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0), ...NO_PERIOD_ALERTS };
+            // The period alerts are filled in below, once per list (P2), and only when read.
+            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0, records), ...NO_PERIOD_ALERTS };
+            recordsByAdopter.set(row.linkedAdopterId, records);
         }
 
         // Already signed? — the animal is adopted by this specific adopter.
@@ -279,6 +288,8 @@ export async function loadApplicantsForAnimal(
             hasInvite,
             isSigned,
             flags,
+            alertsChecked: false,
+            housemateAlert: NO_HOUSEMATE_ALERT,
             adoptionCount,
             requestCount,
             intent: row.intent,
@@ -298,6 +309,43 @@ export async function loadApplicantsForAnimal(
             adopterContext,
         } satisfies ApplicantSummary;
     }));
+
+    // The person's ALERTS, as the full profile shows them (P2 — Jon, 2026-11-08): their
+    // period alerts by the one rule (periodAlerts, the Admin thresholds, requests counted
+    // per rescue) and the housemate chips, read as a search card reads them. Each half is
+    // read strictly and settles on its own: what was read is shown, a failed half is
+    // logged, and «checked» (the panel's «Sin alertas en el perfil») needs both.
+    const linkedIds = [...recordsByAdopter.keys()];
+    if (linkedIds.length > 0) {
+        const alertsCtx = { animalId, viewer: viewerEmail ?? null, applicants: linkedIds.length };
+        const warnFailed = (half: string) => (e: unknown) => {
+            logger.warn(`loadApplicantsForAnimal: ${half} alerts lookup failed, the panel claims no «Sin alertas»`, {
+                ...alertsCtx, error: e instanceof Error ? e.message : String(e),
+            });
+            return null;
+        };
+        const needKeys = [...recordsByAdopter.values()].some(rs => rs.some(r => r.recordType === RECORD_TYPES.REQUEST));
+        const [period, housemates] = await Promise.all([
+            (async () => {
+                const [{ getAdoptionConfig }, { loadRescueKeys, withRescueKeys }] = await Promise.all([import('./config'), import('@/lib/rescueKeys')]);
+                const [config, keys] = await Promise.all([
+                    getAdoptionConfig({ strict: true }),
+                    needKeys ? loadRescueKeys(db, 'loadApplicantsForAnimal') : Promise.resolve(new Map<string, string>()),
+                ]);
+                return (adopterId: string) => periodAlerts(withRescueKeys(recordsByAdopter.get(adopterId) ?? [], keys), config);
+            })().catch(warnFailed('period')),
+            (async () => {
+                const { housemateAlertsFor } = await import('@/lib/households');
+                return await housemateAlertsFor(db, viewerEmail, linkedIds, { strict: true });
+            })().catch(warnFailed('housemate')),
+        ]);
+        for (const a of enriched) {
+            if (!a.adopterId || !a.flags) continue;
+            if (period) a.flags = { ...a.flags, ...period(a.adopterId) };
+            if (housemates) a.housemateAlert = housemates[a.adopterId] ?? NO_HOUSEMATE_ALERT;
+            a.alertsChecked = !!period && !!housemates;
+        }
+    }
 
     // "Agregado por": the rescuer's name, not their email handle. One
     // batched, D1-safe lookup for every distinct addedBy on this animal.

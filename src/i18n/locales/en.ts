@@ -2102,7 +2102,7 @@ export const en = {
         applicants_panel_view_full_form: 'View full form',
         applicants_panel_activity: '{adoptions} adoptions · {requests} requests',
         applicants_panel_added_by: 'Added by {email}',
-        applicants_panel_no_flags: 'No flags on this profile',
+        applicants_panel_no_flags: 'No alerts on this profile',
         applicants_panel_no_adopter: 'No linked profile — form auto-create did not run.',
         applicants_panel_intent_label: 'Intent',
         applicants_panel_pref_label: 'Prefers',

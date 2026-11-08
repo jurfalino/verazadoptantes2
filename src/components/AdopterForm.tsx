@@ -22,7 +22,7 @@ import { ContinueMergeDialog } from "@/components/ContinueMergeDialog";
 import { MatchCard } from "@/components/MatchCardParts";
 import { AdopterName } from "@/components/AdopterName";
 import { isNamelessAdopter } from "@/lib/adopterDisplay";
-import { openFlagKinds } from "@/domain/flags";
+import { openFlagKinds, profileVerifications } from "@/domain/flags";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
@@ -186,6 +186,8 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         requestsThreshold: adoptionConfig?.requestsThreshold || DEFAULT_ADOPTION_CONFIG.requestsThreshold,
         requestsPeriodDays: adoptionConfig?.requestsPeriodDays || DEFAULT_ADOPTION_CONFIG.requestsPeriodDays,
     }), [adoptions, adoptionConfig]);
+    // «Identidad / Dirección Verificada» from the records as they are now (cards V1/V2).
+    const verifications = profileVerifications(flags, adoptions);
 
     const [isEditing, setIsEditing] = useState(isNew);
     // True while the name's inline field is in edit mode — collapses the sibling
@@ -1530,8 +1532,9 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             adopterId={id}
                             adopterName={initialData.name}
                             existingFlags={flags}
-                            hasVerifiedAdoption={adoptions.some(a => a.identityVerified === 1)}
-                            hasVerifiedAddress={adoptions.some(a => a.verifiedAddress && a.verifiedAddress.trim() !== '')}
+                            // «Identidad / Dirección Verificada»: the one rule search cards, applicants and the API use.
+                            verifiedIdentity={verifications.verified_identity}
+                            verifiedAddress={verifications.verified_address}
                             tooManyAdoptions={tooManyAdoptions ?? undefined}
                             tooManyRequests={tooManyRequests ?? undefined}
                             hasDuplicateBanner={hasDuplicateBanner}

@@ -100,7 +100,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         type FlagRow = { adopterId: string; reason: string | null; targetAdopterId: string | null; details: string | null };
         type CountRow = { adopterId: string; recordType: string | null; count: number };
         type StatRow = { adopterId: string; eventType: string; count: number };
-        type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null; addedBy: string | null; sourceUrl: string | null; rescueKey?: string | null };
+        type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null; addedBy: string | null; sourceUrl: string | null; identityVerified: number | null; deliveredToHome: number | null; verifiedAddress: string | null; rescueKey?: string | null };
         type FormRow = { id: string; userId: string; linkedAdopterId: string; autoAdopterId: string | null; createdAt: Date | number | null; selectedAnimalId: string | null };
         type ContractCountRow = { adopterId: string; count: number };
         type EditRow = { adopterId: string; changedBy: string | null; changedAt: number | Date | null };
@@ -156,7 +156,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 // sees r.rating === undefined, passes the `!== null` filter, then
                 // sums to NaN → JSON-serializes to null → every /my-adopters row
                 // rendered "—" regardless of actual rated activity.
-                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, date: adoptions.date, rating: adoptions.rating, addedBy: adoptions.addedBy, sourceUrl: adoptions.sourceUrl })
+                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, date: adoptions.date, rating: adoptions.rating, addedBy: adoptions.addedBy, sourceUrl: adoptions.sourceUrl, identityVerified: adoptions.identityVerified, deliveredToHome: adoptions.deliveredToHome, verifiedAddress: adoptions.verifiedAddress })
                     .from(adoptions)
                     .where(sql`${adoptions.adopterId} IN (${inList})`)
                     .all(),
@@ -391,7 +391,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 
             const adopterRecords = recordsByAdopter.get(adopter.id) || [];
             // The row's flags, then its two period alerts by the one rule (periodAlerts; records keyed per rescue above).
-            const flagObj: AdopterFlags = { ...buildFlags(flags, 0), ...periodAlerts(adopterRecords, adoptionConfig) };
+            const flagObj: AdopterFlags = { ...buildFlags(flags, 0, adopterRecords), ...periodAlerts(adopterRecords, adoptionConfig) };
 
             // v2.19.12: enriched creator info for every row, viewer's own
             // included. The Created-by column is symmetric — your name + org
