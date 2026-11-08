@@ -130,10 +130,11 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
     })();
 
     // The person's ALERTS, as the full profile shows them (P2): their period alerts, then the
-    // housemate chips — the same pills and words. Read on the server; when that read failed
-    // (`alertsChecked` false) the panel shows no alerts line at all, never «Sin alertas».
+    // housemate chips — the same pills and words. Read on the server; whatever was read is
+    // shown, and «Sin alertas» only when the whole check ran (`alertsChecked`) — after a
+    // failed read the panel shows no such line.
     const housemate = applicant.housemateAlert;
-    const hasAlerts = applicant.alertsChecked && !!applicant.flags && (
+    const hasAlerts = !!applicant.flags && (
         !!applicant.flags.tooManyAdoptions || !!applicant.flags.tooManyRequests
         || housemate.lowRating != null || housemate.hasAlerts);
 

@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 
-const { state, warn } = vi.hoisted(() => ({ state: { db: null as unknown, failConfig: false }, warn: vi.fn() }));
+const { state, warn } = vi.hoisted(() => ({ state: { db: null as unknown, failConfig: false, failHousemates: false }, warn: vi.fn() }));
 vi.mock('@/app/actions/_db', () => ({ getDb: async () => state.db, getUser: async () => 'owner@example.com' }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/lib/logger', async (orig) => ({ ...(await orig<typeof import('@/lib/logger')>()), logger: { warn, info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') } }));
@@ -17,6 +17,10 @@ vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: {} }) 
 vi.mock('./config', async (orig) => {
     const real = await orig<typeof import('./config')>();
     return { ...real, getAdoptionConfig: vi.fn(async (o?: { strict?: boolean }) => { if (state.failConfig) throw new Error('D1 down'); return real.getAdoptionConfig(o); }) };
+});
+vi.mock('@/lib/households', async (orig) => {
+    const real = await orig<typeof import('@/lib/households')>();
+    return { ...real, housemateAlertsFor: vi.fn(async (...a: Parameters<typeof real.housemateAlertsFor>) => { if (state.failHousemates) throw new Error('budget spent'); return real.housemateAlertsFor(...a); }) };
 });
 
 import { loadApplicantsForAnimal } from './_applicants';
@@ -44,6 +48,7 @@ const DAY = 86_400;
 
 beforeEach(() => {
     state.failConfig = false;
+    state.failHousemates = false;
     warn.mockClear();
     const m = migratedDb();
     state.db = asyncDb(m.db);
@@ -89,5 +94,14 @@ describe('the applicants panel reads the person\'s alerts (P2)', () => {
             expect(a.flags?.tooManyAdoptions).toBeNull();
         }
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('alerts'), expect.objectContaining({ animalId: 'luna' }));
+    });
+
+    it('one half failing (the housemate read) keeps the half that was read: Juan\'s alert still shows, nobody is «checked»', async () => {
+        state.failHousemates = true;
+        const list = await load();
+        const juan = list.find(a => a.adopterId === 'juan')!;
+        expect(juan.flags?.tooManyAdoptions).toMatchObject({ count: 3 });
+        for (const a of list) expect(a.alertsChecked).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('housemate'), expect.objectContaining({ animalId: 'luna' }));
     });
 });

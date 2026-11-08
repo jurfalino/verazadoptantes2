@@ -57,12 +57,12 @@ export interface ApplicantSummary {
     isSigned: boolean;
     // ── v34 enrichment ──────────────────────────────────────────────
     /** Same shape /my-adopters uses, so <FlagBadges> renders directly. Null for orphan submissions.
-     *  Its period alerts are real only when `alertsChecked`. */
+     *  Its period alerts are the ones read (none when that read failed — then `alertsChecked` is false). */
     flags: AdopterFlags | null;
     /** True only when the person's alerts (period + housemates) were actually read (P2):
      *  the panel says «Sin alertas en el perfil» only then. */
     alertsChecked: boolean;
-    /** The housemate chips' answers («Conviviente con calificación N» / «con alertas»); none unless `alertsChecked`. */
+    /** The housemate chips' answers («Conviviente con calificación N» / «con alertas»); none when that read failed. */
     housemateAlert: HousemateAlertSummary;
     adoptionCount: number;
     requestCount: number;

@@ -63,6 +63,12 @@ describe('ApplicantDetailPanel — the person\'s alerts (P2)', () => {
         expect(text(render(applicant()))).toContain(NONE);
     });
 
+    it('part of the lookup failed: what was read still shows, and no «Sin alertas»', () => {
+        const html = render(applicant({ alertsChecked: false, flags: { ...NO_FLAGS, tooManyAdoptions: { count: 3, threshold: 3, periodDays: 90, actualSpanDays: 10 } } }));
+        expect(html).toContain('data-alert="too_many_adoptions"');
+        expect(text(html)).not.toContain(NONE);
+    });
+
     it('the lookup failed: no alerts line — never «Sin alertas»', () => {
         const html = render(applicant({ alertsChecked: false }));
         expect(text(html)).not.toContain(NONE);

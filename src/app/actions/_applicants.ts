@@ -312,31 +312,38 @@ export async function loadApplicantsForAnimal(
 
     // The person's ALERTS, as the full profile shows them (P2 — Jon, 2026-11-08): their
     // period alerts by the one rule (periodAlerts, the Admin thresholds, requests counted
-    // per rescue) and the housemate chips, read as a search card reads them. Strict: a
-    // failed read is never «no alerts» — it is logged, and the panel claims nothing.
+    // per rescue) and the housemate chips, read as a search card reads them. Each half is
+    // read strictly and settles on its own: what was read is shown, a failed half is
+    // logged, and «checked» (the panel's «Sin alertas en el perfil») needs both.
     const linkedIds = [...recordsByAdopter.keys()];
     if (linkedIds.length > 0) {
-        try {
-            const [{ getAdoptionConfig }, { loadRescueKeys, withRescueKeys }, { housemateAlertsFor }] = await Promise.all([
-                import('./config'), import('@/lib/rescueKeys'), import('@/lib/households'),
-            ]);
-            const needKeys = [...recordsByAdopter.values()].some(rs => rs.some(r => r.recordType === RECORD_TYPES.REQUEST));
-            const [config, keys, housemates] = await Promise.all([
-                getAdoptionConfig({ strict: true }),
-                needKeys ? loadRescueKeys(db, 'loadApplicantsForAnimal') : Promise.resolve(new Map<string, string>()),
-                housemateAlertsFor(db, viewerEmail, linkedIds, { strict: true }),
-            ]);
-            for (const a of enriched) {
-                if (!a.adopterId || !a.flags) continue;
-                a.flags = { ...a.flags, ...periodAlerts(withRescueKeys(recordsByAdopter.get(a.adopterId) ?? [], keys), config) };
-                a.housemateAlert = housemates[a.adopterId] ?? NO_HOUSEMATE_ALERT;
-                a.alertsChecked = true;
-            }
-        } catch (e) {
-            logger.warn('loadApplicantsForAnimal: alerts lookup failed, the panel shows no alerts line', {
-                animalId, viewer: viewerEmail ?? null, applicants: linkedIds.length,
-                error: e instanceof Error ? e.message : String(e),
+        const alertsCtx = { animalId, viewer: viewerEmail ?? null, applicants: linkedIds.length };
+        const warnFailed = (half: string) => (e: unknown) => {
+            logger.warn(`loadApplicantsForAnimal: ${half} alerts lookup failed, the panel claims no «Sin alertas»`, {
+                ...alertsCtx, error: e instanceof Error ? e.message : String(e),
             });
+            return null;
+        };
+        const needKeys = [...recordsByAdopter.values()].some(rs => rs.some(r => r.recordType === RECORD_TYPES.REQUEST));
+        const [period, housemates] = await Promise.all([
+            (async () => {
+                const [{ getAdoptionConfig }, { loadRescueKeys, withRescueKeys }] = await Promise.all([import('./config'), import('@/lib/rescueKeys')]);
+                const [config, keys] = await Promise.all([
+                    getAdoptionConfig({ strict: true }),
+                    needKeys ? loadRescueKeys(db, 'loadApplicantsForAnimal') : Promise.resolve(new Map<string, string>()),
+                ]);
+                return (adopterId: string) => periodAlerts(withRescueKeys(recordsByAdopter.get(adopterId) ?? [], keys), config);
+            })().catch(warnFailed('period')),
+            (async () => {
+                const { housemateAlertsFor } = await import('@/lib/households');
+                return await housemateAlertsFor(db, viewerEmail, linkedIds, { strict: true });
+            })().catch(warnFailed('housemate')),
+        ]);
+        for (const a of enriched) {
+            if (!a.adopterId || !a.flags) continue;
+            if (period) a.flags = { ...a.flags, ...period(a.adopterId) };
+            if (housemates) a.housemateAlert = housemates[a.adopterId] ?? NO_HOUSEMATE_ALERT;
+            a.alertsChecked = !!period && !!housemates;
         }
     }
 
