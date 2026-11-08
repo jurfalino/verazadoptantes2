@@ -2,6 +2,39 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.36] - 2026-11-08
+
+### Fixed — defects found while writing the help docs (22 cards; C1 on hold)
+- **Teams.** A teammate can open «Resultados del contrato» and answer it (T1), tap a teammate's form
+  line in «Mis adoptantes» (T2), and edit or delete a teammate's contact data; «Reportar inexactitud»
+  shows exactly for those who can't edit (T3). The edit pencil on a record now follows the same rule
+  as the save (T4).
+- **Groups (G1).** Any member can «Quitar del grupo» another member (like «Salir»: their records stay
+  theirs). «Generar un enlace nuevo» replaces the invite link; removing a member replaces it too, so the
+  old link stops working. Links never expire on their own. Invite links use buenadoptante.org.
+- **Privacy (P1).** The delivery address on a record is masked for viewers outside the team, the same
+  way as other contact data — including the copy kept in the «Dirección Verificada» mark.
+- **Interested people (P2).** The panel shows the person's alerts with the profile's pills; «Sin alertas
+  en el perfil» only when the check ran and found none.
+- **Records.** A follow-up or return on an animal without a name attaches to its adoption instead of
+  creating a second one (R1). «¿Verificaste su identidad?» only where it is saved (adoption) (R2).
+  Editing a record saves with «Guardar cambios» (R3).
+- **Badges.** «Identidad Verificada» and «Dirección Verificada» follow one rule on the profile, search
+  cards, the applicants panel and the API, and go away when their basis does (V1, V2). The profile
+  header now shows «Dirección Verificada».
+- **Search.** Searching without accents finds addresses (S1). Phones from different area codes no longer
+  count as the same phone; the same number in different formats still does (S2). «DNI 25 999 890» and
+  «documento 25.999.890» find the person (S3).
+- **Duplicates and imports.** A hand-flagged pair offers «No, es otra persona» too (D1). A «No» given in a
+  post import survives a merge (I2). Post import shows each screenshot once and saves every image (I1).
+- **Notices.** The contract notice for a personal link says «… firmó el contrato de adopción de …» and opens
+  the adopter's profile (D2). The back link on «Resultados del contrato» goes to «Mis adoptantes» (D3).
+- **Wording (C2).** «documento» instead of «DNI», voseo in six messages, «mala señal» in the guided tour.
+
+### After deploy
+- Re-run the duplicate Scan from /admin/duplicates once, to clear «Pendientes» pairs that matched only
+  on a phone's last 8 digits.
+
 ## [2.58.35] - 2026-11-07
 
 ### Fixed — public API v1 (independent review of 2.58.34)
