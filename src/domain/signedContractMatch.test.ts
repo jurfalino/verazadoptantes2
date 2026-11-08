@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { matchSignedContract, type SignedContractRow } from './signedContractMatch';
 
-const row = (over: Partial<SignedContractRow>): SignedContractRow => ({ id: 's', animalId: 'a1', placementId: null, fileKey: null, signedAt: 1, ...over });
+const row = (over: Partial<SignedContractRow>): SignedContractRow => ({ id: 's', animalId: 'a1', placementId: null, fileKey: null, signedAt: 1, hasTypedData: true, ...over });
 
 describe('matchSignedContract', () => {
     it('a row that names the placement is that placement\'s', () => {
@@ -29,6 +29,10 @@ describe('matchSignedContract', () => {
         expect(matchSignedContract({ id: 'p1', animalId: 'a1', contractKey: null }, [row({ id: 's1', placementId: 'p1' })])).toBeNull();
         expect(matchSignedContract({ id: 'p1', animalId: 'a1', contractKey: 'k1' }, [row({ id: 's1', animalId: 'a2', fileKey: 'k1' })])).toBeNull();
         expect(matchSignedContract({ id: 'p1', animalId: 'a1', contractKey: 'k1' }, [row({ id: 's1', fileKey: null })])).toBeNull();
+    });
+
+    it('an older signature with nothing the adopter typed (backfill found no notice): no result, PDF only (review M1)', () => {
+        expect(matchSignedContract({ id: 'p1', animalId: 'a1', contractKey: 'k1' }, [row({ id: 's1', fileKey: 'k1', hasTypedData: false })])).toBeNull();
     });
 
     it('two signatures of one file: the newest', () => {
