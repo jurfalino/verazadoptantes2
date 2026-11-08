@@ -20,6 +20,7 @@ type Db = any;
 const SIGNED_COLS = {
     id: signedContracts.id, animalId: signedContracts.animalId, placementId: signedContracts.placementId,
     fileKey: signedContracts.fileKey, signedAt: signedContracts.signedAt,
+    hasTypedData: sql<boolean>`${signedContracts.submittedJson} IS NOT NULL`.mapWith(Boolean),
 };
 
 const fallback = <T>(op: string, ctx: Record<string, unknown>) => (e: unknown): T[] => {

@@ -10,6 +10,9 @@ export interface SignedContractRow {
     placementId: string | null;
     fileKey: string | null;
     signedAt: number | null;
+    /** submitted_json is set: the result page has what the adopter typed. An older row the backfill
+     *  could not fill has nothing to show, so the record keeps only the PDF button (review M1). */
+    hasTypedData: boolean;
 }
 
 export interface PlacementContractRef {
@@ -28,5 +31,5 @@ export function matchSignedContract(placement: PlacementContractRef, rows: reado
         if (!same) continue;
         if (!best || (r.signedAt ?? 0) > (best.signedAt ?? 0)) best = r;
     }
-    return best?.id ?? null;
+    return best?.hasTypedData ? best.id : null;
 }

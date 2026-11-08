@@ -123,9 +123,14 @@ export default function AdminNotificationsPage() {
         // (contract-results/[id] reads it; form-results reads its match data), so
         // deleting it takes the report with it, not just the bell entry.
         const carriesReport = DATA_BEARING_TYPES.has(typeOf(notif.id));
-        const consequence = carriesReport
-            ? 'ATENCIÓN: esta notificación contiene el informe de coincidencias. Si la eliminás, esa persona pierde el informe, no solo el aviso. No se puede deshacer.'
-            : 'Desaparece de su campana y no se puede deshacer.';
+        // H1: a contract signed from this release on keeps its result with the signed
+        // contract («Datos y posibles duplicados» on the profile and the animal); an
+        // older one, and a form's matches, still live only in the notice (review M2).
+        const consequence = !carriesReport
+            ? 'Desaparece de su campana y no se puede deshacer.'
+            : typeOf(notif.id) === 'contract_result'
+                ? 'ATENCIÓN: si el contrato se firmó antes de la versión 2.58.38, el informe de coincidencias vive solo en esta notificación y esa persona lo pierde. Los firmados después lo conservan en el perfil y en el animal. No se puede deshacer.'
+                : 'ATENCIÓN: esta notificación contiene el informe de coincidencias. Si la eliminás, esa persona pierde el informe, no solo el aviso. No se puede deshacer.';
         if (!confirm(`¿Eliminar esta notificación de ${who}?\n\n"${notif.title}"\n\n${consequence}`)) return;
         setDeletingId(notif.id);
         try {
