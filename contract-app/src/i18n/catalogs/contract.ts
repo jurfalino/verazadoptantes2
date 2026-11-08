@@ -19,7 +19,7 @@ export const contract: CatalogSlice = {
         'contract.copied': 'Copiado',
         'contract.sending': 'Enviando...',
         'contract.success_title': '¡Adopción Registrada!',
-        'contract.success_body': 'El contrato de adopción de {name} ha sido enviado exitosamente. El rescatista se pondrá en contacto contigo.',
+        'contract.success_body': 'Listo: enviamos el contrato de adopción de {name}. El rescatista se va a poner en contacto con vos.',
         'contract.next_steps': 'Próximos pasos:',
         'contract.step_data': 'Tus datos fueron registrados',
         'contract.step_saved': 'Contrato firmado guardado',

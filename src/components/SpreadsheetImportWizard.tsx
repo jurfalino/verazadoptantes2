@@ -1961,7 +1961,7 @@ function RowView({ members, groupReason, onSplit, editingCell, onEditCell, onCha
         ...eff.phones.map(v => ({ t: 'Tel', v })),
         ...eff.emails.map(v => ({ t: 'Email', v })),
         ...eff.socials.map(v => ({ t: 'Red', v })),
-        ...eff.dnis.map(v => ({ t: 'DNI', v })),
+        ...eff.dnis.map(v => ({ t: 'Doc', v })),
         ...eff.addresses.map(v => ({ t: 'Dir', v })),
     ];
     const invalid = built.errors.length > 0;
