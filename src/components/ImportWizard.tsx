@@ -824,13 +824,12 @@ export default function ImportWizard() {
                 reader.onload = async () => {
                     const result = reader.result as string;
                     const base64 = result.split(',')[1];
+                    // Listed at once, in the order added; the shrunk copy is patched in when ready.
+                    // Saved before then, the original goes (the server stores big ones in R2).
+                    const item: { data: string; mimeType: string; preview: string; saveData?: string } = { data: base64, mimeType: file.type, preview: result };
+                    setManualImages(prev => [...prev, item]);
                     const saveData = await savedCopyOf(file);
-                    setManualImages(prev => [...prev, {
-                        data: base64,
-                        mimeType: file.type,
-                        preview: result,
-                        ...(saveData ? { saveData } : {}),
-                    }]);
+                    if (saveData) setManualImages(prev => prev.map(m => (m === item ? { ...m, saveData } : m)));
                 };
                 reader.readAsDataURL(file);
             }
