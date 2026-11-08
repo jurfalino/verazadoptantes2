@@ -10,6 +10,7 @@ import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domai
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import type { Visibility } from '@/lib/piiAccess';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
+import { canViewerAccessContractResult, CONTRACT_RESULT_TYPE } from '@/lib/contractResultAccess';
 import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
@@ -31,7 +32,8 @@ import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, typ
  * removing the auto-created orphan adopter. Self-service merge for the rescuer who
  * received the contract-result notification.
  *
- * Auth: caller must be the notification recipient. Cross-creator merge is allowed
+ * Auth: the notification recipient, their team or an admin (T1 — the team acts
+ * as one; src/lib/contractResultAccess.ts). Cross-creator merge is allowed
  * (the matched profile may be owned by a different rescuer); the original creator
  * is notified so they can review.
  *
@@ -61,8 +63,15 @@ export async function attachContractToExistingAdopter(
         // Fetch notification and validate ownership + shape
         const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
         if (!notification) return { success: false, error: 'Notification not found' };
-        if (notification.userId !== actorEmail) return { success: false, error: 'Not authorized for this notification' };
-        if (notification.type !== 'contract_result') return { success: false, error: 'Notification is not a contract result' };
+        if (notification.type !== CONTRACT_RESULT_TYPE) return { success: false, error: 'Notification is not a contract result' };
+        // The recipient, their team or an admin — the same rule the page applies (src/lib/contractResultAccess.ts).
+        // Strict lookups: a D1 failure throws into the catch below (errorId), never reads as "stranger".
+        const { isOrgMateStrict } = await import('@/lib/orgMembership');
+        const { isAdminAsyncStrict } = await import('@/config/admins');
+        if (!(await canViewerAccessContractResult(actorEmail, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict }))) {
+            logger.info('attachContractToExistingAdopter: denied', { notificationId, matchAdopterId, actorEmail });
+            return { success: false, error: 'Not authorized for this notification' };
+        }
 
         const metadata = notification.metadata ? JSON.parse(notification.metadata) : {};
         const orphanAdopterId: string | undefined = metadata.adopterId;
