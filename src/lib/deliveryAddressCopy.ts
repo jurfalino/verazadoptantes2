@@ -22,7 +22,7 @@ import { historyKindFor } from '@/lib/profilePrivilege';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { deserializeContactEntries, parseBlobToContactEntries, mergeContactEntries, contactEntriesToBlob, contactCapExceeded, type ContactEntry } from '@/lib/contactEntries';
-import { recordHandoverFields, splitDeliveryAddress, joinDeliveryAddress } from '@/domain/recordEditAccess';
+import { recordHandoverFields, splitDeliveryAddress } from '@/domain/recordEditAccess';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -54,7 +54,8 @@ export async function copyDeliveryAddressToContacts(db: Db, input: DeliveryAddre
         const entry: ContactEntry = {
             id: crypto.randomUUID(),
             type: 'address',
-            value: joinDeliveryAddress(parts),
+            // The address as written, so it dedups against the same text already on the profile.
+            value: verified,
             ...(parts.streetAndNumber ? { streetAndNumber: parts.streetAndNumber } : {}),
             ...(parts.locality ? { locality: parts.locality } : {}),
             addedBy: changedBy,

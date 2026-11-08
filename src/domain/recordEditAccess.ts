@@ -65,7 +65,8 @@ export interface DeliveryAddressParts {
  * the street, so no character of an old record is dropped on the way back.
  */
 export function splitDeliveryAddress(text: string | null | undefined): DeliveryAddressParts {
-    const v = (text ?? '').trim();
+    // Old records came from a multi-line box: a line break separates parts like a comma.
+    const v = (text ?? '').replace(/\s*[\r\n]+\s*/g, ', ').trim();
     const lastComma = v.lastIndexOf(',');
     if (lastComma > 0) {
         const locality = v.slice(lastComma + 1).trim();

@@ -47,6 +47,9 @@ describe('recordHandoverFields — what a record asks about the handover (F3)', 
 });
 
 describe('splitDeliveryAddress / joinDeliveryAddress — the stored string ⇄ the two fields', () => {
+    it('an old address typed on several lines keeps its parts (single-line fields would glue them)', () => {
+        expect(splitDeliveryAddress('Calle 5\nPiso 2\nLanús')).toEqual({ streetAndNumber: 'Calle 5, Piso 2', locality: 'Lanús' });
+    });
     it('street and locality split on the LAST comma (the locality is what masking keeps)', () => {
         expect(splitDeliveryAddress('Av. Maipú 1200, Vicente López')).toEqual({ streetAndNumber: 'Av. Maipú 1200', locality: 'Vicente López' });
         expect(splitDeliveryAddress('Calle 5 1234, depto 3, Vicente López')).toEqual({ streetAndNumber: 'Calle 5 1234, depto 3', locality: 'Vicente López' });
@@ -77,8 +80,9 @@ describe('splitDeliveryAddress / joinDeliveryAddress — the stored string ⇄ t
             'Belgrano 55\nPB, Tigre',
         ]) {
             const back = joinDeliveryAddress(splitDeliveryAddress(old));
-            // Same words in the same order; only the spacing around the comma may be tidied.
-            expect(back.replace(/\s+/g, '').replace(/,/g, ',')).toBe(old.replace(/\s+/g, ''));
+            // Same words in the same order; only the spacing around the comma may be tidied,
+            // and a line break becomes a comma.
+            expect(back.replace(/\s+/g, '')).toBe(old.replace(/\s*[\r\n]+\s*/g, ',').replace(/\s+/g, ''));
         }
     });
 

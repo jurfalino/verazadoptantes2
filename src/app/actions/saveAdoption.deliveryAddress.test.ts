@@ -108,6 +108,13 @@ describe('saveAdoption — the delivery address reaches the profile\'s contacts'
         expect(addresses()).toHaveLength(1);
     });
 
+    it('an address written without a space after the comma is not added a second time', async () => {
+        sqlite.prepare(`UPDATE adopters SET contact_entries = ?, contact_info = ? WHERE id = 'ad1'`)
+            .run(JSON.stringify([{ id: 'e1', type: 'address', value: 'Belgrano 123,CABA' }]), 'Belgrano 123,CABA');
+        await saveAdoption({ id: 'an1', deliveredToHome: 1, verifiedAddress: 'Belgrano 123,CABA' } as never, { loaded: { deliveredToHome: 0, verifiedAddress: null } });
+        expect(addresses()).toHaveLength(1);
+    });
+
     it('edit: saving another field leaves the contacts alone (a removed address is not put back)', async () => {
         sqlite.prepare(`UPDATE placements SET delivered_to_home = 1, verified_address = ? WHERE id = 'an1-plc'`).run(MAIPU);
         await saveAdoption({ id: 'an1', rating: 4 } as never, { loaded: { rating: null } });
