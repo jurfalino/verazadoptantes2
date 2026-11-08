@@ -1210,6 +1210,10 @@ export const es = {
         delete_request_success: 'Solicitud de eliminación enviada. El equipo la revisará.',
         deletion_requested_title: 'Eliminación solicitada.',
         deletion_requested_body: 'El equipo de administración revisará la solicitud.',
+        /** H4: open «Reportar inexactitud» reports, on the profile (owner team + admins). A flag, never an alert; never «Inexacto». */
+        inaccuracy_reports_title: 'Reportaron información incorrecta ({n})',
+        inaccuracy_reports_fixed: 'Ya lo corregí',
+        inaccuracy_reports_fix_failed: 'No se pudo marcar como corregido. Volvé a intentar.',
         delete_success: 'Registro eliminado correctamente.',
         delete_error_check: 'No se pudo verificar el estado de eliminación.',
         delete_error_failed: 'No se pudo eliminar el registro.',

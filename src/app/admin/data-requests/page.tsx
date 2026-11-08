@@ -221,6 +221,7 @@ export default async function AdminDataRequestsPage() {
                                         <th className="p-4 font-semibold text-stone-500 text-sm">Profile</th>
                                         <th className="p-4 font-semibold text-stone-500 text-sm">Status</th>
                                         <th className="p-4 font-semibold text-stone-500 text-sm">Resolved</th>
+                                        <th className="p-4 font-semibold text-stone-500 text-sm">Resolved by</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stone-100">
@@ -249,6 +250,8 @@ export default async function AdminDataRequestsPage() {
                                             <td className="p-4 text-xs text-stone-500">
                                                 {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone, 'en') : '-'}
                                             </td>
+                                            {/* H4: an admin — or the owner team, via «Ya lo corregí» on the profile. */}
+                                            <td className="p-4 text-xs text-stone-500 break-all" data-testid="data-request-resolved-by">{r.resolvedBy || '-'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -277,6 +280,7 @@ export default async function AdminDataRequestsPage() {
                                     )}
                                     <div className="text-xs text-stone-500">
                                         {r.resolvedAt ? formatShortDate(new Date(r.resolvedAt), timeZone, 'en') : '-'}
+                                        {r.resolvedBy && <span className="break-all"> · by {r.resolvedBy}</span>}
                                     </div>
                                 </div>
                             ))}

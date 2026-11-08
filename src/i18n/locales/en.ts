@@ -1202,6 +1202,10 @@ export const en = {
         delete_request_success: 'Deletion request submitted. The team will review it.',
         deletion_requested_title: 'Removal requested.',
         deletion_requested_body: 'The admin team will review the request.',
+        /** H4: open «Reportar inexactitud» reports, on the profile (owner team + admins). A flag, never an alert. */
+        inaccuracy_reports_title: 'Incorrect information reported ({n})',
+        inaccuracy_reports_fixed: 'I fixed it',
+        inaccuracy_reports_fix_failed: 'Could not mark it as fixed. Please try again.',
         delete_success: 'Record deleted successfully.',
         delete_error_check: 'Could not verify deletion status.',
         delete_error_failed: 'Could not delete the record.',
