@@ -1206,6 +1206,10 @@ export const pt = {
         delete_request_success: 'Solicitação de exclusão enviada. A equipe irá revisá-la.',
         deletion_requested_title: 'Remoção solicitada.',
         deletion_requested_body: 'A equipe de administração vai revisar a solicitação.',
+        /** H4: open «Reportar inexactitud» reports, on the profile (owner team + admins). A flag, never an alert. */
+        inaccuracy_reports_title: 'Informaram dados incorretos ({n})',
+        inaccuracy_reports_fixed: 'Já corrigi',
+        inaccuracy_reports_fix_failed: 'Não foi possível marcar como corrigido. Tente de novo.',
         delete_success: 'Registro excluído com sucesso.',
         delete_error_check: 'Não foi possível verificar o status de exclusão.',
         delete_error_failed: 'Não foi possível excluir o registro.',

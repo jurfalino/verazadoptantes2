@@ -39,7 +39,12 @@ import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
 import { PendingDupBar } from '@/components/PendingDupBar';
+import { InaccuracyReportsBanner } from '@/components/InaccuracyReportsBanner';
+import type { PendingInaccuracyReport } from '@/lib/inaccuracyReports';
 import { AlertTriangle } from 'lucide-react';
+
+/** A stable default, so the banner's prop never changes identity between renders. */
+const EMPTY_INACCURACY_REPORTS: PendingInaccuracyReport[] = [];
 
 interface AdopterProfileV2Props {
     id: string;
@@ -83,6 +88,8 @@ interface AdopterProfileV2Props {
     piiContext?: AdopterPiiContext | null;
     /** Show the "removal requested" banner (already gated to owner + admin/mod by the page). */
     showDeletionRequested?: boolean;
+    /** H4: open «Reportar inexactitud» reports — only for the notice's audience (gated by the page); [] for everyone else. */
+    inaccuracyReports?: PendingInaccuracyReport[];
     /** ENABLE_PINNED_VISIT_INTENT — pin the visit-intent card to the bottom of the screen. */
     pinnedVisitIntent?: boolean;
     /** ENABLE_ORIGIN_LABELS: tag where the profile and each activity came from. */
@@ -101,7 +108,7 @@ interface AdopterProfileV2Props {
     renameUndoId?: string | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, inaccuracyReports = EMPTY_INACCURACY_REPORTS, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -456,6 +463,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         <ProfilePromptBanner tone="warning" icon={AlertTriangle} testId="deletion-requested" title={t('adopter.deletion_requested_title')}>
                             {t('adopter.deletion_requested_body')}
                         </ProfilePromptBanner>
+                    </div>
+                )}
+
+                {/* H4: «Reportaron información incorrecta (n)» + «Ya lo corregí», with the removal banner. */}
+                {!isNew && adopter && inaccuracyReports.length > 0 && !previewAsStranger && (
+                    <div className="mb-4">
+                        <InaccuracyReportsBanner adopterId={adopter.id} reports={inaccuracyReports} />
                     </div>
                 )}
 
