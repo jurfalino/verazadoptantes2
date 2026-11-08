@@ -13,7 +13,7 @@
  */
 
 import { piiAccessRequests, piiAccessGrants, adopters } from '@/db/schema';
-import { and, eq, desc, asc, isNull } from 'drizzle-orm';
+import { and, eq, asc, isNull } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { logger, withTrace } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
@@ -21,7 +21,6 @@ import { isAdminAsync } from '@/config/admins';
 import { isPiiGatingEnabled, resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import {
     isRealActorEmail,
-    piiCooldownUntil,
     maskAdopterContact,
     matchSearchEntries,
     matchSearchNameTokens,
@@ -38,7 +37,7 @@ import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactE
 import { createNotification, resolveDisplayName, resolveDisplayNames } from './notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
-import { loadApprovers, fileAccessRequestFor, sameApprover } from '@/lib/piiAccessRequest';
+import { loadApprovers, fileAccessRequestFor, sameApprover, loadViewerRequestState } from '@/lib/piiAccessRequest';
 
 type PiiRequest = typeof piiAccessRequests.$inferSelect;
 type PiiGrant = typeof piiAccessGrants.$inferSelect;
@@ -310,21 +309,7 @@ export async function getPiiAccessRequestState(adopterId: string): Promise<PiiAc
         const db = await getDb();
         if (!db) return empty;
 
-        const rows: PiiRequest[] = await db.select().from(piiAccessRequests)
-            .where(and(
-                eq(piiAccessRequests.adopterId, adopterId),
-                eq(piiAccessRequests.requesterEmail, viewer),
-            ))
-            .orderBy(desc(piiAccessRequests.createdAt));
-
-        const pending = rows.some(r => r.status === 'pending');
-        const lastDenied = rows.find(r => r.status === 'denied');
-        let cooldownUntil: number | null = null;
-        if (lastDenied?.resolvedAt) {
-            const until = piiCooldownUntil(lastDenied.resolvedAt).getTime();
-            if (until > Date.now()) cooldownUntil = until;
-        }
-        return { pending, cooldownUntil, lastResolutionNote: lastDenied?.resolutionNote ?? null };
+        return await loadViewerRequestState(db, adopterId, viewer);
     } catch (e) {
         logger.warn('getPiiAccessRequestState failed', {
             adopterId, error: e instanceof Error ? e.message : String(e),
@@ -376,17 +361,7 @@ async function getAdopterPiiContextImpl(adopterId: string): Promise<AdopterPiiCo
         // The viewer's own request state for this adopter.
         let requestState: PiiAccessRequestState = { pending: false, cooldownUntil: null, lastResolutionNote: null };
         if (isRealActorEmail(viewer) && !visibility.nothingMasked) {
-            const rows: PiiRequest[] = await db.select().from(piiAccessRequests)
-                .where(and(eq(piiAccessRequests.adopterId, adopterId), eq(piiAccessRequests.requesterEmail, viewer)))
-                .orderBy(desc(piiAccessRequests.createdAt));
-            const pending = rows.some(r => r.status === 'pending');
-            const lastDenied = rows.find(r => r.status === 'denied');
-            let cooldownUntil: number | null = null;
-            if (lastDenied?.resolvedAt) {
-                const until = piiCooldownUntil(lastDenied.resolvedAt).getTime();
-                if (until > Date.now()) cooldownUntil = until;
-            }
-            requestState = { pending, cooldownUntil, lastResolutionNote: lastDenied?.resolutionNote ?? null };
+            requestState = await loadViewerRequestState(db, adopterId, viewer);
         }
 
         // Privileged viewers: the pending requests they can act on + the live

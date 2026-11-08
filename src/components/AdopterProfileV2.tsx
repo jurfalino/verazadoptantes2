@@ -228,6 +228,16 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         && !effectivePiiContext.requestState.pending
         && !effectivePiiContext.requestState.cooldownUntil;
 
+    // H3: the viewer's own access history (turn-down note, «te quitaron el
+    // acceso») — hidden once they ask again (server pending or just submitted).
+    const piiAccessHistory = effectivePiiContext && !requestSubmitted && !effectivePiiContext.requestState.pending
+        ? {
+            denied: !!effectivePiiContext.requestState.denied,
+            note: effectivePiiContext.requestState.lastResolutionNote,
+            accessRevokedAt: effectivePiiContext.requestState.accessRevokedAt ?? null,
+        }
+        : null;
+
     // VisitIntentCard is the canonical (and only) entry point for recording
     // activity on a profile (v2.14.8). After the wizard closes, the card
     // re-renders its options for the next record.
@@ -973,7 +983,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         orgName={attribution?.orgName ?? null}
                         accessGrants={effectivePiiContext?.accessGrants ?? { allContact: [], orgMates: [], searchMatch: [] }}
                         requestPending={requestSubmitted || !!effectivePiiContext?.requestState.pending}
-                        requestCooldown={!!effectivePiiContext?.requestState.cooldownUntil}
+                        requestCooldownUntil={effectivePiiContext?.requestState.cooldownUntil ?? null}
+                        accessHistory={piiAccessHistory}
                         canRequest={piiOptInEligible}
                         onVerify={effectivePiiContext?.masked ? () => setVerifyPopoverOpen('open') : undefined}
                         onRequestAccess={
@@ -1008,6 +1019,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         onClose={() => setVerifyPopoverOpen(null)}
                         adopterId={id}
                         entryType={verifyPopoverOpen && verifyPopoverOpen !== 'open' ? verifyPopoverOpen : undefined}
+                        accessHistory={piiAccessHistory}
                         requestState={
                             (requestSubmitted || effectivePiiContext.requestState.pending)
                                 ? { kind: 'pending' }

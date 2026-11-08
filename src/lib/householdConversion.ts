@@ -56,6 +56,7 @@ import {
 import { MAX_HOUSEHOLD_MEMBERS, householdNameKey } from '@/domain/households';
 import { hasMinimumIdentifier } from '@/domain/adopterIdentity';
 import { realOwner } from '@/domain/dedupPair';
+import { CONVERSION_GRANT_ID_PREFIX } from '@/domain/piiAccessNotice';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type LedgerRow = typeof householdConversions.$inferSelect;
@@ -83,7 +84,7 @@ export const correctionKey = (correctionId: string) => `correction:${correctionI
 /** The household_corrections row a «No convive» correction became. */
 export const convertedCorrectionId = (correctionId: string) => `hc-link-${correctionId}`;
 /** Every grant the conversion wrote for a host's data starts with this. */
-export const conversionGrantPrefix = (hostId: string) => `hcg:${hostId}:`;
+export const conversionGrantPrefix = (hostId: string) => `${CONVERSION_GRANT_ID_PREFIX}${hostId}:`;
 
 export type ConversionSkipReason =
     /** No name and no contact — nothing a profile could be made of. Permanent. */
