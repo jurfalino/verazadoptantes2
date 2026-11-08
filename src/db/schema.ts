@@ -1018,6 +1018,11 @@ export const signedContracts = sqliteTable('signed_contracts', {
     fileKey: text('file_key'),                     // R2 key of the uploaded PDF/image
     via: text('via').notNull(),                    // 'token' | 'open'
     signedAt: integer('signed_at').notNull(),
+    // H1: the contract result lives with the signature, not only in the notice
+    // (/contract-results/[id] opens either id). JSON {name, phone, email, dni, address, socialNetworks}.
+    submittedJson: text('submitted_json'),
+    matchCount: integer('match_count'),
+    placementId: text('placement_id'),             // the placement the signing opened
 }, (t) => ({ animalIdx: index('idx_signed_contracts_animal').on(t.animalId) }));
 
 // ── Organizations ────────────────────────────────────────────────

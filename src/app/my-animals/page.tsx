@@ -1,6 +1,7 @@
 'use client';
 
-import { contractHref } from '@/lib/contractLink';
+import { contractHref, contractResultsHref } from '@/lib/contractLink';
+import SignedContractLinks from '@/components/SignedContractLinks';
 import { useLanguage } from '@/context/LanguageContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
@@ -40,6 +41,8 @@ interface Animal {
     details: string | null;
     comments: string | null;
     hasContract?: number | null;
+    /** H1: the signature's id — opens «Datos y posibles duplicados». */
+    signedContractId?: string | null;
     adopterId: string | null;
     adopterName: string | null;
     /** Distinguishes a foster placement ('foster') from a plain available
@@ -512,27 +515,10 @@ export default function MyAnimalsPage() {
                                         </div>
                                     )}
 
-                                    {/* Contract screenshot link */}
+                                    {/* Signed contract: the PDF + its data and possible duplicates (H1) */}
                                     {(animal.hasContract || animal.comments) && (() => {
-                                        try {
-                                            const href = contractHref(animal.id, animal.hasContract, animal.comments);
-                                            if (href) {
-                                                return (
-                                                    <a
-                                                        href={href}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center gap-2 mb-3 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
-                                                        onClick={e => e.stopPropagation()}
-                                                    >
-                                                        <span className="text-sm">📋</span>
-                                                        <span className="text-sm font-medium text-teal-700">{t('dashboard.view_signed_contract') || 'View Signed Contract'}</span>
-                                                        <svg className="w-3.5 h-3.5 ml-auto text-teal-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                    </a>
-                                                );
-                                            }
-                                        } catch { /* not JSON, ignore */ }
-                                        return null;
+                                        const href = contractHref(animal.id, animal.hasContract, animal.comments);
+                                        return href ? <SignedContractLinks className="mb-3" pdfHref={href} resultsHref={contractResultsHref(animal.signedContractId, { animal: animal.id })} /> : null;
                                     })()}
 
                                     {/* v2.55.15: cards are signals + ONE quick action. The

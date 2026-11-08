@@ -21,3 +21,16 @@ export function contractHref(animalId: string, hasContract: number | boolean | n
     const legacy = new RegExp(`^${R2_PUBLIC_URL.replace(/[.]/g, '\\.')}/contracts/${animalId.replace(/[^A-Za-z0-9_-]/g, '')}/signed-contract\\.(pdf|png|jpg)$`);
     return animalId && legacy.test(url) ? url : null;
 }
+
+/**
+ * H1: where «Datos y posibles duplicados» points — the contract result kept
+ * with the signature (/contract-results/<signedContractId>), naming where the
+ * rescuer came from for the back link (`adopter:<id>` | `animal:<id>`,
+ * formBackLink). NULL when the record has no signed_contracts row (an older
+ * contract): then only the PDF button shows.
+ */
+export function contractResultsHref(signedContractId: string | null | undefined, from: { adopter: string } | { animal: string }): string | null {
+    if (!signedContractId) return null;
+    const src = 'adopter' in from ? `adopter:${from.adopter}` : `animal:${from.animal}`;
+    return `/contract-results/${encodeURIComponent(signedContractId)}?from=${encodeURIComponent(src)}`;
+}

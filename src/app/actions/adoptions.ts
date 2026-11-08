@@ -380,8 +380,11 @@ export async function getAdoptions(adopterId: string) {
         // (/api/files/contract): nobody else gets a link that would just 404.
         const visible = (deduped as Array<{ hasContract?: number | null; addedBy?: string | null }>).map(r =>
             r.hasContract === 1 && !viewerIsAdmin && !sameRescueDirect(viewer, r.addedBy, membership) ? { ...r, hasContract: 0 } : r);
+        // H1: «Datos y posibles duplicados» — after the gate above, so only the PDF's audience gets the id.
+        const { attachSignedContractIds } = await import('@/lib/signedContractIds');
+        const withContracts = await attachSignedContractIds(db, visible as Array<{ id: string; hasContract?: number | null; addedBy?: string | null }>, { op: 'getAdoptions', adopterId });
         // Opaque labels for the browser: the grouping, never other rescuers' organizations.
-        const withForms = await attachActivityForms(db, withOpaqueRescueKeys(visible as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, viewerIsAdmin, membership);
+        const withForms = await attachActivityForms(db, withOpaqueRescueKeys(withContracts as Array<{ id: string; addedBy?: string | null; recordType?: string | null }>, keys), viewer, viewerIsAdmin, membership);
         // Which API tool saved each activity — only while the origin tags are on.
         const { getFeatureFlag } = await import('@/config/features');
         const withOrigin = await getFeatureFlag('ENABLE_ORIGIN_LABELS') ? await attachApiTools(db, withForms) : withForms;

@@ -232,9 +232,14 @@ export async function GET(request: NextRequest) {
             logger.warn('my-animals: lastUpdate name fallback', { userEmail, view, error: e instanceof Error ? e.message : String(e) });
         }
 
+        // H1: each signed contract's id, for «Datos y posibles duplicados» (batched; fails open to the PDF alone).
+        // Every row here is the viewer's team's (`teamMatch`) — the PDF's audience.
+        const { attachSignedContractIds } = await import('@/lib/signedContractIds');
+        const withContracts = await attachSignedContractIds(db, deduped as Array<{ id: string; hasContract?: number | null }>, { op: 'my-animals', userEmail, view });
+
         // «Todos» reads newest activity first — the homepage card's order
         // (byRecentActivity), so «Ver los N animales» lands on the same list.
-        const listed = view === 'todos' ? byRecentActivity(deduped as Array<{ id: string; addedBy?: string | null; date?: unknown }>, bulk) : deduped;
+        const listed = view === 'todos' ? byRecentActivity(withContracts as Array<{ id: string; addedBy?: string | null; date?: unknown }>, bulk) : withContracts;
 
         // The «Con controles pendientes» tab count, from the bulk this request
         // already read (one narrow extra select). Only for the tab lists.

@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, FileSignature, Search, User } from 'lucide
 import { redirect, notFound } from 'next/navigation';
 import type { OpenFlagKind } from '@/domain/flags';
 import { getDb } from '@/lib/db';
-import { notifications, adopters } from '@/db/schema';
+import { adopters } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
@@ -13,9 +13,7 @@ import Link from 'next/link';
 import { formBackLink } from '@/domain/formBackLink';
 import { logger } from '@/lib/logger';
 import { loadOpenPairs } from '@/lib/openPairs';
-import { isOrgMateStrict } from '@/lib/orgMembership';
-import { isAdminAsyncStrict } from '@/config/admins';
-import { canViewerAccessContractResult } from '@/lib/contractResultAccess';
+import { loadContractResult, contractBackNames, type ContractResultLookup } from '@/lib/contractResult';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
 import { countsFor } from '@/lib/profileSummary';
@@ -32,33 +30,17 @@ interface MatchedAdopter {
     score?: number;
 }
 
-interface NotificationMetadata {
-    notificationId?: string;
-    animalId: string;
-    animalName: string;
-    adopterId: string;
-    adopterName: string;
-    matchCount: number;
-    matchedAdopters?: MatchedAdopter[];
-    submittedData?: {
-        name: string;
-        phone: string;
-        email: string;
-        dni: string;
-        address: string;
-        socialNetworks: string;
-    };
-}
 
-
-export default async function ContractResultsPage({ params }: { params: Promise<{ notificationId: string }> }) {
-    const { notificationId } = await params;
+export default async function ContractResultsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+    // H1: either a notice id (old links and emails) or a signed-contract id
+    // (the record's «Datos y posibles duplicados»; works with the notice deleted).
+    const { id } = await params;
     let currentUser = '';
     try {
         currentUser = await getUser();
     } catch (e: any) {
         if (e?.digest?.startsWith('NEXT_REDIRECT')) throw e;
-        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/contract-results/${notificationId}`)}`);
+        redirect(`/?authRequired=1&callbackUrl=${encodeURIComponent(`/contract-results/${id}`)}`);
     }
 
     const db = await getDb();
@@ -66,40 +48,41 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         return <ErrorState message="error_db" />;
     }
 
-    // Find notification by ID
-    const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
-
-    // Missing → 404. The recipient, their team or an admin see the same screen
-    // (T1 — the team acts as one, as on form results); everyone else gets the
-    // 404 (PII: don't confirm it exists). `userId` is the recipient email.
-    if (!notification) notFound();
-    let allowed: boolean;
+    // A notice: the recipient, their team or an admin (T1 — the team acts as
+    // one, as on form results). A signed contract: the animal's rescue and
+    // admins, as the PDF. Everyone else, and a missing id, get the 404 (PII:
+    // don't confirm it exists).
+    let found: ContractResultLookup;
     try {
-        allowed = await canViewerAccessContractResult(currentUser, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict });
+        found = await loadContractResult(db, id, currentUser);
     } catch (e) {
         // Fails closed, but never silently: the lookup itself broke (D1), not a denial.
-        const errorId = logger.error('contract-results: access check failed', e, { notificationId, user: currentUser });
+        const errorId = logger.error('contract-results: access check failed', e, { id, user: currentUser });
         return <ErrorState message="error_load" errorId={errorId} />;
     }
-    if (!allowed) {
-        logger.info('contract-results: denied', { notificationId, userEmail: currentUser });
+    if (found.status !== 'found') {
+        if (found.status === 'denied') logger.info('contract-results: denied', { id, userEmail: currentUser });
         notFound();
     }
+    const view = found.view;
+    const notificationId = view.notificationId;
 
-    // Mark as read
-    await markNotificationRead(notificationId, currentUser);
+    // Mark the notice read (only when opened from it)
+    if (notificationId) await markNotificationRead(notificationId, currentUser);
 
-    const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
+    const fromParam = (await searchParams)?.from;
+    const from = typeof fromParam === 'string' ? fromParam : null;
+    const back = formBackLink(from, await contractBackNames(db, view, from, { id, user: currentUser }));
 
     // A contract match is an ordinary duplicate pair (spec 2026-11-05): the cards
     // are the new profile's OPEN PAIRS, so an answer given anywhere clears them.
     let matchList: Array<MatchedAdopter & { candidateId: string; canAnswer: boolean }> = [];
-    if (metadata.adopterId) {
+    if (view.adopterId) {
         try {
-            const pairs = await loadOpenPairs(db, metadata.adopterId, currentUser, { limit: 20 });
+            const pairs = await loadOpenPairs(db, view.adopterId, currentUser, { limit: 20 });
             matchList = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList }));
         } catch (e) {
-            const errorId = logger.error('contract-results: open pairs unreadable', e, { notificationId, user: currentUser, adopterId: metadata.adopterId });
+            const errorId = logger.error('contract-results: open pairs unreadable', e, { id, user: currentUser, adopterId: view.adopterId });
             return <ErrorState message="error_load" errorId={errorId} />;
         }
     }
@@ -130,12 +113,12 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         // Another rescuer's protected profile must not reach the card raw: the
         // same masking discovery search applies, unlocking only what this
         // contract's adopter typed. Built field by field — never spread a row.
-        const sd = metadata.submittedData;
+        const sd = view.submittedData;
         const masked = await maskMatchCardsForViewer(
             currentUser,
             rows,
             [sd?.phone, sd?.email, sd?.dni, ...(sd?.socialNetworks ?? '').split(/[\s,;]+/)],
-            { notificationId },
+            { notificationId: id },
         );
         matchedProfiles = rows.map(r => ({
             id: r.id,
@@ -151,33 +134,33 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             const homes = await householdLinesFor(db, currentUser, matchedProfiles.map(p => p.id), { listCards: HOUSEHOLD_LINE_CARDS });
             matchedProfiles = matchedProfiles.map(p => (homes[p.id] ? { ...p, households: homes[p.id] } : p));
             // Each card's own rating and alerts (audit B6); countsFor never throws (it logs and shows «Sin calificación»).
-            const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { notificationId, user: currentUser }, { activity: false })));
+            const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { notificationId: id, user: currentUser }, { activity: false })));
             matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openFlags: standing[i].openFlags } : p));
         }
     }
 
     const hasMatches = matchList.length > 0;
     // Matched at signing, but every match has been answered since: never say "no records".
-    const answeredAll = !hasMatches && (metadata.matchCount ?? 0) > 0;
+    const answeredAll = !hasMatches && view.matchCount > 0;
     const signer = {
-        name: metadata.submittedData?.name ?? metadata.adopterName ?? '',
+        name: view.submittedData?.name ?? view.adopterName ?? '',
         entries: [
-            { type: 'phone', value: metadata.submittedData?.phone ?? '' },
-            { type: 'email', value: metadata.submittedData?.email ?? '' },
-            { type: 'id', value: metadata.submittedData?.dni ?? '' },
-            { type: 'address', value: metadata.submittedData?.address ?? '' },
-            { type: 'social', value: metadata.submittedData?.socialNetworks ?? '' },
+            { type: 'phone', value: view.submittedData?.phone ?? '' },
+            { type: 'email', value: view.submittedData?.email ?? '' },
+            { type: 'id', value: view.submittedData?.dni ?? '' },
+            { type: 'address', value: view.submittedData?.address ?? '' },
+            { type: 'social', value: view.submittedData?.socialNetworks ?? '' },
         ].filter(e => e.value.trim()),
     };
-    const submitted = metadata.submittedData;
+    const submitted = view.submittedData;
 
     return (
         <main className="container mx-auto px-4 py-8 max-w-2xl">
             {/* Header */}
             <div className="mb-6">
-                {/* D3: names where it goes, as the form screen does when opened from a notice. */}
-                <Link href={formBackLink(null, {}).href} data-testid="contract-back-link" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
-                    ← <Tr k={formBackLink(null, {}).label.key} />
+                {/* D3 / H1: names where it goes (`?from=`), as the form screen does. */}
+                <Link href={back.href} data-testid="contract-back-link" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
+                    ← <Tr k={back.label.key} vars={back.label.name ? { name: back.label.name } : undefined} />
                 </Link>
                 <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-800 mt-2">
                     {hasMatches
@@ -186,9 +169,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                     <Tr k="contractResults.title" />
                 </h1>
                 <p className="text-sm text-stone-500 mt-1">
-                    {metadata.adopterName?.trim()
-                        ? <Tr k="contractResults.adopted_by" vars={{ animal: metadata.animalName ?? '', name: adopterDisplayName({ name: metadata.adopterName }, '') }} />
-                        : <Tr k="contractResults.adopted_by_unnamed" vars={{ animal: metadata.animalName ?? '' }} />}
+                    {view.adopterName?.trim()
+                        ? <Tr k="contractResults.adopted_by" vars={{ animal: view.animalName ?? '', name: adopterDisplayName({ name: view.adopterName }, '') }} />
+                        : <Tr k="contractResults.adopted_by_unnamed" vars={{ animal: view.animalName ?? '' }} />}
                 </p>
             </div>
 
@@ -239,7 +222,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                             <ContractResultsMatchCard
                                 key={match.id}
                                 matchId={match.id}
-                                notificationId={notificationId}
+                                resultId={id}
                                 profile={profile}
                                 matchTypes={match.matchTypes}
                                 score={match.score}
@@ -255,23 +238,23 @@ export default async function ContractResultsPage({ params }: { params: Promise<
 
             {/* "None of these match?" — explicit affordance for the keep-new outcome.
                 Only shown when there ARE matches (without matches there's nothing to dismiss). */}
-            {hasMatches && metadata.adopterId && (
+            {hasMatches && view.adopterId && (
                 <div className="mt-6">
                     <h2 className="text-sm font-semibold text-stone-700 mb-2"><Tr k="contractResults.none_match_heading" /></h2>
                     <p className="text-xs text-stone-500 mb-3 leading-relaxed">
                         <Tr k="contractResults.none_match_desc" />
                     </p>
-                    <ContractResultsKeepNewButton orphanAdopterId={metadata.adopterId} />
+                    <ContractResultsKeepNewButton orphanAdopterId={view.adopterId} />
                 </div>
             )}
 
             {/* Soft-investigation exit — the user wants to look at the new profile without
                 committing to a triage decision. Wording is explicit about the "without deciding"
                 intent so it doesn't compete with the keep-new CTA above. */}
-            {metadata.adopterId && (
+            {view.adopterId && (
                 <div className="mt-6 pt-4 border-t border-stone-200">
                     <Link
-                        href={`/adopter/${metadata.adopterId}`}
+                        href={`/adopter/${view.adopterId}`}
                         className="inline-flex items-center gap-2 text-xs text-stone-500 hover:text-stone-700 transition-colors"
                     >
                         <User className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />

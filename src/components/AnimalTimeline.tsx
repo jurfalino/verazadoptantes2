@@ -11,7 +11,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { contractHref } from '@/lib/contractLink';
+import { contractHref, contractResultsHref } from '@/lib/contractLink';
+import SignedContractLinks from '@/components/SignedContractLinks';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -355,13 +356,7 @@ export default function AnimalTimeline({ animalId, items, animalSex, userNameMap
                                     </div>
                                 )}
                                 {shot && (
-                                    <a
-                                        href={shot} target="_blank" rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 bg-teal-50 rounded-lg text-xs font-medium text-teal-700 hover:bg-teal-100 transition-colors"
-                                    >
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7 3h10l4 4v14H3V7l4-4z" /></svg>
-                                        {t('dashboard.view_signed_contract') || 'Ver contrato firmado'}
-                                    </a>
+                                    <SignedContractLinks className="mt-2" pdfHref={shot} resultsHref={contractResultsHref(item.signedContractId, { animal: animalId })} />
                                 )}
                                 {item.images.length > 0 && (
                                     <div className="flex gap-1.5 mt-2">
