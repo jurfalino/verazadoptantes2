@@ -130,7 +130,7 @@ export function canLinkSubmissionDirectly(input: {
 /** One form as /my-adopters sees it. `submittedAt` is epoch seconds. */
 export interface AdopterFormRow {
     id: string;
-    /** The rescuer who shared the form — the only one who can act on it. */
+    /** The rescuer who shared the form (`form_submissions.user_id`). */
     userId: string;
     linkedAdopterId: string | null;
     autoAdopterId: string | null;
@@ -140,27 +140,36 @@ export interface AdopterFormRow {
 
 export interface AdopterFormSummary {
     count: number;
-    latest: { submissionId: string; submittedAt: number; animalId: string | null; ownedByViewer: boolean } | null;
+    /** `canOpen`: /form-results would let the viewer in (src/lib/formSubmissionAccess.ts) — the line is a link. */
+    latest: { submissionId: string; submittedAt: number; animalId: string | null; canOpen: boolean } | null;
+}
+
+/** A person's newest form, or null when they have none. */
+export function newestAdopterForm(forms: readonly AdopterFormRow[]): AdopterFormRow | null {
+    if (forms.length === 0) return null;
+    return forms.reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
 }
 
 /**
  * A person's forms, summarised for their /my-adopters row. A form match is an
  * ordinary duplicate pair (spec 2026-11-05): the row's «Posible duplicado» bar
  * comes from the pair, so forms carry no review state of their own.
+ * `openable`: the submission ids the viewer may open (openableSubmissionIds) —
+ * a teammate's form included, the team acts as one (T2).
  */
 export function summarizeAdopterForms(
     forms: readonly AdopterFormRow[],
-    viewerEmail: string,
+    openable: ReadonlySet<string>,
 ): AdopterFormSummary {
-    if (forms.length === 0) return { count: 0, latest: null };
-    const newest = forms.reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
+    const newest = newestAdopterForm(forms);
+    if (!newest) return { count: 0, latest: null };
     return {
         count: forms.length,
         latest: {
             submissionId: newest.id,
             submittedAt: newest.submittedAt,
             animalId: newest.selectedAnimalId,
-            ownedByViewer: newest.userId === viewerEmail,
+            canOpen: openable.has(newest.id),
         },
     };
 }

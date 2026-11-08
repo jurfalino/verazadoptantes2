@@ -21,7 +21,7 @@ import { RECORD_TYPES } from '@/domain/constants';
 import { applicantScopeWhere } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
 import type { ApplicantSummary, ApplicantAdopterContext } from './applicants';
-import type { FormSubmissionRef } from '@/lib/formSubmissionAccess';
+import type { FormSubmissionRef, FormSubmissionAccessDeps } from '@/lib/formSubmissionAccess';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the D1/better-sqlite db union is untyped here, as in the callers */
 type Db = any;
@@ -57,7 +57,7 @@ export async function canAccessFormSubmission(
     viewerEmail: string | null | undefined,
 ): Promise<boolean> {
     if (!viewerEmail) return false;
-    const { formSubmissions, animals } = await import('@/db/schema');
+    const { formSubmissions } = await import('@/db/schema');
     const { eq } = await import('drizzle-orm');
     let ref: FormSubmissionRef | undefined;
     if (typeof submission === 'string') {
@@ -74,8 +74,7 @@ export async function canAccessFormSubmission(
     // STRICT variants: a D1 failure throws instead of reading as "not a
     // teammate / not an admin", so callers show an error with its errorId
     // (and log it) rather than a 404 to someone who is allowed in.
-    const { isOrgMateStrict, getTeamEmails } = await import('@/lib/orgMembership');
-    const { isAdminAsyncStrict } = await import('@/config/admins');
+    const { isOrgMateStrict } = await import('@/lib/orgMembership');
     const { canViewerAccessFormSubmission } = await import('@/lib/formSubmissionAccess');
     const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
     return canViewerAccessFormSubmission(viewerEmail, ref, {
@@ -84,6 +83,22 @@ export async function canAccessFormSubmission(
             if (!v || !o) return false;
             return v === o || isOrgMateStrict(v, o);
         },
+        ...(await formSubmissionAccessLookups(db)),
+    });
+}
+
+/**
+ * The DB lookups behind the form-access rule other than the team check —
+ * STRICT (a D1 failure throws). Shared by canAccessFormSubmission and
+ * /my-adopters (openableSubmissionIds), so the form line is a link exactly
+ * when /form-results would open it.
+ */
+export async function formSubmissionAccessLookups(db: Db): Promise<Omit<FormSubmissionAccessDeps, 'isOwnerOrOrgMate'>> {
+    const { animals } = await import('@/db/schema');
+    const { eq } = await import('drizzle-orm');
+    const { getTeamEmails } = await import('@/lib/orgMembership');
+    const { isAdminAsyncStrict } = await import('@/config/admins');
+    return {
         isAdmin: isAdminAsyncStrict,
         getTeamEmails,
         // Same table and deleted-check as the animal page (getAnimalProfile).
@@ -94,7 +109,7 @@ export async function canAccessFormSubmission(
                 .get() as { addedBy: string | null; deletedAt: unknown } | undefined;
             return animal && !animal.deletedAt ? animal.addedBy : null;
         },
-    });
+    };
 }
 
 /**

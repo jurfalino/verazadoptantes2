@@ -69,7 +69,7 @@ interface Adopter {
     /** Open «same person?» questions (pending, not low, not housemates), newest first — the card's bar. */
     pendingDuplicates?: PendingDupBarPair[];
     /** Newest form linked to this person (submittedAt: epoch seconds). */
-    latestForm?: { submissionId: string; submittedAt: number; animalName: string | null; ownedByViewer: boolean } | null;
+    latestForm?: { submissionId: string; submittedAt: number; animalName: string | null; canOpen: boolean } | null;
     /** Someone in their home (getMyAdopters → housemateAlertsFor): the two chip answers only, never names. Null when none. */
     housemateAlert?: HousemateAlertSummary | null;
     /** Has a record that came from a social post (domain/homeModules isPostRecord). */
@@ -85,9 +85,9 @@ type Filter = 'all' | keyof typeof FILTERS;
 
 /**
  * The person's newest form as a provenance event: "Formulario para Luna ·
- * hace 2 d". Opens the form's results — only for the viewer's own forms,
- * since form-results refuses everyone else (a teammate would land on "no
- * permission"). A ROW_CONTROL: it sits above the row's stretched name link.
+ * hace 2 d". Opens the form's results for anyone /form-results lets in —
+ * the viewer's team included (`canOpen`, decided on the server by the same
+ * rule; T2). A ROW_CONTROL: it sits above the row's stretched name link.
  */
 function FormLine({ form, onOpen, t }: {
     form: NonNullable<Adopter['latestForm']>;
@@ -105,7 +105,7 @@ function FormLine({ form, onOpen, t }: {
             {when && <span className="text-stone-400 flex-shrink-0 ml-auto">{when}</span>}
         </>
     );
-    if (!form.ownedByViewer) {
+    if (!form.canOpen) {
         return <div className="flex items-baseline gap-1.5 min-w-0 text-teal-700 font-medium">{content}</div>;
     }
     return (

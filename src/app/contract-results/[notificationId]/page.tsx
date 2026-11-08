@@ -13,8 +13,9 @@ import Link from 'next/link';
 import { formBackLink } from '@/domain/formBackLink';
 import { logger } from '@/lib/logger';
 import { loadOpenPairs } from '@/lib/openPairs';
-import { isOrgMate } from '@/lib/orgMembership';
-import { isAdminAsync } from '@/config/admins';
+import { isOrgMateStrict } from '@/lib/orgMembership';
+import { isAdminAsyncStrict } from '@/config/admins';
+import { canViewerAccessContractResult } from '@/lib/contractResultAccess';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
 import { countsFor } from '@/lib/profileSummary';
@@ -68,14 +69,21 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     // Find notification by ID
     const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
 
-    // Missing → 404. Not the recipient → teammates/admins keep the "no permission"
-    // screen; strangers get the 404 (PII: don't confirm it exists). `userId` is the recipient email.
+    // Missing → 404. The recipient, their team or an admin see the same screen
+    // (T1 — the team acts as one, as on form results); everyone else gets the
+    // 404 (PII: don't confirm it exists). `userId` is the recipient email.
     if (!notification) notFound();
-    if (notification.userId !== currentUser) {
-        const teammateOrAdmin = (await isOrgMate(currentUser, notification.userId)) || (await isAdminAsync(currentUser));
-        logger.info('contract-results: denied', { notificationId, userEmail: currentUser, teammateOrAdmin });
-        if (!teammateOrAdmin) notFound();
-        return <ErrorState message="error_no_permission" />;
+    let allowed: boolean;
+    try {
+        allowed = await canViewerAccessContractResult(currentUser, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict });
+    } catch (e) {
+        // Fails closed, but never silently: the lookup itself broke (D1), not a denial.
+        const errorId = logger.error('contract-results: access check failed', e, { notificationId, user: currentUser });
+        return <ErrorState message="error_load" errorId={errorId} />;
+    }
+    if (!allowed) {
+        logger.info('contract-results: denied', { notificationId, userEmail: currentUser });
+        notFound();
     }
 
     // Mark as read

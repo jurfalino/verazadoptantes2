@@ -1591,12 +1591,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             const entriesForSection = stored.length > 0
                                 ? stored
                                 : parseBlobToContactEntries(initialData.contactInfo);
-                            const isOwner = initialData.addedBy === currentUser;
                             return (
                                 <ContactEntriesSection
                                     entries={entriesForSection}
                                     adopterId={id}
-                                    canEditAll={isOwner || isAdmin}
+                                    // T3: the server's rule (updateContactEntry / removeContactEntry): owner,
+                                    // their team, admins and moderators — the same gate that hides
+                                    // «Reportar inexactitud», so whoever can't fix it can report it.
+                                    canEditAll={canEditAllHousehold}
                                     currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
                                     adopterIsPublic={!!initialData.isPublic}

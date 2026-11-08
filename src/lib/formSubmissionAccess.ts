@@ -57,3 +57,41 @@ export async function canViewerAccessFormSubmission(
     const scope = normalizeTeamScope(await deps.getTeamEmails(animalOwner));
     return isInTeamScope(submission.userId, scope);
 }
+
+/**
+ * /my-adopters (T2): which of these forms may the viewer open? The same rule
+ * as above, with the viewer's team already in hand (`teamEmails`, the viewer's
+ * org-mates; the viewer is added), so the common case — a form the viewer or
+ * a teammate shared — costs no lookup. Only forms shared by someone outside
+ * the team reach the admin and animal-owner branches; the admin check runs at
+ * most once. A lookup that fails reports through `onError` and leaves that
+ * form closed (the row still opens the profile).
+ */
+export async function openableSubmissionIds(
+    viewerEmail: string,
+    forms: ReadonlyArray<FormSubmissionRef & { id: string }>,
+    teamEmails: readonly string[],
+    deps: Omit<FormSubmissionAccessDeps, 'isOwnerOrOrgMate'>,
+    onError: (submissionId: string, error: unknown) => void,
+): Promise<Set<string>> {
+    const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
+    const team = new Set(teamEmails.map(norm));
+    team.add(norm(viewerEmail));
+    let admin: Promise<boolean> | null = null;
+    const full: FormSubmissionAccessDeps = {
+        // Always asked about this viewer: the owner is in their team, or is them.
+        isOwnerOrOrgMate: async (_viewer, owner) => team.has(norm(owner)),
+        isAdmin: (viewer) => (admin ??= deps.isAdmin(viewer)),
+        getAnimalOwner: deps.getAnimalOwner,
+        getTeamEmails: deps.getTeamEmails,
+    };
+    const ids = await Promise.all(forms.map(async (f) => {
+        try {
+            return (await canViewerAccessFormSubmission(viewerEmail, f, full)) ? f.id : null;
+        } catch (e) {
+            onError(f.id, e);
+            return null;
+        }
+    }));
+    return new Set(ids.filter((id): id is string => id !== null));
+}

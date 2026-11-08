@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formLinkKind, formResultsView, planFormLink, summarizeAdopterForms, canLinkSubmissionDirectly } from './formLink';
+import { formLinkKind, formResultsView, planFormLink, summarizeAdopterForms, newestAdopterForm, canLinkSubmissionDirectly } from './formLink';
 
 const AUTO = 'auto-1';
 const EXISTING = 'existing-1';
@@ -121,7 +121,7 @@ describe('summarizeAdopterForms', () => {
     });
 
     it('is empty for a person with no forms', () => {
-        expect(summarizeAdopterForms([], ME)).toEqual({ count: 0, latest: null });
+        expect(summarizeAdopterForms([], new Set())).toEqual({ count: 0, latest: null });
     });
 
     it('counts every form and surfaces the newest one', () => {
@@ -129,13 +129,24 @@ describe('summarizeAdopterForms', () => {
             form({ id: 'old', submittedAt: 100 }),
             form({ id: 'new', submittedAt: 300, selectedAnimalId: 'luna' }),
             form({ id: 'mid', submittedAt: 200 }),
-        ], ME);
+        ], new Set(['new']));
         expect(s.count).toBe(3);
-        expect(s.latest).toEqual({ submissionId: 'new', submittedAt: 300, animalId: 'luna', ownedByViewer: true });
+        expect(s.latest).toEqual({ submissionId: 'new', submittedAt: 300, animalId: 'luna', canOpen: true });
+    });
+
+    it('the newest form opens when the viewer may open it — a teammate\'s form too (T2)', () => {
+        const forms = [form({ id: 'mate-form', userId: TEAMMATE })];
+        expect(summarizeAdopterForms(forms, new Set(['mate-form'])).latest?.canOpen).toBe(true);
+        expect(summarizeAdopterForms(forms, new Set()).latest?.canOpen).toBe(false);
+    });
+
+    it('newestAdopterForm picks the latest submission', () => {
+        expect(newestAdopterForm([form({ id: 'a', submittedAt: 1 }), form({ id: 'b', submittedAt: 5 })])?.id).toBe('b');
+        expect(newestAdopterForm([])).toBeNull();
     });
 
     it('carries no review state of its own: a form match is an ordinary pair (spec 2026-11-05)', () => {
-        const s = summarizeAdopterForms([form({})], ME);
+        const s = summarizeAdopterForms([form({})], new Set());
         expect('needsReview' in s).toBe(false);
     });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { canViewerAccessFormSubmission, type FormSubmissionAccessDeps } from './formSubmissionAccess';
+import { canViewerAccessFormSubmission, openableSubmissionIds, type FormSubmissionAccessDeps } from './formSubmissionAccess';
 
 /**
  * Who may open a form submission (/form-results, «Crear adoptante» prefill,
@@ -89,5 +89,53 @@ describe('canViewerAccessFormSubmission', () => {
     it('a blank viewer is forbidden', async () => {
         expect(await canViewerAccessFormSubmission('', sub('t@example.com'), deps())).toBe(false);
         expect(await canViewerAccessFormSubmission(null, sub('t@example.com'), deps())).toBe(false);
+    });
+});
+
+/**
+ * T2: /my-adopters makes the «Formulario para…» line a link exactly when
+ * /form-results would open it — the same rule, with the viewer's team in hand.
+ * Viewer V: team = { V, O } (org1). T is in O's other org, X is an outsider.
+ */
+describe('openableSubmissionIds', () => {
+    const TEAM = ['v@example.com', 'O@example.com'];
+    const form = (id: string, userId: string, selectedAnimalId: string | null = null) => ({ id, userId, selectedAnimalId });
+
+    it('the viewer\'s own and a teammate\'s forms open — no lookup needed', async () => {
+        const d = deps();
+        const ids = await openableSubmissionIds('v@example.com', [form('mine', 'V@example.com'), form('mate', 'o@example.com')], TEAM, d, vi.fn());
+        expect([...ids].sort()).toEqual(['mate', 'mine']);
+        expect(d.isAdmin).not.toHaveBeenCalled();
+        expect(d.getAnimalOwner).not.toHaveBeenCalled();
+    });
+
+    it('an outsider\'s form linked to a team profile stays closed (form-results would 404 it)', async () => {
+        const ids = await openableSubmissionIds('v@example.com', [form('x', 'x@example.com'), form('x-animal', 'x@example.com', 'animal-o')], TEAM, deps(), vi.fn());
+        expect(ids.size).toBe(0);
+    });
+
+    it('a form for a teammate\'s animal, shared by someone in that teammate\'s other group, opens (branch 3)', async () => {
+        const ids = await openableSubmissionIds('v@example.com', [form('t', 't@example.com', 'animal-o')], TEAM, deps(), vi.fn());
+        expect([...ids]).toEqual(['t']);
+    });
+
+    it('a viewer in no group sees only their own forms as links', async () => {
+        const ids = await openableSubmissionIds('x@example.com', [form('own', 'x@example.com'), form('o', 'o@example.com')], ['x@example.com'], deps(), vi.fn());
+        expect([...ids]).toEqual(['own']);
+    });
+
+    it('an admin opens any form; the admin check runs once', async () => {
+        const d = deps();
+        const ids = await openableSubmissionIds('admin@example.com', [form('a', 'x@example.com'), form('b', 't@example.com')], ['admin@example.com'], d, vi.fn());
+        expect([...ids].sort()).toEqual(['a', 'b']);
+        expect(d.isAdmin).toHaveBeenCalledTimes(1);
+    });
+
+    it('a broken lookup leaves that form closed and reports it, the rest still resolve', async () => {
+        const onError = vi.fn();
+        const d = deps({ getAnimalOwner: vi.fn(async () => { throw new Error('D1 down'); }) });
+        const ids = await openableSubmissionIds('v@example.com', [form('mine', 'v@example.com'), form('t', 't@example.com', 'animal-o')], TEAM, d, onError);
+        expect([...ids]).toEqual(['mine']);
+        expect(onError).toHaveBeenCalledWith('t', expect.any(Error));
     });
 });

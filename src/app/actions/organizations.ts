@@ -5,6 +5,7 @@ import { eq, and, sql, ne } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
+import { appBaseUrl } from '@/lib/emailConfig';
 
 /**
  * Case-insensitive name-collision check. Returns true when *another* org
@@ -268,6 +269,68 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
     }
 }
 
+/** Why «Quitar del grupo» was refused; the page shows each in words (organizations.error_*). */
+export type RemoveMemberError = 'not_authenticated' | 'not_member' | 'member_not_found' | 'cannot_remove_self' | 'failed';
+
+/**
+ * «Quitar del grupo» (G1, Jon 2026-11-08): ANY member removes another member —
+ * the group's creator included; the admin page keeps its own removal.
+ *
+ * Auth: a signed-in member of `orgId`; the target row must belong to that same
+ * group (`id` AND `org_id`), so a member of one group can never remove someone
+ * from another. Yourself → «Salir» (leaveOrganization), which also deletes a
+ * group left empty.
+ *
+ * What happens to the removed person's records: nothing moves. Records belong
+ * to whoever added them (`addedBy`), and the team is computed live from
+ * org_members — exactly as when someone leaves with «Salir». So from now on
+ * they no longer see the group's records as their team's, and the group no
+ * longer sees theirs as the team's (protected contact data is masked again
+ * both ways). Audited (`org_member_removed`).
+ */
+export async function removeOrganizationMember(orgId: string, memberId: string): Promise<{ success: boolean; error?: RemoveMemberError; errorId?: string }> {
+    let user = '';
+    try {
+        user = await getUser();
+    } catch {
+        return { success: false, error: 'not_authenticated' };
+    }
+    try {
+        const db = await getDb();
+        if (!db) {
+            const errorId = logger.error('removeOrganizationMember: database unavailable', new Error('no db'), { user, orgId, memberId });
+            return { success: false, error: 'failed', errorId };
+        }
+
+        if (!(await isMemberOf(db, orgId, user))) {
+            logger.warn('removeOrganizationMember: refused, not a member', { user, orgId, memberId });
+            return { success: false, error: 'not_member' };
+        }
+
+        const target = await db.select({ id: orgMembers.id, userEmail: orgMembers.userEmail })
+            .from(orgMembers)
+            .where(and(eq(orgMembers.id, memberId), eq(orgMembers.orgId, orgId)))
+            .get() as { id: string; userEmail: string } | undefined;
+        if (!target) return { success: false, error: 'member_not_found' };
+        if (target.userEmail.trim().toLowerCase() === user.trim().toLowerCase()) return { success: false, error: 'cannot_remove_self' };
+
+        await db.delete(orgMembers).where(and(eq(orgMembers.id, memberId), eq(orgMembers.orgId, orgId)));
+
+        logger.info('removeOrganizationMember: removed', { user, orgId, memberId });
+        const { logAudit } = await import('@/lib/audit');
+        await logAudit({
+            userEmail: user,
+            action: 'org_member_removed',
+            target: orgId,
+            details: { orgId, memberId, removedEmail: target.userEmail },
+        });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('removeOrganizationMember failed', error, { user, orgId, memberId });
+        return { success: false, error: 'failed', errorId };
+    }
+}
+
 // ── Invite ───────────────────────────────────────────────────────
 
 export async function getInviteLink(orgId: string): Promise<{ success: boolean; url?: string; error?: string; errorId?: string }> {
@@ -284,15 +347,15 @@ export async function getInviteLink(orgId: string): Promise<{ success: boolean; 
 
         if (!membership) return { success: false, error: 'Not a member' };
 
-        // Reuse existing non-expired invite if available
+        // Reuse the group's link: there is one, and it never expires on its own
+        // (G1) — «Generar un enlace nuevo» (regenerateInviteLink) replaces it.
         const existing = await db.select()
             .from(orgInvites)
             .where(eq(orgInvites.orgId, orgId))
             .get();
 
         if (existing) {
-            const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || 'https://buenadoptante.com';
-            return { success: true, url: `${baseUrl}/invite/${existing.id}` };
+            return { success: true, url: inviteUrl(existing.id) };
         }
 
         // Create new invite
@@ -303,12 +366,71 @@ export async function getInviteLink(orgId: string): Promise<{ success: boolean; 
             createdBy: user,
         });
 
-        const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || 'https://buenadoptante.com';
-        return { success: true, url: `${baseUrl}/invite/${inviteId}` };
+        return { success: true, url: inviteUrl(inviteId) };
     } catch (error) {
         const errorId = logger.error('getInviteLink failed', error, { user, orgId });
         return { success: false, error: 'Failed to generate invite link', errorId };
     }
+}
+
+/**
+ * «Generar un enlace nuevo» (G1): the group's invite link is replaced and the
+ * old one stops working at once — joinOrganization and getInvitePreview treat
+ * an unknown token as invalid. No automatic expiry (Jon 2026-11-08).
+ *
+ * Auth: a signed-in member of `orgId`. The new link is written before the old
+ * ones are deleted, so the group is never left without a link; every older
+ * row of the group goes (not just one).
+ */
+export async function regenerateInviteLink(orgId: string): Promise<{ success: boolean; url?: string; error?: 'not_authenticated' | 'not_member' | 'failed'; errorId?: string }> {
+    let user = '';
+    try {
+        user = await getUser();
+    } catch {
+        return { success: false, error: 'not_authenticated' };
+    }
+    try {
+        const db = await getDb();
+        if (!db) {
+            const errorId = logger.error('regenerateInviteLink: database unavailable', new Error('no db'), { user, orgId });
+            return { success: false, error: 'failed', errorId };
+        }
+
+        if (!(await isMemberOf(db, orgId, user))) {
+            logger.warn('regenerateInviteLink: refused, not a member', { user, orgId });
+            return { success: false, error: 'not_member' };
+        }
+
+        const inviteId = crypto.randomUUID();
+        await db.insert(orgInvites).values({ id: inviteId, orgId, createdBy: user });
+        await db.delete(orgInvites).where(and(eq(orgInvites.orgId, orgId), ne(orgInvites.id, inviteId)));
+
+        logger.info('regenerateInviteLink: old invite links revoked', { user, orgId });
+        return { success: true, url: inviteUrl(inviteId) };
+    } catch (error) {
+        const errorId = logger.error('regenerateInviteLink failed', error, { user, orgId });
+        return { success: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * The public invite URL: this deploy's own origin when configured, else the
+ * real domain for the environment (src/lib/emailConfig.ts). The old fallback
+ * was buenadoptante.com, which is not the app's domain.
+ */
+function inviteUrl(inviteId: string): string {
+    const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || appBaseUrl();
+    return `${baseUrl}/invite/${inviteId}`;
+}
+
+/** Is `user` a member of `orgId`? (Same lookup as the other actions here.) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the D1/better-sqlite db union getDb() returns
+async function isMemberOf(db: any, orgId: string, user: string): Promise<boolean> {
+    const membership = await db.select({ id: orgMembers.id })
+        .from(orgMembers)
+        .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userEmail, user)))
+        .get();
+    return !!membership;
 }
 
 // ── Join via Invite ──────────────────────────────────────────────
