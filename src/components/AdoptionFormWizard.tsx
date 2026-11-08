@@ -1041,7 +1041,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                 </div>
                             )}
 
-                            {(formData.recordType === 'adoption' || formData.recordType === 'follow_up') && (
+                            {/* R2: asked only where it is saved — follow-ups don't store it. */}
+                            {formData.recordType === 'adoption' && (
                                 <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
@@ -1084,7 +1085,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                                         <div className="mt-1 flex items-center gap-2">
                                             <StarRating value={formData.rating} size="sm" />
                                             {formData.deliveredToHome && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">🚗 Delivered</span>}
-                                            {formData.identityVerified && <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">🪪 ID</span>}
+                                            {formData.recordType === 'adoption' && formData.identityVerified && <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">🪪 ID</span>}
                                         </div>
                                     </div>
                                 </div>

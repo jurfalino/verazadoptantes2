@@ -20,6 +20,7 @@ import DatePicker from '@/components/ui/DatePicker';
 import { extractVideoThumbnail } from '@/lib/videoThumbnail';
 import { zarazTrack } from '@/lib/zaraz';
 import { isSaveBusyError, isAnimalAlreadyPlacedError } from '@/domain/fieldCollab';
+import { recordStoresIdentityCheck } from '@/domain/recordEditAccess';
 import { FieldConflictNotice } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage, animalAlreadyPlacedMessage } from '@/lib/collabCopy';
 
@@ -803,7 +804,9 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                         </div>
                     )}
 
-                    {/* Identity Verification Toggle */}
+                    {/* Identity Verification Toggle — only on records that store it
+                        (placements); a follow-up/return/observation would drop it (R2). */}
+                    {recordStoresIdentityCheck(formData.recordType) && (
                     <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -826,6 +829,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                             </p>
                         )}
                     </div>
+                    )}
 
                     {/* Rating only (Status hidden/inferred) */}
                     <div>

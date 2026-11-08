@@ -11,6 +11,8 @@
  * The caller resolves `viewerIsAuthorOrTeammate` (isOwnerOrOrgMate against the
  * record's addedBy) and `viewerIsAdmin`; see src/lib/recordEditAccess.ts.
  */
+import { PLACEMENT_RECORD_TYPES } from './placements';
+
 export interface RecordEditInput {
     viewer: string | null | undefined;
     viewerIsAdmin: boolean;
@@ -23,3 +25,11 @@ export function canEditRecord({ viewer, viewerIsAdmin, viewerIsAuthorOrTeammate 
     return viewerIsAuthorOrTeammate || viewerIsAdmin;
 }
 
+/**
+ * Whether a record type stores «¿Verificaste su identidad?». Only placements
+ * (adoption, foster) have the column; events (follow-up, return, observation,
+ * request) would silently drop it, so the forms don't ask there.
+ */
+export function recordStoresIdentityCheck(recordType: string | null | undefined): boolean {
+    return !!recordType && (PLACEMENT_RECORD_TYPES as readonly string[]).includes(recordType);
+}
