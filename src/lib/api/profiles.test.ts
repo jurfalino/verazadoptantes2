@@ -97,7 +97,8 @@ describe('the API flags follow the app (open duplicate reports only)', () => {
  * «Identidad / Dirección Verificada» — the profile header's rule (cards V1/V2,
  * profileVerifications): from the records as they are now. A record where the
  * ID was checked counts (the API used to read only a stored mark nothing writes);
- * a stored «verified_address» row with no record behind it does not.
+ * saveAdoption's stored «verified_address» copy with no record behind it does not;
+ * a verification filed by hand on the profile still does.
  */
 describe('the API verification flags follow the records (V1/V2)', () => {
     const placement = (id: string, adopterId: string, cols: { identity?: number; delivered?: number; address?: string | null }) => {
@@ -115,6 +116,10 @@ describe('the API verification flags follow the records (V1/V2)', () => {
         placement('p2', 'other', { delivered: 0, address: null });
         sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, details, created_at) VALUES ('f-va', 'other', 'o@example.com', 'verified_address', 'Address verified during pet delivery: Calle Falsa 123', 1)`).run();
         expect((await summaries()).get('other')?.flags).not.toContain('verified_address');
+    });
+    it('an address verification filed on the profile by hand still counts', async () => {
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, details, created_at) VALUES ('f-vm', 'other', 'o@example.com', 'verified_address', 'Verified by user', 1)`).run();
+        expect((await summaries()).get('other')?.flags).toContain('verified_address');
     });
 });
 

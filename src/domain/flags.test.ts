@@ -7,7 +7,7 @@
  * number of those kinds, and a single kind is drawn as that kind's pill.
  */
 import { describe, it, expect } from 'vitest';
-import { buildFlags, openFlagKinds, openFlagKindsOfRows, profileVerifications, rescuerFlagKinds } from './flags';
+import { buildFlags, DELIVERY_ADDRESS_COPY_PREFIX, openFlagKinds, openFlagKindsOfRows, profileVerifications, rescuerFlagKinds } from './flags';
 import { KEPT_SEPARATE_FLAG_DETAILS_PREFIX } from './dedupPair';
 
 const row = (o: { reason: string | null; targetAdopterId?: string | null; details?: string | null }) => ({ adopterId: 'a', ...o });
@@ -29,8 +29,8 @@ describe('buildFlags', () => {
     it('the verification badges come from profileVerifications (the records), not from a stored address mark', () => {
         // V1: a record where the ID was checked is enough — search cards used to miss it.
         expect(buildFlags([], 0, [{ identityVerified: 1 }]).verified_identity).toBe(true);
-        // V2: a stored «verified_address» row alone (the record un-ticked or deleted) shows nothing.
-        expect(buildFlags([row({ reason: 'verified_address' })], 0, []).verified_address).toBe(false);
+        // V2: saveAdoption's stored copy alone (the record un-ticked or deleted) shows nothing.
+        expect(buildFlags([row({ reason: 'verified_address', details: `${DELIVERY_ADDRESS_COPY_PREFIX} Calle Falsa 123` })], 0, []).verified_address).toBe(false);
     });
 });
 
@@ -56,7 +56,11 @@ describe('profileVerifications', () => {
         expect(profileVerifications([], [{ deliveredToHome: 1, verifiedAddress: '   ' }]).verified_address).toBe(false);
         expect(profileVerifications([], [{ deliveredToHome: 1, verifiedAddress: null }]).verified_address).toBe(false);
         // The «verified_address» row saveAdoption stores is a copy of a record, never maintained: it is not a basis.
-        expect(profileVerifications([row({ reason: 'verified_address' })], []).verified_address).toBe(false);
+        expect(profileVerifications([row({ reason: 'verified_address', details: `${DELIVERY_ADDRESS_COPY_PREFIX} Calle Falsa 123` })], []).verified_address).toBe(false);
+    });
+    it('address: a verification filed on the profile by hand (the old «Verificar Dirección» button, a visit) still counts', () => {
+        expect(profileVerifications([row({ reason: 'verified_address', details: 'Verified by user' })], []).verified_address).toBe(true);
+        expect(profileVerifications([row({ reason: 'verified_address', details: null })], []).verified_address).toBe(true);
     });
 });
 

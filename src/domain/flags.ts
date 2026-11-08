@@ -31,20 +31,32 @@ export type VerificationRecord = {
  *   «Verificar Identidad» button — nothing files one any more, but such a mark
  *   is its own basis).
  * - Address: a record delivered home (`deliveredToHome`) with the address it
- *   was delivered to. The `verified_address` row saveAdoption stores is only a
- *   copy of such a record, never kept in step with it, so it is NOT a basis:
- *   counting it is what kept the badge after the record changed.
+ *   was delivered to, or a `verified_address` mark filed on the profile by hand
+ *   (the old «Verificar Dirección» button). The `verified_address` row
+ *   saveAdoption stores on a delivery (details start with
+ *   DELIVERY_ADDRESS_COPY_PREFIX) is only a copy of such a record, never kept in
+ *   step with it, so it is NOT a basis: counting it is what kept the badge after
+ *   the record was edited or deleted.
  */
 export function profileVerifications(
-    flagRows: readonly { reason?: string | null }[],
+    flagRows: readonly { reason?: string | null; details?: string | null }[],
     records: readonly VerificationRecord[],
 ): Pick<ProfileFlags, 'verified_identity' | 'verified_address'> {
     return {
         verified_identity: records.some(r => r.identityVerified === 1)
             || flagRows.some(f => f.reason === FLAG_REASONS.VERIFIED_IDENTITY),
-        verified_address: records.some(r => r.deliveredToHome === 1 && !!r.verifiedAddress?.trim()),
+        verified_address: records.some(r => r.deliveredToHome === 1 && !!r.verifiedAddress?.trim())
+            || flagRows.some(f => f.reason === FLAG_REASONS.VERIFIED_ADDRESS && !f.details?.startsWith(DELIVERY_ADDRESS_COPY_PREFIX)),
     };
 }
+
+/**
+ * How the `verified_address` row saveAdoption writes on a delivery begins
+ * (src/app/actions/adoptions.ts — `Address verified during pet delivery: …`,
+ * unchanged since v1.8.0, the first writer). Such a row is a copy of a record,
+ * not a verification of its own (profileVerifications).
+ */
+export const DELIVERY_ADDRESS_COPY_PREFIX = 'Address verified during pet delivery:';
 
 /**
  * Build a profile's FLAGS from its flag rows (never its alerts: periodAlerts).
