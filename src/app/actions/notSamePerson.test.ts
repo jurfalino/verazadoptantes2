@@ -113,6 +113,16 @@ describe('answerNotSamePerson — one «no es esta persona» for the contact win
         expect(pair('bare', 'r1')).toEqual(['pending']);
     });
 
+    it('post import merged into a profile (I2): a «no» about someone found by the post\'s name — now that profile\'s alias — holds', async () => {
+        // The post's «Ana Ruiz» was merged into Marta: her name stays as an alias on Marta.
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries) VALUES ('marta', 'Marta Gimenez', '5', ?, 'AR', 1000, 1000, ?)`)
+            .run(OWNER, JSON.stringify([{ id: 'marta-a', type: 'alias', value: 'Ana Ruiz', addedBy: OWNER }]));
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries) VALUES ('ana', 'Ana Ruiz', '5', ?, 'AR', 1000, 1000, '[]')`).run(OTHER);
+        for (const id of ['marta', 'ana']) await tokenizeAdopter(id);
+        expect(await answerNotSamePerson({ adopterId: 'marta', rejectedIds: ['ana'] })).toEqual({ ok: true, recorded: 1, asked: [] });
+        expect(pair('marta', 'ana')).toEqual(['dismissed']);
+    });
+
     it('a failed write is an error with its id — never a silent success', async () => {
         sqlite.prepare('DROP TABLE duplicate_candidates').run();
         const res = await answerNotSamePerson({ adopterId: 'mine', rejectedIds: ['r1'] });

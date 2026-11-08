@@ -1171,17 +1171,7 @@ export default function ImportWizard() {
 
             const adopterId = result.id;
 
-            // «No es esta persona» on the match screen: one answer with every other «no» (spec 2026-11-06).
-            // Never blocks the save: a failure is said with its id and the profile stands.
-            if (rejectedMatchIds.length) {
-                try {
-                    const answered = await answerNotSamePerson({ adopterId, rejectedIds: rejectedMatchIds });
-                    if (answered.ok) trackSamePersonAnswer('import', 'different', answered.recorded > 0);
-                    else toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), answered.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${answered.error}`), 'ImportWizard.notThis'));
-                } catch (e) {
-                    if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'ImportWizard.notThis'));
-                }
-            }
+            await saveRejectedMatches(adopterId);
 
             // Relatives recognised as an existing profile join the new profile's household (credited, notified).
             for (const [i, p] of relatives.entries()) {
@@ -1264,8 +1254,9 @@ export default function ImportWizard() {
      * One relative into the profile's household. A relative the rescuer recognised is linked; if that
      * link fails, they are added as a new person instead — never lost. Each failure says why
      * (householdErrorCopy) and the others still go in. 'already_there' is not a failure.
+     * Resolves to the profile placed (null when none was, or it was already there).
      */
-    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null }) => {
+    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null }): Promise<string | null> => {
         const base = { anchorAdopterId, relationship: m.relationship, contactEntries: asHouseholdContacts(m.contactEntries), fromImport: { sourceUrl: sourceUrl || null, slot: m.slot } };
         const report = (res: { error: string; errorId?: string }) => {
             const copy = householdErrorCopy(t, res.error);
@@ -1275,16 +1266,34 @@ export default function ImportWizard() {
         try {
             if (m.existingProfileId) {
                 const linked = await addHouseholdPerson({ ...base, existingProfileId: m.existingProfileId });
-                if (linked.ok || linked.error === 'already_there') return;
+                if (linked.ok) return linked.profileId;
+                if (linked.error === 'already_there') return null;
                 logUxIssue('import: recognised relative not linked, added as new instead', { reason: linked.error });
                 // Final fix P5: the rescuer chose that profile — say it didn't link, and why.
                 const why = householdErrorCopy(t, linked.error);
                 toast.warning(fill(t('import.relative_link_fell_back'), { name: m.name }), why.refused ? why.message : `ID: ${('errorId' in linked && linked.errorId) || resolveErrorId(new Error(`addHouseholdPerson (import link): ${linked.error}`), 'ImportWizard.relativeLink')}`);
             }
             const res = await addHouseholdPerson({ ...base, name: m.name });
-            if (!res.ok && res.error !== 'already_there') report(res);
+            if (res.ok) return res.profileId;
+            if (res.error !== 'already_there') report(res);
         } catch (e) {
             if (!handledAsStale(e)) toast.error(t('errors.generic'), `${t('import.relative_failed')}: ${m.name}`, resolveErrorId(e, 'ImportWizard.relative'));
+        }
+        return null;
+    };
+    /**
+     * «No es esta persona» on the match screen: one answer with every other «no» (spec 2026-11-06),
+     * about the profile the post's person ended up as — the new one, or the one it was merged into (I2).
+     * Never blocks the save: a failure is said with its id and the profile stands.
+     */
+    const saveRejectedMatches = async (adopterId: string) => {
+        if (!rejectedMatchIds.length) return;
+        try {
+            const answered = await answerNotSamePerson({ adopterId, rejectedIds: rejectedMatchIds });
+            if (answered.ok) trackSamePersonAnswer('import', 'different', answered.recorded > 0);
+            else toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), answered.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${answered.error}`), 'ImportWizard.notThis'));
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'ImportWizard.notThis'));
         }
     };
     /** A relative's «¿Es este perfil?» answer is kept under who they are, not their place in the list. */
@@ -1334,6 +1343,7 @@ export default function ImportWizard() {
                 if (!result.success) {
                     throw new Error(result.error || 'Failed to merge contact data');
                 }
+                await saveRejectedMatches(mergeTarget.id);
                 trackImport('import_merged', {
                     hasImages: 0,
                     fromContacts: 1,
@@ -1445,9 +1455,14 @@ export default function ImportWizard() {
             // own contacts) in the target's household, through the same add anyone signed
             // in uses (D54: credited, granted, the target's team told). A relative the
             // rescuer recognised in «¿Es este perfil?» (ImportRelativeCheck) is linked instead.
+            // The post's person is the merged profile — or, as someone in its household, their own new one.
+            let postPersonId: string | null = asRelative ? null : mergeTarget.id;
             for (const m of members) {
-                await addRelative(mergeTarget.id, { ...m, existingProfileId: 'existingProfileId' in m ? m.existingProfileId : null });
+                const placed = await addRelative(mergeTarget.id, { ...m, existingProfileId: 'existingProfileId' in m ? m.existingProfileId : null });
+                if (m.slot === 's') postPersonId = placed;
             }
+            // A «No, es otra persona» given on the match screen holds after a merge too (I2), not only on create.
+            if (postPersonId) await saveRejectedMatches(postPersonId);
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
             const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
