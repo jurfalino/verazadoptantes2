@@ -11,7 +11,7 @@ import { getRecordTypeColors, getRecordTypeIcon } from '@/lib/recordTypeColors';
 import RecordTypeGuidance from '@/components/RecordTypeGuidance';
 import { StarRating } from '@/components/StarRating';
 import { useShowToast } from '@/components/ui/Toast';
-import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { MediaLightbox } from '@/components/ui/MediaLightbox';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -541,8 +541,8 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             // v2.19.40: compose the legacy `verifiedAddress` string from the
             // two structured halves the user filled in. The DB column stays a
             // single string for backward compat with read sites + the AI
-            // import path that still emits free-text; the structured halves
-            // are used below to write a typed `address` contact entry.
+            // import path that still emits free-text; the server splits it
+            // back into street and locality for the profile's contacts.
             const composedVerifiedAddress = formData.deliveredToHome
                 ? [formData.verifiedStreetAndNumber.trim(), formData.verifiedLocality.trim()].filter(Boolean).join(', ')
                 : formData.verifiedAddress;
@@ -593,54 +593,9 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 return;
             }
 
-            // v2.19.40: persist the verified delivery address to the adopter's
-            // structured `contactEntries` so future viewers see it under their
-            // normal PII gating + masking rules (address is masked for
-            // non-privileged viewers; `partialRevealAddressString` keeps the
-            // locality visible, masks the street). Fire-and-forget after the
-            // main save — a failure here doesn't undo the activity record we
-            // already saved. Dedup is handled by `mergeContactEntries` inside
-            // `appendToExistingAdopter`.
-            if (formData.deliveredToHome && (formData.verifiedStreetAndNumber.trim() || formData.verifiedLocality.trim())) {
-                const street = formData.verifiedStreetAndNumber.trim();
-                const locality = formData.verifiedLocality.trim();
-                const composedValue = [street, locality].filter(Boolean).join(', ');
-                const newEntry = {
-                    id: crypto.randomUUID(),
-                    type: 'address' as const,
-                    value: composedValue,
-                    ...(street ? { streetAndNumber: street } : {}),
-                    ...(locality ? { locality } : {}),
-                    addedBy: currentUser || undefined,
-                };
-                try {
-                    const { appendToExistingAdopter } = await import('@/app/actions');
-                    const appended = await appendToExistingAdopter(adopterId, {
-                        contactEntries: JSON.stringify([newEntry]),
-                    });
-                    // Refused (e.g. the profile holds the maximum contact entries): logged with an id, still non-blocking.
-                    if (!appended.success) {
-                        reportClientError({
-                            message: `AdoptionFormWizard: address contact-entry append refused: ${appended.error ?? 'unknown'}`,
-                            source: 'AdoptionFormWizard.delivered-to-home append',
-                            extra: { adopterId, recordType: formData.recordType },
-                        });
-                    }
-                } catch (e) {
-                    // v2.19.44: was console.warn — silent in Axiom. Now goes
-                    // through reportClientError so the contact-entry append
-                    // failure (delivered-to-home address persistence) gets
-                    // an id we can correlate against an Axiom row. The main
-                    // activity record already saved successfully, so this
-                    // stays non-blocking (no toast, no re-throw).
-                    reportClientError({
-                        message: 'AdoptionFormWizard: address contact-entry append failed',
-                        stack: e instanceof Error ? e.stack : undefined,
-                        source: 'AdoptionFormWizard.delivered-to-home append',
-                        extra: { adopterId, recordType: formData.recordType, errorMessage: e instanceof Error ? e.message : String(e) },
-                    }).catch(() => { /* best-effort observability — original save already succeeded */ });
-                }
-            }
+            // The delivery address reaches the profile's contacts on the
+            // server (saveAdoption → copyDeliveryAddressToContacts, F4), for
+            // create and edit alike, merged with what is there.
 
             if (pendingImages.length > 0 && result?.id) {
                 const uploadPromises = pendingImages.map(async (pending) => {

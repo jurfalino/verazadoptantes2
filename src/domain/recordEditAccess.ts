@@ -33,3 +33,48 @@ export function canEditRecord({ viewer, viewerIsAdmin, viewerIsAuthorOrTeammate 
 export function recordStoresIdentityCheck(recordType: string | null | undefined): boolean {
     return !!recordType && (PLACEMENT_RECORD_TYPES as readonly string[]).includes(recordType);
 }
+
+/**
+ * What a record asks about the handover: «¿Entregado en casa del adoptante?»
+ * (with its address) and «¿Verificaste su identidad?». ONE rule for the create
+ * wizard, the edit form and the server's address copy (F3, Jon 2026-11-08): a
+ * «Tránsito» asks exactly what an «Adopción» asks — the foster family receives
+ * the animal at home too — and only those placements store the answers.
+ */
+export interface HandoverFields {
+    deliveredToHome: boolean;
+    identityCheck: boolean;
+}
+
+export function recordHandoverFields(recordType: string | null | undefined): HandoverFields {
+    const placement = recordStoresIdentityCheck(recordType);
+    return { deliveredToHome: placement, identityCheck: placement };
+}
+
+/** The delivery address as the two fields the forms show (street and number, locality). */
+export interface DeliveryAddressParts {
+    streetAndNumber: string;
+    locality: string;
+}
+
+/**
+ * The stored single-string delivery address → the two fields. Splits on the
+ * LAST comma, the same place masking takes the locality from
+ * (partialRevealAddressString), so «Calle 5 1234, depto 3, Vicente López»
+ * keeps «depto 3» in the street. No comma (or nothing after it): all of it is
+ * the street, so no character of an old record is dropped on the way back.
+ */
+export function splitDeliveryAddress(text: string | null | undefined): DeliveryAddressParts {
+    const v = (text ?? '').trim();
+    const lastComma = v.lastIndexOf(',');
+    if (lastComma > 0) {
+        const locality = v.slice(lastComma + 1).trim();
+        if (locality) return { streetAndNumber: v.slice(0, lastComma).trim(), locality };
+    }
+    return { streetAndNumber: v, locality: '' };
+}
+
+/** The two fields → the stored string («street, locality»; an empty half is left out). */
+export function joinDeliveryAddress({ streetAndNumber, locality }: DeliveryAddressParts): string {
+    return [streetAndNumber.trim(), locality.trim()].filter(Boolean).join(', ');
+}
