@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.37] - 2026-11-08
+
+### Fixed — follow-ups found while updating the help pages (F1–F10)
+- **Post import keeps every screenshot (F1).** Screenshots are saved shrunk to 1600 px (the AI still
+  reads the original); any image still too big for the database goes to file storage instead of being
+  dropped silently. If one can't be stored: «No pudimos guardar 1 de las 3 imágenes…». At most 20 images
+  per save, about 7.5 MB each.
+- **A post photo that can't be downloaded is mentioned (F2):** «No pudimos traer 1 foto de la publicación…».
+- **«Tránsito» asks the same as «Adopción» (F3),** on create and edit: «¿Entregado en casa…?» with street
+  and locality, and «¿Verificaste su identidad?». Both forms share one address block.
+- **Marking "delivered home" while editing adds the address to the profile's contacts (F4),** as creating
+  already did; the server does it, without duplicates.
+- **A «No, es otra persona» in a post import is saved** when the person is added to a household they're
+  already in (F5).
+- **A removed group member is told (F6):** «Ya no estás en «Michis» — Marta Giménez te quitó del grupo. Lo
+  que cargaste sigue a tu nombre.» In-app only, no email.
+- **Privacy contact is privacidad@buenadoptante.org everywhere (F9).** The .com address had no mail server.
+
 ## [2.58.36] - 2026-11-08
 
 ### Fixed — defects found while writing the help docs (22 cards; C1 on hold)
