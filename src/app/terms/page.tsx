@@ -86,7 +86,7 @@ function TermsES() {
                 Si consideras que un perfil contiene información inexacta o afecta tus derechos fundamentales:
             </p>
             <ul>
-                <li>Contacta a <strong>privacidad@buenadoptante.com</strong> detallando el perfil y la información en cuestión.</li>
+                <li>Contacta a <strong>privacidad@buenadoptante.org</strong> detallando el perfil y la información en cuestión.</li>
                 <li>La plataforma evaluará la solicitud según la evidencia presentada y los plazos establecidos por la normativa local de protección de datos.</li>
                 <li>En casos de falsedad evidente, se procederá a la remoción o rectificación inmediata.</li>
             </ul>
@@ -184,7 +184,7 @@ function TermsEN() {
                 If you believe that a profile contains inaccurate information or affects your fundamental rights:
             </p>
             <ul>
-                <li>Contact <strong>privacidad@buenadoptante.com</strong> detailing the profile and the information in question.</li>
+                <li>Contact <strong>privacidad@buenadoptante.org</strong> detailing the profile and the information in question.</li>
                 <li>The platform will evaluate the request based on the evidence provided and the timeframes established by local data-protection regulations.</li>
                 <li>In cases of clear falsehood, immediate removal or rectification will proceed.</li>
             </ul>
@@ -282,7 +282,7 @@ function TermsPT() {
                 Se você considerar que um perfil contém informações imprecisas ou afeta seus direitos fundamentais:
             </p>
             <ul>
-                <li>Entre em contato com <strong>privacidad@buenadoptante.com</strong> detalhando o perfil e a informação em questão.</li>
+                <li>Entre em contato com <strong>privacidad@buenadoptante.org</strong> detalhando o perfil e a informação em questão.</li>
                 <li>A plataforma avaliará a solicitação conforme a evidência apresentada e os prazos estabelecidos pela norma local de proteção de dados.</li>
                 <li>Em casos de falsidade evidente, procederá à remoção ou retificação imediata.</li>
             </ul>

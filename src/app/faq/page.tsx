@@ -218,7 +218,7 @@ export default function FaqPage() {
                         <Link href="/guia" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors text-sm">
                             {t('faq.cta_guide')}
                         </Link>
-                        <a href="mailto:privacidad@buenadoptante.com" className="text-stone-500 hover:text-stone-600 text-sm underline underline-offset-2 transition-colors">
+                        <a href="mailto:privacidad@buenadoptante.org" className="text-stone-500 hover:text-stone-600 text-sm underline underline-offset-2 transition-colors">
                             {t('faq.cta_contact')}
                         </a>
                     </div>
