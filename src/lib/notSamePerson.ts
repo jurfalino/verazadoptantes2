@@ -166,9 +166,24 @@ export async function answerNotSamePersonFor(db: Db, actor: string, input: {
     if (offered.failed) {
         return { ok: false, error: 'failed', errorId: logger.error('answerNotSamePerson: duplicate search failed, answer not saved', new Error('search failed'), ctx) };
     }
+    // The profile's other names count too (I2): a post merged into this profile keeps the post's
+    // name as an alias, and a match the post's NAME found is offered only by searching it.
+    // Still the profile's own data, so still proof; only for ids the main search left out.
+    const results = [...offered.results];
+    const missing = () => rejectedIds.filter(id => !results.some(r => r.adopterId === id));
+    if (!typed && missing().length) {
+        for (const alias of [...new Set(of('alias').map(a => a.trim()).filter(a => a.length >= 2 && a !== self.name))].slice(0, 3)) {
+            if (!missing().length) break;
+            const byAlias = await searchFormDuplicates({ name: alias, excludeAdopterId: adopterId }, { limit: 20 }, async () => actor);
+            if (byAlias.failed) {
+                return { ok: false, error: 'failed', errorId: logger.error('answerNotSamePerson: alias search failed, answer not saved', new Error('search failed'), ctx) };
+            }
+            results.push(...byAlias.results);
+        }
+    }
     const settled = await settleNotSamePerson(db, {
         actor, adopterId, rejectedIds,
-        offered: offered.results.map(r => ({ adopterId: r.adopterId, matchTypes: r.matchTypes })), ctx,
+        offered: results.map(r => ({ adopterId: r.adopterId, matchTypes: r.matchTypes })), ctx,
         // A typed contact proves nothing about `adopterId`: only its owner's team (or an admin) settles.
         settleBy: typed ? 'subject' : 'either',
     });

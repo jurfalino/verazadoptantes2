@@ -826,8 +826,9 @@ export default function ImportWizard() {
 
         try {
             const imagesToSend: Array<{ data: string; mimeType: string }> = [];
+            // Videos are uploaded on their own after the save; only images are read.
             for (const img of manualImages) {
-                imagesToSend.push({ data: img.data, mimeType: img.mimeType });
+                if (!img.file) imagesToSend.push({ data: img.data, mimeType: img.mimeType });
             }
 
             const imageUrls = fetchedImages.filter((_, i) => selectedFetchedImages.has(i));
@@ -912,8 +913,10 @@ export default function ImportWizard() {
                 }));
             }
             setCustomSpecies(false);
+            // Only the post's own images (they carry their URL): the rescuer's uploads are already in
+            // manualImages, and keeping both showed — and saved — every screenshot twice (I1).
             if (result.processedImages) {
-                setProcessedImages(result.processedImages);
+                setProcessedImages(result.processedImages.filter(img => img.originalUrl));
             }
             trackImport('import_extract_succeeded', {
                 aiConfidence: typeof aiData.confidence === 'string' ? aiData.confidence : 'unknown',
@@ -1121,11 +1124,10 @@ export default function ImportWizard() {
                 // Those the rescuer recognised as an existing profile («¿Es este perfil?» → sí) are linked after the save.
                 ...(relatives.some(p => !linkedProfileOf(p)) ? { householdMembers: JSON.stringify(relatives.filter(p => !linkedProfileOf(p)).map(toMember)) } : {}),
                 images: [
-                    // Honor the review-step de-selection: a processed image is
-                    // excluded by `p:<i>`, a manual image by `m:<i>`.
-                    ...(processedImages.length > 0
-                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
-                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a post image is
+                    // excluded by `p:<i>`, an upload by `m:<i>`. Each is saved once (I1).
+                    ...processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`)),
+                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType })),
                     ...videoPayloads,
                 ],
                 // v2.19.17: contacts-import path no longer auto-stamps an
@@ -1171,17 +1173,7 @@ export default function ImportWizard() {
 
             const adopterId = result.id;
 
-            // «No es esta persona» on the match screen: one answer with every other «no» (spec 2026-11-06).
-            // Never blocks the save: a failure is said with its id and the profile stands.
-            if (rejectedMatchIds.length) {
-                try {
-                    const answered = await answerNotSamePerson({ adopterId, rejectedIds: rejectedMatchIds });
-                    if (answered.ok) trackSamePersonAnswer('import', 'different', answered.recorded > 0);
-                    else toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), answered.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${answered.error}`), 'ImportWizard.notThis'));
-                } catch (e) {
-                    if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'ImportWizard.notThis'));
-                }
-            }
+            await saveRejectedMatches(adopterId);
 
             // Relatives recognised as an existing profile join the new profile's household (credited, notified).
             for (const [i, p] of relatives.entries()) {
@@ -1264,8 +1256,9 @@ export default function ImportWizard() {
      * One relative into the profile's household. A relative the rescuer recognised is linked; if that
      * link fails, they are added as a new person instead — never lost. Each failure says why
      * (householdErrorCopy) and the others still go in. 'already_there' is not a failure.
+     * Resolves to the profile placed (null when none was, or it was already there).
      */
-    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null }) => {
+    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null }): Promise<string | null> => {
         const base = { anchorAdopterId, relationship: m.relationship, contactEntries: asHouseholdContacts(m.contactEntries), fromImport: { sourceUrl: sourceUrl || null, slot: m.slot } };
         const report = (res: { error: string; errorId?: string }) => {
             const copy = householdErrorCopy(t, res.error);
@@ -1275,16 +1268,34 @@ export default function ImportWizard() {
         try {
             if (m.existingProfileId) {
                 const linked = await addHouseholdPerson({ ...base, existingProfileId: m.existingProfileId });
-                if (linked.ok || linked.error === 'already_there') return;
+                if (linked.ok) return linked.profileId;
+                if (linked.error === 'already_there') return null;
                 logUxIssue('import: recognised relative not linked, added as new instead', { reason: linked.error });
                 // Final fix P5: the rescuer chose that profile — say it didn't link, and why.
                 const why = householdErrorCopy(t, linked.error);
                 toast.warning(fill(t('import.relative_link_fell_back'), { name: m.name }), why.refused ? why.message : `ID: ${('errorId' in linked && linked.errorId) || resolveErrorId(new Error(`addHouseholdPerson (import link): ${linked.error}`), 'ImportWizard.relativeLink')}`);
             }
             const res = await addHouseholdPerson({ ...base, name: m.name });
-            if (!res.ok && res.error !== 'already_there') report(res);
+            if (res.ok) return res.profileId;
+            if (res.error !== 'already_there') report(res);
         } catch (e) {
             if (!handledAsStale(e)) toast.error(t('errors.generic'), `${t('import.relative_failed')}: ${m.name}`, resolveErrorId(e, 'ImportWizard.relative'));
+        }
+        return null;
+    };
+    /**
+     * «No es esta persona» on the match screen: one answer with every other «no» (spec 2026-11-06),
+     * about the profile the post's person ended up as — the new one, or the one it was merged into (I2).
+     * Never blocks the save: a failure is said with its id and the profile stands.
+     */
+    const saveRejectedMatches = async (adopterId: string) => {
+        if (!rejectedMatchIds.length) return;
+        try {
+            const answered = await answerNotSamePerson({ adopterId, rejectedIds: rejectedMatchIds });
+            if (answered.ok) trackSamePersonAnswer('import', 'different', answered.recorded > 0);
+            else toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), answered.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${answered.error}`), 'ImportWizard.notThis'));
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'ImportWizard.notThis'));
         }
     };
     /** A relative's «¿Es este perfil?» answer is kept under who they are, not their place in the list. */
@@ -1334,6 +1345,7 @@ export default function ImportWizard() {
                 if (!result.success) {
                     throw new Error(result.error || 'Failed to merge contact data');
                 }
+                await saveRejectedMatches(mergeTarget.id);
                 trackImport('import_merged', {
                     hasImages: 0,
                     fromContacts: 1,
@@ -1372,11 +1384,10 @@ export default function ImportWizard() {
                     date: recordDateFrom(reportDate),
                 },
                 images: [
-                    // Honor the review-step de-selection: a processed image is
-                    // excluded by `p:<i>`, a manual image by `m:<i>`.
-                    ...(processedImages.length > 0
-                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
-                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a post image is
+                    // excluded by `p:<i>`, an upload by `m:<i>`. Each is saved once (I1).
+                    ...processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`)),
+                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType })),
                     ...videoPayloads,
                 ],
             };
@@ -1445,9 +1456,14 @@ export default function ImportWizard() {
             // own contacts) in the target's household, through the same add anyone signed
             // in uses (D54: credited, granted, the target's team told). A relative the
             // rescuer recognised in «¿Es este perfil?» (ImportRelativeCheck) is linked instead.
+            // The post's person is the merged profile — or, as someone in its household, their own new one.
+            let postPersonId: string | null = asRelative ? null : mergeTarget.id;
             for (const m of members) {
-                await addRelative(mergeTarget.id, { ...m, existingProfileId: 'existingProfileId' in m ? m.existingProfileId : null });
+                const placed = await addRelative(mergeTarget.id, { ...m, existingProfileId: 'existingProfileId' in m ? m.existingProfileId : null });
+                if (m.slot === 's') postPersonId = placed;
             }
+            // A «No, es otra persona» given on the match screen holds after a merge too (I2), not only on create.
+            if (postPersonId) await saveRejectedMatches(postPersonId);
 
             // Upload any pending video files via FormData (they were excluded from JSON body)
             const pendingVideoFiles = manualImages.filter((img, i) => img.file && !isMediaExcluded(`m:${i}`));
@@ -2149,7 +2165,7 @@ export default function ImportWizard() {
                     {(() => {
                         type MediaTile = { key: string; src: string; mediaType: 'image' | 'video'; label?: string };
                         const media: MediaTile[] = [];
-                        // Processed images from fetch (base64)
+                        // The post's images (base64, with their URL)
                         processedImages.forEach((img, i) => media.push({
                             key: `p:${i}`,
                             src: `data:${img.mimeType};base64,${img.data}`,
@@ -2171,7 +2187,7 @@ export default function ImportWizard() {
                         return (
                             <div>
                                 <label className="block text-xs font-medium text-stone-500 mb-1.5">
-                                    {t('import.attachedImages') || 'Attached Media'} ({keptCount}/{media.length})
+                                    {t('import.attachedImages') || 'Attached Media'} ({keptCount})
                                 </label>
                                 <div className="flex flex-wrap gap-2">
                                     {media.map((m) => {

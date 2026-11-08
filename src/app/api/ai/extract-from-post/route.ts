@@ -9,6 +9,11 @@ import { getDb } from '@/lib/db';
 import { appConfig } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
+/** How many images the AI reads; the rest are still returned to be saved. */
+const MAX_AI_IMAGES = 5;
+/** The review step's own cap on post images (ImportWizard MAX_FETCHED_IMAGES). */
+const MAX_URL_IMAGES = 12;
+
 /**
  * Read the admin-configured default Gemini model from app_config. Returns
  * `undefined` when not set (or on D1 read failure) so extractAdopterData's
@@ -61,20 +66,18 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No text or images provided' }, { status: 400 });
         }
 
-        // Combine all images
+        // Combine all images. The AI reads the first MAX_AI_IMAGES; every one comes back to be
+        // saved (I1) — past the fifth they used to be dropped without a word.
         const allImages: Array<{ data: string; mimeType: string; originalUrl?: string }> = [];
 
         // Add uploaded images
         if (images) {
-            allImages.push(...images.slice(0, 5));
+            allImages.push(...images);
         }
 
-        // Download and add URL images
+        // Download and add URL images (the review step offers at most MAX_URL_IMAGES)
         if (imageUrls && imageUrls.length > 0) {
-            const remainingSlots = 5 - allImages.length;
-            const urlsToFetch = imageUrls.slice(0, remainingSlots);
-
-            for (const url of urlsToFetch) {
+            const fetched = await Promise.all(imageUrls.slice(0, MAX_URL_IMAGES).map(async (url) => {
                 try {
                     const imgResponse = await fetch(url, {
                         headers: {
@@ -87,20 +90,23 @@ export async function POST(request: NextRequest) {
                         const buffer = await imgResponse.arrayBuffer();
                         const base64 = arrayBufferToBase64(buffer);
                         // Include original URL so it can be stored in DB instead of base64
-                        allImages.push({ data: base64, mimeType: contentType, originalUrl: url });
-                    } else {
+                        return { data: base64, mimeType: contentType, originalUrl: url };
                     }
+                    logger.warn('AI extraction: post image not downloaded', { userEmail: session?.user?.email || 'anonymous', status: imgResponse.status });
                 } catch (err) {
-                    // Skip failed image downloads silently
+                    logger.warn('AI extraction: post image not downloaded', { userEmail: session?.user?.email || 'anonymous', error: err instanceof Error ? err.message : String(err) });
                 }
-            }
+                return null;
+            }));
+            for (const img of fetched) if (img) allImages.push(img);
         }
-
+        const aiImages = allImages.slice(0, MAX_AI_IMAGES);
 
         logger.info('AI extraction started', {
             userEmail: session?.user?.email || 'anonymous',
             hasText: !!text?.trim(),
-            imageCount: allImages.length,
+            imageCount: aiImages.length,
+            savedImageCount: allImages.length,
         });
 
         // Precedence: explicit body.model (per-call override) → admin-set
@@ -110,7 +116,7 @@ export async function POST(request: NextRequest) {
         // Call Gemini API
         const extracted = await extractAdopterData(
             text,
-            allImages.length > 0 ? allImages : undefined,
+            aiImages.length > 0 ? aiImages : undefined,
             modelName,
             body.language || 'es'
         );
@@ -129,7 +135,7 @@ export async function POST(request: NextRequest) {
             socialCount: extracted.socialProfiles?.length || 0,
             otherPeopleCount: Array.isArray(extracted.otherPeople) ? extracted.otherPeople.length : 0,
             ratingSuggested: typeof extracted.adoptionRating === 'number',
-            imageCount: allImages.length,
+            imageCount: aiImages.length,
         };
         if (extracted.extractionFailed || issues.length) logger.warn('AI extraction completed with issues', completed);
         else logger.info('AI extraction completed', completed);

@@ -10,6 +10,7 @@ import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
+import { formBackLink } from '@/domain/formBackLink';
 import { logger } from '@/lib/logger';
 import { loadOpenPairs } from '@/lib/openPairs';
 import { isOrgMate } from '@/lib/orgMembership';
@@ -166,8 +167,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         <main className="container mx-auto px-4 py-8 max-w-2xl">
             {/* Header */}
             <div className="mb-6">
-                <Link href="/" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
-                    <Tr k="contractResults.back" />
+                {/* D3: names where it goes, as the form screen does when opened from a notice. */}
+                <Link href={formBackLink(null, {}).href} data-testid="contract-back-link" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
+                    ← <Tr k={formBackLink(null, {}).label.key} />
                 </Link>
                 <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-800 mt-2">
                     {hasMatches

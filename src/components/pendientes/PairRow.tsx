@@ -392,12 +392,10 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
                             )}
                         </>}
                         {group === 'pair' && <>
-                            {/* Dismiss writes to duplicate_candidates; a hand-flagged pair has no row there. */}
-                            {pair.source === 'detected' && (
-                                <Button variant="secondary" size="compact" data-testid="dedup-keep-separate" disabled={locked} onClick={() => onAction(pair, 'keep_separate')}>
-                                    {t('samePerson.no')}
-                                </Button>
-                            )}
+                            {/* One way to ask (D1): a hand-flagged pair gets the same two answers as a detected one. */}
+                            <Button variant="secondary" size="compact" data-testid="dedup-keep-separate" disabled={locked} onClick={() => onAction(pair, 'keep_separate')}>
+                                {t('samePerson.no')}
+                            </Button>
                             {mainAction && (
                                 <Button variant="primary" size="compact" data-testid="dedup-merge" disabled={locked} onClick={() => onAction(pair, 'combine', keep)}>
                                     {busy ? (t('common.processing') || 'Procesando...')

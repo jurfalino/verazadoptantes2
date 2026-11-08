@@ -53,6 +53,8 @@ export interface NotificationTemplateParams {
     form_submission_teammate: { submitterName: string; animalName?: string; matchCount: string; sharedByName: string };
     contract_result_matches: { adopterName: string; animalName?: string; matchCount: string };
     contract_result_clear: { adopterName: string; animalName?: string };
+    /** A personal contract link: the signer is a known profile and no search ran (D2) — never «Todo en orden». */
+    contract_result_signed: { adopterName: string; animalName?: string };
     contract_result_teammate: { adopterName: string; animalName?: string };
     /** `decision`: approve | deny | block. `exact`/`fuzzy`: daily caps (approve, deny). */
     api_access: { decision: string; exact?: string; fuzzy?: string; note?: string };
@@ -396,6 +398,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         es: p => ({ title: `${p.animalName || 'Animal'} adoptado por ${p.adopterName}`, body: `No se encontraron registros previos para ${p.adopterName}. Todo en orden.` }),
         en: p => ({ title: `${p.animalName || 'Animal'} adopted by ${p.adopterName}`, body: `No earlier records were found for ${p.adopterName}. All clear.` }),
         pt: p => ({ title: `${p.animalName || 'Animal'} adotado por ${p.adopterName}`, body: `Não foram encontrados registros anteriores para ${p.adopterName}. Tudo certo.` }),
+    },
+    contract_result_signed: {
+        required: ['adopterName'],
+        es: p => ({ title: `${p.animalName || 'Animal'} adoptado por ${p.adopterName}`, body: `${p.adopterName} firmó el contrato de adopción de ${p.animalName || 'un animal'}.` }),
+        en: p => ({ title: `${p.animalName || 'Animal'} adopted by ${p.adopterName}`, body: `${p.adopterName} signed the adoption contract for ${p.animalName || 'an animal'}.` }),
+        pt: p => ({ title: `${p.animalName || 'Animal'} adotado por ${p.adopterName}`, body: `${p.adopterName} assinou o contrato de adoção de ${p.animalName || 'um animal'}.` }),
     },
     contract_result_teammate: {
         required: ['adopterName'],

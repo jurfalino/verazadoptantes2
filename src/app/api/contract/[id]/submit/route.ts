@@ -390,11 +390,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         },
                     });
                 } else {
+                    // D2: a personal link searches nothing (the signer IS that profile), so it never says
+                    // «Todo en orden» — only «firmó el contrato». Either way, tapping opens the profile.
                     await createNotification({
                         id: notificationId,
                         userId: rescuerEmail,
                         type: 'contract_result',
-                        ...notificationContent({ key: 'contract_result_clear', params: { adopterName: fullName, ...animalParam } }),
+                        ...notificationContent({ key: invitation ? 'contract_result_signed' : 'contract_result_clear', params: { adopterName: fullName, ...animalParam } }),
+                        url: `/adopter/${adopterId}`,
                         icon: '✅',
                         metadata: {
                             animalId,
