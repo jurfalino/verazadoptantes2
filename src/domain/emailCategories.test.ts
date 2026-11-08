@@ -6,6 +6,7 @@ import {
     emailThrottleKey,
     parseEmailPrefs,
     isEmailEnabled,
+    isInAppOnly,
     visibleCategories,
 } from './emailCategories';
 
@@ -88,5 +89,12 @@ describe('emailThrottleKey', () => {
         expect(emailThrottleKey('form_submission')).toBe(emailThrottleKey('contract_result'));
         expect(emailThrottleKey('form_submission')).not.toBe(emailThrottleKey('adopter_merged'));
         expect(emailThrottleKey('some_unknown_type')).toBe(emailThrottleKey('another_unknown'));
+    });
+});
+
+describe('isInAppOnly', () => {
+    it('member_removed is a notice in the app only, never emailed (F6, Jon)', () => expect(isInAppOnly('member_removed')).toBe(true));
+    it('every other type keeps its email twin', () => {
+        for (const t of ['member_joined', 'merge_request', 'form_submission', 'some_unknown_type']) expect(isInAppOnly(t), t).toBe(false);
     });
 });

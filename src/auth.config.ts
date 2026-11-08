@@ -138,7 +138,7 @@ export const authConfig = {
         },
         signIn: async ({ user, account }) => {
             // Adopter-login gate (v2.14.9-14): if the signing-in email matches
-            // an adopter profile with a low rating or density flags, reject
+            // an adopter profile shown as 1★ or with a period alert, reject
             // the session. Admins are always allowed (bootstrap list); the
             // gate fails open on DB errors. See src/lib/adopterLoginGate.ts
             // for the full contract.

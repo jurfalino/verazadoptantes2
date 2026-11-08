@@ -55,7 +55,7 @@ export default function Footer() {
                     {t('legal.terms')}
                 </a>
                 <span className="text-stone-300">·</span>
-                <a href="mailto:privacidad@buenadoptante.com" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
+                <a href="mailto:privacidad@buenadoptante.org" className="text-stone-500 hover:text-stone-600 underline underline-offset-2 transition-colors">
                     {t('legal.contact')}
                 </a>
             </div>

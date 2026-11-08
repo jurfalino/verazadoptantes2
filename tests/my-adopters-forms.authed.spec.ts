@@ -1,10 +1,12 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
+import { execD1, rows as dbRows } from './db';
 
 /**
  * /my-adopters "Por formulario": the place to see everyone who filled the
- * adoption form, newest first, with what they applied for and whether a form
- * still waits for "¿es la misma persona?" ("Por revisar").
+ * adoption form, newest first, with what they applied for. A form that looks
+ * like an existing profile is an ordinary possible duplicate (spec 2026-11-05):
+ * the row carries «Posible duplicado», not a «Por revisar» of its own.
  *
  * Runs under `authed` (the admin owns forms sent to ADMIN_USER_ID). Own rows
  * only — unique email/phone per run.
@@ -25,13 +27,13 @@ async function chipCount(page: import('@playwright/test').Page, name: RegExp): P
 }
 
 test.describe('/my-adopters — people who filled a form', () => {
-    test('"Por formulario" lists them newest first, says what they applied for, and flags the undecided', async ({ page, request }) => {
+    test('"Por formulario" lists them newest first, says what they applied for, and marks the undecided as a possible duplicate', async ({ page, request }) => {
         test.setTimeout(120_000);
         const stamp = Date.now();
         const email = `e2e-list-${stamp}@example.com`;
         const phone = `16${String(stamp).slice(-8)}`;
         const name = `E2E Lista ${stamp}`;
-        // Same person twice: the second form's new profile has a look-alike → "Por revisar".
+        // Same person twice: the second form's new profile has a look-alike → «Posible duplicado».
         await submitForm(request, { name, email, phone });
         const secondId = await submitForm(request, { name, email, phone });
 
@@ -50,15 +52,23 @@ test.describe('/my-adopters — people who filled a form', () => {
 
         // Newest form first: one of this run's two people is the top row.
         await expect(rows.first()).toContainText(name);
-        const reviewRow = rows.filter({ hasText: /To review|Por revisar|Para revisar/ }).filter({ hasText: name });
-        await expect(reviewRow).toHaveCount(1);
-        await expect(reviewRow).toContainText(/General form|Formulario general|Formulário geral/);
+        // No «Por revisar» anywhere: no chip in the filters, no pill on rows.
+        await expect(page.getByRole('button', { name: /^(To review|Por revisar|Para revisar)/ })).toHaveCount(0);
+        await expect(page.getByTestId('row-needs-review')).toHaveCount(0);
+        const reviewRow = rows.filter({ has: page.getByTestId('row-pending-dup') }).filter({ hasText: name });
+        // Both applications are the same person, so both rows say so.
+        await expect(reviewRow).toHaveCount(2);
 
         // The seeded admin's T&C modal can open after load and cover the list.
         await dismissCountryBanner(page);
         // The form line opens that form, not the profile behind the row.
-        await reviewRow.getByRole('link', { name: /General form|Formulario general|Formulário geral/ }).click();
+        const secondRow = rows.filter({ has: page.locator(`a[href*="/form-results/${secondId}"]`) });
+        await secondRow.getByRole('link', { name: /General form|Formulario general|Formulário geral/ }).click();
         await expect(page).toHaveURL(new RegExp(`/form-results/${secondId}`), { timeout: 30_000 });
+        // «←» names where we came from (spec 2026-11-05), not «Mis animales».
+        const back = page.getByTestId('form-back-link');
+        await expect(back).toHaveText(/My adopters|Mis adoptantes|Meus adotantes/);
+        await expect(back).toHaveAttribute('href', '/my-adopters');
         await expect(page.getByTestId('form-status-banner')).toHaveAttribute('data-state', 'review_matches');
 
         // Back keeps the filter (it lives in the URL), and "Todos" shows everyone again.
@@ -67,5 +77,70 @@ test.describe('/my-adopters — people who filled a form', () => {
         await page.getByRole('button', { name: /^(All|Todos)/ }).click();
         await expect(page).toHaveURL(/\/my-adopters$/);
         await expect(rows).toHaveCount(all);
+    });
+
+    test('on a phone, the card shows the profile\'s own bar with a 44px «Revisar»', async ({ browser, request }) => {
+        test.setTimeout(120_000);
+        const stamp = Date.now();
+        const name = `E2E Barra ${stamp}`;
+        const email = `e2e-bar-${stamp}@example.com`;
+        const phone = `17${String(stamp).slice(-8)}`;
+        await submitForm(request, { name, email, phone });
+        await submitForm(request, { name, email, phone });
+        const ctx = await browser.newContext({ storageState: '.auth/admin.json', viewport: { width: 390, height: 844 } });
+        try {
+            const page = await ctx.newPage();
+            await page.goto('/my-adopters');
+            await dismissCountryBanner(page);
+            const bar = page.locator('[data-testid="row-pending-dup-bar"]:visible').filter({ hasText: name }).first();
+            await expect(bar).toBeVisible({ timeout: 30_000 });
+            const review = bar.getByRole('link', { name: /Review|Revisar/ });
+            expect((await review.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+            await expect(review).toHaveAttribute('href', /\/my-adopters\?pair=.+#pendientes/);
+            // A real tap: the card's stretched name link must not swallow it.
+            await review.click();
+            await expect(page).toHaveURL(/\/my-adopters\?pair=/, { timeout: 30_000 });
+        } finally {
+            await ctx.close();
+        }
+    });
+
+    test('two open questions: card and profile name the same person, «y 1 más», and «Revisar» opens the same pair', async ({ browser, request }) => {
+        test.setTimeout(150_000);
+        const stamp = Date.now();
+        const name = `E2E Dos ${stamp}`;
+        const email = `e2e-two-${stamp}@example.com`;
+        const phone = `18${String(stamp).slice(-8)}`;
+        const a = await submitForm(request, { name, email, phone });
+        const b = await submitForm(request, { name, email, phone });
+        const c = await submitForm(request, { name, email, phone });
+        const id = (sub: string) => String(dbRows(`SELECT auto_adopter_id AS id FROM form_submissions WHERE id = '${sub}'`)[0].id);
+        const [A, B, C] = [id(a), id(b), id(c)];
+        // C pairs with A and with B. C–A is the STRONGER but older; C–B weaker and newest.
+        const pairWhere = (x: string, y: string) => `(adopter1_id = '${x}' AND adopter2_id = '${y}') OR (adopter1_id = '${y}' AND adopter2_id = '${x}')`;
+        execD1(`UPDATE duplicate_candidates SET score = 90, detected_at = strftime('%s','now','-2 days') WHERE ${pairWhere(C, A)}`);
+        execD1(`UPDATE duplicate_candidates SET score = 40, detected_at = strftime('%s','now') WHERE ${pairWhere(C, B)}`);
+        const ctx = await browser.newContext({ storageState: '.auth/admin.json', viewport: { width: 390, height: 844 } });
+        try {
+            const page = await ctx.newPage();
+            await page.goto('/my-adopters');
+            await dismissCountryBanner(page);
+            const card = page.locator('[data-testid="my-adopters-row"]:visible').filter({ has: page.locator(`a[href="/adopter/${C}?ref=my-adopters"]`) });
+            const cardBar = card.getByTestId('row-pending-dup-bar');
+            await expect(cardBar).toContainText(/1 more|1 más|1 mais/, { timeout: 30_000 });
+            const cardNamed = await cardBar.getByTestId('row-pending-dup-bar-link').getAttribute('href');
+            const cardReview = await cardBar.getByRole('link', { name: /Review|Revisar/ }).getAttribute('href');
+
+            await page.goto(`/adopter/${C}`);
+            await dismissCountryBanner(page);
+            const profileBar = page.getByTestId('profile-pending-dup');
+            await expect(profileBar).toContainText(/1 more|1 más|1 mais/, { timeout: 30_000 });
+            // One rule on both screens (spec Goal 3): the strongest match is named, and «Revisar» opens it.
+            expect(cardNamed).toBe(`/adopter/${A}`);
+            expect(await profileBar.getByTestId('profile-pending-dup-link').getAttribute('href')).toBe(`/adopter/${A}`);
+            expect(await profileBar.getByRole('link', { name: /Review|Revisar/ }).getAttribute('href')).toBe(cardReview);
+        } finally {
+            await ctx.close();
+        }
     });
 });

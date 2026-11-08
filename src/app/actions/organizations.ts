@@ -5,6 +5,7 @@ import { eq, and, sql, ne } from 'drizzle-orm';
 import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
+import { appBaseUrl } from '@/lib/emailConfig';
 
 /**
  * Case-insensitive name-collision check. Returns true when *another* org
@@ -268,6 +269,96 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
     }
 }
 
+/** Why «Quitar del grupo» was refused; the page shows each in words (organizations.error_*). */
+export type RemoveMemberError = 'not_authenticated' | 'not_member' | 'member_not_found' | 'cannot_remove_self' | 'failed';
+
+/**
+ * «Quitar del grupo» (G1, Jon 2026-11-08): ANY member removes another member —
+ * the group's creator included; the admin page keeps its own removal.
+ *
+ * Auth: a signed-in member of `orgId`; the target row must belong to that same
+ * group (`id` AND `org_id`), so a member of one group can never remove someone
+ * from another. Yourself → «Salir» (leaveOrganization), which also deletes a
+ * group left empty.
+ *
+ * What happens to the removed person's records: nothing moves. Records belong
+ * to whoever added them (`addedBy`), and the team is computed live from
+ * org_members — exactly as when someone leaves with «Salir». So from now on
+ * they no longer see the group's records as their team's, and the group no
+ * longer sees theirs as the team's (protected contact data is masked again
+ * both ways). Audited (`org_member_removed`).
+ */
+export async function removeOrganizationMember(orgId: string, memberId: string): Promise<{ success: boolean; error?: RemoveMemberError; errorId?: string }> {
+    let user = '';
+    try {
+        user = await getUser();
+    } catch (e) {
+        logger.warn('organizations: refused, no session', { orgId, error: e instanceof Error ? e.message : String(e) });
+        return { success: false, error: 'not_authenticated' };
+    }
+    try {
+        const db = await getDb();
+        if (!db) {
+            const errorId = logger.error('removeOrganizationMember: database unavailable', new Error('no db'), { user, orgId, memberId });
+            return { success: false, error: 'failed', errorId };
+        }
+
+        if (!(await isMemberOf(db, orgId, user))) {
+            logger.warn('removeOrganizationMember: refused, not a member', { user, orgId, memberId });
+            return { success: false, error: 'not_member' };
+        }
+
+        const target = await db.select({ id: orgMembers.id, userEmail: orgMembers.userEmail })
+            .from(orgMembers)
+            .where(and(eq(orgMembers.id, memberId), eq(orgMembers.orgId, orgId)))
+            .get() as { id: string; userEmail: string } | undefined;
+        if (!target) return { success: false, error: 'member_not_found' };
+        if (target.userEmail.trim().toLowerCase() === user.trim().toLowerCase()) return { success: false, error: 'cannot_remove_self' };
+
+        await db.delete(orgMembers).where(and(eq(orgMembers.id, memberId), eq(orgMembers.orgId, orgId)));
+        // The removed person saw the invite link on /organizations: replace it, or
+        // they could rejoin at once (and, as a member, remove whoever removed them).
+        await rotateInviteLink(db, orgId, user);
+
+        logger.info('removeOrganizationMember: removed', { user, orgId, memberId });
+        const { logAudit } = await import('@/lib/audit');
+        await logAudit({
+            userEmail: user,
+            action: 'org_member_removed',
+            target: orgId,
+            details: { orgId, memberId, removedEmail: target.userEmail },
+        });
+
+        // F6: tell the removed person, in the app only (member_removed has no email
+        // twin). The removal already happened: a failed notice is logged, never undone.
+        await runAfterResponse('removeOrganizationMember.notifyRemoved', async () => {
+            try {
+                const [{ createNotification, resolveDisplayName }, { notificationContent }] = await Promise.all([
+                    import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+                ]);
+                const org = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, orgId)).get() as { name: string } | undefined;
+                const actorName = await resolveDisplayName(user);
+                const id = await createNotification({
+                    userId: target.userEmail,
+                    type: 'member_removed',
+                    ...notificationContent({ key: 'member_removed', params: { actorName, ...(org?.name ? { orgName: org.name } : {}) } }),
+                    url: '/organizations',
+                    metadata: { orgId, orgName: org?.name },
+                });
+                if (!id) logger.warn('removeOrganizationMember: notice to the removed person not created', { user, orgId, memberId });
+            } catch (e) {
+                logger.warn('removeOrganizationMember: notice to the removed person failed', {
+                    user, orgId, memberId, error: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }, { user, orgId, memberId });
+        return { success: true };
+    } catch (error) {
+        const errorId = logger.error('removeOrganizationMember failed', error, { user, orgId, memberId });
+        return { success: false, error: 'failed', errorId };
+    }
+}
+
 // ── Invite ───────────────────────────────────────────────────────
 
 export async function getInviteLink(orgId: string): Promise<{ success: boolean; url?: string; error?: string; errorId?: string }> {
@@ -284,15 +375,15 @@ export async function getInviteLink(orgId: string): Promise<{ success: boolean; 
 
         if (!membership) return { success: false, error: 'Not a member' };
 
-        // Reuse existing non-expired invite if available
+        // Reuse the group's link: there is one, and it never expires on its own
+        // (G1) — «Generar un enlace nuevo» (regenerateInviteLink) replaces it.
         const existing = await db.select()
             .from(orgInvites)
             .where(eq(orgInvites.orgId, orgId))
             .get();
 
         if (existing) {
-            const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || 'https://buenadoptante.com';
-            return { success: true, url: `${baseUrl}/invite/${existing.id}` };
+            return { success: true, url: inviteUrl(existing.id) };
         }
 
         // Create new invite
@@ -303,12 +394,81 @@ export async function getInviteLink(orgId: string): Promise<{ success: boolean; 
             createdBy: user,
         });
 
-        const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || 'https://buenadoptante.com';
-        return { success: true, url: `${baseUrl}/invite/${inviteId}` };
+        return { success: true, url: inviteUrl(inviteId) };
     } catch (error) {
         const errorId = logger.error('getInviteLink failed', error, { user, orgId });
         return { success: false, error: 'Failed to generate invite link', errorId };
     }
+}
+
+/**
+ * «Generar un enlace nuevo» (G1): the group's invite link is replaced and the
+ * old one stops working at once — joinOrganization and getInvitePreview treat
+ * an unknown token as invalid. No automatic expiry (Jon 2026-11-08).
+ *
+ * Auth: a signed-in member of `orgId`. The new link is written before the old
+ * ones are deleted, so the group is never left without a link; every older
+ * row of the group goes (not just one).
+ */
+export async function regenerateInviteLink(orgId: string): Promise<{ success: boolean; url?: string; error?: 'not_authenticated' | 'not_member' | 'failed'; errorId?: string }> {
+    let user = '';
+    try {
+        user = await getUser();
+    } catch (e) {
+        logger.warn('organizations: refused, no session', { orgId, error: e instanceof Error ? e.message : String(e) });
+        return { success: false, error: 'not_authenticated' };
+    }
+    try {
+        const db = await getDb();
+        if (!db) {
+            const errorId = logger.error('regenerateInviteLink: database unavailable', new Error('no db'), { user, orgId });
+            return { success: false, error: 'failed', errorId };
+        }
+
+        if (!(await isMemberOf(db, orgId, user))) {
+            logger.warn('regenerateInviteLink: refused, not a member', { user, orgId });
+            return { success: false, error: 'not_member' };
+        }
+
+        const inviteId = await rotateInviteLink(db, orgId, user);
+
+        logger.info('regenerateInviteLink: old invite links revoked', { user, orgId });
+        return { success: true, url: inviteUrl(inviteId) };
+    } catch (error) {
+        const errorId = logger.error('regenerateInviteLink failed', error, { user, orgId });
+        return { success: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * Replace the group's invite link: the new row is written before the old ones
+ * are deleted, so the group is never left without one. Caller checks membership.
+ */
+async function rotateInviteLink(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, orgId: string, user: string): Promise<string> {
+    const inviteId = crypto.randomUUID();
+    await db.insert(orgInvites).values({ id: inviteId, orgId, createdBy: user });
+    await db.delete(orgInvites).where(and(eq(orgInvites.orgId, orgId), ne(orgInvites.id, inviteId)));
+    return inviteId;
+}
+
+/**
+ * The public invite URL: this deploy's own origin when configured, else the
+ * real domain for the environment (src/lib/emailConfig.ts). The old fallback
+ * was buenadoptante.com, which is not the app's domain.
+ */
+function inviteUrl(inviteId: string): string {
+    const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || appBaseUrl();
+    return `${baseUrl}/invite/${inviteId}`;
+}
+
+/** Is `user` a member of `orgId`? (Same lookup as the other actions here.) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the D1/better-sqlite db union getDb() returns
+async function isMemberOf(db: any, orgId: string, user: string): Promise<boolean> {
+    const membership = await db.select({ id: orgMembers.id })
+        .from(orgMembers)
+        .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userEmail, user)))
+        .get();
+    return !!membership;
 }
 
 // ── Join via Invite ──────────────────────────────────────────────

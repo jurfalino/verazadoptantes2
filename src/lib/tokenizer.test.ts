@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractTokens, computeTokenHash } from './tokenizer';
+import { extractTokens, computeTokenHash, extractLabeledIdQuery } from './tokenizer';
 import { tokenInputsFor } from './adopterTokenize';
 
 const base = { name: 'Juan Pérez', contactInfo: null, addressInfo: null, familyMembers: null, sourceUrl: null };
@@ -71,5 +71,33 @@ describe('name_full weighting (v6) — a shared first name is not a full-name ma
 
     it('is not fooled by padding around a single word', () => {
         expect(of('  Cristina  ').some(t => t.type === 'name_full')).toBe(false);
+    });
+});
+
+describe('extractLabeledIdQuery — a documento typed as on the card (S3)', () => {
+    it.each([
+        ['DNI 25 999 890', '25999890'],
+        ['Documento 25 999 890', '25999890'],
+        ['documento 25.999.890', '25999890'],
+        ['DNI25999890', '25999890'],
+        ['DNI: 25.999.890', '25999890'],
+        ['dni n° 25.999.890', '25999890'],
+        ['Cédula 1.234.567-8', '12345678'],
+        ['CI V-12345678', 'v12345678'],
+        ['  doc 25-999-890 ', '25999890'],
+    ])('%s → %s', (q, id) => {
+        expect(extractLabeledIdQuery(q)).toBe(id);
+    });
+
+    it.each([
+        'Juan Pérez',
+        '25999890',                     // no label: the existing fallback reads it
+        'DNI 25 999 890 Juan Pérez',    // more than a documento
+        'Ceci 12345678',                // a name that starts like a label
+        'documentos 2024',
+        'DNI 12',                       // too short
+        'dni ok',
+    ])('%s → null', q => {
+        expect(extractLabeledIdQuery(q)).toBeNull();
     });
 });

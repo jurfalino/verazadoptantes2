@@ -20,7 +20,9 @@
  * never sent from here, so an edit keeps them as they are; they are still shown
  * (MemberCard, the profile) and still set by the public form and imports.
  */
-import { useId, useState } from 'react';
+import { useId, useState, useRef } from 'react';
+import { askedOwnersText } from '@/lib/askedOwners';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { useRouter } from 'next/navigation';
 import { Check, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -229,25 +231,33 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
     const [checking, setChecking] = useState(false);
     /** null = not checked yet; [] = checked, nobody (left). */
     const [candidates, setCandidates] = useState<HouseholdMatchCandidate[] | null>(null);
+    /** Profiles answered «No, es otra persona» in this check — recorded as different people if a new one is made. */
+    const [rejected, setRejected] = useState<string[]>([]);
+    /** Everyone this check offered (the «no» answers' ownership, for the answer event). */
+    const offeredRef = useRef<HouseholdMatchCandidate[]>([]);
     /** The «¿Es este perfil?» check failed (its errorId): the rescuer retries or adds as new, knowingly. */
     const [checkFailed, setCheckFailed] = useState<string | null>(null);
 
     const hasIdentifier = !!name.trim() || drafts.length > 0;
     const contactInputs = (): HouseholdContactInput[] => drafts.map(asInput);
     // Anything typed after the check makes it stale.
-    const edited = <T,>(set: (v: T) => void) => (v: T) => { set(v); setCandidates(null); };
+    const edited = <T,>(set: (v: T) => void) => (v: T) => { set(v); setCandidates(null); setRejected([]); };
 
-    async function add(existingProfileId?: string) {
+    async function add(existingProfileId?: string, rejectedIds: string[] = rejected) {
         setBusy(true);
         try {
             const res = await addHouseholdPerson({
                 anchorAdopterId,
                 ...(householdId ? { householdId } : {}),
-                ...(existingProfileId ? { existingProfileId } : { name: name.trim() }),
+                ...(existingProfileId ? { existingProfileId } : { name: name.trim(), ...(rejectedIds.length ? { rejectedProfileIds: rejectedIds } : {}) }),
                 ...(rel ? { relationship: rel } : {}),
                 contactEntries: contactInputs(),
             });
             if (!res.ok) { fail.refused(res); return; }
+            // One event per «¿Es este perfil?» answer (spec 2026-11-05): the household check offers only the viewer's reachable profiles.
+            const isOwn = (id: string) => (candidates ?? []).concat(offeredRef.current).some(c => c.adopterId === id && c.ownership === 'mine');
+            if (existingProfileId) trackSamePersonAnswer('household', 'same', isOwn(existingProfileId));
+            else for (const id of rejectedIds) trackSamePersonAnswer('household', 'different', isOwn(id));
             const shownName = existingProfileId ? (candidates?.find(c => c.adopterId === existingProfileId)?.adopter.name ?? name.trim()) : name.trim();
             const who = shownName || t('adopter.nameless');
             toast.success(fill(t('adopter.hh_added_title'), { name: who }),
@@ -255,6 +265,10 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                     ? fill(t('adopter.hh_added_body_others'), { host: hostName, others: joinNames(t, othersInHome) })
                     : fill(t('adopter.hh_added_body'), { host: hostName }));
             if (res.autoRequestFiled) toast.info(t('adopter.ce_add_toast_added_with_request'));
+            // A «No» this rescuer may not settle went to the owners (consistency rule): say who.
+            for (const a of res.asked ?? []) {
+                toast.info(fill(t('adopter.hh_asked_owners'), { owners: askedOwnersText(t, a.ownerLabels), name: who, other: a.otherName }));
+            }
             fail.partial(res.warningErrorId);
             onDone();
             router.refresh();
@@ -269,6 +283,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
         if (!hasIdentifier) return;
         setChecking(true);
         setCheckFailed(null);
+        setRejected([]);
         let found: HouseholdMatchCandidate[] = [];
         try {
             const res = await getHouseholdMatchCandidates({ name: name.trim() || undefined, contactEntries: contactInputs(), anchorAdopterId });
@@ -286,15 +301,19 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
         } finally {
             setChecking(false);
         }
+        offeredRef.current = found;
         if (found.length > 0) { setCandidates(found); return; }
         await add();
     }
 
     async function no() {
+        const current = candidates?.[0];
+        const nowRejected = current ? [...rejected, current.adopterId] : rejected;
+        setRejected(nowRejected);
         const rest = (candidates ?? []).slice(1);
         if (rest.length > 0) { setCandidates(rest); return; }
         setCandidates([]);
-        await add();
+        await add(undefined, nowRejected);
     }
 
     const current = candidates && candidates.length > 0 ? candidates[0] : null;
@@ -312,7 +331,7 @@ export function AddPersonForm({ anchorAdopterId, householdId, hostName, relative
                         wizard): same rows, same «Agregar dato de contacto», same composer. */}
                     <ContactEntriesSection
                         entries={drafts}
-                        onChange={next => { setDrafts(next); setCandidates(null); }}
+                        onChange={next => { setDrafts(next); setCandidates(null); setRejected([]); }}
                         canEditAll
                         hideVisibilityMicrocopy
                         emptyMessage={null}

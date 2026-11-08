@@ -70,7 +70,7 @@ const es: TermsContent = {
                 'Cancelación — solicitar la eliminación de tus datos.',
                 'Oposición — oponerte al tratamiento de tus datos.',
             ] },
-            { type: 'p', text: 'Para ejercer cualquiera de estos derechos, escribí a privacidad@buenadoptante.com indicando tu nombre completo y la acción que solicitás. Responderemos dentro de los 10 días hábiles.' },
+            { type: 'p', text: 'Para ejercer cualquiera de estos derechos, escribí a privacidad@buenadoptante.org indicando tu nombre completo y la acción que solicitás. Responderemos dentro de los 10 días hábiles.' },
         ] },
         { title: '8. Seguridad', blocks: [
             { type: 'p', text: 'Los datos se almacenan de forma segura utilizando protocolos de cifrado estándar. Se implementan medidas técnicas y organizativas para proteger tu información contra acceso no autorizado, pérdida o alteración.' },
@@ -131,7 +131,7 @@ const en: TermsContent = {
                 'Cancellation — request the deletion of your data.',
                 'Objection — object to the processing of your data.',
             ] },
-            { type: 'p', text: 'To exercise any of these rights, write to privacidad@buenadoptante.com stating your full name and the action you are requesting. We will respond within 10 business days.' },
+            { type: 'p', text: 'To exercise any of these rights, write to privacidad@buenadoptante.org stating your full name and the action you are requesting. We will respond within 10 business days.' },
         ] },
         { title: '8. Security', blocks: [
             { type: 'p', text: 'Data is stored securely using standard encryption protocols. Technical and organizational measures are implemented to protect your information against unauthorized access, loss, or alteration.' },
@@ -192,7 +192,7 @@ const pt: TermsContent = {
                 'Cancelamento — solicitar a exclusão dos seus dados.',
                 'Oposição — opor-se ao tratamento dos seus dados.',
             ] },
-            { type: 'p', text: 'Para exercer qualquer um desses direitos, escreva para privacidad@buenadoptante.com informando seu nome completo e a ação que solicita. Responderemos dentro de 10 dias úteis.' },
+            { type: 'p', text: 'Para exercer qualquer um desses direitos, escreva para privacidad@buenadoptante.org informando seu nome completo e a ação que solicita. Responderemos dentro de 10 dias úteis.' },
         ] },
         { title: '8. Segurança', blocks: [
             { type: 'p', text: 'Os dados são armazenados de forma segura utilizando protocolos de criptografia padrão. São implementadas medidas técnicas e organizativas para proteger suas informações contra acesso não autorizado, perda ou alteração.' },

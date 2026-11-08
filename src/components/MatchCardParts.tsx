@@ -20,7 +20,7 @@
  * (≥44px) with the same three labels wherever the step is the same.
  */
 import Link from 'next/link';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import type { ReactNode } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -35,7 +35,7 @@ export type MatchCardPerson = {
     name: string;
     /** The person's own average rating; null/undefined: «Sin calificación». */
     rating?: number | null;
-    openAlerts?: OpenAlertKind[];
+    openFlags?: OpenFlagKind[];
     isMinor?: boolean;
     households?: CardHousehold;
 };
@@ -67,7 +67,7 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
                     </a>
                     {/* The housemate alerts sit in the person's own alert row, before the flags (Jon 2026-11-01). */}
                     {showStanding
-                        ? <PersonStanding rating={person.rating ?? null} openAlerts={person.openAlerts ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} alertsTestId={`${testId}-alerts`}
+                        ? <PersonStanding rating={person.rating ?? null} openFlags={person.openFlags ?? []} isMinor={!!person.isMinor} minorTestId={`${testId}-minor`} flagsTestId={`${testId}-flags`}
                             alerts={<HousemateAlert household={person.households} personId={person.id} testId={`${testId}-housemate-alert`} />} />
                         : <HousemateAlert household={person.households} personId={person.id} testId={`${testId}-housemate-alert`} />}
                 </div>
@@ -77,14 +77,13 @@ export function MatchCardHeader({ person, newTab = false, testId = 'match-card-h
 }
 
 /**
- * «Es la misma persona» (primary, optional), «Ver perfil completo →» (secondary
- * link) and «No es esta persona» (secondary, optional) — or a caller's own
- * primary label for the same slot (e.g. «Continuar con este perfil»).
+ * «Sí, es la misma persona» (primary, optional), the profile link and «No, es otra
+ * persona» (secondary, optional) — the same two answers on every screen (step 3:
+ * one way to ask). What a «Sí» does is said by the caller's confirmation.
  */
 export type MatchCardActionsProps = {
     profileId: string;
     onSame?: () => void;
-    sameLabel?: string;
     onNotThis?: () => void;
     busy?: boolean;
     newTab?: boolean;
@@ -93,7 +92,7 @@ export type MatchCardActionsProps = {
     notThisTestId?: string;
 };
 
-export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy = false, newTab = false, sameTestId, viewTestId, notThisTestId }: MatchCardActionsProps) {
+export function MatchCardActions({ profileId, onSame, onNotThis, busy = false, newTab = false, sameTestId, viewTestId, notThisTestId }: MatchCardActionsProps) {
     const { t } = useLanguage();
     const layout = 'w-full sm:w-auto';
     return (
@@ -101,7 +100,7 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
             {onSame && (
                 <Button type="button" size="compact" onClick={onSame} disabled={busy} data-testid={sameTestId} layoutClassName={layout}
                     icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
-                    {sameLabel || t('formResults.same_person')}
+                    {t('samePerson.yes')}
                 </Button>
             )}
             {newTab
@@ -114,7 +113,7 @@ export function MatchCardActions({ profileId, onSame, sameLabel, onNotThis, busy
                 </Link>}
             {onNotThis && (
                 <Button type="button" variant="secondary" size="compact" onClick={onNotThis} disabled={busy} data-testid={notThisTestId} layoutClassName={`${layout} sm:ml-auto`}>
-                    {t('formResults.not_this_person')}
+                    {t('samePerson.no')}
                 </Button>
             )}
         </div>

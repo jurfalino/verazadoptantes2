@@ -2,6 +2,171 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.37] - 2026-11-08
+
+### Fixed — follow-ups found while updating the help pages (F1–F10)
+- **Post import keeps every screenshot (F1).** Screenshots are saved shrunk to 1600 px (the AI still
+  reads the original); any image still too big for the database goes to file storage instead of being
+  dropped silently. If one can't be stored: «No pudimos guardar 1 de las 3 imágenes…». At most 20 images
+  per save, about 7.5 MB each.
+- **A post photo that can't be downloaded is mentioned (F2):** «No pudimos traer 1 foto de la publicación…».
+- **«Tránsito» asks the same as «Adopción» (F3),** on create and edit: «¿Entregado en casa…?» with street
+  and locality, and «¿Verificaste su identidad?». Both forms share one address block.
+- **Marking "delivered home" while editing adds the address to the profile's contacts (F4),** as creating
+  already did; the server does it, without duplicates.
+- **A «No, es otra persona» in a post import is saved** when the person is added to a household they're
+  already in (F5).
+- **A removed group member is told (F6):** «Ya no estás en «Michis» — Marta Giménez te quitó del grupo. Lo
+  que cargaste sigue a tu nombre.» In-app only, no email.
+- **Privacy contact is privacidad@buenadoptante.org everywhere (F9).** The .com address had no mail server.
+
+## [2.58.36] - 2026-11-08
+
+### Fixed — defects found while writing the help docs (22 cards; C1 on hold)
+- **Teams.** A teammate can open «Resultados del contrato» and answer it (T1), tap a teammate's form
+  line in «Mis adoptantes» (T2), and edit or delete a teammate's contact data; «Reportar inexactitud»
+  shows exactly for those who can't edit (T3). The edit pencil on a record now follows the same rule
+  as the save (T4).
+- **Groups (G1).** Any member can «Quitar del grupo» another member (like «Salir»: their records stay
+  theirs). «Generar un enlace nuevo» replaces the invite link; removing a member replaces it too, so the
+  old link stops working. Links never expire on their own. Invite links use buenadoptante.org.
+- **Privacy (P1).** The delivery address on a record is masked for viewers outside the team, the same
+  way as other contact data — including the copy kept in the «Dirección Verificada» mark.
+- **Interested people (P2).** The panel shows the person's alerts with the profile's pills; «Sin alertas
+  en el perfil» only when the check ran and found none.
+- **Records.** A follow-up or return on an animal without a name attaches to its adoption instead of
+  creating a second one (R1). «¿Verificaste su identidad?» only where it is saved (adoption) (R2).
+  Editing a record saves with «Guardar cambios» (R3).
+- **Badges.** «Identidad Verificada» and «Dirección Verificada» follow one rule on the profile, search
+  cards, the applicants panel and the API, and go away when their basis does (V1, V2). The profile
+  header now shows «Dirección Verificada».
+- **Search.** Searching without accents finds addresses (S1). Phones from different area codes no longer
+  count as the same phone; the same number in different formats still does (S2). «DNI 25 999 890» and
+  «documento 25.999.890» find the person (S3).
+- **Duplicates and imports.** A hand-flagged pair offers «No, es otra persona» too (D1). A «No» given in a
+  post import survives a merge (I2). Post import shows each screenshot once and saves every image (I1).
+- **Notices.** The contract notice for a personal link says «… firmó el contrato de adopción de …» and opens
+  the adopter's profile (D2). The back link on «Resultados del contrato» goes to «Mis adoptantes» (D3).
+- **Wording (C2).** «documento» instead of «DNI», voseo in six messages, «mala señal» in the guided tour.
+
+### After deploy
+- Re-run the duplicate Scan from /admin/duplicates once, to clear «Pendientes» pairs that matched only
+  on a phone's last 8 digits.
+
+## [2.58.35] - 2026-11-07
+
+### Fixed — public API v1 (independent review of 2.58.34)
+- If the Admin "too many" thresholds can't be read, the API now answers 503 instead of judging alerts
+  by the looser built-in defaults (5 adoptions in 90 days; production is set to 2 in 10). Before, a
+  momentary database error could return a person with 3 adoptions in 10 days with no alert. Applies to
+  a person's own alerts and to the housemate alerts. The app itself keeps falling back to the
+  defaults, as before.
+
+## [2.58.34] - 2026-11-07
+
+### Changed — flags and alerts mean one thing each (no visible change)
+- **Alert** = "this person may not be trustworthy to adopt" (system-computed: too many adoptions,
+  too many rescues asked, a housemate rated 1–2★, a housemate with alerts). **Flag** = "some action
+  may be needed on this profile" (Inexacto, Duplicado, posible duplicado, Identidad/Domicilio
+  verificado). Code names, types, translation keys and test ids now follow this split; nothing on
+  screen changes.
+- All screens and the sign-in block compute the "too many" alerts with one shared rule. The sign-in
+  rule itself is unchanged (1★, or one of the two "too many" alerts).
+- «Elegir adoptante» from an animal's page now warns with the Admin thresholds (as the rest of the
+  app does), not a fixed 5 adoptions in 90 days.
+
+### Changed — public API v1
+- `alerts` (profile and risk) can now include `housemate_low_rating` (with `rating`, `ratingLevel`,
+  `ratingLabel`) and `housemate_alerts` (no extra fields). `too_many_*` alerts are unchanged. If the
+  household data can't be read, the call answers 503, never "no alerts".
+- The «inaccurate» flag is no longer returned (it never appeared in a production response).
+
+### Fixed
+- A «Domicilio verificado» flag added while recording a delivery now records who added it (was saved
+  without an author).
+
+## [2.58.33] - 2026-11-07
+
+### Changed — home cards polish (UI review 2026-11-07)
+- «Mis adoptantes» / «Posts de redes» rows: the rating now sits in its own column on the right, as on
+  «Mis adoptantes» (the page the card summarizes), on phone and desktop — no longer wherever the name
+  ends, so every row has the same shape and ratings read straight down. The group name can no longer
+  touch it.
+- The group chip («michis», a teammate's group) is ONE shared component on the home cards and on
+  «Mis adoptantes»: same size as the rating pill, a thin border (it vanished into the card in dark
+  mode), and a long name is cut to one line with the whole name on hover.
+- The person's photo is the size of the animals' photos and lines up with the name; «hace 39 días»
+  no longer breaks across lines; spacing of the orange rows and «También podés» is back on the 8px
+  grid; the loading placeholder is closer to the cards' real height, so the page jumps less.
+- «1 animal más con controles pendientes» (was «1 animales más») — es/en/pt.
+- The orange «pendiente» text is darker everywhere in the light theme (#8a5700, was #c67c00): 5.1:1 on
+  the orange strip and 5.5:1 on the card, up from 2.8:1 — readable at 12px.
+
+### Fixed
+- On phones the card column could grow wider than the screen when a row had a long group name; it now
+  always fits (checked at 320, 360 and 390px).
+
+## [2.58.32] - 2026-11-06
+
+### Fixed
+- Tests only: three checks on the contract screen looked for the Spanish text, which the English test
+  browser no longer shows now that the screen is translated. They now accept es/en/pt. No app change;
+  2.58.31's staging deploy was blocked by this and never went live.
+
+## [2.58.31] - 2026-11-06
+
+### Changed — your team answers «¿Es la misma persona?» as one (step 2)
+- A possible duplicate where you **or a teammate** loaded one of the profiles is yours to answer: it
+  is listed in your «Pendientes de revisar», counted on your homepage, its profile bar offers
+  «Revisar», and you can answer it both ways (keep them separate, or say it's the same person — the
+  usual rules about whose profile is kept and when the other rescuer is asked still apply). Before,
+  only the person who loaded a profile could. Every «No» on the other screens (form, contract,
+  household, «Ya está en otro perfil», post import, new profile) follows the same rule.
+- Someone outside your team still sees the bar but can't answer; a team-lookup failure falls back to
+  only your own profiles, never wider. Independent security review: GO (2026-11-06).
+
+### Changed — one way to ask (step 3)
+- Every screen that asks whether two profiles are the same person now asks it the same way: the
+  question «¿Es la misma persona?», the answers «Sí, es la misma persona» / «No, es otra persona»,
+  and the concept «Posible duplicado». What happens next (merge, add the data, ask the other
+  rescuer, keep them separate) is still said next to the buttons or in the confirmation.
+  Screens: «Pendientes de revisar», form and contract results, the new-profile form, the «Ya está en
+  otro perfil» window, adding a household member, the post import, and the spreadsheet import.
+- The profile bar «Posible duplicado de X» looks the same for everyone (it used to be blue for
+  people who can't answer); only «Revisar» depends on whether you can.
+- The contract results page and the spreadsheet import's «Duplicados» step are now translated (en/pt).
+- Spreadsheet import: answering «No, es otra persona» on a row is now saved like on every other screen,
+  once the new profile is created (in the background; a failure is logged). «Crear todas como nuevas»
+  and the defaults still answer nothing.
+- Post import: when you pick «Un familiar o alguien que vive con esa persona», the button says
+  «No, es alguien de su hogar» (it used to say yes). In «Pendientes», the follow-up when the names
+  differ now reads «¿Seguro que es la misma persona?» instead of asking the same question twice.
+
+## [2.58.30] - 2026-11-06
+
+### Changed — "is this the same person?" has one answer, everywhere
+- A form or contract that looks like someone already registered is now an ordinary «Posible
+  duplicado». The form and contract screens show the same open matches as «Pendientes de revisar»,
+  and their «No es esta persona» is saved: it clears the match on every screen, for everyone. An
+  answer given in the list («Mantener separados») clears the form and contract screens too.
+- Mis adoptantes: the «Por revisar» filter and pill are gone. A person with an open match shows the
+  profile's own bar «Posible duplicado de X · Revisar» on their card (44 px button on a phone), and
+  the card and the profile name the same match and open the same one.
+- Homepage: «N formularios por revisar» is gone; those matches count in «N pendientes de revisar».
+- The form screen's back link names where you came from (Mis adoptantes, the profile, the animal),
+  instead of always «Mis animales».
+- One rule for every «no, it's not this person» (Jon 2026-11-06): it is saved — permanently, for
+  everyone — as soon as both profiles exist, on every screen: «Pendientes», form, contract, adding a
+  household member, the «Ya está en otro perfil» window (was "local only" since 2026-10-29), the post
+  import and the new-profile form. Only someone who loaded one of the two profiles (or an admin)
+  settles it (on the «Ya está en otro perfil» window, only whoever loaded the profile being edited);
+  anyone else's «No» sends the question to the owners' «Pendientes» and they're told who was asked
+  (the group's name only to its members; «los administradores» when nobody owns the profiles). The
+  server only accepts a «No» about a profile its own duplicate search offers for the same input, and
+  a «No» that fails to save is shown with its Error ID.
+- After every match is answered, the form and contract screens no longer claim "no previous records".
+- New analytics event `same_person_answered` (screen, yes/no, own profile or not — no names), on every screen above.
+
 ## [2.58.29] - 2026-11-05
 
 ### Changed — homepage «Mis animales»: one list, what needs you first

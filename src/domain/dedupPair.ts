@@ -101,7 +101,10 @@ export function decideDedupAction(
     if (!actor) return { kind: 'refuse', reason: 'unauthenticated' };
     if (!a || !b || a.deleted || b.deleted || a.id === b.id) return { kind: 'refuse', reason: 'not_found' };
     const created = (s: DedupSide) => !!s.addedBy && s.addedBy === actor;
-    if (!created(a) && !created(b)) return { kind: 'refuse', reason: 'not_yours' };
+    // Step 2 (Jon 2026-11-05): the team acts as one — a pair a teammate loaded a side of
+    // is the viewer's to answer, as in the contact window (dupHintActions). `teamOwned`
+    // includes the caller's own; `created` stays for callers that pass it unset.
+    if (!created(a) && !created(b) && !a.teamOwned && !b.teamOwned) return { kind: 'refuse', reason: 'not_yours' };
     if (keepId !== undefined) {
         if (keepId !== a.id && keepId !== b.id) return { kind: 'refuse', reason: 'not_found' };
         const keep = keepId === a.id ? a : b;

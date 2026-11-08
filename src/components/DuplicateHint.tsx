@@ -32,8 +32,9 @@
  *     - 'pending' (already up for review): only said.
  *     - 'settled' (already recorded as two people: a shared home, «Mantener
  *       separados», «Viven juntos»): «Ya figuran como personas distintas.»
- *   Always: «No es esta persona» → closes the window and drops that row while
- *   the typed value stays the same (local only, no server write, no toast);
+ *   Always: «No es esta persona» → closes the window, drops that row, and saves the
+ *   answer (answerNotSamePerson — the consistency rule, 2026-11-06): settled when the
+ *   viewer loaded either profile, else opened for the owners, who are named in a toast;
  *   «Abrir perfil ↗» (OpenProfileLink) → writes the search-match grant
  *   (grantSearchMatchAccess) so the new tab renders unmasked, then opens it.
  *
@@ -48,6 +49,9 @@ import { getDuplicateHintMatches, grantSearchMatchAccess, flagAdopterAsDuplicate
 import type { DupHintMatch } from '@/app/actions/households';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
+import { answerNotSamePerson } from '@/app/actions/notSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
+import { askedOwnersText } from '@/lib/askedOwners';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -59,7 +63,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { deserializeContactEntries, type ContactEntryType } from '@/lib/contactEntries';
 import { SUMMARY_CONTACT_TYPES, MAX_SUMMARY_CONTACTS } from '@/domain/householdLinks';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
 import { NO_DISMISSED, dismissDupHintMatch, isDupHintType, visibleDupHintMatches, type DupHintDismissed } from '@/domain/dupHint';
 import { CONTACT_ENTRIES_FULL } from '@/lib/contactEntries';
 import { joinNames } from '@/lib/householdCopy';
@@ -182,7 +186,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
     );
     const notThis = (
         <Button type="button" variant="secondary" fullWidth onClick={onNotThis} disabled={disabled} data-testid="dup-hint-not-this">
-            {t('formResults.not_this_person')}
+            {t('samePerson.no')}
         </Button>
     );
     // «Abrir perfil ↗»: the same new-tab link on every surface and for every role (point B, Jon 2026-11-01).
@@ -193,7 +197,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
                 person={{
                     id: match.adopterId, name,
                     rating: match.rating ?? match.avgRating,
-                    openAlerts: match.openAlerts ?? openAlertKinds(match.flags),
+                    openFlags: match.openFlags ?? openFlagKinds(match.flags),
                     isMinor: !!match.isMinor,
                 }}
                 thumbnail={match.thumbnail}
@@ -225,7 +229,7 @@ export function DupHintProfile({ match, canAct, needsPlatform = false, platform 
                         )}
                         <Button type="button" fullWidth onClick={onContinue} disabled={disabled || needsPlatform} data-testid="dup-hint-continue"
                             icon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}>
-                            {t('adopter.dup_action_join_with_existing')}
+                            {t('samePerson.yes')}
                         </Button>
                         {notThis}
                         {openLink}
@@ -445,9 +449,29 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
     if (visible.length === 0) return null;
     const open = openId ? visible.find(m => m.adopterId === openId) ?? null : null;
 
+    // «No es esta persona» is an answer, saved like «Mantener separados» (spec 2026-11-06,
+    // consistency rule — reverses 2026-10-29's "local only"). Hidden on the spot; saved on the server,
+    // which settles it (the viewer loaded either profile) or opens it for the owners and names them.
     const handleNotThis = (adopterId: string) => {
         setDismissed(prev => dismissDupHintMatch(prev, value, adopterId));
         setOpenId(null);
+        if (!excludeAdopterId) return;
+        const typed = isDupHintType(type) ? { type: type as 'phone' | 'email' | 'social' | 'id', value } : undefined;
+        void answerNotSamePerson({ adopterId: excludeAdopterId, rejectedIds: [adopterId], ...(typed ? { typed } : {}) })
+            .then(res => {
+                if (!res.ok) {
+                    toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), res.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${res.error}`), 'DuplicateHint.notThis'));
+                    return;
+                }
+                trackSamePersonAnswer('dup_hint', 'different', res.recorded > 0);
+                for (const a of res.asked) {
+                    toast.info(t('adopter.dup_hint_asked_owners').replace('{owners}', askedOwnersText(t, a.ownerLabels)).replace('{other}', a.otherName));
+                }
+            })
+            .catch(e => {
+                if (handledAsStale(e)) return;
+                toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'DuplicateHint.notThis'));
+            });
     };
 
     const handleOpenFull = async (adopterId: string) => {
@@ -583,7 +607,7 @@ export default function DuplicateHint({ type, value, excludeAdopterId, platform,
         <>
             <DupHintBox matches={visible} done={done} onView={setOpenId} className={`mt-2 ${className ?? ''}`} />
             {open && (
-                <Modal title={t('adopter.hh_candidate_title')} onClose={() => setOpenId(null)} busy={!!busy} testId="dup-hint-window">
+                <Modal title={t('samePerson.question')} onClose={() => setOpenId(null)} busy={!!busy} testId="dup-hint-window">
                     <DupHintProfile
                         match={open}
                         canAct={!!excludeAdopterId}

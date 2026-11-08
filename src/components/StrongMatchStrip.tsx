@@ -19,7 +19,7 @@ import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
 
 interface Props {
     /** What the rescuer has typed — their side of «Qué coincide y qué no». */
@@ -46,7 +46,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
             <div className="px-4 py-2.5 bg-amber-100 border-b border-amber-300 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                 <h3 className="text-sm font-bold text-amber-900">
-                    {t('adopter.dup_strong_strip_title') || 'Likely exact match'}
+                    {t('adopter.dup_strong_strip_title') || 'Possible duplicate'}
                 </h3>
             </div>
             <ul className="divide-y divide-amber-200">
@@ -56,7 +56,7 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                             «Posibles coincidencias» panel; «No es esta persona» takes it off the strip
                             (and out of the save check), where a small × used to. */}
                         <MatchCard newTab thumbnail={result.thumbnail} headTestId="strong-match-head"
-                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
+                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openFlags: openFlagKinds(result.flags), isMinor: result.isMinor, households: result.households }}
                             nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
                             compare={(
                                 <MatchCompare
@@ -73,7 +73,6 @@ export default function StrongMatchStrip({ results, dismissedIds, onDismiss, onC
                             actions={{
                                 busy: busyAdopterId === result.adopter.id,
                                 onSame: onContinueWith ? () => onContinueWith(result.adopter.id) : undefined,
-                                sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
                                 onNotThis: () => onDismiss(result.adopter.id),
                                 notThisTestId: 'strong-match-not-this',
                                 sameTestId: 'strong-match-continue',

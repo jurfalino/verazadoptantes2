@@ -116,7 +116,7 @@ describe('exact scenarios', () => {
         expect(rs.filter(r => r.match === 'found').map(r => r.profile.ratingLevel)).toEqual(expect.arrayContaining([5, 4, 3, 2, 1, 0]));
         expect(rs.map(r => r.reason ?? r.match)).toEqual(expect.arrayContaining(['found', 'not_found', 'name_mismatch', 'multiple_profiles']));
         expect([...new Set(rs.map(r => r.saved.action))].sort()).toEqual(['added_to_best_match', 'added_to_profile', 'created_profile', 'created_profile_for_review']);
-        expect([...new Set(rs.flatMap(r => r.risk.flags))]).toEqual(expect.arrayContaining(['inaccurate', 'possible_duplicate', 'duplicate']));
+        expect([...new Set(rs.flatMap(r => r.risk.flags))]).toEqual(expect.arrayContaining(['possible_duplicate', 'duplicate']));
         expect([...new Set(rs.flatMap(r => r.risk.alerts.map((a: any) => a.type)))].sort()).toEqual(['too_many_adoptions', 'too_many_requests']);
     });
 

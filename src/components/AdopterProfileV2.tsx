@@ -2,8 +2,7 @@
 
 import { apiToolFromHistory, profileOrigin } from '@/domain/recordOrigin';
 import { useEffect, useMemo, useState } from 'react';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts, DEFAULT_ADOPTION_CONFIG } from '@/domain/periodAlerts';
 import { useRouter, useSearchParams } from 'next/navigation';
 import TransferOwnershipModal from '@/components/TransferOwnershipModal';
 import { AdopterForm } from '@/components/AdopterForm';
@@ -36,12 +35,11 @@ import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { NO_ACCESS_VISIBILITY, maskAdopterContact, maskContactEntries, renderName } from '@/lib/piiAccess';
 import { EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/domain/profileHouseholds';
 import { UNDO_RENAME_PARAM, type ProfileIdentityView } from '@/domain/profileIdentity';
-import { pairKey } from '@/domain/dedupPair';
 import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
-import { buttonClasses } from '@/components/ui/Button';
-import { AlertTriangle, ArrowRight, Search } from 'lucide-react';
+import { PendingDupBar } from '@/components/PendingDupBar';
+import { AlertTriangle } from 'lucide-react';
 
 interface AdopterProfileV2Props {
     id: string;
@@ -234,25 +232,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
     // activity on a profile (v2.14.8). After the wizard closes, the card
     // re-renders its options for the next record.
 
-    // Density flags for wizard step-1 alerts (mirrors AdopterForm's computation).
-    // Drives the optional "too many adoptions / too many requests" warnings shown
-    // alongside the rating-bucket guidance copy. null when below threshold.
-    const adoptionsThreshold = adoptionConfig?.threshold ?? 5;
-    const adoptionsPeriodDays = adoptionConfig?.periodDays ?? 90;
-    const requestsThreshold = adoptionConfig?.requestsThreshold ?? 3;
-    const requestsPeriodDays = adoptionConfig?.requestsPeriodDays ?? 30;
-    const tooManyAdoptions = useMemo(() => {
+    // The two period ALERTS for the wizard's step-1 warnings, by the one rule
+    // (periodAlerts — the profile header's and the search card's). null when below threshold.
+    const { tooManyAdoptions, tooManyRequests } = useMemo(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = computeMaxDensityPeriod(adoptions as any, 'adoption', adoptionsPeriodDays);
-        if (d.count < adoptionsThreshold) return null;
-        return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: adoptionsPeriodDays };
-    }, [adoptions, adoptionsThreshold, adoptionsPeriodDays]);
-    const tooManyRequests = useMemo(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = computeRequestRescueDensity(adoptions as any, requestsPeriodDays);
-        if (d.count < requestsThreshold) return null;
-        return { count: d.count, actualSpanDays: d.timeSpanDays, periodDays: requestsPeriodDays };
-    }, [adoptions, requestsThreshold, requestsPeriodDays]);
+        () => periodAlerts(adoptions as any, adoptionConfig ?? DEFAULT_ADOPTION_CONFIG),
+        [adoptions, adoptionConfig],
+    );
 
     const handleDeleteClick = async () => {
         setDeleteLoading(true);
@@ -440,32 +426,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                 {/* Pending-duplicate signal, one line for everyone: «Posible duplicado de <name>», the name
                     opening the strongest match. «Revisar» shows only when the pair is on the viewer's own
                     «Pendientes de revisar» list, and opens that list at the pair. */}
-                {!isNew && adopter && reviewableDups.length > 0 && (() => {
-                    const top = reviewableDups[0];
-                    const reviewable = reviewableDups.find(c => c.onViewerList);
-                    const template = reviewableDups.length === 1
-                        ? (t('myAdopters.profile_pending_dup_of') || 'Posible duplicado de {name}')
-                        : (t('myAdopters.profile_pending_dup_of_more') || 'Posible duplicado de {name} y {n} más').replace('{n}', String(reviewableDups.length - 1));
-                    const [before, after = ''] = template.split('{name}');
-                    const title = (
-                        <>
-                            {before}
-                            <a href={`/adopter/${top.otherAdopterId}`} data-testid="profile-pending-dup-link" className="underline underline-offset-2">
-                                {top.otherAdopterName}
-                            </a>
-                            {after}
-                        </>
-                    );
-                    return reviewable ? (
-                        <ProfilePromptBanner tone="warning" icon={Search} testId="profile-pending-dup" singleLine title={title}
-                            actions={<a href={`/my-adopters?pair=${encodeURIComponent(pairKey(adopter.id, reviewable.otherAdopterId))}#pendientes`}
-                                data-testid="profile-pending-dup-review" className={buttonClasses({ variant: 'secondary', size: 'compact' })}>
-                                {t('myAdopters.profile_pending_dup_review') || 'Revisar'}<ArrowRight className="w-4 h-4" aria-hidden="true" />
-                            </a>} />
-                    ) : (
-                        <ProfilePromptBanner tone="info" icon={Search} testId="profile-pending-dup" singleLine title={title} />
-                    );
-                })()}
+                {!isNew && adopter && <PendingDupBar adopterId={adopter.id} pairs={reviewableDups} />}
 
                 {/* PII access gating — pending-request approver panel stays here at
                     record level: it's an actionable task that must be seen and
@@ -580,12 +541,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 avgRating={avgRating ?? null}
                                 adopterId={id}
                                 currentUser={currentUser}
-                                isAdmin={isAdmin}
-                                // v2.55.20: org-mates edit teammates' records here
-                                // too — the animal page already grants that parity,
-                                // and the same record must not be editable on one
-                                // surface and read-only on the other.
-                                isOrgMate={isOrgMateOfOwner}
+                                // Who may edit each record arrives on the record
+                                // itself (getAdoptions `canEdit`, the save's own rule).
                                 userNameMap={userNameMap}
                                 adopterAddress={adopter?.contactInfo || ''}
                                 editFormComponent={AdoptionFormEditV2}

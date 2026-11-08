@@ -30,6 +30,8 @@ export type MergeSides = {
 /** The params each template takes. Optional params change the wording, never leave a hole. */
 export interface NotificationTemplateParams {
     member_joined: { memberName: string; orgName?: string };
+    /** F6, to the removed person only: `actorName` (the remover's display name) took them out of `orgName`. */
+    member_removed: { actorName: string; orgName?: string };
     contact_entry_added: { actorName: string; adopterName?: string; entryType: string };
     /** `role`: 'to' (the new owner) or 'from' (the previous one). */
     ownership_transferred: { role: string; adopterName?: string; actorName: string; toName: string };
@@ -53,6 +55,8 @@ export interface NotificationTemplateParams {
     form_submission_teammate: { submitterName: string; animalName?: string; matchCount: string; sharedByName: string };
     contract_result_matches: { adopterName: string; animalName?: string; matchCount: string };
     contract_result_clear: { adopterName: string; animalName?: string };
+    /** A personal contract link: the signer is a known profile and no search ran (D2) — never «Todo en orden». */
+    contract_result_signed: { adopterName: string; animalName?: string };
     contract_result_teammate: { adopterName: string; animalName?: string };
     /** `decision`: approve | deny | block. `exact`/`fuzzy`: daily caps (approve, deny). */
     api_access: { decision: string; exact?: string; fuzzy?: string; note?: string };
@@ -232,6 +236,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         en: p => ({ title: '👋 New member', body: `${p.memberName} joined ${p.orgName || 'the organization'}.` }),
         pt: p => ({ title: '👋 Novo membro', body: p.orgName ? `${p.memberName} entrou em ${p.orgName}.` : `${p.memberName} entrou na organização.` }),
     },
+    member_removed: {
+        required: ['actorName'],
+        es: p => ({ title: p.orgName ? `Ya no estás en «${p.orgName}»` : 'Ya no estás en el grupo', body: `${p.actorName} te quitó del grupo. Lo que cargaste sigue a tu nombre.` }),
+        en: p => ({ title: p.orgName ? `You're no longer in «${p.orgName}»` : "You're no longer in the group", body: `${p.actorName} removed you from the group. What you added stays under your name.` }),
+        pt: p => ({ title: p.orgName ? `Você não está mais em «${p.orgName}»` : 'Você não está mais no grupo', body: `${p.actorName} removeu você do grupo. O que você cadastrou continua no seu nome.` }),
+    },
     contact_entry_added: {
         required: ['actorName', 'entryType'],
         es: p => ({ title: 'Nuevo dato de contacto', body: `${p.actorName} agregó ${entryTypeLabel(p.entryType, 'es')} ${p.adopterName ? `a ${p.adopterName}` : 'al adoptante'}.` }),
@@ -396,6 +406,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         es: p => ({ title: `${p.animalName || 'Animal'} adoptado por ${p.adopterName}`, body: `No se encontraron registros previos para ${p.adopterName}. Todo en orden.` }),
         en: p => ({ title: `${p.animalName || 'Animal'} adopted by ${p.adopterName}`, body: `No earlier records were found for ${p.adopterName}. All clear.` }),
         pt: p => ({ title: `${p.animalName || 'Animal'} adotado por ${p.adopterName}`, body: `Não foram encontrados registros anteriores para ${p.adopterName}. Tudo certo.` }),
+    },
+    contract_result_signed: {
+        required: ['adopterName'],
+        es: p => ({ title: `${p.animalName || 'Animal'} adoptado por ${p.adopterName}`, body: `${p.adopterName} firmó el contrato de adopción de ${p.animalName || 'un animal'}.` }),
+        en: p => ({ title: `${p.animalName || 'Animal'} adopted by ${p.adopterName}`, body: `${p.adopterName} signed the adoption contract for ${p.animalName || 'an animal'}.` }),
+        pt: p => ({ title: `${p.animalName || 'Animal'} adotado por ${p.adopterName}`, body: `${p.adopterName} assinou o contrato de adoção de ${p.animalName || 'um animal'}.` }),
     },
     contract_result_teammate: {
         required: ['adopterName'],

@@ -1,6 +1,8 @@
 'use server';
 
 import { adopters, adoptions, adopterImages, adopterFlags, adopterStats, formSubmissions, duplicateCandidates, contractInvitations, adopterHistory, householdMemberships } from '@/db/schema';
+import { hiddenAsHousematesSql } from '@/lib/housemateSql';
+import { pendingDuplicatesByAdopter, type PendingDuplicateRef } from '@/lib/openPairs';
 import { eq, ne, sql, and, isNull, isNotNull, or } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
@@ -15,9 +17,10 @@ import { buildFlags } from '@/domain/flags';
 import { RECORD_TYPES } from '@/domain/constants';
 import { isPostRecord } from '@/domain/homeModules';
 import { loadFormContext } from '@/lib/adopterFormContext';
-import { summarizeAdopterForms, type AdopterFormRow } from '@/domain/formLink';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { summarizeAdopterForms, newestAdopterForm, type AdopterFormRow } from '@/domain/formLink';
+import { openableSubmissionIds } from '@/lib/formSubmissionAccess';
+import { formSubmissionAccessLookups } from './_applicants';
+import { periodAlerts } from '@/domain/periodAlerts';
 import { loadRescueKeys, withRescueKeys } from '@/lib/rescueKeys';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { housemateAlertsFor } from '@/lib/households';
@@ -99,11 +102,11 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         type FlagRow = { adopterId: string; reason: string | null; targetAdopterId: string | null; details: string | null };
         type CountRow = { adopterId: string; recordType: string | null; count: number };
         type StatRow = { adopterId: string; eventType: string; count: number };
-        type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null; addedBy: string | null; sourceUrl: string | null; rescueKey?: string | null };
+        type RecordRow = { adopterId: string; recordType: string | null; date: number | null; rating: number | null; addedBy: string | null; sourceUrl: string | null; identityVerified: number | null; deliveredToHome: number | null; verifiedAddress: string | null; rescueKey?: string | null };
         type FormRow = { id: string; userId: string; linkedAdopterId: string; autoAdopterId: string | null; createdAt: Date | number | null; selectedAnimalId: string | null };
         type ContractCountRow = { adopterId: string; count: number };
         type EditRow = { adopterId: string; changedBy: string | null; changedAt: number | Date | null };
-        type DupRow = { a1: string; a2: string };
+        type DupRow = { a1: string; a2: string; score: number; detectedAt: Date | number | null };
 
         const allImages: ImageRow[] = [];
         const allFlags: FlagRow[] = [];
@@ -155,7 +158,7 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 // sees r.rating === undefined, passes the `!== null` filter, then
                 // sums to NaN → JSON-serializes to null → every /my-adopters row
                 // rendered "—" regardless of actual rated activity.
-                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, date: adoptions.date, rating: adoptions.rating, addedBy: adoptions.addedBy, sourceUrl: adoptions.sourceUrl })
+                db.select({ adopterId: adoptions.adopterId, recordType: adoptions.recordType, date: adoptions.date, rating: adoptions.rating, addedBy: adoptions.addedBy, sourceUrl: adoptions.sourceUrl, identityVerified: adoptions.identityVerified, deliveredToHome: adoptions.deliveredToHome, verifiedAddress: adoptions.verifiedAddress })
                     .from(adoptions)
                     .where(sql`${adoptions.adopterId} IN (${inList})`)
                     .all(),
@@ -197,12 +200,14 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 // query that binds the id list TWICE (see D1_IN_CHUNK note).
                 // Weak (`low`) pairs are excluded: the chip links to the
                 // pending-dedup queue, which never lists them.
-                db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id })
+                db.select({ a1: duplicateCandidates.adopter1Id, a2: duplicateCandidates.adopter2Id, score: duplicateCandidates.score, detectedAt: duplicateCandidates.detectedAt })
                     .from(duplicateCandidates)
                     .where(and(
                         eq(duplicateCandidates.status, 'pending'),
                         ne(duplicateCandidates.confidence, 'low'),
                         sql`(${duplicateCandidates.adopter1Id} IN (${inList}) OR ${duplicateCandidates.adopter2Id} IN (${inList}))`,
+                        // Housemates are never duplicates — the same rule as the profile bar (loadOpenPairs).
+                        sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
                     ))
                     .all(),
                 // Who in this chunk is in a home at all — only they are read for the housemate chips (most
@@ -240,11 +245,14 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             ? housemateAlertsFor(db, userEmail, withHome.slice(0, MY_ADOPTERS_HOUSEMATE_ROWS))
             : Promise.resolve({} as Record<string, HousemateAlertSummary>);
 
-        const adoptersWithPendingDup = new Set<string>();
-        for (const p of dupPairs) {
-            adoptersWithPendingDup.add(p.a1);
-            adoptersWithPendingDup.add(p.a2);
-        }
+        // Each row's open «same person?» questions, in the profile bar's order — the card shows the
+        // profile's own bar (spec 2026-11-05). The other side's name and owner come
+        // in chunks; a gone (merged-away) other side drops its pair, like loadOpenPairs.
+        const pendingDupsP = pendingDuplicatesByAdopter(db, dupPairs, new Map((adoptersList as Array<{ id: string; addedBy: string | null }>).map(r => [r.id, r.addedBy])), userEmail)
+            .catch((e: unknown) => {
+                logger.warn('getMyAdopters: duplicate names unreadable, rows show no duplicate bar', { userEmail, pairs: dupPairs.length, error: e instanceof Error ? e.message : String(e) });
+                return new Map<string, PendingDuplicateRef[]>();
+            });
 
         // Build lookup maps
         // Ratings: compute from allAdoptionRecords using domain function (replaces separate AVG SQL query)
@@ -289,7 +297,19 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
             else if (s.eventType === 'profile_view') entry.profileViews = s.count;
         }
 
-        const { formsByAdopter, liveMatchCounts, animalNames } = await loadFormContext(db, allForms, userEmail);
+        const { formsByAdopter, animalNames } = await loadFormContext(db, allForms, userEmail);
+        // T2: the «Formulario para…» line is a link exactly when /form-results would let
+        // this viewer in — a teammate's form too (src/lib/formSubmissionAccess.ts).
+        const viewer = userEmail;
+        const openableForms = await openableSubmissionIds(
+            viewer,
+            [...formsByAdopter.values()].map(newestAdopterForm).filter((f): f is AdopterFormRow => f !== null),
+            memberEmails,
+            await formSubmissionAccessLookups(db),
+            (submissionId, e) => logger.warn('getMyAdopters: form access lookup failed, the form line stays plain text', {
+                userEmail: viewer, submissionId, error: e instanceof Error ? e.message : String(e),
+            }),
+        );
         const signedContractCountMap = new Map<string, number>();
         for (const row of allContractCounts as { adopterId: string; count: number }[]) {
             if (row.adopterId) signedContractCountMap.set(row.adopterId, row.count);
@@ -377,38 +397,15 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
         const viewerInManyGroups = (await getOrgsForEmail(userEmail)).length >= 2;
 
         // Assemble results in memory (no more DB calls)
+        const pendingDups = await pendingDupsP;
         const enrichedAdopters = adoptersList.map((adopter: typeof adopters.$inferSelect) => {
             const flags = flagsMap.get(adopter.id) || [];
             const counts = countsMap.get(adopter.id) || { adoptions: 0, requests: 0 };
             const stats = statsMap.get(adopter.id) || { searchHits: 0, profileViews: 0 };
 
             const adopterRecords = recordsByAdopter.get(adopter.id) || [];
-            const adoptionsDensity = computeMaxDensityPeriod(adopterRecords as any, RECORD_TYPES.ADOPTION, adoptionConfig.periodDays);
-            const requestsDensity = computeRequestRescueDensity(adopterRecords, adoptionConfig.requestsPeriodDays);
-
-            const flagObj: AdopterFlags = buildFlags(flags, 0);
-            
-            flagObj.tooManyAdoptions = adoptionsDensity.count >= adoptionConfig.threshold
-                ? { 
-                    count: adoptionsDensity.count, 
-                    threshold: adoptionConfig.threshold, 
-                    periodDays: adoptionConfig.periodDays,
-                    actualSpanDays: adoptionsDensity.timeSpanDays,
-                    startDate: adoptionsDensity.startDate,
-                    endDate: adoptionsDensity.endDate
-                  }
-                : null;
-                
-            flagObj.tooManyRequests = requestsDensity.count >= adoptionConfig.requestsThreshold
-                ? { 
-                    count: requestsDensity.count, 
-                    threshold: adoptionConfig.requestsThreshold, 
-                    periodDays: adoptionConfig.requestsPeriodDays,
-                    actualSpanDays: requestsDensity.timeSpanDays,
-                    startDate: requestsDensity.startDate,
-                    endDate: requestsDensity.endDate
-                  }
-                : null;
+            // The row's flags, then its two period alerts by the one rule (periodAlerts; records keyed per rescue above).
+            const flagObj: AdopterFlags = { ...buildFlags(flags, 0, adopterRecords), ...periodAlerts(adopterRecords, adoptionConfig) };
 
             // v2.19.12: enriched creator info for every row, viewer's own
             // included. The Created-by column is symmetric — your name + org
@@ -440,9 +437,9 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
                 requestCount: counts.requests,
                 searchHits: stats.searchHits,
                 profileViews: stats.profileViews,
-                ...formFields(formsByAdopter.get(adopter.id) ?? [], userEmail!, liveMatchCounts, animalNames),
+                ...formFields(formsByAdopter.get(adopter.id) ?? [], openableForms, animalNames),
                 signedContractCount: signedContractCountMap.get(adopter.id) ?? 0,
-                hasPendingDuplicate: adoptersWithPendingDup.has(adopter.id),
+                pendingDuplicates: pendingDups.get(adopter.id) ?? [],
                 // «Desde un post»: the filter chip and the homepage posts card count the same rows.
                 fromPost: (recordsByAdopter.get(adopter.id) ?? []).some(isPostRecord),
                 creatorName,
@@ -480,11 +477,10 @@ export async function getMyAdopters(sort: 'date' | 'name' = 'date') {
 }
 
 /** The per-row form fields /my-adopters renders. */
-function formFields(forms: AdopterFormRow[], viewerEmail: string, liveMatchCounts: Map<string, number>, animalNames: Map<string, string>) {
-    const summary = summarizeAdopterForms(forms, viewerEmail, (id) => liveMatchCounts.get(id) ?? 0);
+function formFields(forms: AdopterFormRow[], openable: ReadonlySet<string>, animalNames: Map<string, string>) {
+    const summary = summarizeAdopterForms(forms, openable);
     return {
         formCount: summary.count,
-        formNeedsReview: summary.needsReview,
         latestForm: summary.latest && {
             ...summary.latest,
             animalName: summary.latest.animalId ? (animalNames.get(summary.latest.animalId) ?? null) : null,

@@ -6,7 +6,7 @@ import { isRealActorEmail } from '@/lib/piiAccess';
 import { deserializeContactEntries } from '@/lib/contactEntries';
 import { logger } from '@/lib/logger';
 import { isMinor, NO_CARD_HOUSEHOLD, type CardHousehold } from '@/domain/households';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 
 export interface MatchContext {
     ok: boolean;
@@ -14,14 +14,14 @@ export interface MatchContext {
     has: { phone: boolean; email: boolean; id: boolean; social: boolean; address: boolean };
     /**
      * Only when asked (`{ standing: true }`): how the person stands, for a match
-     * card's header (audit B6) — their own rating and open alerts (countsFor, as a
+     * card's header (audit B6) — their own rating and open flags (countsFor, as a
      * household row counts them), «Menor de edad», and who they live with. Not
      * PII: the same a search card shows any signed-in rescuer. Absent when it
      * could not be read (logged). Exactly the fields the duplicate search's result
      * carries for this caller (matchContext.test pins it); for a merged-away
      * profile the call returns nothing at all, whoever asks.
      */
-    standing?: { rating: number | null; openAlerts: OpenAlertKind[]; isMinor: boolean; households: CardHousehold };
+    standing?: { rating: number | null; openFlags: OpenFlagKind[]; isMinor: boolean; households: CardHousehold };
 }
 
 /** Presence-only summary of an existing adopter's contact types — for the import
@@ -84,7 +84,7 @@ async function standingOf(
             countsFor(db, adopterId, ctx, { activity: false }),
             householdLinesFor(db, actor, [adopterId]),
         ]);
-        return { standing: { rating: counts.rating, openAlerts: counts.openAlerts, isMinor: isMinor(row), households: lines[adopterId] ?? NO_CARD_HOUSEHOLD } };
+        return { standing: { rating: counts.rating, openFlags: counts.openFlags, isMinor: isMinor(row), households: lines[adopterId] ?? NO_CARD_HOUSEHOLD } };
     } catch (e) {
         logger.warn('getMatchContext: standing could not be read, the card shows none', { adopterId, actor, error: e instanceof Error ? e.message : String(e) });
         return {};

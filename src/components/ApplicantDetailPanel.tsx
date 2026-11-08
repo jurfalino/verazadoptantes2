@@ -29,8 +29,9 @@ import { createContractInvitation } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import LocationMap from '@/components/LocationMap';
-import { AlertPill } from '@/components/AlertPill';
-import { openAlertKinds, rescuerFlagKinds } from '@/domain/flags';
+import { AlertPill, PeriodAlertPills } from '@/components/AlertPill';
+import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
+import { formatRating } from '@/domain/ratings';
 
 interface Props {
     applicants: ApplicantSummary[];
@@ -128,13 +129,22 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         return null;
     })();
 
+    // The person's ALERTS, as the full profile shows them (P2): their period alerts, then the
+    // housemate chips — the same pills and words. Read on the server; whatever was read is
+    // shown, and «Sin alertas» only when the whole check ran (`alertsChecked`) — after a
+    // failed read the panel shows no such line.
+    const housemate = applicant.housemateAlert;
+    const hasAlerts = !!applicant.flags && (
+        !!applicant.flags.tooManyAdoptions || !!applicant.flags.tooManyRequests
+        || housemate.lowRating != null || housemate.hasAlerts);
+
     const flagPills: React.ReactNode[] = [];
     if (applicant.flags) {
         const f = applicant.flags;
         if (f.verified_identity) flagPills.push(<FlagBadge key="vid" icon="✓" label={t('flags.verified_identity') || 'Verified ID'} tone="ok" />);
         if (f.verified_address) flagPills.push(<FlagBadge key="vad" icon="✓" label={t('flags.verified_address') || 'Verified address'} tone="ok" />);
         // The flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01).
-        for (const kind of rescuerFlagKinds(openAlertKinds(f))) flagPills.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
+        for (const kind of rescuerFlagKinds(openFlagKinds(f))) flagPills.push(<AlertPill key={kind} kind={kind}>{t(`flags.${kind}`)}</AlertPill>);
     }
 
     const fullAnswers = (() => {
@@ -148,7 +158,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
         </span>
     ) : !applicant.adopterId ? (
         <Link
-            href={`/form-results/${applicant.submissionId}`}
+            href={`/form-results/${applicant.submissionId}?from=animal:${encodeURIComponent(animalId)}`}
             className="w-full flex items-center justify-center px-4 py-3 rounded-xl bg-stone-700 text-white font-semibold hover:bg-stone-600 transition-colors"
         >
             {t('myAnimals.applicants_view_form') || 'Ver formulario'}
@@ -256,11 +266,20 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                         </h3>
                         {applicant.adopterId ? (
                             <div className="space-y-2">
-                                {flagPills.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1">{flagPills}</div>
-                                ) : (
-                                    <p className="text-xs text-stone-400 italic">{t('myAnimals.applicants_panel_no_flags') || 'Sin alertas'}</p>
-                                )}
+                                {hasAlerts ? (
+                                    <div className="flex flex-wrap gap-1" data-testid="applicant-panel-alerts">
+                                        <PeriodAlertPills alerts={applicant.flags} />
+                                        {housemate.lowRating != null && (
+                                            <AlertPill kind="housemate_low_rating" wrap>
+                                                {t('alerts.housemate_low_rating').replace('{rating}', formatRating(housemate.lowRating))}
+                                            </AlertPill>
+                                        )}
+                                        {housemate.hasAlerts && <AlertPill kind="housemate_alerts" wrap>{t('alerts.housemate_alerts')}</AlertPill>}
+                                    </div>
+                                ) : applicant.alertsChecked ? (
+                                    <p className="text-xs text-stone-400 italic" data-testid="applicant-panel-no-alerts">{t('myAnimals.applicants_panel_no_flags') || 'Sin alertas'}</p>
+                                ) : null}
+                                {flagPills.length > 0 && <div className="flex flex-wrap gap-1">{flagPills}</div>}
                                 <p className="text-sm text-stone-700">
                                     📊 {(t('myAnimals.applicants_panel_activity') || '{adoptions} adopciones · {requests} pedidos')
                                         .replace('{adoptions}', String(applicant.adoptionCount))
@@ -332,7 +351,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animalI
                                 variant="inline"
                             />
                             <a
-                                href={`/form-results/${applicant.submissionId}`}
+                                href={`/form-results/${applicant.submissionId}?from=animal:${encodeURIComponent(animalId)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:text-teal-800 mt-1"

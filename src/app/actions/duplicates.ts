@@ -10,18 +10,21 @@ import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domai
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import type { Visibility } from '@/lib/piiAccess';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
+import { canViewerAccessContractResult, CONTRACT_RESULT_TYPE } from '@/lib/contractResultAccess';
 import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 import { mergeAdopters } from '@/lib/adopterMerge';
-import { createMergeRequest, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
+import { createMergeRequest, keepSeparate, recordSeparatePairs, settleRequestsAsHousehold } from '@/lib/mergeRequests';
 import { loadPairVerdict, refuseDisputedMerge, teamOf } from '@/lib/pairVerdict';
 import { mergeChosenPair } from '@/lib/pairMerge';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { isAdminAsync } from '@/config/admins';
 import { addHouseholdPerson } from './households';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
+import { loadHiddenPairKeys, loadOpenPairs } from '@/lib/openPairs';
+import type { DuplicateCandidate } from '@/types/duplicates';
 import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, type CardHousehold } from '@/domain/households';
 
 /**
@@ -29,7 +32,8 @@ import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, typ
  * removing the auto-created orphan adopter. Self-service merge for the rescuer who
  * received the contract-result notification.
  *
- * Auth: caller must be the notification recipient. Cross-creator merge is allowed
+ * Auth: the notification recipient, their team or an admin (T1 — the team acts
+ * as one; src/lib/contractResultAccess.ts). Cross-creator merge is allowed
  * (the matched profile may be owned by a different rescuer); the original creator
  * is notified so they can review.
  *
@@ -59,8 +63,16 @@ export async function attachContractToExistingAdopter(
         // Fetch notification and validate ownership + shape
         const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
         if (!notification) return { success: false, error: 'Notification not found' };
-        if (notification.userId !== actorEmail) return { success: false, error: 'Not authorized for this notification' };
-        if (notification.type !== 'contract_result') return { success: false, error: 'Notification is not a contract result' };
+        // The recipient, their team or an admin — the same rule the page applies (src/lib/contractResultAccess.ts).
+        // Strict lookups: a D1 failure throws into the catch below (errorId), never reads as "stranger".
+        // Before the type check, so a stranger learns nothing about someone else's notification.
+        const { isOrgMateStrict } = await import('@/lib/orgMembership');
+        const { isAdminAsyncStrict } = await import('@/config/admins');
+        if (!(await canViewerAccessContractResult(actorEmail, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict }))) {
+            logger.info('attachContractToExistingAdopter: denied', { notificationId, matchAdopterId, actorEmail });
+            return { success: false, error: 'Not authorized for this notification' };
+        }
+        if (notification.type !== CONTRACT_RESULT_TYPE) return { success: false, error: 'Notification is not a contract result' };
 
         const metadata = notification.metadata ? JSON.parse(notification.metadata) : {};
         const orphanAdopterId: string | undefined = metadata.adopterId;
@@ -68,12 +80,17 @@ export async function attachContractToExistingAdopter(
         const animalName: string | undefined = metadata.animalName;
         if (!orphanAdopterId) return { success: false, error: 'Notification missing orphan adopter id' };
 
-        // Validate the requested merge target is one of the recorded matches —
-        // prevents using this action to merge into arbitrary profiles.
-        const recordedMatchIds = new Set<string>(
-            (metadata.matchedAdopters || []).map((m: { id: string }) => m.id),
-        );
-        if (!recordedMatchIds.has(matchAdopterId)) {
+        // The target must be an OPEN PAIR of the contract's new profile (spec
+        // 2026-11-05) — never an arbitrary profile, and never one whose pair was
+        // already answered («Mantener separados», another tab).
+        let openPairIds: Set<string>;
+        try {
+            openPairIds = new Set((await loadOpenPairs(db, orphanAdopterId, actorEmail, { limit: 20 })).map(p => p.otherAdopterId));
+        } catch (e) {
+            const errorId = logger.error('attachContractToExistingAdopter: open pairs unreadable', e, { notificationId, matchAdopterId, orphanAdopterId, actorEmail });
+            return { success: false, error: 'Could not check the matches', errorId };
+        }
+        if (!openPairIds.has(matchAdopterId)) {
             return { success: false, error: 'Adopter is not a recorded match for this notification' };
         }
 
@@ -250,18 +267,7 @@ export async function markContractKeepNew(adopterId: string): Promise<{ success:
     }
 }
 
-export interface DuplicateCandidate {
-    id: string;
-    otherAdopterId: string;
-    otherAdopterName: string;
-    matchTypes: string[];
-    score: number;
-    confidence: string;
-    /** Normalised 0–100 confidence percentage derived from score / PRACTICAL_MAX_DUPLICATE. */
-    confidencePercent: number;
-    /** The pair is on the viewer's «Pendientes de revisar» list: they created either side and didn't take it off. */
-    onViewerList: boolean;
-}
+export type { DuplicateCandidate } from '@/types/duplicates';
 
 /**
  * Get pending duplicate candidates for a given adopter.
@@ -279,70 +285,8 @@ export async function getDuplicateCandidates(adopterId: string): Promise<Duplica
         const db = await getDb();
         if (!db) return [];
 
-        const candidates = await db.select({
-            id: duplicateCandidates.id,
-            adopter1Id: duplicateCandidates.adopter1Id,
-            adopter2Id: duplicateCandidates.adopter2Id,
-            matchTypes: duplicateCandidates.matchTypes,
-            score: duplicateCandidates.score,
-            confidence: duplicateCandidates.confidence,
-        })
-            .from(duplicateCandidates)
-            .where(and(
-                eq(duplicateCandidates.status, 'pending'),
-                or(
-                    eq(duplicateCandidates.adopter1Id, adopterId),
-                    eq(duplicateCandidates.adopter2Id, adopterId),
-                ),
-                // A housemate is never a duplicate candidate (a pair detected before
-                // they shared a household). In SQL, so housemates can't fill the cap.
-                sql`NOT ${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
-            ))
-            // Strongest first, so weak pairs can't crowd a strong one out of the cap.
-            .orderBy(sql`${duplicateCandidates.score} DESC`)
-            .limit(5);
-
-        if (candidates.length === 0) return [];
-
-        // Get names for the "other" adopter in each pair. A profile merged away
-        // (deletedAt set) or gone drops out: there is nothing left to open.
-        const otherIds = candidates.map((c: { adopter1Id: string; adopter2Id: string }) =>
-            c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id
-        );
-        const [otherAdopters, self, hidden] = await Promise.all([Promise.all(
-            otherIds.map((id: string) =>
-                db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy })
-                    .from(adopters)
-                    .where(and(eq(adopters.id, id), isNull(adopters.deletedAt)))
-                    .get()
-            )
-        ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
-        loadHiddenPairKeys(db, viewer)]);
-        const nameMap = new Map<string, string>();
-        const ownerMap = new Map<string, string | null>();
-        for (const a of otherAdopters) {
-            if (a) { nameMap.set(a.id, a.name); ownerMap.set(a.id, a.addedBy); }
-        }
-        // The same test as the feed's `listed` (owns either side), minus the pairs the viewer hid.
-        const onViewerList = (otherId: string) =>
-            (self?.addedBy === viewer || ownerMap.get(otherId) === viewer) && !hidden.has(pairKey(adopterId, otherId));
-
-        return candidates
-            .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
-            .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
-                const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
-                return {
-                    id: c.id,
-                    otherAdopterId: otherId,
-                    otherAdopterName: nameMap.get(otherId)!,
-                    matchTypes: JSON.parse(c.matchTypes || '[]') as string[],
-                    score: c.score,
-                    confidence: c.confidence,
-                    confidencePercent: storedScoreToPercent(c.score),
-                    onViewerList: onViewerList(otherId),
-                };
-            })
-            .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);
+        // 20, not 5: the profile bar's «y N más» counts like the /my-adopters card does.
+        return await loadOpenPairs(db, adopterId, viewer, { includeLow: true, limit: 20 });
     } catch (error) {
         logger.warn('getDuplicateCandidates failed', {
             adopterId,
@@ -520,25 +464,6 @@ async function loadRequestsByPair(
     return byPair;
 }
 
-/**
- * The pairs this viewer took off their list («Quitar de la lista», D27). One
- * query. A failed lookup shows them again rather than taking out the feed.
- */
-async function loadHiddenPairKeys(
-    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-    actorEmail: string,
-): Promise<Set<string>> {
-    try {
-        const rows = await db.select({ pairKey: pendingPairHidden.pairKey }).from(pendingPairHidden)
-            .where(eq(pendingPairHidden.viewerEmail, normEmail(actorEmail))).all() as Array<{ pairKey: string }>;
-        return new Set(rows.map(r => r.pairKey));
-    } catch (e) {
-        logger.warn('getPendingDuplicatesForUser: hidden pairs unreadable, showing them', {
-            actorEmail, error: e instanceof Error ? e.message : String(e),
-        });
-        return new Set();
-    }
-}
 
 /**
  * Display names (else nothing — callers fall back to the email handle) for the
@@ -620,8 +545,8 @@ export interface PendingDedupPair {
      * (adopter_flags, reason='duplicate'). Those were visible only on the admin
      * screen — the one place the rescuer who raised the flag cannot go.
      *
-     * Dismiss is offered only for 'detected': it writes to duplicate_candidates,
-     * and a flag has no row there to update.
+     * «No, es otra persona» answers both (D1): dismissDuplicateCandidate takes a
+     * flag's id too and marks that flag kept-separate.
      */
     source: 'detected' | 'flagged';
     /** The "new" auto-created side — heuristically the more recent record. */
@@ -1117,12 +1042,18 @@ export async function getPendingDuplicatesForUser(
         // /my-adopters rendered two error toasts and no duplicates at all.
         //
         // The fan-out is now bounded by pageSize instead of corpus size.
+        // Step 2 (Jon 2026-11-05): the team acts as one — the sides the viewer OR a teammate
+        // loaded (mayAnswerPair's rule; OR of bound scalars, never an IN array).
+        // lower(trim()) — the same normalization as mayAnswerPair / normEmail, so the list and the bar agree.
+        const teamList = [...new Set([normEmail(viewer), ...teamKeys])].filter(Boolean);
+        if (teamList.length === 0) return EMPTY; // unreachable (getUser guarantees an email); never "everyone"
+        const byTeam = (col: typeof adopters.addedBy) => or(...teamList.map(e => sql`lower(trim(${col})) = ${e}`))!;
         const ownRows = await db.select({ id: adopters.id }).from(adopters)
-            .where(and(eq(adopters.addedBy, viewer), isNull(adopters.deletedAt))).all();
+            .where(and(byTeam(adopters.addedBy), isNull(adopters.deletedAt))).all();
         const ownIds = new Set((ownRows as Array<{ id: string }>).map(r => r.id));
         if (ownIds.size === 0 && requests.size === 0) return EMPTY;
 
-        // The actor must own at least one side of the pair — or be party to
+        // The actor's team must own at least one side of the pair — or be party to
         // an open request on it (filed it, or is on the asked owner's team).
         const listed = (a: string, b: string) => ownIds.has(a) || ownIds.has(b) || requests.has(pairKey(a, b));
         const hasRequest = (c: { adopter1Id: string; adopter2Id: string }) => requests.has(pairKey(c.adopter1Id, c.adopter2Id));
@@ -1147,7 +1078,7 @@ export async function getPendingDuplicatesForUser(
         // below rather than a fan-out of their own.
         //
         // Only flags that can pass `listed` are read, in SQL (EM I4): a side the
-        // viewer loaded (ownIds' rule: added_by = viewer, live), or a pair with
+        // viewer's team loaded (ownIds' rule: added_by on the team, live), or a pair with
         // a merge request the viewer is party to (loadRequestsByPair's rule:
         // they filed it, or it asks them or a teammate). It used to read the
         // 100 newest duplicate flags platform-wide and filter afterwards: once
@@ -1157,8 +1088,11 @@ export async function getPendingDuplicatesForUser(
         // Correlated EXISTS with bound scalars — never a bound id array (D1
         // does not expand IN).
         try {
-            const ownSide = (id: typeof adopterFlags.adopterId | typeof adopterFlags.targetAdopterId) =>
-                sql`EXISTS (SELECT 1 FROM adopters o WHERE o.id = ${id} AND o.added_by = ${viewer} AND o.deleted_at IS NULL)`;
+            // ONE EXISTS for both sides: the team list is bound once (≤30 params), keeping the query
+            // well under D1's 100 bound parameters with a full team (step 2 review).
+            const teamSql = sql.join(teamList.map(e => sql`lower(trim(o.added_by)) = ${e}`), sql` OR `);
+            const eitherSideTeamOwned = sql`EXISTS (SELECT 1 FROM adopters o
+                WHERE (o.id = ${adopterFlags.adopterId} OR o.id = ${adopterFlags.targetAdopterId}) AND (${teamSql}) AND o.deleted_at IS NULL)`;
             const party = sql.join([
                 sql`r.requester_email = ${normEmail(viewer)}`,
                 ...team.map(e => sql`r.owner_email = ${normEmail(e)}`),
@@ -1182,7 +1116,7 @@ export async function getPendingDuplicatesForUser(
                 sql`${adopterFlags.targetAdopterId} IS NOT NULL AND ${adopterFlags.targetAdopterId} <> ${adopterFlags.adopterId}`,
                 sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
                     AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
-                sql`(${ownSide(adopterFlags.adopterId)} OR ${ownSide(adopterFlags.targetAdopterId)} OR ${requestOnPair})`,
+                sql`(${eitherSideTeamOwned} OR ${requestOnPair})`,
             )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
@@ -1573,19 +1507,49 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
             status: duplicateCandidates.status,
         }).from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
 
-        if (!candidate) return { success: false, code: 'not_found', error: 'Candidate not found' };
-        if (candidate.status !== 'pending') return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
+        // A hand-flagged pair (D1): its id is the flag's, and «No, es otra persona» answers it too.
+        let flagPair: { a: string; b: string } | null = null;
+        if (!candidate) {
+            const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
+                .from(adopterFlags).where(eq(adopterFlags.id, candidateId)).get();
+            if (!flag || flag.reason !== 'duplicate' || !flag.targetAdopterId) return { success: false, code: 'not_found', error: 'Candidate not found' };
+            if (!isOpenDuplicateFlag(flag)) return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
+            flagPair = { a: flag.adopterId, b: flag.targetAdopterId };
+        } else if (candidate.status !== 'pending') return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
+        const ids = flagPair ?? { a: candidate!.adopter1Id, b: candidate!.adopter2Id };
 
         const [a, b] = await Promise.all([
-            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter1Id)).get(),
-            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter2Id)).get(),
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, ids.a)).get(),
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, ids.b)).get(),
         ]);
 
-        const isOwner = (a?.addedBy === actorEmail) || (b?.addedBy === actorEmail);
-        const isAdminUser = await isAdminAsync(actorEmail);
+        // Step 2 (Jon 2026-11-05): the team acts as one — the loader of either side or an
+        // org-mate of theirs answers (case-insensitive, isOwnerOrOrgMate), or an admin.
+        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
+        const [teamA, teamB, isAdminUser] = await Promise.all([
+            isOwnerOrOrgMate(actorEmail, a?.addedBy), isOwnerOrOrgMate(actorEmail, b?.addedBy), isAdminAsync(actorEmail),
+        ]);
+        const isOwner = teamA || teamB;
 
         if (!isOwner && !isAdminUser) {
             return { success: false, code: 'not_authorized', error: 'Not authorized to dismiss this pair' };
+        }
+
+        if (flagPair) {
+            // Settled as two people, as «Mantener separados» leaves a detected pair: a dismissed
+            // candidate (the engine never proposes the pair again) and the flag marked kept-separate
+            // (it leaves every list). The marker never carries an email: flag details are shown.
+            const wrote = await recordSeparatePairs(db, flagPair.a, [flagPair.b], actorEmail, { candidateId });
+            if (wrote.failed.length) return { success: false, code: 'failed', error: 'Dismiss failed' };
+            await db.update(adopterFlags).set({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}answered-no` }).where(and(
+                eq(adopterFlags.reason, 'duplicate'),
+                or(
+                    and(eq(adopterFlags.adopterId, flagPair.a), eq(adopterFlags.targetAdopterId, flagPair.b)),
+                    and(eq(adopterFlags.adopterId, flagPair.b), eq(adopterFlags.targetAdopterId, flagPair.a)),
+                ),
+            ));
+            logger.info('Flagged duplicate pair kept separate by user', { candidateId, user: actorEmail });
+            return { success: true };
         }
 
         await db.update(duplicateCandidates).set({

@@ -53,6 +53,8 @@ interface Adoption {
     formContent?: Record<string, unknown>;
     /** ENABLE_ORIGIN_LABELS: the API tool that saved this activity (getAdoptions). */
     apiTool?: string;
+    /** May this viewer edit/delete the record — getAdoptions, same rule as saveAdoption. */
+    canEdit?: boolean;
 }
 
 interface AdoptionImage {
@@ -103,7 +105,7 @@ function RecordTypeIcon({ type, className }: { type: string; className?: string 
     }
 }
 
-export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, isAdmin = false, isOrgMate = false, adopterAddress = '', userNameMap = {}, originLabels = false, avgRating = null, editFormComponent: EditComponent }: { adoptions: Adoption[], avgRating?: number | null, adopterId: string, currentUser: string, isAdmin?: boolean, isOrgMate?: boolean, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
+export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId, currentUser, adopterAddress = '', userNameMap = {}, originLabels = false, avgRating = null, editFormComponent: EditComponent }: { adoptions: Adoption[], avgRating?: number | null, adopterId: string, currentUser: string, adopterAddress?: string, userNameMap?: Record<string, string>, originLabels?: boolean, editFormComponent: ComponentType<{ adopterId: string; initialData: Adoption; onCancel: () => void; onSuccess: () => void; onDelete: () => void; currentUser?: string; adopterAddress?: string; adopterAdoptions?: Adoption[] }> }) {
     const { formatShortDate } = useDateFormat();
     const formatRelativeTime = useRelativeTime();
     const { t, locale } = useLanguage();
@@ -264,8 +266,10 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                         );
                     }
 
-                    // v2.55.20: org-mates too (parity with the animal page).
-                    const canEdit = isAdmin || isOrgMate || adoption.addedBy === currentUser;
+                    // T4: the server decides per record with the save's own rule
+                    // (src/domain/recordEditAccess.ts) — the record's author, their
+                    // teammates, admins — so the pencil shows exactly where saving works.
+                    const canEdit = adoption.canEdit === true;
                     const images = adoptionImages[adoption.id] || [];
                     const recordType = adoption.recordType || 'adoption';
                     const colors = getRecordTypeColors(recordType);
@@ -497,7 +501,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                         const formSubmissionId = adoption.sourceUrl!.replace('form:', '');
                                         return (
                                             <a
-                                                href={`/form-results/${formSubmissionId}`}
+                                                href={`/form-results/${formSubmissionId}?from=adopter:${encodeURIComponent(adopterId)}`}
                                                 className="flex items-center gap-2 mt-2.5 p-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition-colors"
                                                 onClick={e => e.stopPropagation()}
                                             >

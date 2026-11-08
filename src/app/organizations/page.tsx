@@ -12,16 +12,20 @@ import {
     updateOrganizationName,
     leaveOrganization,
     getInviteLink,
+    regenerateInviteLink,
+    removeOrganizationMember,
     type Organization,
+    type OrgMember,
 } from '@/app/actions/organizations';
 import OrgActivityFeed from '@/components/OrgActivityFeed';
 import Link from 'next/link';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 import { fetchCustomAdoptionDocsFlag } from '@/lib/adoptionDocsFlag';
 
 
 export default function OrganizationsPage() {
-    const { data: _session, status } = useSession();
+    const { data: session, status } = useSession();
     const router = useRouter();
     const { t } = useLanguage();
     const toast = useShowToast();
@@ -184,7 +188,7 @@ export default function OrganizationsPage() {
             ) : (
                 <div className="space-y-4">
                     {orgs.map((org) => (
-                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} docsEnabled={docsEnabled} />
+                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} docsEnabled={docsEnabled} currentEmail={session?.user?.email ?? ''} />
                     ))}
                 </div>
             )}
@@ -239,7 +243,7 @@ function InfoBanner() {
     );
 }
 
-function OrgCard({ org, onRefresh, docsEnabled }: { org: Organization; onRefresh: () => void; docsEnabled: boolean }) {
+function OrgCard({ org, onRefresh, docsEnabled, currentEmail }: { org: Organization; onRefresh: () => void; docsEnabled: boolean; currentEmail: string }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [editing, setEditing] = useState(false);
@@ -247,6 +251,8 @@ function OrgCard({ org, onRefresh, docsEnabled }: { org: Organization; onRefresh
     const [inviteUrl, setInviteUrl] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [leaving, setLeaving] = useState(false);
+    const [regenerating, setRegenerating] = useState(false);
+    const [removingId, setRemovingId] = useState<string | null>(null);
 
     const isLastMember = org.members.length <= 1;
 
@@ -305,6 +311,61 @@ function OrgCard({ org, onRefresh, docsEnabled }: { org: Organization; onRefresh
         }
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    /** A refusal code from the G1 actions, in words (always shown with an error id). */
+    const refusalText = (code: string | undefined) => {
+        switch (code) {
+            case 'not_member': return t('organizations.error_not_member');
+            case 'member_not_found': return t('organizations.error_member_gone');
+            case 'cannot_remove_self': return t('organizations.error_remove_self');
+            case 'not_authenticated': return t('auth.session_expired_desc');
+            default: return t('errors.unexpected') || 'Error';
+        }
+    };
+
+    // G1: «Generar un enlace nuevo» — the old link stops working at once.
+    const handleRegenerate = async () => {
+        setRegenerating(true);
+        try {
+            const result = await regenerateInviteLink(org.id);
+            if (result.success && result.url) {
+                setInviteUrl(result.url);
+                setCopied(false);
+                toast.success(t('organizations.regenerated_success'));
+            } else {
+                toast.error(t('errors.generic') || 'Error', refusalText(result.error),
+                    result.errorId ?? resolveErrorId(new Error(`regenerateInviteLink: ${result.error}`), 'OrganizationsPage.regenerate'));
+            }
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('errors.unexpected') || 'Error', resolveErrorId(e, 'OrganizationsPage.regenerate'));
+        } finally {
+            setRegenerating(false);
+        }
+    };
+
+    // G1: any member removes another member; their records stay theirs (see removeOrganizationMember).
+    const handleRemove = async (m: OrgMember) => {
+        const name = m.displayName || emailHandle(m.userEmail);
+        if (!confirm(t('organizations.remove_member_confirm').replace('{name}', name))) return;
+        setRemovingId(m.id);
+        try {
+            const result = await removeOrganizationMember(org.id, m.id);
+            if (result.success) {
+                toast.success(t('organizations.removed_success').replace('{name}', name));
+                setInviteUrl(null); // the link shown was just replaced; «Invitar» fetches the new one
+                onRefresh();
+            } else {
+                toast.error(t('errors.generic') || 'Error', refusalText(result.error),
+                    result.errorId ?? resolveErrorId(new Error(`removeOrganizationMember: ${result.error}`), 'OrganizationsPage.removeMember'));
+                // Someone else already removed them (or you were removed): show the list as it is now.
+                if (result.error === 'member_not_found' || result.error === 'not_member') onRefresh();
+            }
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('errors.unexpected') || 'Error', resolveErrorId(e, 'OrganizationsPage.removeMember'));
+        } finally {
+            setRemovingId(null);
+        }
     };
 
     const handleLeave = async () => {
@@ -368,14 +429,31 @@ function OrgCard({ org, onRefresh, docsEnabled }: { org: Organization; onRefresh
                     {t('organizations.members')} ({org.members.length})
                 </h3>
                 <ul className="space-y-1.5">
-                    {org.members.map((m) => (
-                        <li key={m.id} className="flex items-center justify-between text-sm">
-                            <span className="text-stone-700">{m.displayName || emailHandle(m.userEmail)}</span>
-                            <span className="text-xs text-stone-400 px-2 py-0.5 bg-stone-50 rounded-full">
-                                {m.role === 'owner' ? t('organizations.owner') : t('organizations.member')}
-                            </span>
-                        </li>
-                    ))}
+                    {org.members.map((m) => {
+                        const isMe = !!currentEmail && m.userEmail.trim().toLowerCase() === currentEmail.trim().toLowerCase();
+                        return (
+                            <li key={m.id} className="flex items-center justify-between gap-2 text-sm">
+                                <span className="text-stone-700 min-w-0 truncate">{m.displayName || emailHandle(m.userEmail)}</span>
+                                <span className="flex items-center gap-2 shrink-0">
+                                    <span className="text-xs text-stone-400 px-2 py-0.5 bg-stone-50 rounded-full">
+                                        {m.role === 'owner' ? t('organizations.owner') : t('organizations.member')}
+                                    </span>
+                                    {/* Yourself: «Salir» below. */}
+                                    {!isMe && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemove(m)}
+                                            disabled={removingId !== null}
+                                            data-testid="org-remove-member"
+                                            className="text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
+                                        >
+                                            {t('organizations.remove_member')}
+                                        </button>
+                                    )}
+                                </span>
+                            </li>
+                        );
+                    })}
                 </ul>
             </div>
 
@@ -397,6 +475,19 @@ function OrgCard({ org, onRefresh, docsEnabled }: { org: Organization; onRefresh
                         >
                             {copied ? '✓' : '📋'}
                         </button>
+                    </div>
+                    {/* G1: links never expire on their own; this is how a forwarded link is shut. */}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <button
+                            type="button"
+                            onClick={handleRegenerate}
+                            disabled={regenerating}
+                            data-testid="org-regenerate-invite"
+                            className="text-xs font-medium text-teal-700 hover:text-teal-800 underline underline-offset-2 disabled:opacity-50"
+                        >
+                            {t('organizations.regenerate_invite')}
+                        </button>
+                        <span className="text-xs text-teal-700">{t('organizations.regenerate_invite_hint')}</span>
                     </div>
                 </div>
             )}

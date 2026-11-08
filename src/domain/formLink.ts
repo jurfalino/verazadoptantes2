@@ -77,8 +77,12 @@ export type FormLinkPlan =
 export function planFormLink(input: {
     row: FormLinkRow;
     targetId: string;
-    /** Match ids recorded for this submission at submit time. */
-    recordedMatchIds: readonly string[];
+    /**
+     * The other side of every pending pair of the form's own profile (the
+     * duplicate pair is the only record of "same person?", spec 2026-11-05);
+     * for an `unlinked` form, the ids recorded at submit.
+     */
+    openPairIds: readonly string[];
     targetLive: boolean;
     /** The auto-created profile still exists (was not merged away elsewhere). */
     autoLive: boolean;
@@ -87,7 +91,7 @@ export function planFormLink(input: {
     // Before the match check: a retry must succeed even if matches changed since.
     if (row.linkedAdopterId === targetId) return { ok: true, op: 'noop' };
     if (targetId === row.autoAdopterId) return { ok: false, reason: 'self' };
-    if (!input.recordedMatchIds.includes(targetId)) return { ok: false, reason: 'not_a_match' };
+    if (!input.openPairIds.includes(targetId)) return { ok: false, reason: 'not_a_match' };
     if (!input.targetLive) return { ok: false, reason: 'target_unavailable' };
 
     switch (formLinkKind(row)) {
@@ -109,25 +113,24 @@ export type DirectLinkDecision =
 /**
  * linkFormSubmissionToAdopter (a profile created from the form, or an unlinked
  * form) may only point the form at a profile the rescuer could legitimately
- * choose: one of the matches recorded for this submission (as planFormLink
- * requires) or a profile she already sees in full (her own / her team's / an
+ * choose: an open pair of the form's profile (as planFormLink requires) or a profile she already sees in full (her own / her team's / an
  * approved full-contact grant / admin). Anything else would let her forge
  * «applicant» status — and with it a contract invitation — for any adopter.
  */
 export function canLinkSubmissionDirectly(input: {
     targetLive: boolean;
-    isRecordedMatch: boolean;
+    isOpenPair: boolean;
     callerFullySees: boolean;
 }): DirectLinkDecision {
     if (!input.targetLive) return { ok: false, reason: 'target_unavailable' };
-    if (input.isRecordedMatch || input.callerFullySees) return { ok: true };
+    if (input.isOpenPair || input.callerFullySees) return { ok: true };
     return { ok: false, reason: 'not_allowed' };
 }
 
 /** One form as /my-adopters sees it. `submittedAt` is epoch seconds. */
 export interface AdopterFormRow {
     id: string;
-    /** The rescuer who shared the form — the only one who can act on it. */
+    /** The rescuer who shared the form (`form_submissions.user_id`). */
     userId: string;
     linkedAdopterId: string | null;
     autoAdopterId: string | null;
@@ -137,35 +140,36 @@ export interface AdopterFormRow {
 
 export interface AdopterFormSummary {
     count: number;
-    latest: { submissionId: string; submittedAt: number; animalId: string | null; ownedByViewer: boolean } | null;
-    /** One of the viewer's own forms is still waiting for "¿es la misma persona?". */
-    needsReview: boolean;
+    /** `canOpen`: /form-results would let the viewer in (src/lib/formSubmissionAccess.ts) — the line is a link. */
+    latest: { submissionId: string; submittedAt: number; animalId: string | null; canOpen: boolean } | null;
+}
+
+/** A person's newest form, or null when they have none. */
+export function newestAdopterForm(forms: readonly AdopterFormRow[]): AdopterFormRow | null {
+    if (forms.length === 0) return null;
+    return forms.reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
 }
 
 /**
- * A person's forms, summarised for their /my-adopters row. "Needs review" is
- * the same rule the form-results page uses for its review banner
- * (formResultsView → 'review_matches'), so the list and the page can't
- * disagree. `liveMatchCount` = recorded matches whose profile still exists.
+ * A person's forms, summarised for their /my-adopters row. A form match is an
+ * ordinary duplicate pair (spec 2026-11-05): the row's «Posible duplicado» bar
+ * comes from the pair, so forms carry no review state of their own.
+ * `openable`: the submission ids the viewer may open (openableSubmissionIds) —
+ * a teammate's form included, the team acts as one (T2).
  */
 export function summarizeAdopterForms(
     forms: readonly AdopterFormRow[],
-    viewerEmail: string,
-    liveMatchCount: (submissionId: string) => number,
+    openable: ReadonlySet<string>,
 ): AdopterFormSummary {
-    if (forms.length === 0) return { count: 0, latest: null, needsReview: false };
-    const newest = forms.reduce((a, b) => (b.submittedAt > a.submittedAt ? b : a));
-    const needsReview = forms.some(f =>
-        f.userId === viewerEmail
-        && formResultsView(formLinkKind(f), liveMatchCount(f.id)).banner === 'review_matches');
+    const newest = newestAdopterForm(forms);
+    if (!newest) return { count: 0, latest: null };
     return {
         count: forms.length,
         latest: {
             submissionId: newest.id,
             submittedAt: newest.submittedAt,
             animalId: newest.selectedAnimalId,
-            ownedByViewer: newest.userId === viewerEmail,
+            canOpen: openable.has(newest.id),
         },
-        needsReview,
     };
 }

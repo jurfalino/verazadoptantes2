@@ -231,7 +231,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
                         {/* The one «standing + activity» renderer (PersonStanding), as «¿Es este perfil?» and every card's household line. */}
                         {/* Their own period alerts («3 adopciones en 8 días») with the pill a card's housemate list uses —
                             one concept, one look (review fix 4); what the header's «Conviviente con alertas» leads to. */}
-                        <PersonStanding rating={member.rating} openAlerts={member.openAlerts} isMinor={member.isMinor} alertsTestId="household-member-alerts"
+                        <PersonStanding rating={member.rating} openFlags={member.openFlags} isMinor={member.isMinor} flagsTestId="household-member-flags"
                             alerts={<PeriodAlertPills alerts={member.alerts} testId="household-member-period-alert" />} />
                         <PersonActivity activity={member.activity} testId="household-member-activity" />
                     </div>

@@ -12,7 +12,8 @@ import { deserializeContactEntries } from '@/lib/contactEntries';
 import { enrichAdopters } from '@/app/actions/enrichAdopters';
 import { getRatingDisplayLevel, getRatingLabelKey } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
+import { housemateAlertsFor } from '@/lib/households';
 import { normalizeDocumentId, type CandidateNames } from '@/domain/apiExactMatch';
 import { foldHolderName, MAX_NAMES_PER_IDENTIFIER, type IdentifierKind, type SharedIdentifier } from '@/domain/identityVerdict';
 import { phoneDuplicateTokens } from '@/domain/phoneNumber';
@@ -237,6 +238,7 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
     const out = new Map<string, ProfileSummary>();
     if (ids.length === 0) return out;
     let enriched: Awaited<ReturnType<typeof enrichAdopters>>;
+    let housemates: Awaited<ReturnType<typeof housemateAlertsFor>>;
     // Batched (review 2026-10-17): a 50-result fuzzy call used to fan out to ~150
     // queries. One grouped read per chunk of ids (D1-safe IN list, each id its own
     // bound parameter, as enrichAdopters does) gives counts, last date and who
@@ -251,7 +253,7 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
         sameRescueDirect = rescueKeys.sameRescueDirect;
         const chunks: string[][] = [];
         for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
-        const [e, m, parts] = await Promise.all([
+        const [e, m, parts, h] = await Promise.all([
             enrichAdopters(db, ids, { strict: true }),
             rescueKeys.loadOrgMembership(db, 'api.profileSummaries'),
             Promise.all(chunks.map(chunk => {
@@ -263,9 +265,12 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
                     db.select({ id: adopters.id, createdAt: adopters.createdAt }).from(adopters).where(sql`${adopters.id} IN (${inList})`).all(),
                 ]);
             })),
+            // The search card's housemate chips, strictly: a failed read fails the call (503), never «no alerts».
+            housemateAlertsFor(db, ownerEmail, ids, { strict: true }),
         ]);
         enriched = e;
         membership = m;
+        housemates = h;
         for (const [g, c] of parts as Array<[typeof groups, Array<{ id: string; createdAt: unknown }>]>) {
             groups.push(...g);
             for (const r of c) createdAt.set(r.id, r.createdAt);
@@ -295,10 +300,11 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             if (t !== null && (last === null || t > last)) last = t;
         }
         const f = e?.flags;
-        // `inaccurate` and `duplicate` are the person's open alerts, by the app's one rule
-        // (openAlertKinds — the profile header's): a duplicate report only while it is open,
-        // never one closed by a merge or a «mantener separados» (Jon, 2026-10-28).
-        const flags: ProfileSummary['flags'] = [...openAlertKinds(f)];
+        // An open duplicate report, by the app's one rule (openFlagKinds — the profile
+        // header's): never one closed by a merge or a «mantener separados» (Jon, 2026-10-28).
+        // `inaccurate` is left out: as in the app, only admins see it (Jon, 2026-11-07).
+        const flags: ProfileSummary['flags'] = openFlagKinds(f).filter((k): k is 'duplicate' => k === 'duplicate');
+        const home = housemates[id];
         if (f?.systemDuplicate) flags.push('possible_duplicate');
         if (f?.verified_identity) flags.push('verified_identity');
         if (f?.verified_address) flags.push('verified_address');
@@ -310,6 +316,9 @@ export async function buildProfileSummaries(db: Db, ids: string[], origin: strin
             alerts: [
                 ...(f?.tooManyRequests ? [{ type: 'too_many_requests' as const, count: f.tooManyRequests.count, periodDays: f.tooManyRequests.periodDays }] : []),
                 ...(f?.tooManyAdoptions ? [{ type: 'too_many_adoptions' as const, count: f.tooManyAdoptions.count, periodDays: f.tooManyAdoptions.periodDays }] : []),
+                // The two housemate chips, as the search card shows them («Conviviente con calificación N» / «con alertas»).
+                ...(home?.lowRating != null ? [{ type: 'housemate_low_rating' as const, ...ratingFields(home.lowRating) }] : []),
+                ...(home?.hasAlerts ? [{ type: 'housemate_alerts' as const }] : []),
             ],
             records,
             lastRecordAt: last === null ? null : new Date(last).toISOString().slice(0, 10),

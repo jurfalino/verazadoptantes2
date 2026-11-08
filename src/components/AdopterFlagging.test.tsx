@@ -52,7 +52,7 @@ describe('AdopterFlagging — the header\'s housemate chips', () => {
         const own = html.indexOf('data-alert="too_many_adoptions"');
         const low = html.indexOf('data-testid="profile-housemate-alert-rating"');
         const alerts = html.indexOf('data-testid="profile-housemate-alert-alerts"');
-        const flag = html.indexOf('data-alert="duplicate"');
+        const flag = html.indexOf('data-flag="duplicate"');
         expect(own).toBeGreaterThan(-1);
         expect(own).toBeLessThan(low);
         expect(low).toBeLessThan(alerts);
@@ -66,5 +66,21 @@ describe('AdopterFlagging — the header\'s housemate chips', () => {
         for (const housemateAlert of [undefined, { lowRating: null, hasAlerts: false }]) {
             expect(render({ housemateAlert })).not.toContain('profile-housemate-alert');
         }
+    });
+});
+
+/** V2: the header draws «Dirección Verificada» too — decided by the caller with profileVerifications, like identity. */
+describe('AdopterFlagging — the verification badges', () => {
+    it('«Dirección Verificada» shows when the records verify the address', () => {
+        const html = text(render({ verifiedAddress: true }));
+        expect(html).toContain(es.flags.addr_verified);
+        expect(html).not.toContain(es.flags.id_verified);
+    });
+    it('both badges when both are verified; none when neither is (a stored mark alone decides nothing here)', () => {
+        const both = text(render({ verifiedIdentity: true, verifiedAddress: true }));
+        expect(both).toContain(es.flags.id_verified);
+        expect(both).toContain(es.flags.addr_verified);
+        const none = text(render({ existingFlags: [{ id: 'f2', reason: 'verified_address', details: 'Address verified during pet delivery: x' }] }));
+        expect(none).not.toContain(es.flags.addr_verified);
     });
 });

@@ -9,28 +9,34 @@
  * - `md`: the profile header (a button that opens the «Por qué está marcado» hint).
  * - `sm`: a line about a person (rows, cards, lists).
  *
- * An ALERT (computed from the person's records) keeps its status colour:
+ * An ALERT (Jon, 2026-11-07: a reason not to trust the person with an animal,
+ * computed by the system) keeps its status colour:
  * «N adopciones en N días» = warning, «Pidió en N rescates…» = purple, and
  * the two about someone in their home («Conviviente con calificación 2.0»,
  * «Conviviente con alertas» — HousemateAlertChips) = warning with the home icon.
- * A FLAG (a rescuer's report: «Duplicado», «Inexacto») is not an alert (Jon,
- * 2026-11-01): a neutral grey outlined chip with a flag icon and the flag's
- * own name, drawn after the alerts and never counted as «N alertas». Which
- * flags a rescuer surface draws at all is rescuerFlagKinds (no «Inexacto»).
+ * A FLAG (something on the profile that may need doing: «Duplicado»,
+ * «Inexacto») is not an alert (Jon, 2026-11-01 / 2026-11-07): a neutral grey
+ * outlined chip with a flag icon and the flag's own name, drawn after the
+ * alerts and never counted as «N alertas». Which flags a rescuer surface draws
+ * at all is rescuerFlagKinds (no «Inexacto»). The DOM says which is which:
+ * `data-alert={kind}` on an alert, `data-flag={kind}` on a flag.
  * Colours are CSS variables: theme-safe.
  */
 import type { MouseEvent, ReactNode } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, Flag, Home, type LucideIcon } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
-import { rescuerFlagKinds, type OpenAlertKind } from '@/domain/flags';
+import { rescuerFlagKinds, type OpenFlagKind } from '@/domain/flags';
 import { periodAlertDays, type PeriodAlerts } from '@/domain/periodAlerts';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 
-export type AlertKind = OpenAlertKind | 'too_many_adoptions' | 'too_many_requests' | 'housemate_low_rating' | 'housemate_alerts';
+/** The ALERTS a pill can show (the person's own two period alerts, the two housemate chips). */
+export type AlertKind = 'too_many_adoptions' | 'too_many_requests' | 'housemate_low_rating' | 'housemate_alerts';
+/** Everything a pill can show: an alert, or a flag (OpenFlagKind). */
+export type PillKind = AlertKind | OpenFlagKind;
 
 /** `null` tone = a flag: the neutral outlined chip. */
-const KIND: Record<AlertKind, { tone: 'warning' | 'purple' | null; Icon: LucideIcon }> = {
+const KIND: Record<PillKind, { tone: 'warning' | 'purple' | null; Icon: LucideIcon }> = {
     inaccurate: { tone: null, Icon: Flag },
     duplicate: { tone: null, Icon: Flag },
     too_many_adoptions: { tone: 'warning', Icon: AlertTriangle },
@@ -49,7 +55,7 @@ const SIZE = {
 } as const;
 
 export function AlertPill({ kind, children, size = 'sm', onClick, href, onNavigate, pressed, expanded, controls, wrap = false, testId, ariaLabel }: {
-    kind: AlertKind;
+    kind: PillKind;
     children: ReactNode;
     size?: keyof typeof SIZE;
     /** A button (the profile header's pills open their hint). */
@@ -69,6 +75,8 @@ export function AlertPill({ kind, children, size = 'sm', onClick, href, onNaviga
     ariaLabel?: string;
 }) {
     const { tone, Icon } = KIND[kind];
+    // An alert says so (data-alert), a flag says so (data-flag): never one marker for both.
+    const marker = tone ? { 'data-alert': kind } : { 'data-flag': kind };
     const sz = SIZE[size];
     const weight = tone ? 'font-semibold' : 'font-medium';
     const cls = wrap
@@ -84,14 +92,14 @@ export function AlertPill({ kind, children, size = 'sm', onClick, href, onNaviga
     // prefetch off — a list of rows would otherwise prefetch every profile. A place on THIS page (#…) stays a plain <a>.
     if (href && !href.startsWith('#')) {
         return (
-            <Link href={href} prefetch={false} onClick={onNavigate} data-testid={testId} data-alert={kind} aria-label={ariaLabel} className={linkCls} style={style}>
+            <Link href={href} prefetch={false} onClick={onNavigate} data-testid={testId} {...marker} aria-label={ariaLabel} className={linkCls} style={style}>
                 {body}
             </Link>
         );
     }
     if (href) {
         return (
-            <a href={href} onClick={onNavigate} data-testid={testId} data-alert={kind} aria-label={ariaLabel}
+            <a href={href} onClick={onNavigate} data-testid={testId} {...marker} aria-label={ariaLabel}
                 className={linkCls} style={style}>
                 {body}
             </a>
@@ -100,25 +108,25 @@ export function AlertPill({ kind, children, size = 'sm', onClick, href, onNaviga
     if (onClick) {
         const aria = expanded === undefined ? { 'aria-pressed': pressed } : { 'aria-expanded': expanded, 'aria-controls': controls };
         return (
-            <button type="button" onClick={onClick} {...aria} data-testid={testId} data-alert={kind}
+            <button type="button" onClick={onClick} {...aria} data-testid={testId} {...marker}
                 // 44px to the touch (TAP_TARGET_44) at the pill's own size.
                 className={`${cls} ${TAP_TARGET_44} transition-all hover:opacity-90 ${pressed ? 'shadow-inner' : ''}`} style={style}>
                 {body}
             </button>
         );
     }
-    return <span className={cls} style={style} data-testid={testId} data-alert={kind}>{body}</span>;
+    return <span className={cls} style={style} data-testid={testId} {...marker}>{body}</span>;
 }
 
 /**
  * A person's open FLAGS, where one person is summed up in a line (household
  * rows, match cards, «¿Es este perfil?», the applicants list): one neutral
  * flag chip per kind, by its own name («Duplicado») — never counted into
- * «N alertas» (Jon, 2026-11-01). `kinds` come from openAlertKinds; only the
+ * «N alertas» (Jon, 2026-11-01). `kinds` come from openFlagKinds; only the
  * ones a rescuer surface shows are drawn (rescuerFlagKinds: no «Inexacto»).
  * Nothing when there are none.
  */
-export function AlertSummary({ kinds, testId }: { kinds: readonly OpenAlertKind[]; testId?: string }) {
+export function FlagSummary({ kinds, testId }: { kinds: readonly OpenFlagKind[]; testId?: string }) {
     const { t } = useLanguage();
     const shown = rescuerFlagKinds(kinds);
     if (shown.length === 0) return null;
@@ -129,7 +137,7 @@ export function AlertSummary({ kinds, testId }: { kinds: readonly OpenAlertKind[
  * A person's ALERTS — «{count} adopciones en {days} días» and «Pidió en {count}
  * rescates en {days} días» (periodAlerts) — one pill each, as the search card
  * draws its own; a card's household line draws a housemate's the same way.
- * Never a summary, and never mixed with flags (AlertSummary). Nothing when
+ * Never a summary, and never mixed with flags (FlagSummary). Nothing when
  * there are none.
  */
 export function PeriodAlertPills({ alerts, testId }: { alerts: PeriodAlerts | null | undefined; testId?: string }) {
@@ -139,12 +147,12 @@ export function PeriodAlertPills({ alerts, testId }: { alerts: PeriodAlerts | nu
         <>
             {a && (
                 <AlertPill kind="too_many_adoptions" testId={testId}>
-                    {t('flags.too_many_adoptions').replace('{count}', String(a.count)).replace('{days}', String(periodAlertDays(a)))}
+                    {t('alerts.too_many_adoptions').replace('{count}', String(a.count)).replace('{days}', String(periodAlertDays(a)))}
                 </AlertPill>
             )}
             {r && (
                 <AlertPill kind="too_many_requests" testId={testId}>
-                    {t('flags.too_many_requests').replace('{count}', String(r.count)).replace('{days}', String(periodAlertDays(r)))}
+                    {t('alerts.too_many_requests').replace('{count}', String(r.count)).replace('{days}', String(periodAlertDays(r)))}
                 </AlertPill>
             )}
         </>

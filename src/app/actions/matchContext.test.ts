@@ -15,7 +15,7 @@ vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: {} }) 
 
 import { getMatchContext } from './matchContext';
 import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
 import { NO_CARD_HOUSEHOLD } from '@/domain/households';
 
 type Row = Record<string, unknown>;
@@ -52,8 +52,8 @@ describe('getMatchContext — standing', () => {
     it('only when asked', async () => {
         expect((await getMatchContext('pedro')).standing).toBeUndefined();
     });
-    it('an adult: their rating and open alerts; a minor: «Menor de edad»', async () => {
-        expect((await getMatchContext('pedro', { standing: true })).standing).toMatchObject({ rating: 2, openAlerts: ['inaccurate'], isMinor: false, households: NO_CARD_HOUSEHOLD });
+    it('an adult: their rating and open flags; a minor: «Menor de edad»', async () => {
+        expect((await getMatchContext('pedro', { standing: true })).standing).toMatchObject({ rating: 2, openFlags: ['inaccurate'], isMinor: false, households: NO_CARD_HOUSEHOLD });
         expect((await getMatchContext('lucas', { standing: true })).standing).toMatchObject({ isMinor: true });
     });
     it('signed out: nothing', async () => {
@@ -102,10 +102,10 @@ describe('getMatchContext — never more than the duplicate search', () => {
         for (const id of ['pedro', 'lucas']) {
             const [m] = await hydrateDuplicateMatches(state.db, [stub(id)], { viewer: state.user, isUnauthenticated: false });
             const { standing } = await getMatchContext(id, { standing: true });
-            expect(Object.keys(standing ?? {}).sort()).toEqual(['households', 'isMinor', 'openAlerts', 'rating']);
+            expect(Object.keys(standing ?? {}).sort()).toEqual(['households', 'isMinor', 'openFlags', 'rating']);
             // A search card with no answer about a home carries none (unset: households off here, re-review I1); the
             // match card says the same with the empty home.
-            expect(standing).toEqual({ rating: m.avgRating, openAlerts: openAlertKinds(m.flags), isMinor: !!m.isMinor, households: m.households ?? NO_CARD_HOUSEHOLD });
+            expect(standing).toEqual({ rating: m.avgRating, openFlags: openFlagKinds(m.flags), isMinor: !!m.isMinor, households: m.households ?? NO_CARD_HOUSEHOLD });
         }
     });
 });

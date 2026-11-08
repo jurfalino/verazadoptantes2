@@ -155,7 +155,7 @@ test.describe('Team applicants: org-mates see the applicants of team animals', (
             await expect(page.getByText(MATCH_NAME).first()).toBeVisible({ timeout: 30000 });
             // «Es la misma persona» on the match card (staging's link flow), confirmed in its dialog.
             const card = page.locator('article').filter({ hasText: MATCH_NAME });
-            await card.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ }).click();
+            await card.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ }).click();
             await page.getByRole('dialog').getByRole('button', { name: /Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa/ }).click();
             // Success navigates to the profile; a refused link toasts and stays.
             await expect(page).toHaveURL(/\/adopter\/test-adopter-fixture-apl-match/, { timeout: 30000 });

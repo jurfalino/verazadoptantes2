@@ -45,6 +45,13 @@ export interface ImportBatchRow {
     matchedAdopterId?: string | null;
     matchedAdopterName?: string | null;
     matchConfidence?: number | null;
+    /**
+     * A 'create' row the rescuer answered «No, es otra persona» about, on the row itself:
+     * the profile it was compared with. Once the new profile exists the answer is saved
+     * like on every other screen (answerNotSamePersonFor — only ids the server's own search
+     * offers count). Bulk «Crear todas como nuevas» and defaults never send it (they answer nothing).
+     */
+    rejectedAdopterId?: string | null;
 }
 export interface ImportBatchResult {
     index: number;
@@ -155,6 +162,7 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
     } catch { /* country is best-effort */ }
 
     const out: ImportBatchResult[] = [];
+    const answeredNo: Array<{ index: number; adopterId: string; rejected: string }> = [];
     for (const raw of rows) {
         // Client JSON: rename marks off FIRST (never counted or read as exempt from the cap).
         const row: ImportBatchRow = { ...raw, contactEntries: stripClientRenameMarksJson(raw.contactEntries) };
@@ -186,11 +194,32 @@ export async function importAdoptersBatch(rows: ImportBatchRow[], runId: string)
             } else {
                 const id = await withDbRetry(() => createImportedAdopter(db, actor, country, row, runId));
                 out.push({ index: row.index, status: 'created', id });
+                const rejected = typeof row.rejectedAdopterId === 'string' ? row.rejectedAdopterId.trim().slice(0, 64) : '';
+                if (rejected && rejected !== id) answeredNo.push({ index: row.index, adopterId: id, rejected });
             }
         } catch (e) {
             const errorId = logger.error('importAdoptersBatch: row failed', e, { actorEmail: actor, index: row.index, action: row.action });
             out.push({ index: row.index, status: 'failed', message: `Error del servidor (${errorId})` });
         }
+    }
+
+    // The row's «No, es otra persona», saved after the response (one duplicate search per
+    // answered row must not push a heavy batch past the Worker limit). A failure is logged
+    // with its row; the import itself already succeeded.
+    if (answeredNo.length) {
+        const { runAfterResponse } = await import('@/lib/background');
+        await runAfterResponse('importAdoptersBatch.notSamePerson', async () => {
+            const { answerNotSamePersonFor } = await import('@/lib/notSamePerson');
+            for (const a of answeredNo) {
+                const ctx = { actorEmail: actor, runId, index: a.index, adopterId: a.adopterId };
+                try {
+                    const res = await answerNotSamePersonFor(db, actor, { adopterId: a.adopterId, rejectedIds: [a.rejected] });
+                    if (!res.ok) logger.warn('importAdoptersBatch: «No, es otra persona» not saved', { ...ctx, error: res.error, errorId: res.errorId });
+                } catch (e) {
+                    logger.error('importAdoptersBatch: «No, es otra persona» failed', e, ctx);
+                }
+            }
+        }, { actorEmail: actor, runId, rows: answeredNo.length });
     }
 
     // Audit incrementally, per batch — so failures are ALWAYS captured even if the

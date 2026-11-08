@@ -17,8 +17,8 @@ import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import { MinorTag } from './MinorTag';
 import { HousemateAlertChips, HousemateList, hasHousemateAlert, useHousemateList } from './HousemateAlert';
 import { useMinWidth } from '@/hooks/useMinWidth';
-import { AlertSummary, PeriodAlertPills } from './AlertPill';
-import { openAlertKinds } from '@/domain/flags';
+import { FlagSummary, PeriodAlertPills } from './AlertPill';
+import { openFlagKinds } from '@/domain/flags';
 import { CalendarPlus, Eye, Pencil, Search } from 'lucide-react';
 import { PersonActivity } from './PersonStanding';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
@@ -161,7 +161,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
     const housemateList = (className: string) => (housemates.open && hasHousemate
         ? <HousemateList household={res.households} id={housemates.listId} className={className} />
         : null);
-    const hasRiskFlags = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests || hasHousemate);
+    const hasAlerts = Boolean(res.flags.tooManyAdoptions || res.flags.tooManyRequests || hasHousemate);
 
     const inner = (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-stone-200 group-hover:border-teal-300 group-hover:shadow-md transition-all">
@@ -263,7 +263,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                 band; contact lives in the middle column). */}
             {/* A housemate chip is a button with a 44px touch area around a 22px pill (11px each side,
                 review fix 6): 12px between wrapped lines and under the row keep it off the «Tel:» line. */}
-            {hasRiskFlags && (
+            {hasAlerts && (
                 <div className={`md:hidden flex flex-wrap gap-x-1.5 ${hasHousemate ? 'gap-y-3 mb-3' : 'gap-y-1.5 mb-2'}`}><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert-m')}</div>
             )}
             {!desktop && housemateList('mb-3')}
@@ -301,7 +301,7 @@ export function AdopterResultCard({ match: res, isAuthenticated, showMetadata = 
                         `md:contents` lets them flow into this flex cluster on ≥md. */}
                     <span className="hidden md:contents"><PeriodAlertPills alerts={res.flags} />{housemateChips('search-card-housemate-alert')}</span>
                     {/* Then the flags, neutral, by name — never «Inexacto» (rescuerFlagKinds, Jon 2026-11-01). */}
-                    <AlertSummary kinds={openAlertKinds(res.flags)} />
+                    <FlagSummary kinds={openFlagKinds(res.flags)} />
                     {res.flags.systemDuplicate && !res.flags.duplicate && (
                         <span
                             title={t('search.possible_duplicate_tooltip') || 'El sistema detectó otro registro similar. El responsable del registro puede revisarlo.'}

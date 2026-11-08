@@ -93,15 +93,36 @@ export interface AdopterStats {
     profileViews: number;
 }
 
-export interface AdopterFlags {
+/**
+ * A profile's FLAGS (Jon, 2026-11-07): something on the profile that may need
+ * doing — filed by a rescuer («Duplicado», «Inexacto», «Identidad/Domicilio
+ * verificado») or found by the system (`systemDuplicate`). Never a reason not
+ * to trust the person: that is an alert (PeriodAlertFields, the housemate chips).
+ */
+export interface ProfileFlags {
     inaccurate: boolean;
     duplicate: boolean;
     systemDuplicate: boolean;
     verified_identity: boolean;
     verified_address: boolean;
-    tooManyAdoptions: { count: number; threshold: number; periodDays: number; actualSpanDays?: number; startDate?: Date | null; endDate?: Date | null } | null;
-    tooManyRequests: { count: number; threshold: number; periodDays: number; actualSpanDays?: number; startDate?: Date | null; endDate?: Date | null } | null;
 }
+
+/** One period ALERT: «{count} adopciones en {days} días» / «Pidió en {count} rescates…» (domain/periodAlerts). */
+export type PeriodAlert = { count: number; threshold: number; periodDays: number; actualSpanDays?: number; startDate?: Date | null; endDate?: Date | null };
+
+/** A person's two period ALERTS — reasons not to trust them with an animal; null when below threshold. */
+export interface PeriodAlertFields {
+    tooManyAdoptions: PeriodAlert | null;
+    tooManyRequests: PeriodAlert | null;
+}
+
+/**
+ * What a search result or a /my-adopters row carries in its `flags` field: the
+ * profile's flags AND its period alerts, side by side. Two concepts, one
+ * object only because the field predates the split — read each half by its
+ * own type (ProfileFlags / PeriodAlertFields).
+ */
+export type AdopterFlags = ProfileFlags & PeriodAlertFields;
 
 export interface AdoptionConfig {
     threshold: number;

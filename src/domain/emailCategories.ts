@@ -72,6 +72,13 @@ export function categoryForType(type: string): EmailCategory {
     return Object.prototype.hasOwnProperty.call(TYPE_TO_CATEGORY, type) ? TYPE_TO_CATEGORY[type] : 'other';
 }
 
+/** Notices shown in the app only, never emailed (F6, Jon: being removed from a group is an in-app notice, no email). */
+const IN_APP_ONLY_TYPES: ReadonlySet<string> = new Set(['member_removed']);
+
+export function isInAppOnly(type: string): boolean {
+    return IN_APP_ONLY_TYPES.has(type);
+}
+
 /**
  * Each one is its own question (merge_request), a person writing to a person
  * (pair_message), or the safeguard of an open edit (profile_renamed: anyone

@@ -400,7 +400,20 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // getPendingDuplicatesForUser), counts + ≤3 rows per card; +hideHomeFirstSteps() — session
 // required, takes no input, writes only the caller's own user_profiles.home_prefs.
 // 174 = 175 − 1. 2026-11-05 hideHomeFirstSteps removed with the «Ocultar» button (Jon).
-const EXPECTED_ACTIONS = 174;
+// 175 = 174 + 1. 2026-11-06 answerNotSamePerson (src/app/actions/notSamePerson.ts; spec
+// .agents/plans/2026-11-05-form-matches-are-duplicates.md «Consistency rule»): session required;
+// adopterId must be a live profile; ids trimmed/capped (≤10, never itself); the server re-runs the
+// duplicate search for the given input (the profile's data, or the typed contact) and only ids it
+// offers count — proof the other looks like the INPUT. It settles a pair only for whoever loaded either
+// profile (with a typed contact: only adopterId's owner) or an admin; otherwise it opens a pending pair
+// for the owners when none exists — no more than flagAdopterAsDuplicate allows. Never touches a settled pair.
+// 177 = 175 + 2. 2026-11-08 group membership (G1, src/app/actions/organizations.ts):
+// +regenerateInviteLink(orgId) — session required; caller must be a member of orgId (else
+// not_member); writes a new invite row for that group and deletes only that group's older rows,
+// returns only that group's URL. +removeOrganizationMember(orgId, memberId) — session required;
+// caller must be a member of orgId; target looked up AND deleted by id AND org_id (another
+// group's member id → member_not_found); removing yourself refused; audited, returns no member data.
+const EXPECTED_ACTIONS = 177;
 
 let manifest;
 try {

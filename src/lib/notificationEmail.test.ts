@@ -108,6 +108,12 @@ describe('sendNotificationEmail', () => {
         // Still always-on: no unsubscribe link.
         expect(send.mock.calls[1][0].html).not.toContain('Dejar de recibir');
     });
+    it('an in-app-only type (member_removed, F6) -> skipped_in_app_only, nothing sent, emailed_at stays null', async () => {
+        const id = addNotif('member_removed');
+        expect(await call(id, 'member_removed')).toBe('skipped_in_app_only');
+        expect(send).not.toHaveBeenCalled();
+        expect(emailedAt(id)).toBeNull();
+    });
     it('ENABLE_NOTIFICATION_EMAIL off (app_config) -> skipped_disabled, checked before anything else', async () => {
         sqlite.prepare(`INSERT INTO app_config (key, value) VALUES ('ENABLE_NOTIFICATION_EMAIL', 'false')`).run();
         sqlite.prepare(`DELETE FROM user WHERE id = 'u1'`).run();

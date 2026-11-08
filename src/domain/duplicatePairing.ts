@@ -11,6 +11,10 @@ export const SHARED_SOCIAL_HANDLE_CAP = 8;
 export const SHARED_ADDRESS_WORD_CAP = 5;
 
 export function pairsOnSharedToken(tokenType: string, sharedByRecords: number): boolean {
+    // Only complete numbers index a `phone_suffix`. Two records holding the same
+    // number also share its `phone` key (which pairs them), so a suffix shared
+    // on its own means two numbers with different area codes (S2).
+    if (tokenType === 'phone_suffix') return false;
     if ((tokenType === 'social' || tokenType === 'social_handle') && sharedByRecords > SHARED_SOCIAL_HANDLE_CAP) return false;
     if (tokenType === 'address_word' && sharedByRecords > SHARED_ADDRESS_WORD_CAP) return false;
     return true;

@@ -4,7 +4,7 @@
  * (src/lib/householdLinks.ts, getLinkedSummaries) and households as profiles
  * (src/lib/households.ts). Plain server module, never 'use server'.
  *
- * - `countsFor`: rating, open alerts and activity by record type (what that
+ * - `countsFor`: rating, open flags and activity by record type (what that
  *   profile's own «Actividad» header counts) — one query per profile.
  * - `viewerContacts`: the profile's contacts masked exactly as getAdopter would
  *   mask them for this viewer (same masking, fail closed), capped.
@@ -20,7 +20,7 @@ import { maskOptionsFor } from '@/lib/piiAccessServer';
 import { countActivity, type ActivityCounts } from '@/domain/activityCounts';
 import { realOwner } from '@/domain/dedupPair';
 import { summaryContacts, type LinkedSummary } from '@/domain/householdLinks';
-import { openAlertKindsOfRows, type OpenAlertKind } from '@/domain/flags';
+import { openFlagKindsOfRows, type OpenFlagKind } from '@/domain/flags';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -38,9 +38,9 @@ export async function namesFor(emails: Array<string | null | undefined>, ctx: Re
     }
 }
 
-export type ProfileCounts = { rating: number | null; openAlerts: OpenAlertKind[]; activity: ActivityCounts };
+export type ProfileCounts = { rating: number | null; openFlags: OpenFlagKind[]; activity: ActivityCounts };
 
-export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: [], activity: {} };
+export const EMPTY_COUNTS: ProfileCounts = { rating: null, openFlags: [], activity: {} };
 
 /**
  * Rating (same source as the profile page: AVG over the adoptions view), open
@@ -51,7 +51,7 @@ export const EMPTY_COUNTS: ProfileCounts = { rating: null, openAlerts: [], activ
  * as a parameter), and ONE pass over that profile's activity rows: the
  * average and the record types come out of the same subquery. Flags come back
  * as a JSON array so the open-alert rule stays in src/domain
- * (openAlertKindsOfRows), not in SQL. A failure degrades to an empty summary line
+ * (openFlagKindsOfRows), not in SQL. A failure degrades to an empty summary line
  * and is logged.
  *
  * `activity: false` (search-card household lines, «¿Es este perfil?»: they show
@@ -91,7 +91,7 @@ export async function countsFor(db: Db, id: string, ctx: Record<string, unknown>
     }
     return {
         rating: avg,
-        openAlerts: openAlertKindsOfRows(flags.map(f => ({ adopterId: id, ...f }))),
+        openFlags: openFlagKindsOfRows(flags.map(f => ({ adopterId: id, ...f }))),
         activity: withActivity ? countActivity(kinds.map(recordType => ({ recordType }))) : {},
     };
 }

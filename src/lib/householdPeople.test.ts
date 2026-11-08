@@ -726,6 +726,25 @@ describe('Task 4 fix round 2', () => {
             .toMatchObject({ ok: true, profileId: 'marta', createdProfile: false });
     });
 
+    it("F5: «No, es otra persona» about the post's person holds when they turn out to be a housemate already there — still without naming them", async () => {
+        // Someone the stranger loaded, looking like Marta: offered on the import's match screen, answered «no».
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, country, created_at, updated_at, contact_entries) VALUES ('marta-x', 'Marta Paez', '5', ?, 'AR', 1000, 1000, ?)`)
+            .run(STRANGER, JSON.stringify([{ id: 'xc', type: 'phone', value: MARTA_PHONE_STORED, addedBy: STRANGER }]));
+        await tokenizeAdopter('marta-x');
+        const hh = await ensureHousehold(db(), 'pedro', null);
+        await addMembership(db(), { householdId: hh, adopterId: 'marta', relationship: 'partner', relativeToAdopterId: 'pedro', addedBy: OWNER });
+        session.user = STRANGER;
+        const res = await addHouseholdPerson({
+            anchorAdopterId: 'pedro', name: 'marta paez', relationship: 'unknown', fromImport: { sourceUrl: null, slot: 's' },
+            rejectedIfAlreadyThere: ['marta-x', 'marta', 'x'.repeat(500)],
+        });
+        expect(res).toEqual({ ok: false, error: 'already_there' });
+        expect(JSON.stringify(res)).not.toContain('marta');
+        // Settled as two different people (the stranger loaded marta-x), not just opened for the owners.
+        const pairs = sqlite.prepare(`SELECT adopter1_id AS a, adopter2_id AS b, status FROM duplicate_candidates`).all();
+        expect(pairs).toEqual([{ a: 'marta', b: 'marta-x', status: 'dismissed' }]);
+    });
+
     it('a re-merge after the anchor moved to a new home puts the same person in the CURRENT household', async () => {
         const url = 'https://facebook.com/posts/88';
         const first = await addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Laura Paez', relationship: 'partner', fromImport: { sourceUrl: url, slot: 'r0' } });

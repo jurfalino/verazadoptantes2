@@ -96,11 +96,10 @@ describe('PairRow — «Pedir revisión a un administrador» (D49)', () => {
         expect(html).not.toContain(es.myAdopters.pending_d_action_dispute);
     });
 
-    it.each(dicts)('%s: a possible duplicate an admin ruled separate offers the review, not «Combinar perfiles»', (_l, dict) => {
+    it.each(dicts)('%s: a possible duplicate an admin ruled separate: the line says the admins decide, the buttons ask the one question (step 3)', (_l, dict) => {
         const html = render(pair({ actionByKeep: { new: 'dispute', existing: 'dispute' } }), as(dict));
-        expect(html).toContain(dict.myAdopters.pending_d_action_dispute);
         expect(html).toContain(dict.myAdopters.pending_d_explain_dispute);
-        expect(html).not.toContain(dict.myAdopters.pending_dedup_action_merge);
+        expect(html).toContain(dict.samePerson.yes);
     });
 
     it.each(dicts)('%s: a dispute that was sent reads as a review the admins have', (_l, dict) => {
@@ -140,7 +139,7 @@ describe('PairRow — each side\'s standing row (dedup-side-standing, point C)',
         const alerts = mine.indexOf('data-testid="dedup-housemate-alert-mine-alerts"');
         expect(rating).toBeLessThan(low);
         expect(low).toBeLessThan(alerts);
-        expect(html).toContain(es.flags.housemate_low_rating.replace('{rating}', '1.5'));
+        expect(html).toContain(es.alerts.housemate_low_rating.replace('{rating}', '1.5'));
         // Theirs: rating not read (undefined) and no homes → nothing in the row, not «Sin calificación».
         expect(theirs).not.toContain('data-testid="rating-value"');
         expect(theirs).not.toContain('person-unrated');

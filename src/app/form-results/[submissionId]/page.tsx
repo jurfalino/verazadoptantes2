@@ -1,11 +1,11 @@
 export const runtime = 'edge';
 
 import { selfieUrlColumn } from '@/lib/selfieLink';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import { photoLinks } from '@/domain/formPhotos';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
-import { notifications, adopters, formSubmissions, adopterImages, adoptions } from '@/db/schema';
+import { notifications, adopters, animals, formSubmissions, adopterImages, adoptions } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { getUser } from '@/app/actions/_db';
@@ -13,6 +13,8 @@ import { markNotificationRead } from '@/app/actions/notifications';
 import FormResultsContent from '@/components/FormResultsContent';
 import { canAccessFormSubmission } from '@/app/actions/_applicants';
 import { logger } from '@/lib/logger';
+import { loadOpenPairs } from '@/lib/openPairs';
+import { formBackLink } from '@/domain/formBackLink';
 import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
@@ -48,7 +50,7 @@ interface NotificationMetadata {
 
 
 
-export default async function FormResultsPage({ params }: { params: Promise<{ submissionId: string }> }) {
+export default async function FormResultsPage({ params, searchParams }: { params: Promise<{ submissionId: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
     const { submissionId } = await params;
     let currentUser = '';
     try {
@@ -174,7 +176,28 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         autoAdopterId: submission?.autoAdopterId ?? null,
     });
     const linkedId = submission?.linkedAdopterId ?? null;
-    const matchIds = (metadata.matchedAdopters ?? []).map(a => a.id);
+    // A form match is an ordinary duplicate pair (spec 2026-11-05): the cards are
+    // the form profile's OPEN PAIRS, so an answer given anywhere («Mantener
+    // separados», another tab) clears them here too. The notification's
+    // recorded matches only stand in for a form that never got a profile.
+    type MatchRow = { id: string; name: string; matchTypes: string[]; score?: number; candidateId: string | null; canAnswer: boolean };
+    let matchList: MatchRow[] = [];
+    if (linkKind === 'new_profile' && submission?.autoAdopterId) {
+        try {
+            const pairs = await loadOpenPairs(db, submission.autoAdopterId, currentUser, { limit: 20 });
+            matchList = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList }));
+        } catch (e) {
+            const errorId = logger.error('form-results: open pairs unreadable', e, { submissionId, user: currentUser, adopterId: submission.autoAdopterId });
+            return <ErrorState message="No pudimos cargar este formulario. Probá de nuevo en un rato." errorId={errorId} />;
+        }
+    } else if (linkKind === 'linked_existing' && linkedId) {
+        // The chosen profile's card, so «which did I pick?» is answered on open.
+        const recorded = (metadata.matchedAdopters ?? []).find(a => a.id === linkedId);
+        matchList = [{ id: linkedId, name: recorded?.name ?? '', matchTypes: recorded?.matchTypes ?? [], score: recorded?.score, candidateId: null, canAnswer: false }];
+    } else if (linkKind === 'unlinked') {
+        matchList = (metadata.matchedAdopters ?? []).map(a => ({ ...a, candidateId: null, canAnswer: false }));
+    }
+    const matchIds = matchList.map(a => a.id);
     const profileIds = [...new Set([...matchIds, ...(linkedId ? [linkedId] : [])])];
 
     type ProfileRow = {
@@ -182,7 +205,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
         isMinor?: boolean; households?: CardHousehold;
         /** Their own standing on the match card (audit B6). */
-        rating?: number | null; openAlerts?: OpenAlertKind[];
+        rating?: number | null; openFlags?: OpenFlagKind[];
     };
     let matchedProfiles: ProfileRow[] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
@@ -261,7 +284,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         // Soft-deleted (merged-away) matches are dropped at read time, so a
         // notification recorded before a merge still renders correctly.
         // Sort by match strength (more matchTypes first), preserving order of metadata.matchedAdopters for ties
-        const order = new Map((metadata.matchedAdopters ?? []).map((a, i) => [a.id, { count: a.matchTypes?.length ?? 0, index: i }]));
+        const order = new Map(matchList.map((a, i) => [a.id, { count: a.matchTypes?.length ?? 0, index: i }]));
         matchedProfiles = (rows as Row[])
             .filter(r => order.has(r.id) && !r.deletedAt)
             .map(withImage)
@@ -278,7 +301,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
             // Each card's own rating and alerts (audit B6), the same counts a household line shows; countsFor
             // never throws (a failure logs and shows «Sin calificación»). One query per card, capped like the lines.
             const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { submissionId, user: currentUser }, { activity: false })));
-            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openAlerts: standing[i].openAlerts } : p));
+            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openFlags: standing[i].openFlags } : p));
         }
 
         // A form linked to a profile that was later merged away (before merges
@@ -296,7 +319,7 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         }
     }
 
-    const hasMatches = (metadata.matchCount ?? 0) > 0;
+    const hasMatches = matchList.length > 0;
     const submitted = metadata.submittedData;
     let fullAnswers: Record<string, any> = (metadata.submittedData as any) || {};
     try {
@@ -320,15 +343,36 @@ export default async function FormResultsPage({ params }: { params: Promise<{ su
         return { ...rest, photos: photoLinks(submission.id, photoKeys) };
     })() : submission;
 
+    // Back link: names the screen the rescuer came from (`?from=`), but only a
+    // profile or animal that belongs to THIS form gets named (spec 2026-11-05).
+    const fromParam = (await searchParams)?.from;
+    const from = typeof fromParam === 'string' ? fromParam : null;
+    const backNames: { adopter?: string | null; animal?: string | null } = {};
+    {
+        const [fromKind, fromId] = (from ?? '').split(':', 2);
+        try {
+            if (fromKind === 'adopter' && fromId && (fromId === submission?.linkedAdopterId || fromId === submission?.autoAdopterId)) {
+                backNames.adopter = (await db.select({ name: adopters.name }).from(adopters).where(and(eq(adopters.id, fromId), isNull(adopters.deletedAt))).get())?.name ?? null;
+            } else if (fromKind === 'animal' && fromId && fromId === ownerCheck?.selectedAnimalId) {
+                backNames.animal = (await db.select({ name: animals.name }).from(animals).where(eq(animals.id, fromId)).get())?.name ?? null;
+            }
+        } catch (e) {
+            logger.warn('form-results: back-link name lookup failed, back to Mis adoptantes', { submissionId, user: currentUser, from, error: e instanceof Error ? e.message : String(e) });
+        }
+    }
+    const back = formBackLink(from, backNames);
+
     return (
         <FormResultsContent
+            back={back}
             submitted={submitted}
             submission={submissionView}
             fullAnswers={fullAnswers}
             householdItems={householdItems}
             hasMatches={hasMatches}
-            matchCount={metadata.matchCount ?? 0}
-            matchedAdopters={metadata.matchedAdopters}
+            matchCount={matchList.length}
+            everMatched={(metadata.matchCount ?? 0) > 0 || matchList.length > 0}
+            matchedAdopters={matchList}
             matchedProfiles={matchedProfiles}
             linkKind={linkKind}
             linkedProfile={linkedProfile}

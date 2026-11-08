@@ -27,7 +27,7 @@ import { AdopterName } from '@/components/AdopterName';
 import { isNamelessAdopter } from '@/lib/adopterDisplay';
 import MatchCompare, { entriesAsShown, type MatchSourceKind } from '@/components/MatchCompare';
 import { MatchCard } from '@/components/MatchCardParts';
-import { openAlertKinds } from '@/domain/flags';
+import { openFlagKinds } from '@/domain/flags';
 import { AlertTriangle } from 'lucide-react';
 
 const NAME_HL_TYPES = ['name_full', 'name_word'];
@@ -96,7 +96,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                 type="button"
                 onClick={() => count > 0 && setExpanded(true)}
                 disabled={count === 0}
-                aria-label={count === 0 ? (t('adopter.dup_peek_pill_searching') || 'Searching...') : (t('adopter.dup_peek_panel_title') || 'Possible matches')}
+                aria-label={count === 0 ? (t('adopter.dup_peek_pill_searching') || 'Searching...') : (t('adopter.dup_peek_panel_title') || 'Possible duplicates')}
                 className={[
                     'sticky top-0 z-20 -mx-5 -mt-5 mb-4 w-[calc(100%+2.5rem)]',
                     'flex items-center justify-between gap-3 px-5 py-3',
@@ -117,8 +117,8 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                             <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                             <span className="truncate">
                                 {count === 1
-                                    ? (t('adopter.dup_peek_pill_one') || '1 possible match — Review')
-                                    : (t('adopter.dup_peek_pill_many') || '{n} possible matches — Review').replace('{n}', String(count))}
+                                    ? (t('adopter.dup_peek_pill_one') || '1 possible duplicate — Review')
+                                    : (t('adopter.dup_peek_pill_many') || '{n} possible duplicates — Review').replace('{n}', String(count))}
                             </span>
                         </>
                     )}
@@ -138,7 +138,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                     className="fixed inset-0 z-[60]"
                     role="dialog"
                     aria-modal="true"
-                    aria-label={t('adopter.dup_peek_panel_title') || 'Possible matches'}
+                    aria-label={t('adopter.dup_peek_panel_title') || 'Possible duplicates'}
                     onClick={() => setExpanded(false)}
                 >
                     <div className="absolute inset-0 bg-stone-900/30 backdrop-blur-sm animate-in fade-in duration-200" />
@@ -155,7 +155,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                         <div className="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-center justify-between">
                             <div>
                                 <h3 className="font-semibold text-stone-900">
-                                    {t('adopter.dup_peek_panel_title') || 'Possible matches'}
+                                    {t('adopter.dup_peek_panel_title') || 'Possible duplicates'}
                                 </h3>
                                 <p className="text-xs text-stone-500 mt-0.5">
                                     {count === 1 ? t('adopter.dup_peek_count_one') : t('adopter.dup_peek_count_many').replace('{n}', String(count))}
@@ -180,7 +180,7 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                                     <li key={result.adopter.id} className={`px-5 py-3 ${strong ? 'bg-amber-50/40' : ''}`}>
                                         {/* The shared match card (audit B6): header → household line → «Qué coincide» → actions. */}
                                         <MatchCard newTab thumbnail={result.thumbnail} headTestId="dup-peek-head"
-                                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
+                                            person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openFlags: openFlagKinds(result.flags), isMinor: result.isMinor, households: result.households }}
                                             nameNode={isNamelessAdopter(result.adopter)
                                                 ? <AdopterName adopter={result.adopter} className="break-words" />
                                                 : highlightMatches(result.adopter.name, result.matchValues, NAME_HL_TYPES)}
@@ -199,7 +199,6 @@ export default function DuplicatePeek({ results: allResults, searching, onContin
                                             actions={{
                                                 busy: busyAdopterId === result.adopter.id,
                                                 onSame: onContinueWith ? () => onContinueWith(result.adopter.id) : undefined,
-                                                sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
                                                 onNotThis: onNotThis ? () => onNotThis(result.adopter.id) : undefined,
                                                 notThisTestId: 'dup-peek-not-this',
                                                 sameTestId: 'dup-peek-continue',

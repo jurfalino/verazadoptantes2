@@ -61,7 +61,8 @@ async function _enrichAdoptersImpl(
     adopterIds: string[],
     strict: boolean,
 ): Promise<Map<string, EnrichmentResult>> {
-    const adoptionConfig = await getAdoptionConfig();
+    // Strict (the API): a failed thresholds read fails the call, never looser defaults.
+    const adoptionConfig = await getAdoptionConfig({ strict });
 
     // v2.20.0: batch the enrichment into a handful of grouped queries instead of
     // 5 queries PER adopter (~5×N — up to ~1000 D1 subrequests at 200 rows, the
@@ -70,7 +71,7 @@ async function _enrichAdoptersImpl(
     // stay under D1's per-query bound-parameter limit (the dup query uses the IN
     // list twice, so chunk*2 must stay within budget).
     const CHUNK = 40;
-    type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null; addedBy: string | null };
+    type AdoptionRow = { adopterId: string; rating: number | null; recordType: string | null; date: number | null; addedBy: string | null; identityVerified: number | null; deliveredToHome: number | null; verifiedAddress: string | null };
     type FlagRow = { adopterId: string; reason: string | null; targetAdopterId: string | null; details: string | null };
     type StatRow = { adopterId: string; eventType: string };
     type ImageRow = { adopterId: string; url: string; isProfilePicture: number | null };
@@ -91,7 +92,7 @@ async function _enrichAdoptersImpl(
         const chunk = adopterIds.slice(i, i + CHUNK);
         const inList = sql.join(chunk.map((id) => sql`${id}`), sql`, `);
         const [a, f, s, im, d] = await Promise.all([
-            db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy })
+            db.select({ adopterId: adoptions.adopterId, rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy, identityVerified: adoptions.identityVerified, deliveredToHome: adoptions.deliveredToHome, verifiedAddress: adoptions.verifiedAddress })
                 .from(adoptions).where(sql`${adoptions.adopterId} IN (${inList})`).catch(riskRead('adoptions', chunk.length)),
             db.select({ adopterId: adopterFlags.adopterId, reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                 .from(adopterFlags).where(sql`${adopterFlags.adopterId} IN (${inList})`).catch(riskRead('flags', chunk.length)),
@@ -162,9 +163,9 @@ async function _enrichAdoptersImpl(
         const adoptionCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.ADOPTION).length;
         const requestCount = adopterAdoptions.filter((a) => a.recordType === RECORD_TYPES.REQUEST).length;
 
-        const flags = buildFlags(adopterFlagRecords, systemDupCount);
-        // The period alerts: one rule (periodAlerts), also on a housemate's household line.
-        Object.assign(flags, periodAlerts(adopterAdoptions, adoptionConfig));
+        // The profile's flags (verification badges from its records: profileVerifications), and next to
+        // them its period alerts: one rule (periodAlerts), also on a housemate's household line.
+        const flags = { ...buildFlags(adopterFlagRecords, systemDupCount, adopterAdoptions), ...periodAlerts(adopterAdoptions, adoptionConfig) };
 
         const stats: EnrichmentResult['stats'] = computeStats(adopterStatRecords, adopterAdoptions);
         stats.adoptions = adoptionCount;

@@ -6,8 +6,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import AdopterPicker, { type PickedAdopter } from '@/components/AdopterPicker';
 import { appendCreatePrefill } from '@/lib/createPrefill';
 import AdoptionFormWizard from '@/components/AdoptionFormWizard';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts, DEFAULT_ADOPTION_CONFIG } from '@/domain/periodAlerts';
+import type { AdoptionConfig } from '@/types/adopter';
 import { reportClientError } from '@/lib/clientErrorReporter';
 
 interface PickAdopterForAnimalModalProps {
@@ -61,7 +61,7 @@ export default function PickAdopterForAnimalModal({
        inventory, which the animal prefill is matched against. All four are
        EXISTING server actions, so this opens no new browser-callable door.
        Fails open to the wizard's own defaults. */
-    const [ctx, setCtx] = useState<{ adoptions: unknown[]; avgRating: number | null; availableAnimals: unknown[] } | null>(null);
+    const [ctx, setCtx] = useState<{ adoptions: unknown[]; avgRating: number | null; availableAnimals: unknown[]; config: AdoptionConfig } | null>(null);
 
     // A preset adopter goes straight to the wizard; nothing to search for.
     useEffect(() => {
@@ -80,7 +80,7 @@ export default function PickAdopterForAnimalModal({
         let cancelled = false;
         (async () => {
             try {
-                const { getAdoptions, getAverageRating, getAvailableAnimals } = await import('@/app/actions');
+                const { getAdoptions, getAverageRating, getAvailableAnimals, getAdoptionConfig } = await import('@/app/actions');
                 // Each loader degrades on its own, but never silently: an
                 // inventory that failed to load reads exactly like "no
                 // animals", which is how the animal prefill gets dropped.
@@ -93,12 +93,14 @@ export default function PickAdopterForAnimalModal({
                     });
                     return fallback;
                 };
-                const [adoptions, avgRating, availableAnimals] = await Promise.all([
+                const [adoptions, avgRating, availableAnimals, config] = await Promise.all([
                     getAdoptions(wizard.adopterId).catch(degraded<unknown[]>('adoptions', [])),
                     getAverageRating(wizard.adopterId).catch(degraded<number | null>('avgRating', null)),
                     getAvailableAnimals().catch(degraded<unknown[]>('availableAnimals', [])),
+                    // The Admin thresholds, as the profile's own alerts use (were hardcoded 5/90 · 3/30).
+                    getAdoptionConfig().catch(degraded<AdoptionConfig>('adoptionConfig', DEFAULT_ADOPTION_CONFIG)),
                 ]);
-                if (!cancelled) setCtx({ adoptions: adoptions ?? [], avgRating: avgRating ?? null, availableAnimals: availableAnimals ?? [] });
+                if (!cancelled) setCtx({ adoptions: adoptions ?? [], avgRating: avgRating ?? null, availableAnimals: availableAnimals ?? [], config: config ?? DEFAULT_ADOPTION_CONFIG });
             } catch (e) {
                 // Degraded, not fatal: the wizard still saves, it just loses the
                 // density warnings and the inventory prefill. Reported, never swallowed.
@@ -107,19 +109,14 @@ export default function PickAdopterForAnimalModal({
                     source: 'PickAdopterForAnimalModal.wizardContext',
                     extra: { adopterId: wizard.adopterId },
                 });
-                if (!cancelled) setCtx({ adoptions: [], avgRating: null, availableAnimals: [] });
+                if (!cancelled) setCtx({ adoptions: [], avgRating: null, availableAnimals: [], config: DEFAULT_ADOPTION_CONFIG });
             }
         })();
         return () => { cancelled = true; };
     }, [wizard, animalId]);
 
-    const density = (type: 'adoption' | 'adoption_request', periodDays: number, threshold: number) => {
-        if (!ctx) return null;
-        const d = type === 'adoption_request'
-            ? computeRequestRescueDensity(ctx.adoptions as Parameters<typeof computeRequestRescueDensity>[0], periodDays) // per rescue (src/domain/requestDensity.ts)
-            : computeMaxDensityPeriod(ctx.adoptions as Parameters<typeof computeMaxDensityPeriod>[0], type, periodDays);
-        return d.count < threshold ? null : { count: d.count, actualSpanDays: d.timeSpanDays, periodDays };
-    };
+    // The profile's two alerts, by the one rule (periodAlerts; getAdoptions keys requests per rescue).
+    const alerts = ctx ? periodAlerts(ctx.adoptions as Parameters<typeof periodAlerts>[0], ctx.config) : null;
 
     if (!open && !wizard) return null;
 
@@ -199,8 +196,8 @@ export default function PickAdopterForAnimalModal({
                 adopterId={wizard.adopterId}
                 adopterName={wizard.adopterName}
                 avgRating={ctx?.avgRating ?? null}
-                tooManyAdoptions={density('adoption', 90, 5)}
-                tooManyRequests={density('adoption_request', 30, 3)}
+                tooManyAdoptions={alerts?.tooManyAdoptions ?? null}
+                tooManyRequests={alerts?.tooManyRequests ?? null}
                 availableAnimals={ctx?.availableAnimals ?? []}
                 adopterAdoptions={ctx?.adoptions ?? []}
                 currentUser={currentUser}

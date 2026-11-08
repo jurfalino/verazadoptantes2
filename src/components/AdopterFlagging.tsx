@@ -16,7 +16,7 @@ import { useDateFormat } from '@/context/TimezoneContext';
 import { matchTypeLabel } from '@/lib/matchTypeLabels';
 import { contactBlobForDisplay } from '@/lib/contactEntries';
 import { isOpenDuplicateFlag } from '@/domain/dedupPair';
-import { openAlertKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
+import { openFlagKindsOfRows, rescuerFlagKinds } from '@/domain/flags';
 import { CheckCircle2 } from 'lucide-react';
 import { AlertPill } from '@/components/AlertPill';
 import { HOUSEHOLD_SECTION_HREF, type HousemateAlertSummary } from '@/domain/profileHouseholds';
@@ -78,7 +78,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     );
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], verifiedIdentity?: boolean, verifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, verifiedIdentity = false, verifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -102,7 +102,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const [showAdoptionsHint, setShowAdoptionsHint] = useState(false);
     const [showRequestsHint, setShowRequestsHint] = useState(false);
     const [showIdentityHint, setShowIdentityHint] = useState(false);
-    const [_showAddressHint, _setShowAddressHint] = useState(false);
+    const [showAddressHint, setShowAddressHint] = useState(false);
 
     // Fetch system-detected duplicate candidates on mount
     useEffect(() => {
@@ -113,20 +113,20 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     }, [adopterId]);
 
     // The open flags, by the one rule every surface draws them with
-    // (openAlertKindsOfRows, then rescuerFlagKinds): «Duplicado» only for an
+    // (openFlagKindsOfRows, then rescuerFlagKinds): «Duplicado» only for an
     // OPEN duplicate question — a merged flag ("Merged into … by …") or a
     // declined merge request ("Kept separate: …") is settled, and its details
     // are bookkeeping. «Inexacto» is never drawn here, for any viewer (Jon,
     // 2026-11-01: only admins care about it, in the admin UI).
-    const flagKinds = rescuerFlagKinds(openAlertKindsOfRows(existingFlags.map(f => ({ adopterId, ...f }))));
+    const flagKinds = rescuerFlagKinds(openFlagKindsOfRows(existingFlags.map(f => ({ adopterId, ...f }))));
     const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
     const isFlaggedAsDuplicate = flagKinds.includes('duplicate');
 
-    // Verification flags - include adoption-based verification
+    // The verification badges are decided by the caller with the one rule every surface uses
+    // (profileVerifications, src/domain/flags.ts); a filed identity mark only lends the hint its words.
     const identityVerifiedFlag = existingFlags.find(f => f.reason === 'verified_identity');
-    const identityVerified = identityVerifiedFlag || hasVerifiedAdoption;
-    const _addressVerifiedFlag = existingFlags.find(f => f.reason === 'verified_address');
-    const _addressVerified = _addressVerifiedFlag || _hasVerifiedAddress;
+    const identityVerified = verifiedIdentity;
+    const addressVerified = verifiedAddress;
 
 
 
@@ -290,14 +290,14 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         {/* Too Many Adoptions Warning */}
                         {tooManyAdoptions && (
                             <AlertPill kind="too_many_adoptions" size="md" onClick={() => setShowAdoptionsHint(!showAdoptionsHint)} pressed={showAdoptionsHint}>
-                                {t('flags.too_many_adoptions').replace('{count}', String(tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))))}
+                                {t('alerts.too_many_adoptions').replace('{count}', String(tooManyAdoptions.count)).replace('{days}', String(Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || tooManyAdoptions.periodDays))))}
                             </AlertPill>
                         )}
 
                         {/* Too Many Requests Warning */}
                         {tooManyRequests && (
                             <AlertPill kind="too_many_requests" size="md" onClick={() => setShowRequestsHint(!showRequestsHint)} pressed={showRequestsHint}>
-                                {t('flags.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
+                                {t('alerts.too_many_requests').replace('{count}', String(tooManyRequests.count)).replace('{days}', String(Math.max(1, Math.round(tooManyRequests.actualSpanDays || tooManyRequests.periodDays))))}
                             </AlertPill>
                         )}
 
@@ -305,12 +305,12 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                             a real link, so focus moves there too — onHousemateAlert smooths the scroll)… */}
                         {housemateLow != null && (
                             <AlertPill kind="housemate_low_rating" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-rating">
-                                {t('flags.housemate_low_rating').replace('{rating}', formatRating(housemateLow))}
+                                {t('alerts.housemate_low_rating').replace('{rating}', formatRating(housemateLow))}
                             </AlertPill>
                         )}
                         {housemateAlerts && (
                             <AlertPill kind="housemate_alerts" size="md" wrap href={HOUSEHOLD_SECTION_HREF} onNavigate={onHousemateAlert} testId="profile-housemate-alert-alerts">
-                                {t('flags.housemate_alerts')}
+                                {t('alerts.housemate_alerts')}
                             </AlertPill>
                         )}
 
@@ -346,28 +346,28 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         {showAdoptionsHint && tooManyAdoptions && (
                             <div className="w-full mt-1 p-3 bg-orange-50 border border-orange-100 rounded-lg text-xs leading-relaxed text-orange-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
                                 <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-orange-100"></div>
-                                <span className="font-semibold text-orange-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
-                                {t('flags.adoptions_warning_p1') || 'Registró '}{tooManyAdoptions.count}{t('flags.adoptions_warning_p2') || ' adopciones en '}{Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || 0))}{t('flags.adoptions_warning_p3') || ' días'}
+                                <span className="font-semibold text-orange-900 block mb-0.5">{t('alerts.hint_title') || 'Por qué está marcado'}</span>
+                                {t('alerts.adoptions_warning_p1') || 'Registró '}{tooManyAdoptions.count}{t('alerts.adoptions_warning_p2') || ' adopciones en '}{Math.max(1, Math.round(tooManyAdoptions.actualSpanDays || 0))}{t('alerts.adoptions_warning_p3') || ' días'}
                                 {tooManyAdoptions.startDate && tooManyAdoptions.endDate && (
-                                    <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyAdoptions.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyAdoptions.endDate)})</>
-                                )}. {t('flags.adoptions_risk') || 'Una frecuencia inusualmente alta indica un posible riesgo de acumulación o falta de capacidad de seguimiento.'}
+                                    <> {t('alerts.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyAdoptions.startDate)} {t('alerts.and') || 'y'} {formatShortDate(tooManyAdoptions.endDate)})</>
+                                )}. {t('alerts.adoptions_risk') || 'Una frecuencia inusualmente alta indica un posible riesgo de acumulación o falta de capacidad de seguimiento.'}
                             </div>
                         )}
                         {showRequestsHint && tooManyRequests && (
                             <div className="w-full mt-1 p-3 bg-purple-50 border border-purple-100 rounded-lg text-xs leading-relaxed text-purple-800 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
                                 <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-purple-100"></div>
-                                <span className="font-semibold text-purple-900 block mb-0.5">{t('flags.hint_title') || 'Por qué está marcado'}</span>
-                                {t('flags.requests_warning_p1') || 'Registró '}{tooManyRequests.count}{t('flags.requests_warning_p2') || ' solicitudes en '}{Math.max(1, Math.round(tooManyRequests.actualSpanDays || 0))}{t('flags.requests_warning_p3') || ' días'}
+                                <span className="font-semibold text-purple-900 block mb-0.5">{t('alerts.hint_title') || 'Por qué está marcado'}</span>
+                                {t('alerts.requests_warning_p1') || 'Registró '}{tooManyRequests.count}{t('alerts.requests_warning_p2') || ' solicitudes en '}{Math.max(1, Math.round(tooManyRequests.actualSpanDays || 0))}{t('alerts.requests_warning_p3') || ' días'}
                                 {tooManyRequests.startDate && tooManyRequests.endDate && (
-                                    <> {t('flags.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyRequests.startDate)} {t('flags.and') || 'y'} {formatShortDate(tooManyRequests.endDate)})</>
-                                )}. {t('flags.requests_risk') || 'Solicitar múltiples animales de forma simultánea requiere verificación adicional.'}
+                                    <> {t('alerts.warning_dates') || '(ocurrido entre'} {formatShortDate(tooManyRequests.startDate)} {t('alerts.and') || 'y'} {formatShortDate(tooManyRequests.endDate)})</>
+                                )}. {t('alerts.requests_risk') || 'Solicitar múltiples animales de forma simultánea requiere verificación adicional.'}
                             </div>
                         )}
                     </div>
                 )}
 
                 {/* ✓ Verifications: inline interactive pills */}
-                {(identityVerified) && (
+                {(identityVerified || addressVerified) && (
                     <div className="flex flex-wrap items-center gap-2 mt-2">
                         {identityVerified && (
                             <button
@@ -381,6 +381,18 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                 {t('flags.id_verified') || '✓ Identity'}
                             </button>
                         )}
+                        {addressVerified && (
+                            <button
+                                type="button"
+                                onClick={() => setShowAddressHint(!showAddressHint)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${showAddressHint ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-700 shadow-inner' : 'bg-transparent text-teal-700 dark:text-teal-300 border-transparent hover:bg-teal-50 dark:hover:bg-teal-900/20'}`}
+                            >
+                                <svg className={`w-3.5 h-3.5 transform transition-transform ${showAddressHint ? 'rotate-180' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                {t('flags.addr_verified') || 'Verified address'}
+                            </button>
+                        )}
 
                     </div>
                 )}
@@ -391,6 +403,13 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                         <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-teal-100 dark:border-b-stone-700"></div>
                         <span className="font-semibold text-teal-900 dark:text-teal-300 block mb-0.5">{t('flags.id_verified') || 'Identidad Verificada'}</span>
                         {identityVerifiedFlag?.details || t('flags.legend_verified') || 'Confirmamos que esta persona es quien dice ser.'}
+                    </div>
+                )}
+                {showAddressHint && addressVerified && (
+                    <div className="w-full mt-1 p-3 bg-teal-50 dark:bg-stone-800/80 border border-teal-100 dark:border-teal-900/50 rounded-lg text-xs leading-relaxed text-teal-800 dark:text-teal-200 animate-in slide-in-from-top-1 fade-in duration-200 shadow-sm relative">
+                        <div className="absolute top-0 left-6 -translate-y-[5px] border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-teal-100 dark:border-b-stone-700"></div>
+                        <span className="font-semibold text-teal-900 dark:text-teal-300 block mb-0.5">{t('flags.addr_verified') || 'Dirección Verificada'}</span>
+                        {t('flags.legend_verified') || 'Confirmamos esta información mediante soporte documentario o visita.'}
                     </div>
                 )}
 
@@ -452,7 +471,7 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
                                         {systemSuggestions.length > 0 && !searchTerm && (() => {
                                             const LOW_CONFIDENCE_THRESHOLD = 15;
                                             const sorted = [...systemSuggestions].sort((a, b) => b.confidencePercent - a.confidencePercent);
-                                            const visible = sorted.filter(s => s.confidencePercent >= LOW_CONFIDENCE_THRESHOLD);
+                                            const visible = sorted.filter(s => s.confidencePercent >= LOW_CONFIDENCE_THRESHOLD).slice(0, 5);
                                             const suppressed = sorted.filter(s => s.confidencePercent < LOW_CONFIDENCE_THRESHOLD);
                                             return (
                                                 <div className="mb-3">

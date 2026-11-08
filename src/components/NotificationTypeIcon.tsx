@@ -8,7 +8,7 @@
  */
 import {
     ArrowRightLeft, Ban, Bell, CalendarDays, ClipboardList, FileSignature, Flag, GitMerge, Home, Lock, LockOpen,
-    MessageSquare, PencilLine, Plug, Settings, ShieldQuestion, Trash2, UserPlus, Users, type LucideIcon,
+    MessageSquare, PencilLine, Plug, Settings, ShieldQuestion, Trash2, UserMinus, UserPlus, Users, type LucideIcon,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { NOTIFICATION_TYPES, type NotificationType } from '@/domain/constants';
@@ -20,7 +20,7 @@ export const NOTIFICATION_TYPE_ICON: Record<NotificationType, LucideIcon> = {
     profile_renamed: PencilLine, profile_rename_undone: PencilLine, profile_age_changed: CalendarDays,
     pii_access_request: Lock, pii_access_approved: LockOpen, pii_access_denied: Lock, pii_access_revoked: Lock,
     contact_entry_added: UserPlus, follow_up_due: Bell, ownership_transferred: ArrowRightLeft,
-    adopter_flagged: Flag, duplicate_flagged: GitMerge, inaccuracy_reported: PencilLine, deletion_request: Trash2, member_joined: Users, adopter_login_blocked: Ban,
+    adopter_flagged: Flag, duplicate_flagged: GitMerge, inaccuracy_reported: PencilLine, deletion_request: Trash2, member_joined: Users, member_removed: UserMinus, adopter_login_blocked: Ban,
     adopter_merged: GitMerge, merge_request: GitMerge, merge_request_resolved: GitMerge,
     merge_disputed: ShieldQuestion, merge_dispute_resolved: ShieldQuestion, pair_message: MessageSquare,
     household_linked: Home, household_link_removed: Home, household_link_disputed: ShieldQuestion, household_contribution: Home,

@@ -88,7 +88,7 @@ function PrivacyES() {
                 <li><strong>Oposición:</strong> negarte al tratamiento de tus datos por motivos legítimos.</li>
             </ul>
             <p>
-                Para ejercer estos derechos, contactanos en <strong>privacidad@buenadoptante.com</strong>.
+                Para ejercer estos derechos, contactanos en <strong>privacidad@buenadoptante.org</strong>.
                 Las solicitudes se procesarán en los plazos establecidos por la normativa local vigente
                 de tu país (usualmente entre 10 y 15 días hábiles).
             </p>
@@ -168,7 +168,7 @@ function PrivacyEN() {
                 <li><strong>Opposition:</strong> refuse the processing of your data on legitimate grounds.</li>
             </ul>
             <p>
-                To exercise these rights, contact us at <strong>privacidad@buenadoptante.com</strong>.
+                To exercise these rights, contact us at <strong>privacidad@buenadoptante.org</strong>.
                 Requests will be processed within the timeframes established by the data-protection
                 regulations in force in your country (usually between 10 and 15 business days).
             </p>
@@ -249,7 +249,7 @@ function PrivacyPT() {
                 <li><strong>Oposição:</strong> recusar o tratamento dos seus dados por motivos legítimos.</li>
             </ul>
             <p>
-                Para exercer estes direitos, entre em contato conosco pelo <strong>privacidad@buenadoptante.com</strong>.
+                Para exercer estes direitos, entre em contato conosco pelo <strong>privacidad@buenadoptante.org</strong>.
                 As solicitações serão processadas nos prazos estabelecidos pela norma local vigente
                 do seu país (geralmente entre 10 e 15 dias úteis).
             </p>

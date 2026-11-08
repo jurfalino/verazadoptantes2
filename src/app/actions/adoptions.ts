@@ -11,14 +11,15 @@ import { saveAdoptionSchema } from './validation';
 import { z } from 'zod';
 import { planFieldSave, canonField, holdTogether } from '@/domain/fieldCollab';
 import { recordFieldAuthors } from '@/lib/collabAttribution';
-import { casAdopterLists } from '@/lib/adopterListCas';
-import { deserializeContactEntries, parseBlobToContactEntries, mergeContactEntries, contactEntriesToBlob, contactCapExceeded } from '@/lib/contactEntries';
 import { SAVE_BUSY, ANIMAL_ALREADY_PLACED } from '@/domain/fieldCollab';
-import { insertRecord, updateRecord, isActivePlacementConflict, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
+import { insertRecord, updateRecord, isActivePlacementConflict, deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter, normalizeRecordType } from './_recordWrite';
+import { copyDeliveryAddressToContacts } from '@/lib/deliveryAddressCopy';
+import { recordHandoverFields } from '@/domain/recordEditAccess';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { historyKindFor } from '@/lib/profilePrivilege';
+import { DELIVERY_ADDRESS_COPY_PREFIX } from '@/domain/flags';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
 export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
@@ -63,11 +64,11 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
         if (existing) {
             // Editing an existing record is a MUTATION: the record's creator,
             // a teammate of theirs, or an admin — exactly deleteAdoption's gate
-            // and what the UI offers (AdoptionHistory canEdit; the animal page
-            // via assertCanEditAnimal). Adding a new record stays open.
-            const { isAdminAsync } = await import('@/config/admins');
-            const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-            if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !(await isAdminAsync(changedBy))) {
+            // and what the UI offers (AdoptionHistory canEdit, from the same
+            // rule via getAdoptions; the animal page via assertCanEditAnimal).
+            // Adding a new record stays open.
+            const { canEditRecordAs } = await import('@/lib/recordEditAccess');
+            if (!(await canEditRecordAs(changedBy, existing.addedBy))) {
                 // Thrown like every other saveAdoption failure (callers treat a
                 // throw as failure); the catch below logs it with the errorId
                 // the user sees.
@@ -106,48 +107,18 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                     changedAt: new Date()
                 });
 
-                // If delivered to home with verified address, set address verified flag
-                if (data.deliveredToHome && data.verifiedAddress) {
-                    // Add the verified address to the adopter's contacts — as a
-                    // structured entry (the blob is derived from the entries, so
-                    // both stay in sync), merged into the list as it is NOW with a
-                    // compare-and-swap: a teammate's contact edit landing in
-                    // between is kept. Already there (normalized) → no write.
-                    const verified = data.verifiedAddress;
-                    const added = await casAdopterLists<{ from: string | null; to: string | null } | null>(db, data.adopterId, (row) => {
-                        const current = deserializeContactEntries(row.contactEntries);
-                        const base = current.length ? current : parseBlobToContactEntries(row.contactInfo).map(e => ({ id: crypto.randomUUID(), ...e }));
-                        const merged = mergeContactEntries(base, [{ id: crypto.randomUUID(), type: 'address', value: verified, addedBy: changedBy }]);
-                        if (merged.length === base.length) return { result: null };
-                        if (contactCapExceeded(merged)) {
-                            // S1: never past the cap (a later read would truncate). The record is saved.
-                            logger.warn('saveAdoption: verified address not added — the profile holds the maximum contact entries', { adopterId: data.adopterId, changedBy });
-                            return { result: null };
-                        }
-                        const blob = contactEntriesToBlob(merged) || null;
-                        return { write: { contactEntries: JSON.stringify(merged), contactInfo: blob }, result: { from: row.contactInfo, to: blob } };
-                    }, { op: 'saveAdoption.verifiedAddress', changedBy });
-                    if (added.status === 'busy') {
-                        // The record is saved; only the address copy didn't land. Logged with its id.
-                        logger.error('saveAdoption: verified address not added to contacts (busy)', new Error('busy'), { adopterId: data.adopterId, errorId: added.errorId });
-                    } else if (added.status === 'done' && added.wrote && added.result) {
-                        // Log address change in audit history
-                        await db.insert(adopterHistory).values({
-                            id: crypto.randomUUID(),
-                            adopterId: data.adopterId,
-                            changedBy,
-                            kind,
-                            changes: JSON.stringify({
-                                contactInfo: {
-                                    from: added.result.from || '(empty)',
-                                    to: added.result.to,
-                                    reason: 'verified_during_pet_delivery'
-                                }
-                            }),
-                            changedAt: new Date()
-                        });
-                        await tokenizeAdopter(data.adopterId).catch(e => { logger.error('Tokenize adopter failed (verified address)', e, { adopterId: data.adopterId }); });
-                    }
+                // If delivered to home with verified address, set address verified flag.
+                // Only records that store the delivery (adoption, «Tránsito»): a
+                // stale toggle on another type is not a delivery (F3).
+                if (data.deliveredToHome && data.verifiedAddress && recordHandoverFields(normalizeRecordType(data.recordType)).deliveredToHome) {
+                    // Add the verified address to the adopter's contacts (F4: the
+                    // same copy the edit path runs; owner/teammate/admin only,
+                    // merged, never failing the save).
+                    await copyDeliveryAddressToContacts(db, {
+                        adopterId: data.adopterId, recordType: normalizeRecordType(data.recordType),
+                        deliveredToHome: data.deliveredToHome, verifiedAddress: data.verifiedAddress,
+                        changedBy, op: 'saveAdoption.create',
+                    });
 
                     // Check if verified_address flag already exists
                     const existingFlag = await db.select().from(adopterFlags).where(
@@ -161,9 +132,12 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
                         await db.insert(adopterFlags).values({
                             id: crypto.randomUUID(),
                             adopterId: data.adopterId,
-                            addedBy: changedBy,
+                            // `flaggedBy` (adopter_flags has no added_by): this was dropped and every
+                            // delivery-verified address was filed as 'anonymous'.
+                            flaggedBy: changedBy,
                             reason: 'verified_address',
-                            details: `Address verified during pet delivery: ${data.verifiedAddress}`,
+                            // The street stays on the record, where it is masked per viewer (P1).
+                            details: DELIVERY_ADDRESS_COPY_PREFIX,
                             createdAt: new Date()
                         });
                     }
@@ -263,10 +237,9 @@ export async function deleteAdoption(adoptionId: string, adopterId: string, keep
         // the UI (AdoptionHistory: canEdit = isAdmin || addedBy === currentUser).
         // v2.55.20: org-mates too — the UI now offers edit/delete on a
         // teammate's records (AdoptionHistory canEdit), so the server gate must
-        // agree or the affordance fails on save.
-        const { isAdminAsync } = await import('@/config/admins');
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-        if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !await isAdminAsync(changedBy)) {
+        // agree or the affordance fails on save. One rule: src/domain/recordEditAccess.ts.
+        const { canEditRecordAs } = await import('@/lib/recordEditAccess');
+        if (!(await canEditRecordAs(changedBy, existing.addedBy))) {
             throw new Error("Not authorized to delete this record");
         }
 
@@ -412,7 +385,9 @@ export async function getAdoptions(adopterId: string) {
         // Which API tool saved each activity — only while the origin tags are on.
         const { getFeatureFlag } = await import('@/config/features');
         const withOrigin = await getFeatureFlag('ENABLE_ORIGIN_LABELS') ? await attachApiTools(db, withForms) : withForms;
-        return await attachAdoptionThumbnails(db, withOrigin);
+        // `canEdit` per record (the pencil = the save gate) + the delivery address masked outside the team.
+        const { attachRecordViewerAccess } = await import('@/lib/recordEditAccess');
+        return await attachRecordViewerAccess(db, await attachAdoptionThumbnails(db, withOrigin), { viewer, viewerIsAdmin, adopterId });
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];
@@ -603,6 +578,20 @@ async function updateRecordFields(
                 continue; // someone saved in between — re-read and re-check
             }
             await recordLanded(apply, currentVals, writeData, current);
+            // F4: marking «Entregado en casa» (or changing its address) while
+            // editing copies the address into the contacts, as creating does.
+            // Only when this save landed one of the two; a save of another
+            // field never puts back an address someone removed from contacts.
+            if (apply.includes('deliveredToHome') || apply.includes('verifiedAddress')) {
+                const after = (f: RecordField) => (apply.includes(f) ? payload[f] : currentVals[f]);
+                await copyDeliveryAddressToContacts(db, {
+                    adopterId: (writeData.adopterId as string | null | undefined) || current.adopterId,
+                    recordType: after('recordType') as string | null,
+                    deliveredToHome: after('deliveredToHome'),
+                    verifiedAddress: after('verifiedAddress') as string | null,
+                    changedBy, op: 'saveAdoption.edit',
+                });
+            }
         }
 
         const named = await recordFieldAuthors(db, recordId, [...new Set([...plan.conflicts, ...plan.updatedByOthers])]);

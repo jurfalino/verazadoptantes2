@@ -22,7 +22,7 @@ import { ContinueMergeDialog } from "@/components/ContinueMergeDialog";
 import { MatchCard } from "@/components/MatchCardParts";
 import { AdopterName } from "@/components/AdopterName";
 import { isNamelessAdopter } from "@/lib/adopterDisplay";
-import { openAlertKinds } from "@/domain/flags";
+import { openFlagKinds, profileVerifications } from "@/domain/flags";
 import { linkFormSubmissionToAdopter } from '@/app/actions/formSubmission';
 import { useLanguage } from "@/context/LanguageContext";
 import ContactEntriesSection from "@/components/ContactEntriesSection";
@@ -39,6 +39,8 @@ import { useAuthContext } from '@/context/AuthContext';
 import { RatingBadge } from '@/components/RatingBadge';
 import ProfilePhotoChooser from '@/components/ProfilePhotoChooser';
 import { useShowToast } from '@/components/ui/Toast';
+import { answerNotSamePerson } from '@/app/actions/notSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { Button } from '@/components/ui/Button';
 import { TAP_TARGET_44 } from '@/components/ui/tapTarget';
 import { extractErrorId } from '@/lib/errorUtils';
@@ -46,8 +48,7 @@ import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 
 import { getSourceIcon } from '@/lib/sourceIcons';
 import { getCountryByCode } from '@/config/countries';
-import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
-import { computeRequestRescueDensity } from '@/domain/requestDensity';
+import { periodAlerts, DEFAULT_ADOPTION_CONFIG } from '@/domain/periodAlerts';
 import { renderTextWithLinks } from '@/lib/textUtils';
 import { AdopterFlagging } from '@/components/AdopterFlagging';
 import type { AdopterFlaggingHandle } from '@/components/AdopterFlagging';
@@ -177,19 +178,16 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         || (!!currentUser && !!initialData?.addedBy && currentUser.trim().toLowerCase() === initialData.addedBy.trim().toLowerCase())
     );
 
-    // Sliding window logic strictly memoized to avoid expensive sorting on every render
-    const periodDays = adoptionConfig?.periodDays || 90;
-    const threshold = adoptionConfig?.threshold || 5;
-    const requestsPeriodDays = adoptionConfig?.requestsPeriodDays || 30;
-    const requestsThreshold = adoptionConfig?.requestsThreshold || 3;
-
-    const adoptionsDensity = useMemo(() => {
-        return computeMaxDensityPeriod(adoptions, 'adoption', periodDays);
-    }, [adoptions, periodDays]);
-
-    const requestsDensity = useMemo(() => {
-        return computeRequestRescueDensity(adoptions, requestsPeriodDays);
-    }, [adoptions, requestsPeriodDays]);
+    // The header's two period ALERTS, by the one rule (periodAlerts), memoized
+    // (the sliding window sorts). A 0 / unset threshold falls back to the default, as before.
+    const { tooManyAdoptions, tooManyRequests } = useMemo(() => periodAlerts(adoptions, {
+        threshold: adoptionConfig?.threshold || DEFAULT_ADOPTION_CONFIG.threshold,
+        periodDays: adoptionConfig?.periodDays || DEFAULT_ADOPTION_CONFIG.periodDays,
+        requestsThreshold: adoptionConfig?.requestsThreshold || DEFAULT_ADOPTION_CONFIG.requestsThreshold,
+        requestsPeriodDays: adoptionConfig?.requestsPeriodDays || DEFAULT_ADOPTION_CONFIG.requestsPeriodDays,
+    }), [adoptions, adoptionConfig]);
+    // «Identidad / Dirección Verificada» from the records as they are now (cards V1/V2).
+    const verifications = profileVerifications(flags, adoptions);
 
     const [isEditing, setIsEditing] = useState(isNew);
     // True while the name's inline field is in edit mode — collapses the sibling
@@ -648,6 +646,17 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     // older AdoptionWizard call sites.
                     const animalId = searchParams.get('animalId') || '';
 
+                    // «No es esta persona» on this form: one answer with every other «no» (spec 2026-11-06).
+                    // Never blocks the save: a failure is said with its id and the new profile stands.
+                    if (isNew && dismissedStrongIds.size > 0) {
+                        try {
+                            const answered = await answerNotSamePerson({ adopterId: res.id, rejectedIds: [...dismissedStrongIds] });
+                            if (answered.ok) trackSamePersonAnswer('new_profile', 'different', answered.recorded > 0);
+                            else toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), answered.errorId ?? resolveErrorId(new Error(`answerNotSamePerson: ${answered.error}`), 'AdopterForm.notThis'));
+                        } catch (e) {
+                            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'AdopterForm.notThis'));
+                        }
+                    }
                     let redirectUrl = `/adopter/${res.id}`;
                     if (continueToAdoption === 'true') {
                         // Redirect to profile with all wizard params (adoption or observation)
@@ -740,7 +749,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         } finally {
             setLoading(false);
         }
-    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t, dontKnowName, anonPublic]);
+    }, [data, contactEntries, isNew, formPrefill, searchParams, router, t, dontKnowName, anonPublic, dismissedStrongIds]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1523,10 +1532,11 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             adopterId={id}
                             adopterName={initialData.name}
                             existingFlags={flags}
-                            hasVerifiedAdoption={adoptions.some(a => a.identityVerified === 1)}
-                            hasVerifiedAddress={adoptions.some(a => a.verifiedAddress && a.verifiedAddress.trim() !== '')}
-                            tooManyAdoptions={adoptionsDensity.count >= threshold ? { count: adoptionsDensity.count, actualSpanDays: adoptionsDensity.timeSpanDays, periodDays, startDate: adoptionsDensity.startDate, endDate: adoptionsDensity.endDate } : undefined}
-                            tooManyRequests={requestsDensity.count >= requestsThreshold ? { count: requestsDensity.count, actualSpanDays: requestsDensity.timeSpanDays, periodDays: requestsPeriodDays, startDate: requestsDensity.startDate, endDate: requestsDensity.endDate } : undefined}
+                            // «Identidad / Dirección Verificada»: the one rule search cards, applicants and the API use.
+                            verifiedIdentity={verifications.verified_identity}
+                            verifiedAddress={verifications.verified_address}
+                            tooManyAdoptions={tooManyAdoptions ?? undefined}
+                            tooManyRequests={tooManyRequests ?? undefined}
                             hasDuplicateBanner={hasDuplicateBanner}
                             compareSource={{ ...compareSource, kind: 'profile' }}
                             // The housemate alerts (Jon 2026-11-01): here a tap goes to the section that lists everyone.
@@ -1581,12 +1591,14 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                             const entriesForSection = stored.length > 0
                                 ? stored
                                 : parseBlobToContactEntries(initialData.contactInfo);
-                            const isOwner = initialData.addedBy === currentUser;
                             return (
                                 <ContactEntriesSection
                                     entries={entriesForSection}
                                     adopterId={id}
-                                    canEditAll={isOwner || isAdmin}
+                                    // T3: the server's rule (updateContactEntry / removeContactEntry): owner,
+                                    // their team, admins and moderators — the same gate that hides
+                                    // «Reportar inexactitud», so whoever can't fix it can report it.
+                                    canEditAll={canEditAllHousehold}
                                     currentUser={currentUser}
                                     onMaskedClick={onMaskedContactClick}
                                     adopterIsPublic={!!initialData.isPublic}
@@ -1646,13 +1658,13 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 (audit B8) with the shared match cards (audit B6) — the same header, order and actions as
                 the «Posibles coincidencias» panel. */}
             {saveDuplicateModal && (
-                <Modal title={t('import.saveModal_title') || 'Possible duplicate profiles'} onClose={() => setSaveDuplicateModal(null)} testId="save-duplicate-modal" size="lg">
+                <Modal title={t('import.saveModal_title') || 'Possible duplicates'} onClose={() => setSaveDuplicateModal(null)} testId="save-duplicate-modal" size="lg">
                     <ModalText>{t('import.saveModal_body') || 'Creating a new profile may create a duplicate. You can link to an existing profile instead.'}</ModalText>
                     <ul className="space-y-2">
                         {saveDuplicateModal.matches.map((result) => (
                             <li key={result.adopter.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200">
                                 <MatchCard newTab thumbnail={result.thumbnail} headTestId="save-dup-head"
-                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openAlerts: openAlertKinds(result.flags), isMinor: result.isMinor, households: result.households }}
+                                    person={{ id: result.adopter.id, name: result.adopter.name ?? '', rating: result.avgRating, openFlags: openFlagKinds(result.flags), isMinor: result.isMinor, households: result.households }}
                                     nameNode={isNamelessAdopter(result.adopter) ? <AdopterName adopter={result.adopter} className="break-words" /> : undefined}
                                     compare={(
                                         <MatchCompare
@@ -1670,7 +1682,6 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                                         busy: continueBusyId === result.adopter.id,
                                         // The same step as the panel: the typed data goes into that profile, after its confirm.
                                         onSame: () => { setSaveDuplicateModal(null); handleContinueWith(result.adopter.id, result); },
-                                        sameLabel: t('adopter.dup_action_continue_with_existing') || 'Continue with this profile',
                                         onNotThis: () => dismissStrongMatch(result.adopter.id),
                                         notThisTestId: 'save-dup-not-this',
                                     }} />

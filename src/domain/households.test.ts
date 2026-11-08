@@ -149,7 +149,7 @@ describe('householdNameKey', () => {
 
 describe('householdLineGroups (the card line: «Convive con» / «En otro hogar, con»)', () => {
     const line = (profileId: string, householdId: string, isGift = false) =>
-        ({ name: profileId, profileId, rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift, householdId });
+        ({ name: profileId, profileId, rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift, householdId });
     it('groups by home in order and leaves gift-only lines out', () => {
         expect(householdLineGroups([line('pedro', 'h1'), line('ana', 'h2'), line('marta', 'h1'), line('rosa', 'g1', true)]))
             .toEqual([[line('pedro', 'h1'), line('marta', 'h1')], [line('ana', 'h2')]]);
@@ -163,7 +163,7 @@ describe('householdLineGroups (the card line: «Convive con» / «En otro hogar,
 describe('housemateLowRating / housemateHasAlerts (the housemate alert chips — Jon 2026-11-01)', () => {
     const alert = (count: number, periodDays = 90): PeriodAlert => ({ count, threshold: 3, periodDays, actualSpanDays: 10 });
     const line = (profileId: string, over: Partial<HouseholdLine> = {}): HouseholdLine =>
-        ({ name: profileId, profileId, rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1', ...over });
+        ({ name: profileId, profileId, rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1', ...over });
 
     it('the LOWEST low rating among the housemates, in any non-gift home', () => {
         expect(housemateLowRating([line('pedro', { rating: 1 })])).toBe(1);
@@ -171,7 +171,7 @@ describe('housemateLowRating / housemateHasAlerts (the housemate alert chips —
         expect(housemateLowRating([line('a', { rating: 2.4 }), line('b', { rating: 5 })])).toBe(2.4);
     });
     it('flags or alerts only → no rating chip', () => {
-        expect(housemateLowRating([line('pedro', { openAlerts: ['inaccurate', 'duplicate'], rating: 4 })])).toBeNull();
+        expect(housemateLowRating([line('pedro', { openFlags: ['inaccurate', 'duplicate'], rating: 4 })])).toBeNull();
         expect(housemateLowRating([line('pedro', { alerts: { tooManyAdoptions: alert(9), tooManyRequests: null } })])).toBeNull();
     });
     it('2.5 (reads «Regular»), 3★ and up, unrated, nobody → null', () => {
@@ -189,7 +189,7 @@ describe('housemateLowRating / housemateHasAlerts (the housemate alert chips —
         expect(housemateHasAlerts([line('a', { rating: 5 }), line('b', { householdId: 'h2', alerts: { tooManyAdoptions: null, tooManyRequests: alert(3, 30) } })])).toBe(true);
     });
     it('flags only → no alerts chip; a low rating alone → none either', () => {
-        expect(housemateHasAlerts([line('pedro', { openAlerts: ['inaccurate', 'duplicate'] })])).toBe(false);
+        expect(housemateHasAlerts([line('pedro', { openFlags: ['inaccurate', 'duplicate'] })])).toBe(false);
         expect(housemateHasAlerts([line('pedro', { rating: 1 })])).toBe(false);
         expect(housemateHasAlerts(undefined)).toBe(false);
     });

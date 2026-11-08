@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { AlertTriangle, CheckCircle2, FileSignature, Search, User } from 'lucide-react';
 import { redirect, notFound } from 'next/navigation';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import { getDb } from '@/lib/db';
 import { notifications, adopters } from '@/db/schema';
 import { eq, or, and, isNull } from 'drizzle-orm';
@@ -10,15 +10,19 @@ import { getUser } from '@/app/actions/_db';
 import { markNotificationRead } from '@/app/actions/notifications';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
+import { formBackLink } from '@/domain/formBackLink';
 import { logger } from '@/lib/logger';
-import { isOrgMate } from '@/lib/orgMembership';
-import { isAdminAsync } from '@/config/admins';
+import { loadOpenPairs } from '@/lib/openPairs';
+import { isOrgMateStrict } from '@/lib/orgMembership';
+import { isAdminAsyncStrict } from '@/config/admins';
+import { canViewerAccessContractResult } from '@/lib/contractResultAccess';
 import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
 import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
 import { countsFor } from '@/lib/profileSummary';
 import { isMinor, type CardHousehold } from '@/domain/households';
 import ContractResultsMatchCard from '@/components/ContractResultsMatchCard';
 import ContractResultsKeepNewButton from '@/components/ContractResultsKeepNewButton';
+import { Tr } from '@/components/ui/Tr';
 
 interface MatchedAdopter {
     id: string;
@@ -59,20 +63,27 @@ export default async function ContractResultsPage({ params }: { params: Promise<
 
     const db = await getDb();
     if (!db) {
-        return <ErrorState message="Database unavailable" />;
+        return <ErrorState message="error_db" />;
     }
 
     // Find notification by ID
     const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
 
-    // Missing → 404. Not the recipient → teammates/admins keep the "no permission"
-    // screen; strangers get the 404 (PII: don't confirm it exists). `userId` is the recipient email.
+    // Missing → 404. The recipient, their team or an admin see the same screen
+    // (T1 — the team acts as one, as on form results); everyone else gets the
+    // 404 (PII: don't confirm it exists). `userId` is the recipient email.
     if (!notification) notFound();
-    if (notification.userId !== currentUser) {
-        const teammateOrAdmin = (await isOrgMate(currentUser, notification.userId)) || (await isAdminAsync(currentUser));
-        logger.info('contract-results: denied', { notificationId, userEmail: currentUser, teammateOrAdmin });
-        if (!teammateOrAdmin) notFound();
-        return <ErrorState message="No tenés permiso para ver esta notificación" />;
+    let allowed: boolean;
+    try {
+        allowed = await canViewerAccessContractResult(currentUser, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict });
+    } catch (e) {
+        // Fails closed, but never silently: the lookup itself broke (D1), not a denial.
+        const errorId = logger.error('contract-results: access check failed', e, { notificationId, user: currentUser });
+        return <ErrorState message="error_load" errorId={errorId} />;
+    }
+    if (!allowed) {
+        logger.info('contract-results: denied', { notificationId, userEmail: currentUser });
+        notFound();
     }
 
     // Mark as read
@@ -80,10 +91,23 @@ export default async function ContractResultsPage({ params }: { params: Promise<
 
     const metadata: NotificationMetadata = notification.metadata ? JSON.parse(notification.metadata) : {};
 
+    // A contract match is an ordinary duplicate pair (spec 2026-11-05): the cards
+    // are the new profile's OPEN PAIRS, so an answer given anywhere clears them.
+    let matchList: Array<MatchedAdopter & { candidateId: string; canAnswer: boolean }> = [];
+    if (metadata.adopterId) {
+        try {
+            const pairs = await loadOpenPairs(db, metadata.adopterId, currentUser, { limit: 20 });
+            matchList = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList }));
+        } catch (e) {
+            const errorId = logger.error('contract-results: open pairs unreadable', e, { notificationId, user: currentUser, adopterId: metadata.adopterId });
+            return <ErrorState message="error_load" errorId={errorId} />;
+        }
+    }
+
     // Fetch full adopter profiles for matches
-    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: CardHousehold; rating?: number | null; openAlerts?: OpenAlertKind[] }> = [];
-    if (metadata.matchedAdopters && metadata.matchedAdopters.length > 0) {
-        const adopterIds = metadata.matchedAdopters.map(a => a.id);
+    let matchedProfiles: Array<{ id: string; name: string; contactInfo: string | null; contactEntries: string | null; status: string | null; isMinor?: boolean; households?: CardHousehold; rating?: number | null; openFlags?: OpenFlagKind[] }> = [];
+    if (matchList.length > 0) {
+        const adopterIds = matchList.map(a => a.id);
         // Filter soft-deleted (merged-duplicate) adopters at read time so even legacy
         // notifications whose stored matchedAdopters contains since-deleted IDs render correctly.
         type Row = {
@@ -128,11 +152,13 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             matchedProfiles = matchedProfiles.map(p => (homes[p.id] ? { ...p, households: homes[p.id] } : p));
             // Each card's own rating and alerts (audit B6); countsFor never throws (it logs and shows «Sin calificación»).
             const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { notificationId, user: currentUser }, { activity: false })));
-            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openAlerts: standing[i].openAlerts } : p));
+            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openFlags: standing[i].openFlags } : p));
         }
     }
 
-    const hasMatches = metadata.matchCount > 0;
+    const hasMatches = matchList.length > 0;
+    // Matched at signing, but every match has been answered since: never say "no records".
+    const answeredAll = !hasMatches && (metadata.matchCount ?? 0) > 0;
     const signer = {
         name: metadata.submittedData?.name ?? metadata.adopterName ?? '',
         entries: [
@@ -149,17 +175,20 @@ export default async function ContractResultsPage({ params }: { params: Promise<
         <main className="container mx-auto px-4 py-8 max-w-2xl">
             {/* Header */}
             <div className="mb-6">
-                <Link href="/" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
-                    ← Volver
+                {/* D3: names where it goes, as the form screen does when opened from a notice. */}
+                <Link href={formBackLink(null, {}).href} data-testid="contract-back-link" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
+                    ← <Tr k={formBackLink(null, {}).label.key} />
                 </Link>
                 <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-800 mt-2">
                     {hasMatches
                         ? <AlertTriangle className="w-5 h-5 shrink-0 text-amber-700" strokeWidth={1.75} aria-hidden="true" />
                         : <CheckCircle2 className="w-5 h-5 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />}
-                    Resultados del contrato
+                    <Tr k="contractResults.title" />
                 </h1>
                 <p className="text-sm text-stone-500 mt-1">
-                    {metadata.animalName} — adoptado por {adopterDisplayName({ name: metadata.adopterName }, 'Sin nombre')}
+                    {metadata.adopterName?.trim()
+                        ? <Tr k="contractResults.adopted_by" vars={{ animal: metadata.animalName ?? '', name: adopterDisplayName({ name: metadata.adopterName }, '') }} />
+                        : <Tr k="contractResults.adopted_by_unnamed" vars={{ animal: metadata.animalName ?? '' }} />}
                 </p>
             </div>
 
@@ -167,14 +196,18 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             <div className={`rounded-xl p-4 mb-6 ${hasMatches ? 'bg-amber-50 border border-amber-200' : 'bg-teal-50 border border-teal-200'}`}>
                 <p className={`text-sm font-semibold ${hasMatches ? 'text-amber-800' : 'text-teal-800'}`}>
                     {hasMatches
-                        ? (metadata.matchCount === 1 ? 'Se encontró 1 posible coincidencia' : `Se encontraron ${metadata.matchCount} posibles coincidencias`)
-                        : 'No se encontraron registros previos para este adoptante'
+                        ? (matchList.length === 1 ? <Tr k="contractResults.banner_one" /> : <Tr k="contractResults.banner_many" vars={{ n: matchList.length }} />)
+                        : answeredAll
+                            ? <Tr k="contractResults.banner_answered" />
+                            : <Tr k="contractResults.banner_none" />
                     }
                 </p>
                 <p className={`text-xs mt-1 ${hasMatches ? 'text-amber-600' : 'text-teal-700'}`}>
                     {hasMatches
-                        ? 'Revisá los perfiles a continuación para verificar si es la misma persona.'
-                        : 'Todo parece estar en orden. Este adoptante no tiene registros previos en el sistema.'
+                        ? <Tr k="contractResults.desc_matches" />
+                        : answeredAll
+                            ? <Tr k="contractResults.desc_answered" />
+                            : <Tr k="contractResults.desc_none" />
                     }
                 </p>
             </div>
@@ -182,23 +215,23 @@ export default async function ContractResultsPage({ params }: { params: Promise<
             {/* Submitted Data */}
             {submitted && (
                 <div className="bg-white rounded-xl border border-stone-200 p-4 mb-6 shadow-sm">
-                    <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-700 mb-3"><FileSignature className="w-4 h-4 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />Datos del contrato</h2>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-700 mb-3"><FileSignature className="w-4 h-4 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" /><Tr k="contractResults.data_title" /></h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {submitted.name && <DataPill label="Nombre" value={submitted.name} />}
-                        {submitted.phone && <DataPill label="Teléfono" value={submitted.phone} />}
-                        {submitted.email && <DataPill label="Email" value={submitted.email} />}
-                        {submitted.dni && <DataPill label="Documento" value={submitted.dni} />}
-                        {submitted.address && <DataPill label="Dirección" value={submitted.address} />}
-                        {submitted.socialNetworks && <DataPill label="Redes" value={submitted.socialNetworks} />}
+                        {submitted.name && <DataPill label={<Tr k="contractResults.field_name" />} value={submitted.name} />}
+                        {submitted.phone && <DataPill label={<Tr k="contractResults.field_phone" />} value={submitted.phone} />}
+                        {submitted.email && <DataPill label={<Tr k="contractResults.field_email" />} value={submitted.email} />}
+                        {submitted.dni && <DataPill label={<Tr k="contractResults.field_document" />} value={submitted.dni} />}
+                        {submitted.address && <DataPill label={<Tr k="contractResults.field_address" />} value={submitted.address} />}
+                        {submitted.socialNetworks && <DataPill label={<Tr k="contractResults.field_social" />} value={submitted.socialNetworks} />}
                     </div>
                 </div>
             )}
 
             {/* Matched Profiles */}
-            {hasMatches && metadata.matchedAdopters && (
+            {hasMatches && (
                 <div className="space-y-3">
-                    <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-700"><Search className="w-4 h-4 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />Perfiles coincidentes</h2>
-                    {metadata.matchedAdopters.map((match) => {
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-700"><Search className="w-4 h-4 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" /><Tr k="samePerson.concept_many" /></h2>
+                    {matchList.map((match) => {
                         const profile = matchedProfiles.find(p => p.id === match.id);
                         if (!profile) return null;
 
@@ -211,7 +244,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                                 matchTypes={match.matchTypes}
                                 score={match.score}
                                 signer={signer}
-                                compareOpen={metadata.matchedAdopters!.length === 1}
+                                compareOpen={matchList.length === 1}
+                                candidateId={match.candidateId}
+                                canAnswer={match.canAnswer}
                             />
                         );
                     })}
@@ -222,9 +257,9 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                 Only shown when there ARE matches (without matches there's nothing to dismiss). */}
             {hasMatches && metadata.adopterId && (
                 <div className="mt-6">
-                    <h2 className="text-sm font-semibold text-stone-700 mb-2">¿Ninguna coincide?</h2>
+                    <h2 className="text-sm font-semibold text-stone-700 mb-2"><Tr k="contractResults.none_match_heading" /></h2>
                     <p className="text-xs text-stone-500 mb-3 leading-relaxed">
-                        Si ninguno de los perfiles anteriores corresponde a esta persona, continuá con el perfil recién creado a partir del contrato.
+                        <Tr k="contractResults.none_match_desc" />
                     </p>
                     <ContractResultsKeepNewButton orphanAdopterId={metadata.adopterId} />
                 </div>
@@ -240,7 +275,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
                         className="inline-flex items-center gap-2 text-xs text-stone-500 hover:text-stone-700 transition-colors"
                     >
                         <User className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-                        Ver el perfil del nuevo adoptante (sin decidir)
+                        <Tr k="contractResults.view_new_without_deciding" />
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
@@ -251,7 +286,7 @@ export default async function ContractResultsPage({ params }: { params: Promise<
     );
 }
 
-function DataPill({ label, value }: { label: string; value: string }) {
+function DataPill({ label, value }: { label: React.ReactNode; value: string }) {
     return (
         <div className="flex items-start gap-2 text-xs">
             <span className="text-stone-500 font-medium whitespace-nowrap">{label}:</span>
@@ -260,13 +295,15 @@ function DataPill({ label, value }: { label: string; value: string }) {
     );
 }
 
-function ErrorState({ message }: { message: string }) {
+/** `message`: a contractResults.error_* key. */
+function ErrorState({ message, errorId }: { message: 'error_db' | 'error_no_permission' | 'error_load'; errorId?: string }) {
     return (
         <main className="container mx-auto px-4 py-16 text-center">
             <p className="text-2xl mb-2">😕</p>
-            <p className="text-sm text-stone-500 font-medium">{message}</p>
+            <p className="text-sm text-stone-500 font-medium"><Tr k={`contractResults.${message}`} /></p>
+            {errorId && <p className="text-xs text-stone-400 font-mono mt-2">Error ID: {errorId}</p>}
             <Link href="/" className="text-sm text-blue-600 hover:text-blue-700 mt-4 inline-block">
-                ← Volver al inicio
+                <Tr k="contractResults.back_home" />
             </Link>
         </main>
     );

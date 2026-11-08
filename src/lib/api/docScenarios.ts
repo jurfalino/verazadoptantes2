@@ -39,7 +39,7 @@ export interface Registered {
     phone?: string;
     documentId?: string;
     /** Set by people in BuenAdoptante (adopter_flags.reason). */
-    marks?: Array<'inaccurate_information' | 'verified_identity'>;
+    marks?: Array<'verified_identity'>;
     /**
      * A rescuer reported this profile as a duplicate of that one (adopter_flags reason
      * `duplicate`, target_adopter_id): an OPEN question — what the API reports as
@@ -134,9 +134,9 @@ const DEFS: ScenarioDef[] = [
     {
         key: 'one_star',
         title: '1★ peligroso, con alertas',
-        registered: 'Un perfil «Diego Sosa» con el teléfono 11 5550-3105 y el email diego.sosa.demo@example.com, calificado 1,3, marcado con datos no confiables, que en los últimos 4 días pidió adoptar en 4 rescates distintos.',
+        registered: 'Un perfil «Diego Sosa» con el teléfono 11 5550-3105 y el email diego.sosa.demo@example.com, calificado 1,3, que en los últimos 4 días pidió adoptar en 4 rescates distintos.',
         profiles: [{
-            id: 'demo-api-diego', name: 'Diego Sosa', phone: '11 5550-3105', email: 'diego.sosa.demo@example.com', marks: ['inaccurate_information'],
+            id: 'demo-api-diego', name: 'Diego Sosa', phone: '11 5550-3105', email: 'diego.sosa.demo@example.com',
             history: [
                 { type: 'observation', rating: 1, daysAgo: 200 }, { type: 'observation', rating: 1, daysAgo: 180 },
                 { type: 'adoption_request', rating: 2, daysAgo: 60 },
@@ -146,7 +146,7 @@ const DEFS: ScenarioDef[] = [
         }],
         person: { fullName: 'Diego Sosa', phone: '11 5550-3105', email: 'diego.sosa.demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Rocco', species: 'dog' },
-        why: 'Email, teléfono y nombre coinciden → `found`. `ratingLevel` 1 (`dangerous`): **en BuenAdoptante, 1★ impide adoptar**. `risk.flags` trae `inaccurate` y `risk.alerts` trae `too_many_requests` (4 rescates distintos en pocos días). No entregues el animal.',
+        why: 'Email, teléfono y nombre coinciden → `found`. `ratingLevel` 1 (`dangerous`): **en BuenAdoptante, 1★ impide adoptar**. `risk.alerts` trae `too_many_requests` (4 rescates distintos en pocos días). No entregues el animal.',
     },
     {
         key: 'not_rated',
@@ -333,7 +333,6 @@ function computed(p: Registered, now: Date, cfg: AlertConfig) {
     const placed = densest(p.history.filter(h => h.type === 'adoption').map(h => ({ daysAgo: h.daysAgo, item: 1 })), cfg.periodDays, w => w.length);
     if (placed >= cfg.threshold) alerts.push({ type: 'too_many_adoptions', count: placed, periodDays: cfg.periodDays });
     const flags: string[] = [];
-    if (p.marks?.includes('inaccurate_information')) flags.push('inaccurate');
     if (p.duplicateOf) flags.push('duplicate');
     if (p.possibleDuplicate) flags.push('possible_duplicate');
     if (p.marks?.includes('verified_identity')) flags.push('verified_identity');

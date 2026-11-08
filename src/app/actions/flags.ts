@@ -10,6 +10,7 @@ import { getDb, getUser, checkIsAdminAsync } from './_db';
 import { flagAdopterSchema, dismissFlagSchema, removeVerificationSchema } from './validation';
 import { runAfterResponse } from '@/lib/background';
 import { historyKindFor } from '@/lib/profilePrivilege';
+import { redactDeliveryAddressCopies } from '@/domain/flags';
 import { FLAG_REASONS } from '@/domain/constants';
 
 export type FlagAdopterResult =
@@ -133,10 +134,11 @@ export async function getFlags(adopterId: string) {
     try {
         const db = await getDb();
         if (!db) return [];
-        return await db.select().from(adopterFlags)
+        // The delivery copy's street would reach every viewer unmasked (P1).
+        return redactDeliveryAddressCopies(await db.select().from(adopterFlags)
             .where(eq(adopterFlags.adopterId, adopterId))
             .orderBy(sql`${adopterFlags.createdAt} DESC`)
-            .all();
+            .all());
     } catch (error) {
         logger.error('Get flags failed', error, { adopterId });
         return [];

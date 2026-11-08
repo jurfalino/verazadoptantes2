@@ -52,7 +52,7 @@ function match(id: string, name: string, over: Partial<DupHintMatch> = {}): DupH
         matchSnippet: null, contactProtected: true, visibilityBadge: null, avgRating: null, thumbnail: null,
         stats: { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 },
         flags: { inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false, tooManyAdoptions: null, tooManyRequests: null } as DupHintMatch['flags'],
-        household: NO_CARD_HOUSEHOLD, openAlerts: [], activity: {}, rating: null, matchedEntryIndexes: [0], action: 'continue', alreadyPending: false,
+        household: NO_CARD_HOUSEHOLD, openFlags: [], activity: {}, rating: null, matchedEntryIndexes: [0], action: 'continue', alreadyPending: false,
         ...over,
     };
 }
@@ -62,8 +62,8 @@ const jonatan = match('b', 'Jonatan Urfalino', {
     rating: 4,
     household: {
         lines: [
-            { name: 'Pedro Paez', profileId: 'p', rating: 1, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
-            { name: 'Delia Urfalino', profileId: 'd', rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
+            { name: 'Pedro Paez', profileId: 'p', rating: 1, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
+            { name: 'Delia Urfalino', profileId: 'd', rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1' },
         ],
         more: 0,
         alert: { lowRating: 1, hasAlerts: false },
@@ -133,10 +133,12 @@ describe('DupHintProfile — the window', () => {
         expect(html).toContain('data-testid="dup-hint-activity"');
     });
 
-    it("case 1 'continue': «Unir con este perfil», «No es esta persona», then «Abrir perfil ↗» — in that order (point B)", () => {
+    it("case 1 'continue': «Sí, es la misma persona», «No, es otra persona», then «Abrir perfil ↗» — in that order (point B; one way to ask, step 3)", () => {
         const html = renderToStaticMarkup(<DupHintProfile match={jonatan} canAct {...handlers} />);
         expect(ids(html)).toEqual(['dup-hint-continue', 'dup-hint-not-this', 'dup-hint-open-full']);
-        expect(text(html)).toContain('Unir con este perfil');
+        expect(text(html)).toContain('Sí, es la misma persona');
+        expect(text(html)).toContain('No, es otra persona');
+        expect(text(html)).not.toContain('Unir con este perfil');
         expect(text(html)).not.toContain('Continuar con este perfil');
         expect(text(html)).toContain('Abrir perfil');
         expect(text(html)).not.toContain('Abrir perfil completo');

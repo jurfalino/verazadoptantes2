@@ -65,7 +65,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         admin = await playwrightRequest.newContext({ baseURL, storageState: '.auth/admin.json' });
         PEDRO = await createProfileViaApi(admin, { name: PEDRO_NAME, phone: PEDRO_PHONE });
         ROSA = await createProfileViaApi(admin, { name: ROSA_NAME, phone: ROSA_PHONE });
-        // Pedro is rated 1 with an open alert: the line a relative's card carries.
+        // Pedro is rated 1 with an open flag: the line a relative's card carries.
         execD1Batch([
             `INSERT INTO adopter_events (id, adopter_id, event_type, rating, recorded_by, created_at) VALUES ('test-hh-fixture-ev-${stamp}', '${PEDRO}', 'observation', 1, '${ADMIN_EMAIL}', strftime('%s','now','-3 days'))`,
             `INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, created_at) VALUES ('test-hh-fixture-fl-${stamp}', '${PEDRO}', '${ADMIN_EMAIL}', 'inaccurate_information', strftime('%s','now','-3 days'))`,
@@ -135,8 +135,8 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         await expect(pedroCard).toHaveCount(1, { timeout: 30_000 });
         // His row: rating, no «Inexacto» chip, no «Perfil cargado por …»; one attribution at most.
         await expect(pedroCard).toContainText('1.0');
-        await expect(pedroCard.getByTestId('household-member-alerts')).toHaveCount(0);
-        await expect(pedroCard.locator('[data-alert="inaccurate"]')).toHaveCount(0);
+        await expect(pedroCard.getByTestId('household-member-flags')).toHaveCount(0);
+        await expect(pedroCard.locator('[data-flag="inaccurate"]')).toHaveCount(0);
         await expect(pedroCard.locator('[data-activity="observation"]')).toHaveAttribute('data-count', '1');
         // «Editar» on everyone's card, the anchor's too — no relationship field there (his row has none);
         // taking Pedro out of his own home is not this viewer's to do.
@@ -181,7 +181,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         expect(page.url()).toBe(before);
         const list = martaCard.getByTestId('card-household-list');
         await expect(list).toContainText(PEDRO_NAME);
-        await expect(list.locator('[data-alert="inaccurate"]')).toHaveCount(0);
+        await expect(list.locator('[data-flag="inaccurate"]')).toHaveCount(0);
         await chip.click();
         await expect(list).toHaveCount(0);
     });

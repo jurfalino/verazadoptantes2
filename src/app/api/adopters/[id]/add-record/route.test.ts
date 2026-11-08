@@ -15,7 +15,7 @@ const { state, logs } = vi.hoisted(() => ({
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => ({ user: { email: 'rescuer@example.com', name: 'Rescuer' } })) }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/app/actions/_db', () => ({ getDb: async () => state.db, getUser: async () => 'rescuer@example.com' }));
-vi.mock('@/lib/r2', () => ({ processImageForStorage: vi.fn(), uploadToR2: vi.fn() }));
+vi.mock('@/lib/r2', () => ({ MAX_INLINE_IMAGE_DATA_URL: 500_000, processImageForStorage: vi.fn(), storeLargeImageDataUrl: vi.fn(), uploadToR2: vi.fn() }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async () => undefined) }));
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => undefined) }));
 vi.mock('@/lib/logger', () => ({
@@ -29,6 +29,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { POST } from './route';
+import { processImageForStorage, storeLargeImageDataUrl } from '@/lib/r2';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -63,5 +64,44 @@ describe('POST /api/adopters/[id]/add-record — a minor\'s profile', () => {
         const res = await post('pedro');
         expect(res.status).toBe(200);
         expect(records('pedro')).toHaveLength(1);
+    });
+});
+
+describe('POST /api/adopters/[id]/add-record — big screenshots (F1)', () => {
+    const withImages = (images: unknown[]) => POST(
+        new Request('http://localhost/api/adopters/pedro/add-record', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ sourceUrl: 'https://facebook.com/posts/1', adoption: { recordType: 'observation' }, images }),
+        }),
+        { params: Promise.resolve({ id: 'pedro' }) },
+    );
+    const big = { data: 'A'.repeat(600_000), mimeType: 'image/png' };
+    const urls = () => sqlite.prepare('SELECT url FROM adopter_images WHERE adopter_id = ?').all('pedro').map(r => r.url);
+
+    beforeEach(() => {
+        vi.mocked(processImageForStorage).mockReset().mockImplementation(async (url: string) => url);
+        vi.mocked(storeLargeImageDataUrl).mockReset();
+    });
+
+    it('a screenshot over the inline cap goes to R2 instead of being skipped', async () => {
+        vi.mocked(storeLargeImageDataUrl).mockResolvedValue('https://r2.example/big.png');
+        const res = await withImages([big]);
+        expect(res.status).toBe(200);
+        expect(await res.json()).not.toHaveProperty('imagesNotSaved');
+        expect(urls()).toEqual(['https://r2.example/big.png']);
+    });
+
+    it('past 20 images (the create route\'s cap), the rest are not stored and are counted', async () => {
+        const small = Array.from({ length: 22 }, (_, i) => ({ data: `c21hbGw${i}`, mimeType: 'image/jpeg' }));
+        const res = await withImages(small);
+        expect(await res.json()).toMatchObject({ imagesNotSaved: 2, imagesTotal: 22 });
+        expect(urls()).toHaveLength(20);
+    });
+
+    it('one that still cannot be stored is counted in the answer', async () => {
+        vi.mocked(storeLargeImageDataUrl).mockResolvedValue(null);
+        const res = await withImages([{ data: 'c21hbGw=', mimeType: 'image/jpeg' }, big]);
+        expect(await res.json()).toMatchObject({ imagesNotSaved: 1, imagesTotal: 2, errorId: expect.any(String) });
+        expect(urls()).toEqual(['data:image/jpeg;base64,c21hbGw=']);
     });
 });

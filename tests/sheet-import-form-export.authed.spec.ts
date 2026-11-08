@@ -79,7 +79,7 @@ test.describe('sheet import: the same person on several rows', () => {
         await page.getByTestId('sheet-file-input').setInputFiles({ name: 'grupo.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
         await expect(page.getByText(/2 actividades · mismo email/)).toBeVisible({ timeout: 30000 });
         await page.getByRole('button', { name: /Continuar a duplicados/ }).click();
-        await page.getByRole('button', { name: /Importar 2 →/ }).click({ timeout: 60000 });
+        await page.getByRole('button', { name: /(Importar|Import) 2 →/ }).click({ timeout: 60000 });
         await expect(page.getByText('Importación completa')).toBeVisible({ timeout: 60000 });
         await expect(page.getByText(/1 fila de la misma persona se agrupó/)).toBeVisible();
         const href = await page.getByRole('link', { name: /Abrir perfil|Open profile/ }).first().getAttribute('href');

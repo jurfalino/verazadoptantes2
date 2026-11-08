@@ -33,7 +33,7 @@
  * codes (the UI translates them); a failure carries an errorId.
  */
 import { eq } from 'drizzle-orm';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import { getDb, getUser } from './_db';
 import { adopterHistory, adopters } from '@/db/schema';
 import { logger } from '@/lib/logger';
@@ -68,6 +68,7 @@ import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintPairMatches, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
 import { ratingAfterMerge } from '@/domain/ratings';
 import { realOwner } from '@/domain/dedupPair';
+import { answerNotSamePersonFor, settleNotSamePerson } from '@/lib/notSamePerson';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
@@ -103,6 +104,12 @@ export type AddHouseholdPersonInput = {
     householdId?: string;
     /** «¿Es este perfil?» → sí: link this live profile instead of making one. */
     existingProfileId?: string;
+    /**
+     * «¿Es este perfil?» → no, for these profiles (spec 2026-11-05): when a new
+     * profile is made, each is recorded as a different person. Only ids the
+     * server's own check offers for this input count (keepOffered).
+     */
+    rejectedProfileIds?: string[];
     name?: string;
     relationship?: Relationship;
     contactEntries?: HouseholdContactInput[];
@@ -114,6 +121,14 @@ export type AddHouseholdPersonInput = {
      * key. `slot`: the person's place in the post ('s' = the post's person, 'r0', 'r1'…).
      */
     fromImport?: { sourceUrl?: string | null; slot: string };
+    /**
+     * The post import's «No, es otra persona» answers about the person being added (F5). Used
+     * only when they turn out to be someone already in that household whom the caller may not
+     * be told about (`already_there`): the answer is saved about that housemate here, on the
+     * server, so it isn't lost and who they are still stays unsaid. Same rule as
+     * answerNotSamePerson: only ids the housemate's own duplicate search offers count.
+     */
+    rejectedIfAlreadyThere?: string[];
 };
 
 export type AddHouseholdPersonResult =
@@ -121,14 +136,16 @@ export type AddHouseholdPersonResult =
         ok: true; profileId: string; membershipId: string; createdProfile: boolean; autoRequestFiled: boolean;
         /** The person is placed, but a later step (history, notices…) failed: logged under this id. */
         warningErrorId?: string;
+        /** «No, es otra persona» the actor may not settle: opened for these owners (consistency rule). */
+        asked?: Array<{ otherName: string; ownerLabels: string[] }>;
     }
     | Fail;
 
 export type HouseholdMatchCandidate = DiscoveryMatch & {
     /** The card's home. UNSET = not read (households off, or the query budget cut this card): the card says nothing about a home, never «nobody lives there». */
     household?: CardHousehold;
-    /** Open alerts, counted exactly as the household line counts them (ProfileCounts / openAlertKinds — final fix P6). */
-    openAlerts: OpenAlertKind[];
+    /** Open flags, counted exactly as the household line counts them (ProfileCounts / openFlagKinds — final fix P6). */
+    openFlags: OpenFlagKind[];
     /** Activity by record type, counted as the candidate's own «Actividad» header and a household row count it (countsFor). */
     activity: ActivityCounts;
     /** The rating as a household row reads it (countsFor); null = not rated. */
@@ -399,9 +416,20 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                     const standing = sameEmail(there.addedBy, actor)
                         || privilegedOnAnchor
                         || await isPrivilegedOnProfile(actor, there.ownerEmail);
-                    return standing
-                        ? { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false }
-                        : { ok: false, error: 'already_there' };
+                    if (standing) return { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false };
+                    // F5: the importer's «no» answers are about this housemate — saved here, never echoed back.
+                    const rejected = Array.isArray(input.rejectedIfAlreadyThere)
+                        ? [...new Set(input.rejectedIfAlreadyThere.map(id64).filter(id => id && id !== there.profileId))].slice(0, 10)
+                        : [];
+                    if (rejected.length) {
+                        try {
+                            const answered = await answerNotSamePersonFor(db, actor, { adopterId: there.profileId, rejectedIds: rejected });
+                            if (!answered.ok) return { ok: false, error: 'already_there', ...(answered.errorId ? { errorId: answered.errorId } : {}) };
+                        } catch (e) {
+                            return { ok: false, error: 'already_there', errorId: logger.error('addHouseholdPerson: «no es la misma persona» about the housemate already there not saved', e, { ...ctx, membershipId: there.membershipId, rejected: rejected.length }) };
+                        }
+                    }
+                    return { ok: false, error: 'already_there' };
                 }
             }
             const full = await capacityError(db, householdId, existing?.id ?? null);
@@ -544,7 +572,28 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                 if (res.autoRequestFiled) autoRequestFiled = true;
             }
         }
-        return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled, ...(warningErrorId ? { warningErrorId } : {}) };
+        // «No, es otra persona» (spec 2026-11-05/06): one rule with every other «no» — saved when the
+        // actor loaded either profile (or is an admin), otherwise opened for the owners, who are named.
+        let asked: Array<{ otherName: string; ownerLabels: string[] }> | undefined;
+        if (createdProfile && Array.isArray(input.rejectedProfileIds) && input.rejectedProfileIds.length) {
+            try {
+                const offered = await getHouseholdMatchCandidates({ name: name || undefined, contactEntries: input.contactEntries, anchorAdopterId: anchorId });
+                if (offered.failed) {
+                    logger.warn('addHouseholdPerson: candidate re-check failed, «no» answers not recorded', { ...out, errorId: offered.errorId });
+                } else {
+                    const settled = await settleNotSamePerson(db, {
+                        actor, adopterId: person.id, rejectedIds: input.rejectedProfileIds,
+                        offered: offered.results.map(r => ({ adopterId: r.adopterId, matchTypes: r.matchTypes })), ctx: out,
+                    });
+                    if (settled.asked.length) asked = settled.asked.map(a => ({ otherName: a.otherName, ownerLabels: a.ownerLabels }));
+                    // The person is added; a «no» we couldn't save is said with its id (fail.partial).
+                    if (settled.failed.length) warningErrorId = settled.errorId ?? warningErrorId;
+                }
+            } catch (e) {
+                logger.error('addHouseholdPerson: «no es la misma persona» not recorded (the add stands)', e, out);
+            }
+        }
+        return { ok: true, profileId: person.id, membershipId: placed.membershipId, createdProfile, autoRequestFiled, ...(warningErrorId ? { warningErrorId } : {}), ...(asked ? { asked } : {}) };
     } catch (e) {
         const errorId = logger.error('addHouseholdPerson failed', e, ctx);
         return { ok: false, error: 'failed', errorId };
@@ -723,7 +772,7 @@ export async function removeHouseholdMembership(
 /**
  * Card-ready candidates: each match's household line (it already rides on a
  * hydrated match — read here only for one that came without it), and its
- * rating, open alerts and activity counted as a household row counts them.
+ * rating, open flags and activity counted as a household row counts them.
  */
 async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ctx: Record<string, unknown>): Promise<HouseholdMatchCandidate[]> {
     const missing = matches.filter(r => !r.households).map(r => r.adopter.id);
@@ -733,7 +782,7 @@ async function asCandidates(db: Db, actor: string, matches: DiscoveryMatch[], ct
     ]);
     return matches.map((r, i) => ({
         ...r, household: r.households ?? lines[r.adopter.id],
-        openAlerts: counts[i].openAlerts, activity: counts[i].activity, rating: counts[i].rating,
+        openFlags: counts[i].openFlags, activity: counts[i].activity, rating: counts[i].rating,
     }));
 }
 

@@ -10,7 +10,7 @@ import { getDb } from '@/lib/db';
 import { notifications } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
-import { ALWAYS_ON_CATEGORIES, categoryForType, emailThrottleKey, isEmailEnabled } from '@/domain/emailCategories';
+import { ALWAYS_ON_CATEGORIES, categoryForType, emailThrottleKey, isEmailEnabled, isInAppOnly } from '@/domain/emailCategories';
 import { getEmailRecipient, getLocaleForEmail } from '@/lib/emailPrefs';
 import { getFeatureFlag } from '@/config/features';
 import { appBaseUrl, isLocalRun, isStagingEnvironment, resolveEmailConfig } from '@/lib/emailConfig';
@@ -22,7 +22,7 @@ import { renameUndoPath } from '@/domain/profileIdentity';
 import type { EmailLocale } from '@/lib/email';
 
 export type NotificationEmailResult =
-    | 'sent' | 'skipped_disabled' | 'skipped_no_account' | 'skipped_pref' | 'skipped_throttle' | 'skipped_config' | 'skipped_local' | 'failed';
+    | 'sent' | 'skipped_in_app_only' | 'skipped_disabled' | 'skipped_no_account' | 'skipped_pref' | 'skipped_throttle' | 'skipped_config' | 'skipped_local' | 'failed';
 
 const THROTTLE_MS = 10 * 60_000;
 const THROTTLE_SCAN_LIMIT = 50;
@@ -38,6 +38,9 @@ function replyToFor(type: string, metadata: Record<string, unknown> | null | und
 export async function sendNotificationEmail(n: {
     id: string; userId: string; type: string; title: string; body: string; url?: string | null; metadata?: Record<string, unknown> | null;
 }): Promise<NotificationEmailResult> {
+    // In-app-only notices have no email twin.
+    if (isInAppOnly(n.type)) return 'skipped_in_app_only';
+
     // 0. Emergency off switch (Admin → config). Shares Resend with OTP login,
     //    so a runaway sender can be stopped without taking login down.
     if (!(await getFeatureFlag('ENABLE_NOTIFICATION_EMAIL'))) return 'skipped_disabled';

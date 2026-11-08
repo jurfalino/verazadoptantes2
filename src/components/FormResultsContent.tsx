@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import Link from 'next/link';
 import { useTimezone } from '@/context/TimezoneContext';
 import { useLanguage } from '@/context/LanguageContext';
@@ -15,6 +15,7 @@ import { RatingExplainer } from '@/components/RatingExplainer';
 import { en } from '@/i18n/locales/en';
 import { ChevronDown, ChevronRight, CheckCircle2, ClipboardList, Users, UserPlus, UserCheck, ArrowRight } from 'lucide-react';
 import { formResultsView, type FormLinkKind, type FormResultsAction, type FormResultsBanner } from '@/domain/formLink';
+import type { FormBackLink } from '@/domain/formBackLink';
 import type { CardHousehold } from '@/domain/households';
 
 // Single source of truth: fallbacks come from English locale so labels always render
@@ -67,6 +68,10 @@ interface MatchedAdopter {
     matchTypes: string[];
     /** Search score; stored on notifications since 2026-10-25, admins only. */
     score?: number;
+    /** The open pair behind this match (null for an unlinked form's recorded matches or the chosen profile). */
+    candidateId: string | null;
+    /** The viewer may answer «No es esta persona» (the pair is on their list). */
+    canAnswer: boolean;
 }
 
 interface MatchedProfile {
@@ -80,10 +85,12 @@ interface MatchedProfile {
     isMinor?: boolean;
     households?: CardHousehold;
     rating?: number | null;
-    openAlerts?: OpenAlertKind[];
+    openFlags?: OpenFlagKind[];
 }
 
 interface FormResultsContentProps {
+    /** Where «←» goes and what it says (domain/formBackLink): the screen the rescuer came from. */
+    back: FormBackLink;
     submitted: {
         name: string;
         email: string;
@@ -115,6 +122,8 @@ interface FormResultsContentProps {
     householdItems: string[];
     hasMatches: boolean;
     matchCount: number;
+    /** Someone matched at submit or still does — "no previous records" is false even after every match was answered. */
+    everMatched: boolean;
     matchedAdopters: MatchedAdopter[] | undefined;
     matchedFormSubmissions?: Array<{ id: string; name: string; notificationId: string | null }>;
     matchedProfiles: MatchedProfile[];
@@ -212,8 +221,10 @@ export default function FormResultsContent(props: FormResultsContentProps) {
         <main className="container mx-auto px-4 py-8 max-w-2xl">
             {/* Header */}
             <div className="mb-6">
-                <Link href="/my-animals" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
-                    ← {L('back_to_animals')}
+                <Link href={props.back.href} data-testid="form-back-link" className="text-sm text-stone-500 hover:text-stone-600 transition-colors">
+                    ← {props.back.label.name
+                        ? (t(props.back.label.key) || '{name}').replace('{name}', props.back.label.name)
+                        : L(props.back.label.key.replace('formResults.', ''))}
                 </Link>
                 <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-800 mt-2">
                     <ClipboardList className="w-5 h-5 shrink-0 text-teal-700" strokeWidth={1.75} aria-hidden="true" />
@@ -239,7 +250,7 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                 count={visibleMatches.length}
                 applicantName={submitted?.name || null}
                 linkedProfile={linkedProfile}
-                hadMatches={matchCount > 0}
+                hadMatches={props.everMatched}
                 L={L}
                 actions={
                     <>
@@ -383,6 +394,8 @@ export default function FormResultsContent(props: FormResultsContentProps) {
                                     canLink={view.canLinkMatches}
                                     linked={linkKind === 'linked_existing' && match.id === linkedId}
                                     willMerge={linkKind === 'new_profile' && !!linkedProfile}
+                                    candidateId={match.candidateId}
+                                    canAnswer={match.canAnswer}
                                     onDismiss={() => setDismissedMatchIds((ids) => [...ids, match.id])}
                                 />
                             );

@@ -24,14 +24,14 @@ import { MatchCardHeader } from './MatchCardParts';
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const alert = (count: number): PeriodAlert => ({ count, threshold: 3, periodDays: 90, actualSpanDays: 10 });
 const line = (profileId: string, name: string, over: Partial<HouseholdLine> = {}): HouseholdLine =>
-    ({ name, profileId, rating: null, openAlerts: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1', ...over });
+    ({ name, profileId, rating: null, openFlags: [], alerts: NO_PERIOD_ALERTS, isMinor: false, isGift: false, householdId: 'h1', ...over });
 
 /** A card's homes as the server sends them: the chips' answers from these lines (the list is all of them). */
 const home = (lines: HouseholdLine[], more = 0): CardHousehold => ({ lines, more, alert: housemateAlertSummary(lines) });
 
 const julian = line('j', 'Julián Urfalino', { rating: 2 });
 const pedro = line('p', 'Pedro Paez', { rating: 1.5, householdId: 'h2' });
-const ana = line('a', 'Ana Gil', { rating: 4, openAlerts: ['duplicate'], alerts: { tooManyAdoptions: alert(5), tooManyRequests: null } });
+const ana = line('a', 'Ana Gil', { rating: 4, openFlags: ['duplicate'], alerts: { tooManyAdoptions: alert(5), tooManyRequests: null } });
 const rosa = line('r', 'Rosa Gift', { rating: 1, isGift: true, householdId: 'g1' });
 
 describe('HousemateAlertChips', () => {
@@ -60,7 +60,7 @@ describe('HousemateAlertChips', () => {
     });
 
     it('flags only, a 2.5, or a gift-only housemate → nothing', () => {
-        const flagsOnly = line('f', 'Flag Only', { rating: 4, openAlerts: ['duplicate', 'inaccurate'] });
+        const flagsOnly = line('f', 'Flag Only', { rating: 4, openFlags: ['duplicate', 'inaccurate'] });
         for (const lines of [[flagsOnly], [line('m', 'Mid', { rating: 2.5 })], [rosa], []]) {
             expect(renderToStaticMarkup(<HousemateAlertChips household={home(lines)} open={false} onToggle={() => {}} listId="l1" />)).toBe('');
             expect(hasHousemateAlert(home(lines))).toBe(false);
@@ -123,7 +123,7 @@ describe('HousemateList — what a tap opens', () => {
         expect(html.match(/data-testid="card-household-person"/g)).toHaveLength(3);
         // Ana's own alert next to her rating; her «Duplicado» flag is not shown.
         expect(said).toContain('5 adopciones en 10 días');
-        expect(html).not.toContain('data-alert="duplicate"');
+        expect(html).not.toContain('data-flag="duplicate"');
         expect(said).toContain('2.0');
         expect(html).toContain('id="l1"');
     });
@@ -138,14 +138,14 @@ describe('HousemateList — what a tap opens', () => {
 describe('MatchCardHeader — the chips are alerts in the person\'s own alert row', () => {
     it('both chips after the person\'s own rating and before their flags; no old card line', () => {
         const html = renderToStaticMarkup(
-            <MatchCardHeader person={{ id: 'x', name: 'Jonathan Urfalino', rating: 5, openAlerts: ['duplicate'], households: home([julian, ana]) }} testId="mh" />,
+            <MatchCardHeader person={{ id: 'x', name: 'Jonathan Urfalino', rating: 5, openFlags: ['duplicate'], households: home([julian, ana]) }} testId="mh" />,
         );
         expect(html).toContain('data-testid="mh-housemate-alert-rating"');
         expect(html).toContain('data-testid="mh-housemate-alert-alerts"');
         const rating = html.indexOf('data-testid="rating-value"');
         const lowChip = html.indexOf('data-alert="housemate_low_rating"');
         const alertsChip = html.indexOf('data-alert="housemate_alerts"');
-        const flag = html.indexOf('data-alert="duplicate"');
+        const flag = html.indexOf('data-flag="duplicate"');
         expect(rating).toBeGreaterThan(-1);
         expect(rating).toBeLessThan(lowChip);
         expect(lowChip).toBeLessThan(alertsChip);

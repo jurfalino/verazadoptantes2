@@ -78,7 +78,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(banner).toHaveAttribute('data-state', 'review_matches', { timeout: 30_000 });
 
         const card = page.locator('article').filter({ hasText: existingName });
-        await card.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ }).click();
+        await card.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ }).click();
         const dialog = page.getByRole('dialog');
         await expect(dialog).toContainText(existingName);
         await dialog.getByRole('button', { name: /Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa/ }).click();
@@ -98,9 +98,9 @@ test.describe('form-results: linking to an existing profile', () => {
 
         // The matches fold away once decided; opened, the chosen one is marked
         // and nothing offers to link again.
-        await page.getByRole('button', { name: /Matching profiles|Perfiles coincidentes|Perfis coincidentes/ }).click();
+        await page.getByRole('button', { name: /Possible duplicates|Posibles duplicados|Possíveis duplicados/ }).click();
         await expect(card.getByText(/^(Linked profile|Perfil vinculado)$/)).toBeVisible();
-        await expect(page.getByRole('button', { name: /^(Same person|Es la misma persona|É a mesma pessoa)$/ })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /^(Yes, same person|Sí, es la misma persona|Sim, é a mesma pessoa)$/ })).toHaveCount(0);
 
         // Data: form on the existing profile, auto-created one folded in (no
         // duplicate left), the request in the existing profile's history.
@@ -245,7 +245,7 @@ test.describe('form-results: linking to an existing profile', () => {
         await expect(tomas.getByTestId('household-member-label')).toContainText(/3 years old|3 años|3 anos/);
         await expect(tomas.getByTestId('minor-tag')).toBeVisible();
         await expect(tomas.getByTestId('household-member-profile-link')).toHaveAttribute('href', /\/adopter\//);
-        await expect(page.locator(`a[href="/form-results/${submissionId}"]`).first()).toBeVisible();
+        await expect(page.locator(`a[href^="/form-results/${submissionId}"]`).first()).toBeVisible();
     });
 
     test("gift: only the fully named recipient reaches the giver's profile; the recipient's housemates stay on the form", async ({ page, request }) => {

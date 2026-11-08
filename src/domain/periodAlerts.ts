@@ -4,22 +4,26 @@
  * {count} rescates en {days} días» (`tooManyRequests`). ONE rule: the search
  * card's own alerts (enrichAdopters) and a housemate's on a card's household
  * line (householdLinesFor) both come from here, with the same adoption config
- * (getAdoptionConfig). Alerts are not FLAGS: flags are what rescuers report
- * («Inexacto», «Duplicado» — openAlertKinds in ./flags).
+ * (getAdoptionConfig). Alerts are not FLAGS (Jon, 2026-11-07): an alert says
+ * the person may not be trustworthy to adopt; a flag says something on the
+ * profile may need doing («Inexacto», «Duplicado» — openFlagKinds in ./flags).
  *
  * Requests count RESCUES (./requestDensity): pass records with their
  * `rescueKey` set (withRescueKeys) or members of one organization count apart.
  * Pure.
  */
-import type { AdopterFlags, AdoptionConfig, AdoptionRecord } from '@/types/adopter';
+import type { AdoptionConfig, AdoptionRecord, PeriodAlert as PeriodAlertType, PeriodAlertFields } from '@/types/adopter';
 import { RECORD_TYPES } from './constants';
 import { computeMaxDensityPeriod } from '@/lib/adoptionFilters';
 import { computeRequestRescueDensity } from './requestDensity';
 
-export type PeriodAlerts = Pick<AdopterFlags, 'tooManyAdoptions' | 'tooManyRequests'>;
-export type PeriodAlert = NonNullable<AdopterFlags['tooManyAdoptions']>;
+export type PeriodAlerts = PeriodAlertFields;
+export type PeriodAlert = PeriodAlertType;
 
 export const NO_PERIOD_ALERTS: PeriodAlerts = { tooManyAdoptions: null, tooManyRequests: null };
+
+/** The thresholds when none are set in Admin (app_config) — getAdoptionConfig's fallback, and a screen's before its config arrives. */
+export const DEFAULT_ADOPTION_CONFIG: AdoptionConfig = { threshold: 5, periodDays: 90, requestsThreshold: 3, requestsPeriodDays: 30 };
 
 type PeriodRecord = { recordType?: string | null; date?: Date | number | string | null; addedBy?: string | null; rescueKey?: string | null };
 

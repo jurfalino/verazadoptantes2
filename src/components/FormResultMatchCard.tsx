@@ -1,11 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import type { OpenAlertKind } from '@/domain/flags';
+import type { OpenFlagKind } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import { useShowToast } from '@/components/ui/Toast';
+import { useAnswerNotSamePerson } from '@/components/useAnswerNotSamePerson';
+import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { useState } from 'react';
@@ -29,7 +31,7 @@ export interface FormResultMatchCardProps {
         /** Final fix P2: the same «Menor de edad» tag and household line as every card showing one person. */
         isMinor?: boolean; households?: CardHousehold;
         /** Their own standing in the card's header (audit B6). */
-        rating?: number | null; openAlerts?: OpenAlertKind[];
+        rating?: number | null; openFlags?: OpenFlagKind[];
     };
     applicantSelfieUrl?: string | null;
     matchTypes: string[];
@@ -42,6 +44,14 @@ export interface FormResultMatchCardProps {
     linked?: boolean;
     /** Linking folds the profile auto-created from the form into this one. */
     willMerge: boolean;
+    /**
+     * The open pair behind this card. With it (and `canAnswer`), «No es esta persona»
+     * answers the pair for everyone — the same as «Mantener separados» (spec 2026-11-05).
+     */
+    candidateId?: string | null;
+    /** The pair is on the viewer's «Pendientes» list (they loaded a side). Step 2 widens this to the team. */
+    canAnswer?: boolean;
+    /** Called once the pair is no longer open, so the page drops the card. */
     onDismiss?: () => void;
 }
 
@@ -55,11 +65,22 @@ export default function FormResultMatchCard({
     canLink,
     linked = false,
     willMerge,
+    candidateId = null,
+    canAnswer = false,
     onDismiss,
 }: FormResultMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
     const toast = useShowToast();
+    const answerNotSamePerson = useAnswerNotSamePerson('FormResultMatchCard.notThis');
+    const notThis = canLink && canAnswer && candidateId && onDismiss
+        ? async () => {
+            setLinking(true);
+            try {
+                if (await answerNotSamePerson(candidateId)) { trackSamePersonAnswer('form_results', 'different', canAnswer); onDismiss(); }
+            } finally { setLinking(false); }
+        }
+        : undefined;
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
@@ -89,6 +110,7 @@ export default function FormResultMatchCard({
                 return;
             }
             if (result.success) {
+                trackSamePersonAnswer('form_results', 'same', canAnswer);
                 toast.success(L('link_success').replace('{name}', result.adopterName ?? profile.name));
                 router.push(`/adopter/${profile.id}`);
                 return;
@@ -100,10 +122,13 @@ export default function FormResultMatchCard({
                 result.error === 'already_linked' ? L('link_error_already_linked')
                 : result.error === 'busy' ? L('link_error_busy')
                 : result.error === 'target_unavailable' ? L('link_error_unavailable')
+                // The pair was answered elsewhere (another tab, «Mantener separados»): show where it stands.
+                : result.error === 'not_a_match' ? L('link_error_answered')
                 // Households as profiles: the merge into this profile was refused (household data not converted yet).
                 : result.error === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted')
                 : L('link_error');
             fail(result.errorId ?? resolveErrorId(new Error(`linkFormToExistingAdopter: ${result.error}`), 'FormResultMatchCard'), message);
+            if (result.error === 'not_a_match') router.refresh();
         } catch (e) {
             fail(resolveErrorId(e, 'FormResultMatchCard'), L('link_error'));
         }
@@ -187,8 +212,8 @@ export default function FormResultMatchCard({
                 )}
                 actions={{
                     busy: linking,
-                    onSame: canLink ? () => setConfirmOpen(true) : undefined, sameLabel: L('same_person'),
-                    onNotThis: canLink && onDismiss ? onDismiss : undefined,
+                    onSame: canLink ? () => setConfirmOpen(true) : undefined,
+                    onNotThis: notThis, notThisTestId: 'form-match-not-this',
                 }}
             />
 

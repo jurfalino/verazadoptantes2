@@ -21,9 +21,9 @@ interface Props {
     adopterName?: string | null;
     /** Average rating from prior records — passed through to the wizard's guidance copy. */
     avgRating?: number | null;
-    /** Density flag forwarded to the wizard's guidance copy. */
+    /** Period alert forwarded to the wizard's guidance copy. */
     tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number } | null;
-    /** Density flag forwarded to the wizard's guidance copy. */
+    /** Period alert forwarded to the wizard's guidance copy. */
     tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number } | null;
     currentUser: string;
     adoptions: AdoptionLite[];

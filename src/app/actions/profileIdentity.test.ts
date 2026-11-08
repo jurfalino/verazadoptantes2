@@ -345,7 +345,7 @@ describe('a stored age and minors', () => {
         expect(minorNow('lucas')).toBe(false);
     });
 
-    it('a profile with records or open alerts can be marked a minor', async () => {
+    it('a profile with records or open flags can be marked a minor', async () => {
         await as(OWNER, () => saveAdoption({ adopterId: 'pedro', recordType: 'observation', species: 'cat', status: 'completed', rating: 1, details: 'x' } as never));
         expect(await setAge('pedro', 12, true)).toMatchObject({ status: 'changed', to: { age: 12, minor: true } });
         expect(pedro()).toMatchObject({ age: 12, is_minor: 1 });

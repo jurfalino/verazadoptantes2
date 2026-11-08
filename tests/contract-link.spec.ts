@@ -94,7 +94,7 @@ test.describe('Contract-results merge — "Es la misma persona"', () => {
         await expect(pageA.getByText(FIXTURE_ADOPTER_NAME).first()).toBeVisible({ timeout: 30000 });
 
         // 5. Click "Es la misma persona" — opens the confirmation modal.
-        const sameButton = pageA.getByRole('button', { name: /Es la misma persona|Same person/i }).first();
+        const sameButton = pageA.getByRole('button', { name: /Sí, es la misma persona|Yes, same person/i }).first();
         await expect(sameButton).toBeVisible({ timeout: 30000 });
         await sameButton.click();
 

@@ -18,6 +18,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { timeAgo } from '@/lib/timeAgo';
 import { RatingBadge } from '@/components/RatingBadge';
+import { GroupChip } from '@/components/GroupChip';
+import { keepNumberWithUnit } from '@/lib/keepNumberWithUnit';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
 import { getHomeModules } from '@/app/actions/homeModules';
@@ -84,7 +86,7 @@ function ModuleShell({ icon, title, summary, href, children, testId }: {
  */
 function TodoRow({ children, href, testId }: { children: ReactNode; href: string; testId: string }) {
     return (
-        <Link href={href} data-testid={testId} className="flex items-center w-full min-h-11 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors [overflow-wrap:anywhere]">
+        <Link href={href} data-testid={testId} className="flex items-center w-full min-h-11 px-4 py-2 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors [overflow-wrap:anywhere]">
             {children}
         </Link>
     );
@@ -103,7 +105,7 @@ function AnimalRow({ href, testId, name, photo, species, line, due = false }: {
             </span>
             <span className="flex-1 min-w-0">
                 <span className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere]">{name}</span>
-                <span className={`block text-xs [overflow-wrap:anywhere] ${due ? 'font-semibold text-amber-700' : 'text-stone-500'}`}>{line}</span>
+                <span className={`block text-xs [overflow-wrap:anywhere] ${due ? 'font-semibold text-amber-700' : 'text-stone-500'}`}>{keepNumberWithUnit(line)}</span>
             </span>
         </Link>
     );
@@ -120,31 +122,29 @@ function MoreRow({ label, href, testId }: { label: string; href: string; testId:
 
 const ROWS = 'divide-y divide-stone-200';
 
-/** The /my-adopters group chip: stone for your own rows, teal for a teammate's. */
-function GroupChip({ name, self }: { name: string; self: boolean }) {
-    return <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[11px] font-medium ${self ? 'bg-stone-100 text-stone-600' : 'bg-teal-50 text-teal-700'}`}>{name}</span>;
-}
-
-/** Same avatar as /my-adopters: the profile photo, else the person silhouette. */
+/**
+ * Same avatar as /my-adopters: the profile photo, else the person silhouette.
+ * The rating sits in its own column on the right, as on /my-adopters (the page
+ * this card summarizes) — never wherever the name happens to end, so every row
+ * of the list has the same shape and the ratings read straight down.
+ */
 function PersonRow({ id, name, thumbnail, avgRating, meta, chip, t }: {
     id: string; name: string | null; thumbnail: string | null; avgRating: number | null; meta: string; chip?: ReactNode; t: T;
 }) {
     const display = adopterDisplayName({ name }, t('adopter.nameless'));
     return (
-        <Link href={`/adopter/${encodeURIComponent(id)}`} data-testid="home-person-row" className="flex items-center gap-3 min-h-11 py-2 group">
-            <span className="w-9 h-9 shrink-0 rounded-full bg-stone-100 border border-stone-200 overflow-hidden flex items-center justify-center text-stone-500">
+        <Link href={`/adopter/${encodeURIComponent(id)}`} data-testid="home-person-row" className="flex items-start gap-3 min-h-11 py-2 group">
+            <span className="w-10 h-10 shrink-0 rounded-full bg-stone-100 border border-stone-200 overflow-hidden flex items-center justify-center text-stone-500">
                 {thumbnail ? <img src={thumbnail} alt="" className="w-full h-full object-cover" /> : <Icon name="person" className="w-4 h-4" />}
             </span>
-            <span className="flex-1 min-w-0">
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-sm font-semibold text-stone-900 group-hover:text-teal-700 line-clamp-2 [overflow-wrap:anywhere]">{display}</span>
-                    <RatingBadge rating={avgRating} />
-                </span>
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500 [overflow-wrap:anywhere]">
+            <span className="flex-1 min-w-0 flex flex-col gap-1">
+                <span className="text-sm font-semibold text-stone-900 group-hover:text-teal-700 line-clamp-2 [overflow-wrap:anywhere]">{display}</span>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-xs text-stone-500 [overflow-wrap:anywhere]">
                     <span>{meta}</span>
                     {chip}
                 </span>
             </span>
+            <span className="shrink-0"><RatingBadge rating={avgRating} /></span>
         </Link>
     );
 }
@@ -164,7 +164,7 @@ function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<Home
         return <ModuleShell icon="people" title={t('homeModules.adopters_title')} href="/my-adopters" testId="home-adopters"><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
     const d = section.data;
-    const hasTodo = d.pendingReview > 0 || d.formsToReview > 0;
+    const hasTodo = d.pendingReview > 0;
     const rows = d.recent.slice(0, homeListLimit(hasTodo));
     const meta = (r: HomeAdoptersData['recent'][number]) => r.viaForm
         ? interpolate(t('homeModules.via_form'), { when: rel(r.createdAt) })
@@ -178,11 +178,6 @@ function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<Home
                     {d.pendingReview > 0 && (
                         <TodoRow href="/my-adopters#pendientes" testId="home-adopters-pending">
                             {count(t, d.pendingReview, 'homeModules.pending_review_one', 'homeModules.pending_review_many')}
-                        </TodoRow>
-                    )}
-                    {d.formsToReview > 0 && (
-                        <TodoRow href="/my-adopters?filtro=por-revisar" testId="home-adopters-forms">
-                            {count(t, d.formsToReview, 'homeModules.forms_review_one', 'homeModules.forms_review_many')}
                         </TodoRow>
                     )}
                 </div>
@@ -243,7 +238,7 @@ function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t:
                     </div>
                     {moreDue > 0 && (
                         <TodoRow href="/my-animals?view=pendientes" testId="home-animals-due-more">
-                            {interpolate(t('homeModules.more_due'), { n: moreDue })}
+                            {count(t, moreDue, 'homeModules.more_due_one', 'homeModules.more_due_many')}
                         </TodoRow>
                     )}
                     {d.total > d.rows.length && (
@@ -300,7 +295,7 @@ const STEPS: Record<HomeModuleKey, { icon: keyof typeof PATHS; key: string; href
 
 function FirstSteps({ steps, title, t }: { steps: HomeModuleKey[]; title: string; t: T }) {
     return (
-        <section data-testid="home-first-steps" className="bg-white rounded-2xl border border-stone-200 px-4 pt-2 pb-1 shadow-sm">
+        <section data-testid="home-first-steps" className="bg-white rounded-2xl border border-stone-200 px-4 py-2 shadow-sm">
             <h2 className="flex items-center min-h-11 text-base font-bold text-stone-900">{title}</h2>
             <div className={ROWS}>
                 {steps.map(k => (
@@ -361,7 +356,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         );
     }
     // Space held while loading so the page below doesn't jump when the cards arrive.
-    if (data === undefined) return <div data-testid="home-modules-loading" aria-hidden="true" className="h-48 rounded-2xl bg-white border border-stone-200 shadow-sm animate-pulse" />;
+    if (data === undefined) return <div data-testid="home-modules-loading" aria-hidden="true" className="h-80 rounded-2xl bg-white border border-stone-200 shadow-sm animate-pulse" />;
     if (data === null) return null;
 
     const now = Date.now();
@@ -369,7 +364,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         ? ({ ok: true, data: { ...data.posts.data, people: 0, recent: [] } } as HomeSection<HomePostsData>)
         : data.posts;
     const { cards, steps, firstSteps } = orderHomeModules({
-        adopters: stateOf(data.adopters, d => d.pendingReview > 0 || d.formsToReview > 0, d => d.total > 0),
+        adopters: stateOf(data.adopters, d => d.pendingReview > 0, d => d.total > 0),
         animals: stateOf(data.animals, d => d.dueCount > 0, d => d.total > 0),
         posts: stateOf(posts, () => false, d => d.people > 0),
     });
@@ -406,9 +401,12 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
 
     // Desktop: two columns inside the page's own width, read left to right,
     // each card keeping its own height. A lone card stays full width rather
-    // than leaving an empty column beside it. Phones: one column.
+    // than leaving an empty column beside it. Phones: one column — grid-cols-1
+    // (minmax(0, 1fr)), never the implicit auto column, which grows to a card's
+    // widest content (a long group chip beside the rating) and pushed the page
+    // wider than a 360px phone.
     return (
-        <div data-testid="home-modules" className={items.length > 1 ? 'grid gap-4 md:grid-cols-2 items-start' : 'space-y-4'}>
+        <div data-testid="home-modules" className={items.length > 1 ? 'grid grid-cols-1 gap-4 md:grid-cols-2 items-start' : 'space-y-4'}>
             {items}
         </div>
     );

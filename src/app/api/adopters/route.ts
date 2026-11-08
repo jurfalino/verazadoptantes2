@@ -9,7 +9,7 @@ import { auth } from '@/auth';
 import { logger, generateErrorId } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
-import { processImageForStorage, uploadToR2 } from '@/lib/r2';
+import { processImageForStorage, uploadToR2, storeLargeImageDataUrl, MAX_INLINE_IMAGE_DATA_URL } from '@/lib/r2';
 import { createAdopterApiSchema } from '@/app/actions/validation';
 import { deserializeContactEntries, contactEntriesToBlob, contactEntriesJsonCount, stripRenameMarks, stripClientRenameMarksJson, stripClientRenameMarksHouseholdJson, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES } from '@/lib/contactEntries';
 import { deserializeHouseholdMembers, withoutProfileLinks } from '@/lib/householdMembers';
@@ -518,10 +518,14 @@ export async function POST(request: Request) {
 
         // Save media (images + videos) if any
         let savedImageCount = 0;
+        // F1: images that could not be stored, said to the rescuer (the wizard's notice) — never skipped silently.
+        let imagesTotal = 0;
+        let imagesNotSaved = 0;
         if (images && Array.isArray(images) && images.length > 0) {
             for (let i = 0; i < images.length; i++) {
                 const img = images[i];
                 const isVideo = img.mimeType?.startsWith('video/');
+                if (!isVideo) imagesTotal++;
 
                 // Use original URL if available (from Playwright scraper), otherwise create data URL (from uploads)
                 const mediaUrl = img.originalUrl || (img.data ? `data:${img.mimeType};base64,${img.data}` : null);
@@ -531,24 +535,27 @@ export async function POST(request: Request) {
                     logger.warn('Adopter create: skipping media item with no URL or data', {
                         errorId, index: i, mimeType: img.mimeType, user: session.user.email
                     });
-                    continue;
-                }
-
-                // Skip if data URL is too large (>500KB base64 = ~375KB actual) - these shouldn't be stored
-                if (mediaUrl.startsWith('data:') && mediaUrl.length > 500000) {
-                    logger.warn('Adopter create: skipping oversized image', {
-                        errorId,
-                        index: i,
-                        size: mediaUrl.length,
-                        user: session.user.email
-                    });
+                    if (!isVideo) imagesNotSaved++;
                     continue;
                 }
 
                 const imageId = crypto.randomUUID();
 
+                // Too big to keep inline (>500KB base64 = ~375KB actual): to R2, as videos go (F1).
+                let largeUrl: string | null = null;
+                if (mediaUrl.startsWith('data:') && mediaUrl.length > MAX_INLINE_IMAGE_DATA_URL) {
+                    largeUrl = await storeLargeImageDataUrl(mediaUrl, newId, imageId);
+                    if (!largeUrl) {
+                        logger.warn('Adopter create: oversized image not stored', {
+                            errorId, index: i, size: mediaUrl.length, user: session.user.email
+                        });
+                        if (!isVideo) imagesNotSaved++;
+                        continue;
+                    }
+                }
+
                 // Persist external URLs (social media CDN etc.) to R2
-                const persistedUrl = await processImageForStorage(mediaUrl, newId, imageId);
+                const persistedUrl = largeUrl ?? await processImageForStorage(mediaUrl, newId, imageId);
 
                 // Upload thumbnail if provided
                 let thumbnailUrl: string | null = null;
@@ -702,7 +709,9 @@ export async function POST(request: Request) {
             logAudit({ userEmail: session.user.email || undefined, action: 'adoption_created', target: adoptionId, details: { adopterId: newId, viaApi: true } });
         }
 
-        return NextResponse.json({ success: true, id: newId });
+        if (imagesNotSaved) logger.warn('Adopter create: some images not saved, the rescuer is told', { errorId, adopterId: newId, imagesNotSaved, imagesTotal, user: session.user.email });
+        // Extra fields only: an old tab ignores them.
+        return NextResponse.json({ success: true, id: newId, ...(imagesNotSaved ? { imagesNotSaved, imagesTotal, errorId } : {}) });
 
     } catch (error) {
         const loggedErrorId = logger.error('Adopter create: failed', error, {

@@ -137,8 +137,8 @@ export default function ContractPage() {
                     <div className="text-5xl mb-4">🎉</div>
                     <h3 className="text-2xl font-semibold text-stone-900 mb-2">¡Adopción Registrada!</h3>
                     <p className="text-stone-500 mb-4">
-                        El contrato de adopción de <strong>{animal?.animalName}</strong> ha sido enviado exitosamente.
-                        El rescatista se pondrá en contacto contigo.
+                        Listo: enviamos el contrato de adopción de <strong>{animal?.animalName}</strong>.
+                        El rescatista se va a poner en contacto con vos.
                     </p>
                     <div className="p-4 bg-teal-50 rounded-xl border border-teal-100 text-sm text-teal-800">
                         <p className="font-semibold mb-1">Próximos pasos:</p>
