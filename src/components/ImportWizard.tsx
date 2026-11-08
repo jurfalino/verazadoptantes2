@@ -826,8 +826,9 @@ export default function ImportWizard() {
 
         try {
             const imagesToSend: Array<{ data: string; mimeType: string }> = [];
+            // Videos are uploaded on their own after the save; only images are read.
             for (const img of manualImages) {
-                imagesToSend.push({ data: img.data, mimeType: img.mimeType });
+                if (!img.file) imagesToSend.push({ data: img.data, mimeType: img.mimeType });
             }
 
             const imageUrls = fetchedImages.filter((_, i) => selectedFetchedImages.has(i));
@@ -912,8 +913,10 @@ export default function ImportWizard() {
                 }));
             }
             setCustomSpecies(false);
+            // Only the post's own images (they carry their URL): the rescuer's uploads are already in
+            // manualImages, and keeping both showed — and saved — every screenshot twice (I1).
             if (result.processedImages) {
-                setProcessedImages(result.processedImages);
+                setProcessedImages(result.processedImages.filter(img => img.originalUrl));
             }
             trackImport('import_extract_succeeded', {
                 aiConfidence: typeof aiData.confidence === 'string' ? aiData.confidence : 'unknown',
@@ -1121,11 +1124,10 @@ export default function ImportWizard() {
                 // Those the rescuer recognised as an existing profile («¿Es este perfil?» → sí) are linked after the save.
                 ...(relatives.some(p => !linkedProfileOf(p)) ? { householdMembers: JSON.stringify(relatives.filter(p => !linkedProfileOf(p)).map(toMember)) } : {}),
                 images: [
-                    // Honor the review-step de-selection: a processed image is
-                    // excluded by `p:<i>`, a manual image by `m:<i>`.
-                    ...(processedImages.length > 0
-                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
-                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a post image is
+                    // excluded by `p:<i>`, an upload by `m:<i>`. Each is saved once (I1).
+                    ...processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`)),
+                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType })),
                     ...videoPayloads,
                 ],
                 // v2.19.17: contacts-import path no longer auto-stamps an
@@ -1382,11 +1384,10 @@ export default function ImportWizard() {
                     date: recordDateFrom(reportDate),
                 },
                 images: [
-                    // Honor the review-step de-selection: a processed image is
-                    // excluded by `p:<i>`, a manual image by `m:<i>`.
-                    ...(processedImages.length > 0
-                        ? processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`))
-                        : manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType }))),
+                    // Honor the review-step de-selection: a post image is
+                    // excluded by `p:<i>`, an upload by `m:<i>`. Each is saved once (I1).
+                    ...processedImages.filter((_, i) => !isMediaExcluded(`p:${i}`)),
+                    ...manualImages.filter((img, i) => !img.file && !isMediaExcluded(`m:${i}`)).map(img => ({ data: img.data, mimeType: img.mimeType })),
                     ...videoPayloads,
                 ],
             };
@@ -2164,7 +2165,7 @@ export default function ImportWizard() {
                     {(() => {
                         type MediaTile = { key: string; src: string; mediaType: 'image' | 'video'; label?: string };
                         const media: MediaTile[] = [];
-                        // Processed images from fetch (base64)
+                        // The post's images (base64, with their URL)
                         processedImages.forEach((img, i) => media.push({
                             key: `p:${i}`,
                             src: `data:${img.mimeType};base64,${img.data}`,
@@ -2186,7 +2187,7 @@ export default function ImportWizard() {
                         return (
                             <div>
                                 <label className="block text-xs font-medium text-stone-500 mb-1.5">
-                                    {t('import.attachedImages') || 'Attached Media'} ({keptCount}/{media.length})
+                                    {t('import.attachedImages') || 'Attached Media'} ({keptCount})
                                 </label>
                                 <div className="flex flex-wrap gap-2">
                                     {media.map((m) => {
