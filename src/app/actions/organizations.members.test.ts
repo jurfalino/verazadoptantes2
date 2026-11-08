@@ -71,6 +71,15 @@ describe('removeOrganizationMember — «Quitar del grupo»', () => {
         }));
     });
 
+    it('the removed person cannot rejoin with the link they had: removal replaces it', async () => {
+        expect(await as(OWNER, () => removeOrganizationMember('org-1', 'm-mate'))).toEqual({ success: true });
+        expect(await as(MATE, () => joinOrganization('old-link'))).toMatchObject({ success: false });
+        expect(members('org-1')).toEqual([OWNER]);
+        const [fresh] = invites('org-1');
+        expect(fresh).toBeTruthy();
+        expect(fresh).not.toBe('old-link');
+    });
+
     it('a member of another group is refused; nobody is removed', async () => {
         expect(await as(OTHER, () => removeOrganizationMember('org-1', 'm-mate'))).toEqual({ success: false, error: 'not_member' });
         expect(members('org-1')).toEqual([MATE, OWNER].sort());

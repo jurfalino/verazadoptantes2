@@ -2926,7 +2926,7 @@ export const pt = {
         regenerated_success: 'Pronto: o link anterior não funciona mais.',
         remove_member: 'Remover do grupo',
         remove_member_confirm: 'Remover {name} do grupo? A pessoa deixa de compartilhar registros com a equipe. O que ela cadastrou continua no nome dela.',
-        removed_success: '{name} não está mais no grupo. Se tinha o link de convite, gere um novo.',
+        removed_success: '{name} não está mais no grupo. Trocamos o link de convite, então o anterior não funciona mais.',
         error_not_member: 'Você não faz mais parte deste grupo.',
         error_member_gone: 'Essa pessoa não está mais no grupo.',
         error_remove_self: 'Para sair do grupo, use «Sair».',

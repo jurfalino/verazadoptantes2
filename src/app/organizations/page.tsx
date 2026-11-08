@@ -353,6 +353,7 @@ function OrgCard({ org, onRefresh, docsEnabled, currentEmail }: { org: Organizat
             const result = await removeOrganizationMember(org.id, m.id);
             if (result.success) {
                 toast.success(t('organizations.removed_success').replace('{name}', name));
+                setInviteUrl(null); // the link shown was just replaced; «Invitar» fetches the new one
                 onRefresh();
             } else {
                 toast.error(t('errors.generic') || 'Error', refusalText(result.error),

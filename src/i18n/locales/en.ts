@@ -2921,7 +2921,7 @@ export const en = {
         regenerated_success: 'Done: the previous link no longer works.',
         remove_member: 'Remove from group',
         remove_member_confirm: 'Remove {name} from the group? They stop sharing records with the team. What they added stays under their name.',
-        removed_success: '{name} is no longer in the group. If they had the link, generate a new one.',
+        removed_success: '{name} is no longer in the group. We changed the invite link, so the old one no longer works.',
         error_not_member: 'You are no longer part of this group.',
         error_member_gone: 'That person is no longer in the group.',
         error_remove_self: 'To leave the group, use «Leave».',

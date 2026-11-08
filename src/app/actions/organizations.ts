@@ -292,7 +292,8 @@ export async function removeOrganizationMember(orgId: string, memberId: string):
     let user = '';
     try {
         user = await getUser();
-    } catch {
+    } catch (e) {
+        logger.warn('organizations: refused, no session', { orgId, error: e instanceof Error ? e.message : String(e) });
         return { success: false, error: 'not_authenticated' };
     }
     try {
@@ -315,6 +316,9 @@ export async function removeOrganizationMember(orgId: string, memberId: string):
         if (target.userEmail.trim().toLowerCase() === user.trim().toLowerCase()) return { success: false, error: 'cannot_remove_self' };
 
         await db.delete(orgMembers).where(and(eq(orgMembers.id, memberId), eq(orgMembers.orgId, orgId)));
+        // The removed person saw the invite link on /organizations: replace it, or
+        // they could rejoin at once (and, as a member, remove whoever removed them).
+        await rotateInviteLink(db, orgId, user);
 
         logger.info('removeOrganizationMember: removed', { user, orgId, memberId });
         const { logAudit } = await import('@/lib/audit');
@@ -386,7 +390,8 @@ export async function regenerateInviteLink(orgId: string): Promise<{ success: bo
     let user = '';
     try {
         user = await getUser();
-    } catch {
+    } catch (e) {
+        logger.warn('organizations: refused, no session', { orgId, error: e instanceof Error ? e.message : String(e) });
         return { success: false, error: 'not_authenticated' };
     }
     try {
@@ -401,9 +406,7 @@ export async function regenerateInviteLink(orgId: string): Promise<{ success: bo
             return { success: false, error: 'not_member' };
         }
 
-        const inviteId = crypto.randomUUID();
-        await db.insert(orgInvites).values({ id: inviteId, orgId, createdBy: user });
-        await db.delete(orgInvites).where(and(eq(orgInvites.orgId, orgId), ne(orgInvites.id, inviteId)));
+        const inviteId = await rotateInviteLink(db, orgId, user);
 
         logger.info('regenerateInviteLink: old invite links revoked', { user, orgId });
         return { success: true, url: inviteUrl(inviteId) };
@@ -411,6 +414,17 @@ export async function regenerateInviteLink(orgId: string): Promise<{ success: bo
         const errorId = logger.error('regenerateInviteLink failed', error, { user, orgId });
         return { success: false, error: 'failed', errorId };
     }
+}
+
+/**
+ * Replace the group's invite link: the new row is written before the old ones
+ * are deleted, so the group is never left without one. Caller checks membership.
+ */
+async function rotateInviteLink(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, orgId: string, user: string): Promise<string> {
+    const inviteId = crypto.randomUUID();
+    await db.insert(orgInvites).values({ id: inviteId, orgId, createdBy: user });
+    await db.delete(orgInvites).where(and(eq(orgInvites.orgId, orgId), ne(orgInvites.id, inviteId)));
+    return inviteId;
 }
 
 /**

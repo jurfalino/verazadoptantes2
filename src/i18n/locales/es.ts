@@ -2927,7 +2927,7 @@ export const es = {
         regenerated_success: 'Listo: el enlace anterior ya no funciona.',
         remove_member: 'Quitar del grupo',
         remove_member_confirm: '¿Quitar a {name} del grupo? Deja de compartir registros con el equipo. Lo que cargó sigue a su nombre.',
-        removed_success: '{name} ya no está en el grupo. Si tenía el enlace de invitación, generá uno nuevo.',
+        removed_success: '{name} ya no está en el grupo. Cambiamos el enlace de invitación, así que el anterior ya no sirve.',
         error_not_member: 'Ya no sos parte de este grupo.',
         error_member_gone: 'Esa persona ya no está en el grupo.',
         error_remove_self: 'Para irte del grupo, usá «Salir».',
