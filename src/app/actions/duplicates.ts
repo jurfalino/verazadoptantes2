@@ -15,7 +15,7 @@ import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeS
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
 
 import { mergeAdopters } from '@/lib/adopterMerge';
-import { createMergeRequest, keepSeparate, settleRequestsAsHousehold } from '@/lib/mergeRequests';
+import { createMergeRequest, keepSeparate, recordSeparatePairs, settleRequestsAsHousehold } from '@/lib/mergeRequests';
 import { loadPairVerdict, refuseDisputedMerge, teamOf } from '@/lib/pairVerdict';
 import { mergeChosenPair } from '@/lib/pairMerge';
 import { notificationContent } from '@/domain/notificationTemplates';
@@ -535,8 +535,8 @@ export interface PendingDedupPair {
      * (adopter_flags, reason='duplicate'). Those were visible only on the admin
      * screen — the one place the rescuer who raised the flag cannot go.
      *
-     * Dismiss is offered only for 'detected': it writes to duplicate_candidates,
-     * and a flag has no row there to update.
+     * «No, es otra persona» answers both (D1): dismissDuplicateCandidate takes a
+     * flag's id too and marks that flag kept-separate.
      */
     source: 'detected' | 'flagged';
     /** The "new" auto-created side — heuristically the more recent record. */
@@ -1497,12 +1497,20 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
             status: duplicateCandidates.status,
         }).from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
 
-        if (!candidate) return { success: false, code: 'not_found', error: 'Candidate not found' };
-        if (candidate.status !== 'pending') return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
+        // A hand-flagged pair (D1): its id is the flag's, and «No, es otra persona» answers it too.
+        let flagPair: { a: string; b: string } | null = null;
+        if (!candidate) {
+            const flag = await db.select({ adopterId: adopterFlags.adopterId, targetAdopterId: adopterFlags.targetAdopterId, reason: adopterFlags.reason, details: adopterFlags.details })
+                .from(adopterFlags).where(eq(adopterFlags.id, candidateId)).get();
+            if (!flag || flag.reason !== 'duplicate' || !flag.targetAdopterId) return { success: false, code: 'not_found', error: 'Candidate not found' };
+            if (!isOpenDuplicateFlag(flag)) return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
+            flagPair = { a: flag.adopterId, b: flag.targetAdopterId };
+        } else if (candidate.status !== 'pending') return { success: false, code: 'already_resolved', error: 'Candidate already resolved' };
+        const ids = flagPair ?? { a: candidate!.adopter1Id, b: candidate!.adopter2Id };
 
         const [a, b] = await Promise.all([
-            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter1Id)).get(),
-            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, candidate.adopter2Id)).get(),
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, ids.a)).get(),
+            db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, ids.b)).get(),
         ]);
 
         // Step 2 (Jon 2026-11-05): the team acts as one — the loader of either side or an
@@ -1515,6 +1523,23 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
 
         if (!isOwner && !isAdminUser) {
             return { success: false, code: 'not_authorized', error: 'Not authorized to dismiss this pair' };
+        }
+
+        if (flagPair) {
+            // Settled as two people, as «Mantener separados» leaves a detected pair: a dismissed
+            // candidate (the engine never proposes the pair again) and the flag marked kept-separate
+            // (it leaves every list). The marker never carries an email: flag details are shown.
+            const wrote = await recordSeparatePairs(db, flagPair.a, [flagPair.b], actorEmail, { candidateId });
+            if (wrote.failed.length) return { success: false, code: 'failed', error: 'Dismiss failed' };
+            await db.update(adopterFlags).set({ details: `${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}answered-no` }).where(and(
+                eq(adopterFlags.reason, 'duplicate'),
+                or(
+                    and(eq(adopterFlags.adopterId, flagPair.a), eq(adopterFlags.targetAdopterId, flagPair.b)),
+                    and(eq(adopterFlags.adopterId, flagPair.b), eq(adopterFlags.targetAdopterId, flagPair.a)),
+                ),
+            ));
+            logger.info('Flagged duplicate pair kept separate by user', { candidateId, user: actorEmail });
+            return { success: true };
         }
 
         await db.update(duplicateCandidates).set({

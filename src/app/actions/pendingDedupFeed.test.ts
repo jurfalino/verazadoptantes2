@@ -340,6 +340,25 @@ describe('getPendingDuplicatesForUser — what «Combinar» will do (mergeAction
         expect(p.mergeAction).toBe('merge');
         expect(await as(OWNER, () => mergePendingDedupPair('flag-cross'))).toEqual({ success: true, outcome: 'merged' });
     });
+
+    it('a hand-filed flag answered «No, es otra persona» (D1): kept separate, off the list, never proposed again', async () => {
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES
+            ('fn-s', 'Marta Giménez', '5', ?, 100, 100), ('fn-o', 'Marta Gimenez', '5', ?, 200, 200)`).run(STRANGER, OWNER);
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, target_adopter_id, details, created_at)
+            VALUES ('flag-no', 'fn-o', ?, 'duplicate', 'fn-s', NULL, 1)`).run(OWNER);
+        expect(pairOf((await feed(OWNER)).pairs, 'flag-no').source).toBe('flagged');
+        // Someone who loaded neither side may not answer it.
+        expect(await as('nobody@example.com', () => dismissDuplicateCandidate('flag-no'))).toMatchObject({ success: false, code: 'not_authorized' });
+        expect(await as(OWNER, () => dismissDuplicateCandidate('flag-no'))).toEqual({ success: true });
+        expect((sqlite.prepare(`SELECT details FROM adopter_flags WHERE id = 'flag-no'`).get() as { details: string }).details).toMatch(/^Kept separate: /);
+        // The engine skips a dismissed pair: it is not proposed again.
+        expect(sqlite.prepare(`SELECT status FROM duplicate_candidates WHERE (adopter1_id = 'fn-o' AND adopter2_id = 'fn-s') OR (adopter1_id = 'fn-s' AND adopter2_id = 'fn-o')`).all()).toEqual([{ status: 'dismissed' }]);
+        for (const who of [OWNER, STRANGER]) {
+            expect((await feed(who)).pairs.map(p => p.candidateId)).not.toContain('flag-no');
+        }
+        // Answered already: a second click says so.
+        expect(await as(OWNER, () => dismissDuplicateCandidate('flag-no'))).toMatchObject({ success: false, code: 'already_resolved' });
+    });
 });
 
 describe('getPendingDuplicatesForUser — layout D (groups, summary, admin score, keep, identity, hide)', () => {
