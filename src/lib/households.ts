@@ -761,7 +761,8 @@ export async function getHouseholdsFor(
  * (periodAlerts with getAdoptionConfig, requests per rescue). Each profile is
  * read once per reader (memoized), the config and the rescue keys once, and
  * only when someone is read. A failed read is logged with the caller's context
- * and shows no alerts for that person; it never throws.
+ * and shows no alerts for that person — except in `strict` mode (the public API),
+ * where it throws, as does a spent budget.
  */
 export type PeriodAlertReader = {
     config: () => Promise<AdoptionConfig>;
@@ -774,7 +775,7 @@ export function periodAlertReader(db: Db, op: string, budget?: QueryBudget, opts
     let rescueKeysP: Promise<Map<string, string>> | null = null;
     // With a budget, each first read spends it (a memoized one is free): the config's one query, the rescue
     // keys' two (org memberships, admins), one per person. A spent budget rejects (HouseholdBudgetSpent).
-    const config = () => (configP ??= (budget?.spend(1), getAdoptionConfig()));
+    const config = () => (configP ??= (budget?.spend(1), getAdoptionConfig({ strict: opts.strict })));
     const rescueKeys = () => (rescueKeysP ??= (budget?.spend(2), loadRescueKeys(db, op)));
     const alertsOf = (profileId: string, ctx: Record<string, unknown>) => {
         let p = memo.get(profileId);

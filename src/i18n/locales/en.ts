@@ -373,7 +373,7 @@ export const en = {
         view_original: 'View Original',
         confirm_unverify: 'Remove this verification?',
         unverify_error: 'Could not remove verification. You may only remove verifications you added.',
-        
+
         possible_duplicate: 'Possible duplicate',
     },
     // ALERTS (Jon, 2026-11-07): reasons not to trust a person with an animal, computed by the system.

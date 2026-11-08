@@ -134,4 +134,14 @@ describe('the API alerts carry the housemate chips (Jon, 2026-11-07)', () => {
         }) as typeof sqlite.prepare;
         await expect(summaries()).rejects.toMatchObject({ status: 503 });
     });
+
+    it('a failed read of the Admin thresholds fails the call (503) — never alerts judged by the looser defaults', async () => {
+        const real = sqlite.prepare.bind(sqlite);
+        // getAdoptionConfig reads the whole table (a feature flag reads one key, with a WHERE).
+        sqlite.prepare = ((q: string) => {
+            if (/from "app_config"/.test(q) && !/where/i.test(q)) throw new Error('D1 hiccup');
+            return real(q);
+        }) as typeof sqlite.prepare;
+        await expect(summaries()).rejects.toMatchObject({ status: 503 });
+    });
 });

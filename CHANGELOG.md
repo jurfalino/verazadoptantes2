@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.35] - 2026-11-07
+
+### Fixed — public API v1 (independent review of 2.58.34)
+- If the Admin "too many" thresholds can't be read, the API now answers 503 instead of judging alerts
+  by the looser built-in defaults (5 adoptions in 90 days; production is set to 2 in 10). Before, a
+  momentary database error could return a person with 3 adoptions in 10 days with no alert. Applies to
+  a person's own alerts and to the housemate alerts. The app itself keeps falling back to the
+  defaults, as before.
+
 ## [2.58.34] - 2026-11-07
 
 ### Changed — flags and alerts mean one thing each (no visible change)

@@ -61,7 +61,8 @@ async function _enrichAdoptersImpl(
     adopterIds: string[],
     strict: boolean,
 ): Promise<Map<string, EnrichmentResult>> {
-    const adoptionConfig = await getAdoptionConfig();
+    // Strict (the API): a failed thresholds read fails the call, never looser defaults.
+    const adoptionConfig = await getAdoptionConfig({ strict });
 
     // v2.20.0: batch the enrichment into a handful of grouped queries instead of
     // 5 queries PER adopter (~5×N — up to ~1000 D1 subrequests at 200 rows, the
