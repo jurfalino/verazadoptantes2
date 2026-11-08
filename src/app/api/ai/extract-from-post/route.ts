@@ -72,7 +72,8 @@ export async function POST(request: NextRequest) {
 
         // Add uploaded images
         if (images) {
-            allImages.push(...images);
+            // Bounded like the post's own images: the review step never sends more.
+            allImages.push(...images.slice(0, MAX_URL_IMAGES));
         }
 
         // Download and add URL images (the review step offers at most MAX_URL_IMAGES)
