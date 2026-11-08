@@ -14,6 +14,8 @@ import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { readProfileHouseholds, EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/lib/profileHouseholds';
 import { profileIdentityView, undoableRenameId, type ProfileIdentityView } from '@/domain/profileIdentity';
 import { profileReturnPath } from '@/domain/profileReturnPath';
+import { mergeRowsNewestFirst } from '@/domain/mergeHistory';
+import type { ProfileMergeDispute } from '@/lib/mergeDisputes';
 
 export default async function AdopterPage({
     params,
@@ -232,6 +234,22 @@ export default async function AdopterPage({
     const renameUndoId = !isNew && adopter && (isOwnerViewer || isOrgMateOfOwner || isModeratorOrAdmin)
         ? undoableRenameId(history, adopter.name)
         : null;
+    // H2: «Son dos personas distintas» on the newest live merge's history row — reachable without the notice. Only
+    // where the history shows and has a merge; the server rules (mergeDisputeForProfile) decide who may raise it.
+    let mergeDispute: ProfileMergeDispute | null = null;
+    if (!isNew && adopter && canViewAudit && currentUser && mergeRowsNewestFirst(history).length > 0) {
+        try {
+            const { getDb } = await import('@/lib/db');
+            const { mergeDisputeForProfile } = await import('@/lib/mergeDisputes');
+            const db = await getDb();
+            if (db) mergeDispute = await mergeDisputeForProfile(db, id, history, currentUser);
+        } catch (e) {
+            logger.warn('adopter page: merge dispute option failed, history button hidden', {
+                adopterId: id, viewer: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
     // "Removal requested" banner: only the record owner + admins/moderators (the
     // people who act on it) see it — not unrelated viewers.
     const showDeletionRequested = deletionRequested && (isModeratorOrAdmin || (!!currentUser && adopter?.addedBy === currentUser));
@@ -294,6 +312,7 @@ export default async function AdopterPage({
             householdsEnabled={householdsEnabled}
             identity={identity}
             renameUndoId={renameUndoId}
+            mergeDispute={mergeDispute}
         />
     );
 }

@@ -408,7 +408,8 @@ export async function mergeAdopters(
             id: crypto.randomUUID(),
             adopterId: primaryId,
             changedBy: actorEmail,
-            changes: JSON.stringify({ profiles_merged: { fromId: secondaryId, fromName: secondary.name, fromAddedBy: secondary.addedBy ?? null } }),
+            // auditId: the history row's «Son dos personas distintas» disputes this merge (H2).
+            changes: JSON.stringify({ profiles_merged: { fromId: secondaryId, fromName: secondary.name, fromAddedBy: secondary.addedBy ?? null, auditId } }),
             changedAt: new Date(),
             kind: mergeKind,
         }).catch((e: unknown) => {

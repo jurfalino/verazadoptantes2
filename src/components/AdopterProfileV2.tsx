@@ -17,7 +17,8 @@ import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
 import VisitIntentCard from '@/components/VisitIntentCard';
 import { DeletionCollaboratorList } from '@/components/household/HouseholdDialogs';
-import MergeDisputePrompt from '@/components/MergeDisputePrompt';
+import MergeDisputePrompt, { MergeDisputeHistoryAction } from '@/components/MergeDisputePrompt';
+import type { ProfileMergeDispute } from '@/lib/mergeDisputes';
 import { ContinuedProfileBanner } from '@/components/ContinuedProfileBanner';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
@@ -99,9 +100,11 @@ interface AdopterProfileV2Props {
     identity?: ProfileIdentityView | null;
     /** The rename this viewer may undo from the history (owner team / admin / moderator), or null. */
     renameUndoId?: string | null;
+    /** H2: «Son dos personas distintas» on the newest live merge's history row, when this viewer may dispute it. */
+    mergeDispute?: ProfileMergeDispute | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null, mergeDispute = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -611,6 +614,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             // Merges (2026-10-19): the survivor's history says it absorbed a profile, and an undo says so too.
                                             else if (parsed.profiles_merged) { eventType = 'profiles_merged'; changes = parsed.profiles_merged; }
                                             else if (parsed.profiles_unmerged) { eventType = 'profiles_unmerged'; changes = parsed.profiles_unmerged; }
+                                            // An admin kept a disputed merge (H2): the outcome is here, not only in a notice.
+                                            else if (parsed.merge_dispute_kept) { eventType = 'merge_dispute_kept'; changes = parsed.merge_dispute_kept; }
                                             // «No convive» (D48): written on both profiles. A plain member removal shares the host-side key.
                                             else if (parsed.household_member_removed?.reason === 'not_living_together') { eventType = 'hh_not_living_host'; changes = parsed.household_member_removed; }
                                             else if (parsed.household_not_living_together) { eventType = 'hh_not_living_linked'; changes = parsed.household_not_living_together; }
@@ -650,6 +655,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'api_contract' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contract')}</span>}
                                                         {eventType === 'profiles_merged' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_merged')}</span>}
                                                         {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
+                                                        {eventType === 'merge_dispute_kept' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_merge_dispute_kept')}</span>}
                                                         {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_not_living')}</span>}
                                                         {eventType === 'hh_removed_by_host' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
                                                         {eventType === 'hh_member_removed_mistake' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
@@ -722,6 +728,14 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     {t('audit.desc_profiles_merged')
                                                                         .replace('{name}', changes.fromName || t('adopter.nameless'))
                                                                         .replace('{who}', changes.fromAddedBy ? actorLabel(changes.fromAddedBy, userNameMap?.[changes.fromAddedBy], t) : t('common.anonymous'))}
+                                                                    {mergeDispute && h.id === mergeDispute.historyId && !previewAsStranger && (
+                                                                        <MergeDisputeHistoryAction auditId={mergeDispute.auditId} initial={mergeDispute.state} />
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'merge_dispute_kept' && (
+                                                                <div className="text-teal-800 break-words" data-testid="history-merge-dispute-kept">
+                                                                    {changes.otherName ? t('audit.desc_merge_dispute_kept').replace('{name}', changes.otherName) : t('audit.desc_merge_dispute_kept_plain')}
                                                                 </div>
                                                             )}
                                                             {eventType === 'profiles_unmerged' && (
