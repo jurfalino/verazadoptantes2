@@ -541,12 +541,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                 avgRating={avgRating ?? null}
                                 adopterId={id}
                                 currentUser={currentUser}
-                                isAdmin={isAdmin}
-                                // v2.55.20: org-mates edit teammates' records here
-                                // too — the animal page already grants that parity,
-                                // and the same record must not be editable on one
-                                // surface and read-only on the other.
-                                isOrgMate={isOrgMateOfOwner}
+                                // Who may edit each record arrives on the record
+                                // itself (getAdoptions `canEdit`, the save's own rule).
                                 userNameMap={userNameMap}
                                 adopterAddress={adopter?.contactInfo || ''}
                                 editFormComponent={AdoptionFormEditV2}

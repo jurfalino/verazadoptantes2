@@ -63,11 +63,11 @@ export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: {
         if (existing) {
             // Editing an existing record is a MUTATION: the record's creator,
             // a teammate of theirs, or an admin — exactly deleteAdoption's gate
-            // and what the UI offers (AdoptionHistory canEdit; the animal page
-            // via assertCanEditAnimal). Adding a new record stays open.
-            const { isAdminAsync } = await import('@/config/admins');
-            const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-            if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !(await isAdminAsync(changedBy))) {
+            // and what the UI offers (AdoptionHistory canEdit, from the same
+            // rule via getAdoptions; the animal page via assertCanEditAnimal).
+            // Adding a new record stays open.
+            const { canEditRecordAs } = await import('@/lib/recordEditAccess');
+            if (!(await canEditRecordAs(changedBy, existing.addedBy))) {
                 // Thrown like every other saveAdoption failure (callers treat a
                 // throw as failure); the catch below logs it with the errorId
                 // the user sees.
@@ -265,10 +265,9 @@ export async function deleteAdoption(adoptionId: string, adopterId: string, keep
         // the UI (AdoptionHistory: canEdit = isAdmin || addedBy === currentUser).
         // v2.55.20: org-mates too — the UI now offers edit/delete on a
         // teammate's records (AdoptionHistory canEdit), so the server gate must
-        // agree or the affordance fails on save.
-        const { isAdminAsync } = await import('@/config/admins');
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-        if (!(await isOwnerOrOrgMate(changedBy, existing.addedBy)) && !await isAdminAsync(changedBy)) {
+        // agree or the affordance fails on save. One rule: src/domain/recordEditAccess.ts.
+        const { canEditRecordAs } = await import('@/lib/recordEditAccess');
+        if (!(await canEditRecordAs(changedBy, existing.addedBy))) {
             throw new Error("Not authorized to delete this record");
         }
 
@@ -414,7 +413,9 @@ export async function getAdoptions(adopterId: string) {
         // Which API tool saved each activity — only while the origin tags are on.
         const { getFeatureFlag } = await import('@/config/features');
         const withOrigin = await getFeatureFlag('ENABLE_ORIGIN_LABELS') ? await attachApiTools(db, withForms) : withForms;
-        return await attachAdoptionThumbnails(db, withOrigin);
+        // `canEdit` per record (the pencil = the save gate) + the delivery address masked outside the team.
+        const { attachRecordViewerAccess } = await import('@/lib/recordEditAccess');
+        return await attachRecordViewerAccess(db, await attachAdoptionThumbnails(db, withOrigin), { viewer, viewerIsAdmin, adopterId });
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];

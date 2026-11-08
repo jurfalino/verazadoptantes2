@@ -88,3 +88,39 @@ describe('getAdoptions — signed-in only', () => {
         expect(rows.map(r => r.animalName)).toEqual(['Nina']);
     });
 });
+
+describe('getAdoptions — the pencil shows exactly where the save works (T4)', () => {
+    beforeEach(() => {
+        const m = migratedDb();
+        state.db = m.db;
+        sqlite = m.sqlite as unknown as typeof sqlite;
+        seed();
+        // A record an outside rescuer wrote on OWNER's profile.
+        sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, date, recorded_by) VALUES ('ev-out', 'ad1', 'follow_up', 2000, ?)`).run(STRANGER);
+    });
+
+    const canEdit = async () => Object.fromEntries((await getAdoptions('ad1') as Array<Record<string, unknown>>).map(r => [r.id, r.canEdit]));
+
+    it('a teammate of the profile owner: the team\'s record yes, the outside rescue\'s record no', async () => {
+        session.user = MATE;
+        expect(await canEdit()).toEqual({ 'an1': true, 'ev-out': false });
+    });
+
+    it('the outside rescuer: their own record on a stranger\'s profile yes, the owner\'s no', async () => {
+        session.user = STRANGER;
+        expect(await canEdit()).toEqual({ 'an1': false, 'ev-out': true });
+    });
+
+    it('an admin: every record', async () => {
+        session.user = ADMIN;
+        expect(await canEdit()).toEqual({ 'an1': true, 'ev-out': true });
+    });
+
+    it('agrees with saveAdoption: where canEdit is false the save is refused, where true it lands', async () => {
+        session.user = MATE;
+        await expect(saveAdoption({ id: 'ev-out', details: 'x' } as never)).rejects.toThrow(/Error ID/);
+        session.user = STRANGER;
+        await saveAdoption({ id: 'ev-out', details: 'Sigue bien' } as never);
+        expect(sqlite.prepare("SELECT details FROM adopter_events WHERE id = 'ev-out'").get()!.details).toBe('Sigue bien');
+    });
+});
