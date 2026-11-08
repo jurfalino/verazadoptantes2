@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.34] - 2026-11-07
+
+### Changed — flags and alerts mean one thing each (no visible change)
+- **Alert** = "this person may not be trustworthy to adopt" (system-computed: too many adoptions,
+  too many rescues asked, a housemate rated 1–2★, a housemate with alerts). **Flag** = "some action
+  may be needed on this profile" (Inexacto, Duplicado, posible duplicado, Identidad/Domicilio
+  verificado). Code names, types, translation keys and test ids now follow this split; nothing on
+  screen changes.
+- All screens and the sign-in block compute the "too many" alerts with one shared rule. The sign-in
+  rule itself is unchanged (1★, or one of the two "too many" alerts).
+- «Elegir adoptante» from an animal's page now warns with the Admin thresholds (as the rest of the
+  app does), not a fixed 5 adoptions in 90 days.
+
+### Changed — public API v1
+- `alerts` (profile and risk) can now include `housemate_low_rating` (with `rating`, `ratingLevel`,
+  `ratingLabel`) and `housemate_alerts` (no extra fields). `too_many_*` alerts are unchanged. If the
+  household data can't be read, the call answers 503, never "no alerts".
+- The «inaccurate» flag is no longer returned (it never appeared in a production response).
+
+### Fixed
+- A «Domicilio verificado» flag added while recording a delivery now records who added it (was saved
+  without an author).
+
 ## [2.58.33] - 2026-11-07
 
 ### Changed — home cards polish (UI review 2026-11-07)
