@@ -6,8 +6,10 @@
  * product requirement here: photos are taken in the field on phones.
  * (AdoptionFormWizard keeps its own variant — it also extracts video
  * thumbnails; folding those together is a separate change.)
+ * Takes any Blob (a File is one): the post import also shrinks screenshots
+ * shared from another app, which arrive as Service Worker cache blobs.
  */
-export function compressImage(file: File, maxSize = 1200, quality = 0.8): Promise<string> {
+export function compressImage(file: Blob, maxSize = 1200, quality = 0.8): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
