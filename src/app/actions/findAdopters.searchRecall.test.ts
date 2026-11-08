@@ -117,3 +117,14 @@ describe('S2 — a phone from another area code is not the same phone', () => {
         expect(await dup('4790-2355')).toContain('full');
     });
 });
+
+describe('S3 — a documento typed as on the card', () => {
+    beforeEach(async () => {
+        await seed('doc', 'Juan Pérez', [e('id', '25.999.890')]);
+    });
+
+    it.each(['DNI 25 999 890', 'Documento 25 999 890', 'documento 25.999.890', 'DNI25999890', 'DNI: 25.999.890', '25999890', 'dni 25-999-890'])(
+        '«%s» finds the person', async q => {
+            expect(await found(q)).toContain('doc');
+        });
+});

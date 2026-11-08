@@ -40,7 +40,7 @@ import { phoneQueryPlan, phoneDuplicateTokens, readPhones } from '@/domain/phone
 import { extractQueryIdentifiers } from '@/domain/queryIdentifiers';
 import { redactedError, redactedErrorFields } from '@/lib/redactedError';
 import type { PersonInput } from '@/lib/identityMatch';
-import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue, extractAddressWords } from '@/lib/tokenizer';
+import { normalizeText, extractEmails, extractIds, normalizeSocialHandle, detectSocialPlatformFromValue, normalizeIdValue, extractAddressWords, extractLabeledIdQuery } from '@/lib/tokenizer';
 import { count } from 'drizzle-orm';
 import { matchSearchEntries, matchSearchNameTokens, hashNameToken, NO_ACCESS_VISIBILITY, type Visibility } from '@/lib/piiAccess';
 import { assembleDiscoveryMatch } from '@/lib/discoveryMatch';
@@ -328,7 +328,12 @@ async function searchPhoneTokenMatches(db: any, normalizedQuery: string, country
 async function searchIdTokenMatches(db: any, normalizedQuery: string): Promise<string[]> {
     const candidates = new Set<string>();
     for (const id of extractIds(normalizedQuery)) candidates.add(id);
-    if (isPhoneLikeQuery(normalizedQuery)) {
+    // «DNI 25 999 890», «Documento 25.999.890», «DNI25999890»: the label plus the
+    // number as written on the card (extractIds takes no inner spaces, and the
+    // whole-query fallback below would keep the label: "dni25999890").
+    const labeled = extractLabeledIdQuery(normalizedQuery);
+    if (labeled) candidates.add(labeled);
+    else if (isPhoneLikeQuery(normalizedQuery)) {
         const whole = normalizeIdValue(normalizedQuery);
         if (whole.length >= 5 && (whole.match(/\d/g) ?? []).length >= 4) candidates.add(whole);
     }

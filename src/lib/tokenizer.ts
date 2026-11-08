@@ -109,6 +109,28 @@ const ID_LABEL_REGEX = new RegExp(
 );
 
 /**
+ * A search query that is a documento typed as written on the card: an ID label,
+ * then the number — with spaces, dots or dashes inside, or glued to the label:
+ * «DNI 25 999 890», «Documento 25.999.890», «DNI25999890», «CI: 1.234.567-8».
+ * Returns the normalized number (as `normalizeIdValue`), or null.
+ *
+ * For a WHOLE search query only. ID_LABEL_REGEX refuses inner spaces on purpose
+ * (in free text "DNI 12345678 y tel 5555555" would swallow the phone); a query
+ * that is nothing but a label and one number has nothing else to swallow.
+ */
+const ID_QUERY_REGEX = new RegExp(
+    `^(?:${[...ID_LABELS].sort((a, b) => b.length - a.length).join('|')})(?![a-záéíóúñ])\\s*[:.#°º]?\\s*(?:n[°º.]\\s*)?([a-z]?[\\s.\\-]?\\d[\\d\\s.\\-/]*[\\da-z]?)$`,
+    'i',
+);
+export function extractLabeledIdQuery(query: string): string | null {
+    const m = (query || '').trim().match(ID_QUERY_REGEX);
+    if (!m) return null;
+    const norm = normalizeIdValue(m[1]);
+    if (norm.length < 5 || (norm.match(/\d/g) || []).length < 4) return null;
+    return norm;
+}
+
+/**
  * Normalize an ID value: lowercase + strip everything except [a-z0-9].
  * Examples:
  *  - "12.345.678-9" → "123456789"
