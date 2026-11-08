@@ -12,6 +12,40 @@ export function isInaccurateReason(reason: string | null | undefined): boolean {
     return reason === FLAG_REASONS.INACCURATE || reason === 'inaccurate';
 }
 
+/** What a record says about verifying the person (the `adoptions` view's columns). */
+export type VerificationRecord = {
+    identityVerified?: number | null;
+    deliveredToHome?: number | null;
+    verifiedAddress?: string | null;
+};
+
+/**
+ * «Identidad Verificada» and «Dirección Verificada» — ONE rule for every
+ * surface that shows them: the profile header, search cards, the applicants
+ * list and panel, /my-adopters and the public API (cards V1/V2, 2026-11-08).
+ * Worked out from the person's records as they are NOW, so a badge follows
+ * every edit and deletion of the record it stands on.
+ *
+ * - Identity: a record where the rescuer ticked «¿Verificaste su identidad?»,
+ *   or a `verified_identity` mark filed on the profile itself (the old manual
+ *   «Verificar Identidad» button — nothing files one any more, but such a mark
+ *   is its own basis).
+ * - Address: a record delivered home (`deliveredToHome`) with the address it
+ *   was delivered to. The `verified_address` row saveAdoption stores is only a
+ *   copy of such a record, never kept in step with it, so it is NOT a basis:
+ *   counting it is what kept the badge after the record changed.
+ */
+export function profileVerifications(
+    flagRows: readonly { reason?: string | null }[],
+    records: readonly VerificationRecord[],
+): Pick<ProfileFlags, 'verified_identity' | 'verified_address'> {
+    return {
+        verified_identity: records.some(r => r.identityVerified === 1)
+            || flagRows.some(f => f.reason === FLAG_REASONS.VERIFIED_IDENTITY),
+        verified_address: records.some(r => r.deliveredToHome === 1 && !!r.verifiedAddress?.trim()),
+    };
+}
+
 /**
  * Build a profile's FLAGS from its flag rows (never its alerts: periodAlerts).
  *
@@ -29,14 +63,15 @@ export function isInaccurateReason(reason: string | null | undefined): boolean {
  */
 export function buildFlags(
     flagRows: readonly DuplicateFlagRow[],
-    systemDuplicateCount: number
+    systemDuplicateCount: number,
+    /** The person's records: the verification badges come from them (profileVerifications). */
+    records: readonly VerificationRecord[],
 ): ProfileFlags {
     return {
         inaccurate: flagRows.some(f => isInaccurateReason(f.reason)),
         duplicate: flagRows.some(f => isOpenDuplicateFlag(f)),
         systemDuplicate: systemDuplicateCount > 0,
-        verified_identity: flagRows.some(f => f.reason === FLAG_REASONS.VERIFIED_IDENTITY),
-        verified_address: flagRows.some(f => f.reason === FLAG_REASONS.VERIFIED_ADDRESS),
+        ...profileVerifications(flagRows, records),
     };
 }
 
@@ -71,7 +106,7 @@ export function openFlagKinds(flags: { inaccurate?: boolean | null; duplicate?: 
 
 /** The same rule from a profile's flag rows (household lines, the profile header). */
 export function openFlagKindsOfRows(flagRows: readonly DuplicateFlagRow[]): OpenFlagKind[] {
-    return openFlagKinds(buildFlags(flagRows, 0));
+    return openFlagKinds(buildFlags(flagRows, 0, []));
 }
 
 /**

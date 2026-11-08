@@ -93,6 +93,31 @@ describe('the API flags follow the app (open duplicate reports only)', () => {
     });
 });
 
+/**
+ * «Identidad / Dirección Verificada» — the profile header's rule (cards V1/V2,
+ * profileVerifications): from the records as they are now. A record where the
+ * ID was checked counts (the API used to read only a stored mark nothing writes);
+ * a stored «verified_address» row with no record behind it does not.
+ */
+describe('the API verification flags follow the records (V1/V2)', () => {
+    const placement = (id: string, adopterId: string, cols: { identity?: number; delivered?: number; address?: string | null }) => {
+        sqlite.prepare(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES (?, 'Nina', 'cat', 'o@example.com', 1000, 1000)`).run(`an-${id}`);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, status, recorded_by, identity_verified, delivered_to_home, verified_address)
+            VALUES (?, ?, ?, 'adoption', 1000, 'completed', 'o@example.com', ?, ?, ?)`).run(id, `an-${id}`, adopterId, cols.identity ?? null, cols.delivered ?? null, cols.address ?? null);
+    };
+    it('a record with the ID checked → verified_identity; delivered home with its address → verified_address', async () => {
+        placement('p1', 'other', { identity: 1, delivered: 1, address: 'Calle Falsa 123' });
+        const flags = (await summaries()).get('other')?.flags;
+        expect(flags).toContain('verified_identity');
+        expect(flags).toContain('verified_address');
+    });
+    it('a stored «verified_address» row whose record was un-ticked is not a verified address', async () => {
+        placement('p2', 'other', { delivered: 0, address: null });
+        sqlite.prepare(`INSERT INTO adopter_flags (id, adopter_id, flagged_by, reason, details, created_at) VALUES ('f-va', 'other', 'o@example.com', 'verified_address', 'Address verified during pet delivery: Calle Falsa 123', 1)`).run();
+        expect((await summaries()).get('other')?.flags).not.toContain('verified_address');
+    });
+});
+
 describe('the API alerts carry the housemate chips (Jon, 2026-11-07)', () => {
     const OWNER = 'o@example.com';
     beforeEach(async () => {

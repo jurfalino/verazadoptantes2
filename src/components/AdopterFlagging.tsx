@@ -78,7 +78,7 @@ function ShowLowConfidenceSuggestions({ suppressed, targetAdopter, setTargetAdop
     );
 }
 
-export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], hasVerifiedAdoption?: boolean, hasVerifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, hasVerifiedAdoption = false, hasVerifiedAddress: _hasVerifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
+export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: string, adopterName: string, existingFlags: any[], verifiedIdentity?: boolean, verifiedAddress?: boolean, tooManyAdoptions?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, tooManyRequests?: { count: number; actualSpanDays?: number; periodDays: number; startDate?: Date | null; endDate?: Date | null }, hasDuplicateBanner?: boolean, compareSource?: { kind: MatchSourceKind; name: string; entries: Array<{ type: string; value: string }> }, housemateAlert?: HousemateAlertSummary, onHousemateAlert?: (e: MouseEvent<HTMLAnchorElement>) => void }>(function AdopterFlagging({ adopterId, adopterName: _adopterName, compareSource, existingFlags, verifiedIdentity = false, verifiedAddress: _verifiedAddress = false, tooManyAdoptions, tooManyRequests, hasDuplicateBanner = false, housemateAlert, onHousemateAlert }, ref) {
     const router = useRouter();
     const { t } = useLanguage();
     const { formatShortDate } = useDateFormat();
@@ -122,11 +122,10 @@ export const AdopterFlagging = forwardRef<AdopterFlaggingHandle, { adopterId: st
     const duplicateFlags = existingFlags.filter(f => isOpenDuplicateFlag({ adopterId, ...f }));
     const isFlaggedAsDuplicate = flagKinds.includes('duplicate');
 
-    // Verification flags - include adoption-based verification
+    // The verification badges are decided by the caller with the one rule every surface uses
+    // (profileVerifications, src/domain/flags.ts); a filed identity mark only lends the hint its words.
     const identityVerifiedFlag = existingFlags.find(f => f.reason === 'verified_identity');
-    const identityVerified = identityVerifiedFlag || hasVerifiedAdoption;
-    const _addressVerifiedFlag = existingFlags.find(f => f.reason === 'verified_address');
-    const _addressVerified = _addressVerifiedFlag || _hasVerifiedAddress;
+    const identityVerified = verifiedIdentity;
 
 
 

@@ -221,10 +221,10 @@ export async function loadApplicantsForAnimal(
                     .from(adopters)
                     .where(eq(adopters.id, row.linkedAdopterId))
                     .get() as Promise<{ name: string; addedBy: string | null; source: string | null; country: string | null } | undefined>,
-                db.select({ rating: adoptions.rating, recordType: adoptions.recordType })
+                db.select({ rating: adoptions.rating, recordType: adoptions.recordType, identityVerified: adoptions.identityVerified, deliveredToHome: adoptions.deliveredToHome, verifiedAddress: adoptions.verifiedAddress })
                     .from(adoptions)
                     .where(eq(adoptions.adopterId, row.linkedAdopterId))
-                    .all() as Promise<Array<{ rating: number | null; recordType: string | null }>>,
+                    .all() as Promise<Array<{ rating: number | null; recordType: string | null; identityVerified: number | null; deliveredToHome: number | null; verifiedAddress: string | null }>>,
                 db.select({ reason: adopterFlags.reason, targetAdopterId: adopterFlags.targetAdopterId, details: adopterFlags.details })
                     .from(adopterFlags)
                     .where(eq(adopterFlags.adopterId, row.linkedAdopterId))
@@ -249,7 +249,7 @@ export async function loadApplicantsForAnimal(
             // surfaces flag pills, not the system-duplicate badge). If we ever
             // surface it, add a third parallel query above.
             // Flags only: the applicants list shows no alerts (Jon, 2026-11-07: «not for now»).
-            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0), ...NO_PERIOD_ALERTS };
+            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0, records), ...NO_PERIOD_ALERTS };
         }
 
         // Already signed? — the animal is adopted by this specific adopter.
