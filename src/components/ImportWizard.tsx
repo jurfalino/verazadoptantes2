@@ -1297,9 +1297,14 @@ export default function ImportWizard() {
      * link fails, they are added as a new person instead — never lost. Each failure says why
      * (householdErrorCopy) and the others still go in. 'already_there' is not a failure.
      * Resolves to the profile placed (null when none was, or it was already there).
+     * `rejectedIfAlreadyThere`: the match screen's «No, es otra persona» about this person — when
+     * they are someone already there whom we may not be told about, the server saves it about them (F5).
      */
-    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null }): Promise<string | null> => {
-        const base = { anchorAdopterId, relationship: m.relationship, contactEntries: asHouseholdContacts(m.contactEntries), fromImport: { sourceUrl: sourceUrl || null, slot: m.slot } };
+    const addRelative = async (anchorAdopterId: string, m: { name: string; relationship: PostPerson['relationship']; contactEntries: ContactEntry[]; slot: string; existingProfileId?: string | null; rejectedIfAlreadyThere?: string[] }): Promise<string | null> => {
+        const base = {
+            anchorAdopterId, relationship: m.relationship, contactEntries: asHouseholdContacts(m.contactEntries), fromImport: { sourceUrl: sourceUrl || null, slot: m.slot },
+            ...(m.rejectedIfAlreadyThere?.length ? { rejectedIfAlreadyThere: m.rejectedIfAlreadyThere } : {}),
+        };
         const report = (res: { error: string; errorId?: string }) => {
             const copy = householdErrorCopy(t, res.error);
             if (copy.refused) toast.warning(`${t('import.relative_failed')}: ${m.name}`, copy.message);
@@ -1318,6 +1323,8 @@ export default function ImportWizard() {
             const res = await addHouseholdPerson({ ...base, name: m.name });
             if (res.ok) return res.profileId;
             if (res.error !== 'already_there') report(res);
+            // Already there: the person stands; only the «no» answers saved about them can have failed (F5).
+            else if (res.errorId) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), res.errorId);
         } catch (e) {
             if (!handledAsStale(e)) toast.error(t('errors.generic'), `${t('import.relative_failed')}: ${m.name}`, resolveErrorId(e, 'ImportWizard.relative'));
         }
@@ -1461,7 +1468,7 @@ export default function ImportWizard() {
             const asRelative = mergeAs === 'relative' && needsIdentityChoice(selectedMatch);
             // Each with its place in the post (`slot`): a re-merge of the same post adds nobody twice.
             const members = [
-                ...(asRelative ? [{ name: extractedData.name?.trim() || '', relationship: 'unknown' as const, contactEntries, slot: 's' }] : []),
+                ...(asRelative ? [{ name: extractedData.name?.trim() || '', relationship: 'unknown' as const, contactEntries, slot: 's', rejectedIfAlreadyThere: rejectedMatchIds }] : []),
                 ...relatives.map((p, i) => ({ ...toMember(p), slot: `r${i}`, existingProfileId: linkedProfileOf(p) })),
             ];
             const alias = asRelative ? null : aliasForMerge(extractedData.name, mergeTarget.name);

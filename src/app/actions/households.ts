@@ -68,7 +68,7 @@ import { hydrateDuplicateMatches } from './hydrateDuplicateMatches';
 import { DUP_HINT_MAX_RESULTS, DUP_HINT_MAX_VALUE, DUP_HINT_MIN_RELEVANCE, dupHintMergePlan, dupHintPairMatches, dupHintSearchInput, entryMatchesTyped, isDupHintType, typedIsNewFor, type DupHintAction } from '@/domain/dupHint';
 import { ratingAfterMerge } from '@/domain/ratings';
 import { realOwner } from '@/domain/dedupPair';
-import { settleNotSamePerson } from '@/lib/notSamePerson';
+import { answerNotSamePersonFor, settleNotSamePerson } from '@/lib/notSamePerson';
 import { decideDupHintMatch, loadDupHintViewer, ratingsOf, type DupHintViewer, type DupHintProfileRow } from '@/lib/dupHintFacts';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
@@ -121,6 +121,14 @@ export type AddHouseholdPersonInput = {
      * key. `slot`: the person's place in the post ('s' = the post's person, 'r0', 'r1'…).
      */
     fromImport?: { sourceUrl?: string | null; slot: string };
+    /**
+     * The post import's «No, es otra persona» answers about the person being added (F5). Used
+     * only when they turn out to be someone already in that household whom the caller may not
+     * be told about (`already_there`): the answer is saved about that housemate here, on the
+     * server, so it isn't lost and who they are still stays unsaid. Same rule as
+     * answerNotSamePerson: only ids the housemate's own duplicate search offers count.
+     */
+    rejectedIfAlreadyThere?: string[];
 };
 
 export type AddHouseholdPersonResult =
@@ -408,9 +416,20 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                     const standing = sameEmail(there.addedBy, actor)
                         || privilegedOnAnchor
                         || await isPrivilegedOnProfile(actor, there.ownerEmail);
-                    return standing
-                        ? { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false }
-                        : { ok: false, error: 'already_there' };
+                    if (standing) return { ok: true, profileId: there.profileId, membershipId: there.membershipId, createdProfile: false, autoRequestFiled: false };
+                    // F5: the importer's «no» answers are about this housemate — saved here, never echoed back.
+                    const rejected = Array.isArray(input.rejectedIfAlreadyThere)
+                        ? [...new Set(input.rejectedIfAlreadyThere.map(id64).filter(id => id && id !== there.profileId))].slice(0, 10)
+                        : [];
+                    if (rejected.length) {
+                        try {
+                            const answered = await answerNotSamePersonFor(db, actor, { adopterId: there.profileId, rejectedIds: rejected });
+                            if (!answered.ok) return { ok: false, error: 'already_there', ...(answered.errorId ? { errorId: answered.errorId } : {}) };
+                        } catch (e) {
+                            return { ok: false, error: 'already_there', errorId: logger.error('addHouseholdPerson: «no es la misma persona» about the housemate already there not saved', e, { ...ctx, membershipId: there.membershipId, rejected: rejected.length }) };
+                        }
+                    }
+                    return { ok: false, error: 'already_there' };
                 }
             }
             const full = await capacityError(db, householdId, existing?.id ?? null);
