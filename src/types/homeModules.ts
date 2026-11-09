@@ -51,7 +51,7 @@ export type HomeAnimalsData = {
     total: number;
     /** «Con controles pendientes» tab count. */
     dueCount: number;
-    /** Up to 3: the animals with a check-up due (most overdue first), then the most recently updated (homeAnimalRows). */
+    /** Up to 4 (3 when the «N más» amber row takes a slot): the animals with a check-up due (most overdue first), then the most recently updated (homeAnimalRows). */
     rows: HomeAnimalRow[];
 };
 

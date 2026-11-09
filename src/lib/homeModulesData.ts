@@ -15,7 +15,7 @@ import { adopters, adoptions, adopterEvents, adopterImages } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
-import { homeAnimalRows } from '@/domain/homeModules';
+import { homeAnimalRows, HOME_CARD_SLOTS } from '@/domain/homeModules';
 import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomePostsData, HomePersonRow } from '@/types/homeModules';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Drizzle D1/better-sqlite3 union getDb() returns
@@ -64,7 +64,7 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
     const rowsP = (async () => {
         const [recentRows, viewerOrgs] = await Promise.all([
             db.select({ id: adopters.id, name: adopters.name, source: adopters.source, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
-                .from(adopters).where(scope).orderBy(desc(adopters.createdAt)).limit(3).all(),
+                .from(adopters).where(scope).orderBy(desc(adopters.createdAt)).limit(HOME_CARD_SLOTS).all(),
             getOrgsForEmail(userEmail),
         ]);
         type Recent = { id: string; name: string | null; source: string | null; addedBy: string | null; createdAt: unknown };

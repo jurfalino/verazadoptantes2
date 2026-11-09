@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { ReactNode } from 'react';
 import { es } from '@/i18n/locales/es';
 import { en } from '@/i18n/locales/en';
 import { pt } from '@/i18n/locales/pt';
@@ -103,5 +104,50 @@ describe('the list pages use the same sentence-case words', () => {
         expect(get(dict, 'dashboard.add_new_adopter')).toBe(adopter);
         expect(get(dict, 'dashboard.add_animal')).toBe(animal);
         expect(get(dict, 'homeModules.add')).toBe(add);
+    });
+});
+
+describe('Mis adoptantes / Mis animales — same 4 slots, so side by side they are the same height (Jon 2026-11-09, options 1 + 4)', () => {
+    const person = (i: number) => ({
+        id: `p${i}`, name: `Persona ${i}`, thumbnail: null, avgRating: null,
+        createdAt: 0, viaForm: false, creatorIsSelf: true, creatorName: null, groupName: null,
+    });
+    const people = (pendingReview: number, total = 10): HomeAdoptersData => ({ total, pendingReview, recent: [1, 2, 3, 4].map(person) });
+    const renderAdopters = (data: HomeAdoptersData, contacts: ReactNode = null) =>
+        renderToStaticMarkup(<AdoptersCard section={{ ok: true, data }} contacts={contacts} t={t} rel={rel} />);
+    const n = (html: string, id: string) => (html.match(new RegExp(`data-testid="${id}"`, 'g')) ?? []).length;
+
+    it('nothing pending, no import link: 4 people', () => {
+        expect(n(renderAdopters(people(0)), 'home-person-row')).toBe(4);
+    });
+
+    it('pending review: the amber row takes a slot — amber + 3 people', () => {
+        const html = renderAdopters(people(5));
+        expect(n(html, 'home-adopters-pending')).toBe(1);
+        expect(n(html, 'home-person-row')).toBe(3);
+    });
+
+    it('import link shown: it takes a slot — 3 people + the link', () => {
+        const html = renderAdopters(people(0), <span data-testid="contacts-slot" />);
+        expect(n(html, 'home-person-row')).toBe(3);
+        expect(n(html, 'contacts-slot')).toBe(1);
+    });
+
+    it('«Ver los N» only when people are left out', () => {
+        expect(n(renderAdopters(people(0, 4)), 'home-adopters-more')).toBe(0);
+        expect(n(renderAdopters(people(5, 4)), 'home-adopters-more')).toBe(1);
+    });
+
+    it('every person and animal row is one 56px slot on desktop', () => {
+        const animal = (id: string): HomeAnimalsData['rows'][number] => ({
+            id, name: id, photo: null, species: 'cat', status: 'available', personName: null, applicants: 0, due: null,
+        } as HomeAnimalsData['rows'][number]);
+        const animalsHtml = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: { ...animals(0), total: 9, rows: ['a', 'b', 'c', 'd'].map(animal) } }} t={t} />);
+        expect(n(animalsHtml, 'home-animal-row')).toBe(4);
+        for (const html of [renderAdopters(people(0)), animalsHtml]) {
+            const rows = html.match(/<a[^>]*data-testid="home-(person|animal)-row"[^>]*>/g) ?? [];
+            expect(rows.length).toBe(4);
+            for (const r of rows) expect(r).toContain('md:h-14');
+        }
     });
 });

@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.41] - 2026-11-09
+
+### Changed — home cards Mis adoptantes / Mis animales are the same height
+- **Same build, same height (desktop):** both cards now have 4 slots. An amber row («N pendientes de
+  revisar», «N animales más con controles pendientes») or the «Importar desde tus contactos» link takes a
+  slot; people or animals fill the rest. Side by side they come out the same height, with no empty space.
+  Every row is one line of name + one line underneath; long names and lines end in «…» (full text on hover).
+- **Up to 4 rows instead of 3** on every screen size: Mis animales lists up to 4 animals (3 + «N más» when
+  more than 4 are due); Mis adoptantes lists 4 people, or 3 beside an amber row / the import link.
+- **When the two can't match** (e.g. a small account with 2 adopters), the shorter card is no longer
+  stretched into an empty gap: the next card («También podés») moves up under it.
+- **Loading placeholder** now shows two cards in the real cards' shape (header, 4 rows, «Ver los…») instead
+  of one wide blank block, so the page no longer changes shape or jumps ~200px when the cards arrive.
+
 ## [2.58.40] - 2026-11-09
 
 ### Changed — home cards polish

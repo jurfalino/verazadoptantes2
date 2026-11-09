@@ -42,26 +42,33 @@ export function orderHomeModules(states: Record<HomeModuleKey, HomeModuleState>)
     return { cards, steps, firstSteps: cards.length === 0 ? 'start' : 'more' };
 }
 
-/** A list shows at most 3 rows, 2 when amber rows sit above it. */
-export function homeListLimit(hasTodoRows: boolean): number {
-    return hasTodoRows ? 2 : 3;
-}
+/**
+ * Mis adoptantes and Mis animales are built from the same parts so that, side
+ * by side on desktop, they come out the same height (Jon 2026-11-09, option 1):
+ * every card has HOME_CARD_SLOTS slots of one row each, and an amber row or
+ * the «Importar desde tus contactos» link takes a slot like a row does.
+ */
+export const HOME_CARD_SLOTS = 4;
 
-/** The homepage animals card lists at most this many animals. */
-export const HOME_ANIMAL_ROWS = 3;
+/** Mis adoptantes: people fill the slots the amber row / import link leave. */
+export function homeAdopterRowCount(hasExtraRow: boolean): number {
+    return hasExtraRow ? HOME_CARD_SLOTS - 1 : HOME_CARD_SLOTS;
+}
 
 /**
  * The homepage animals card's rows: the animals that need you first (a
  * check-up due, most overdue first), then the most recently updated ones to
  * fill the card. `moreDue` = due animals that didn't fit — the «N animales
- * más con controles pendientes» link. `due` and `recent` arrive already
- * ordered; an animal never appears twice.
+ * más con controles pendientes» amber row, which takes a slot: with more due
+ * animals than slots, one fewer animal is listed. `due` and `recent` arrive
+ * already ordered; an animal never appears twice.
  */
 export function homeAnimalRows<D extends { id: string }, R extends { id: string }>(
     due: readonly D[],
     recent: readonly R[],
-    limit: number = HOME_ANIMAL_ROWS,
+    slots: number = HOME_CARD_SLOTS,
 ): { due: D[]; recent: R[]; moreDue: number } {
+    const limit = due.length > slots ? slots - 1 : slots;
     const dueShown = due.slice(0, limit);
     const taken = new Set(dueShown.map(a => a.id));
     const recentShown: R[] = [];

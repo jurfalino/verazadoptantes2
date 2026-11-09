@@ -120,12 +120,12 @@ test.describe.serial('homepage modules', () => {
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
     });
 
-    test('Mis animales: at most 3 animals, each once; «Ver los N animales» is the «Todos» count', async ({ page }) => {
+    test('Mis animales: at most 4 animals (one per slot), each once; «Ver los N animales» is the «Todos» count', async ({ page }) => {
         test.setTimeout(240_000);
         await openHome(page);
         const card = page.getByTestId('home-animals');
         const rows = card.locator('[data-testid="home-animals-due"], [data-testid="home-animal-row"]');
-        expect(await rows.count()).toBeLessThanOrEqual(3);
+        expect(await rows.count()).toBeLessThanOrEqual(4);
         // The overdue animal is listed as due, never again as «recently updated».
         await expect(card.getByTestId('home-animal-row').filter({ hasText: DUE_ANIMAL_NAME })).toHaveCount(0);
         await expect.poll(async () => {
