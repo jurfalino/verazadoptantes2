@@ -80,6 +80,8 @@ import { mergeContactEntries, CONTACT_ENTRIES_FULL, MAX_CONTACT_ENTRIES, RENAME_
 import { importAdoptersBatch } from './importBatch';
 import { knownAsNames, RENAME_NOTICE_WINDOW_MS, RENAME_RATE_LIMIT } from '@/domain/profileIdentity';
 import { preserveRenameAliases } from '@/domain/profileIdentity';
+import { notifyProfileAgeChanged } from '@/lib/profileIdentity';
+import { chooseProfileChangesFrom } from '@/test-utils/profileChangesFrom';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -164,11 +166,33 @@ describe('changeProfileName — open to anyone signed in', () => {
         expect([owner, ...editors]).not.toContain(STRANGER);
     });
 
-    it("the owner's own team renames → no notice (D54); an admin from outside the team → the team is told", async () => {
+    it("the owner's own team renames → no notice by default («Otros rescatistas»); an admin from outside the team → the team is told", async () => {
         await as(MATE, () => changeProfileName({ adopterId: 'pedro', name: 'Pedro A. Paez', expectedName: 'Pedro Paez' }));
         expect(notify.create).toHaveLength(0);
         await as(ADMIN, () => changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro A. Paez' }));
         expect(noticesOfType('profile_renamed').map(n => n.userId).sort()).toEqual([MATE, OWNER].sort());
+    });
+
+    it("«Otros rescatistas y mi equipo»: a teammate's rename reaches the teammates who chose it (with «Deshacer»), never the renamer", async () => {
+        chooseProfileChangesFrom(sqlite, OWNER, 'team');
+        await as(MATE, () => changeProfileName({ adopterId: 'pedro', name: 'Pedro A. Paez', expectedName: 'Pedro Paez' }));
+        const notices = noticesOfType('profile_renamed');
+        expect(notices.map(n => n.userId)).toEqual([OWNER]);
+        expect(notices[0]).toMatchObject({ metadata: expect.objectContaining({ undo: { historyId: historyOf('pedro').at(-1)!.id } }) });
+        // The owner's own rename: MATE chose the default, so nobody is told.
+        notify.create.length = 0;
+        await as(OWNER, () => changeProfileName({ adopterId: 'pedro', name: 'Pedro Paez', expectedName: 'Pedro A. Paez' }));
+        expect(notify.create).toHaveLength(0);
+    });
+
+    it('a teammate who switched to «Otros rescatistas» is not revived by the rename collapse (no unread again)', async () => {
+        chooseProfileChangesFrom(sqlite, OWNER, 'team');
+        await as(MATE, () => changeProfileName({ adopterId: 'pedro', name: 'P. Paez', expectedName: 'Pedro Paez' }));
+        sqlite.prepare("UPDATE notifications SET read = 1").run();
+        chooseProfileChangesFrom(sqlite, OWNER, 'outside');
+        await as(MATE, () => changeProfileName({ adopterId: 'pedro', name: 'Pepe Paez', expectedName: 'P. Paez' }));
+        const rows = sqlite.prepare("SELECT title, read FROM notifications WHERE user_id = ? AND type = 'profile_renamed'").all(OWNER);
+        expect(rows).toEqual([{ title: 'mate cambió el nombre de Pedro Paez a P. Paez', read: 1 }]);
     });
 
     it('a stale expectedName → conflict with the stored name and who wrote it; nothing changes', async () => {
@@ -671,6 +695,23 @@ describe('Final fix S7 — a rename by signing a contract tells the owner team l
             metadata: expect.objectContaining({ undo: { historyId: h.id }, profileId: 'pedro' }),
         });
         expect(await as(OWNER, () => getRenameUndoOption(h.id))).toMatchObject({ status: 'can_undo' });
+    });
+});
+
+describe('notifyProfileAgeChanged — the one rule of «Avisame de cambios hechos por:»', () => {
+    const ageChanged = (actor: string) => notifyProfileAgeChanged(state.db as never, { adopterId: 'pedro', actor, ownerEmail: OWNER, name: 'Pedro Paez', age: 40, minor: false });
+    const told = () => noticesOfType('profile_age_changed').map(n => n.userId).sort();
+
+    it("an outsider's change: the owner's team", async () => {
+        await ageChanged(STRANGER);
+        expect(told()).toEqual([MATE, OWNER].sort());
+    });
+    it("a teammate's change: nobody by default; the teammates who chose «… y mi equipo»", async () => {
+        await ageChanged(MATE);
+        expect(told()).toEqual([]);
+        chooseProfileChangesFrom(sqlite, OWNER, 'team');
+        await ageChanged(MATE);
+        expect(told()).toEqual([OWNER]);
     });
 });
 

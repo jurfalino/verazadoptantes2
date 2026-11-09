@@ -111,6 +111,7 @@ import { logAudit } from '@/lib/audit';
 import { addMembership as libAddMembership, ensureHousehold as libEnsureHousehold } from '@/lib/households';
 import { findFormDuplicates } from './findFormDuplicates';
 import { searchFormDuplicates } from '@/lib/formDuplicates';
+import { chooseProfileChangesFrom } from '@/test-utils/profileChangesFrom';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -341,6 +342,18 @@ describe('addHouseholdPerson — an existing profile («¿Es este perfil?» → 
         await expectNotApprover(STRANGER, 'marta');
     });
 
+    it("household_linked follows «Avisame de cambios hechos por:»: MATE links Pedro into Rosa's home → OWNER hears only with «… y mi equipo»; OTHER (outside) always", async () => {
+        await as(MATE, () => addHouseholdPerson({ anchorAdopterId: 'rosa', existingProfileId: 'pedro' }));
+        expect(noticesOfType('household_linked')).toEqual([]);
+        expect(noticesOfType('household_contribution').map(n => n.userId)).toEqual([OTHER]);
+        notify.create.length = 0;
+        chooseProfileChangesFrom(sqlite, OWNER, 'team');
+        sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('ana', 'Ana Paez', '5', ?, 1000, 1000)`).run(OWNER);
+        await as(MATE, () => addHouseholdPerson({ anchorAdopterId: 'marta', existingProfileId: 'ana' }));
+        expect(noticesOfType('household_linked').map(n => n.userId)).toEqual([OWNER]);
+        expect(notify.create.some(n => n.userId === MATE)).toBe(false);
+    });
+
     it("refuses the anchor itself and a deleted profile", async () => {
         expect(await addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'pedro' })).toEqual({ ok: false, error: 'not_found' });
         sqlite.prepare(`UPDATE adopters SET deleted_at = 5000 WHERE id = 'rosa'`).run();
@@ -449,10 +462,20 @@ describe('removeHouseholdMembership — «No vive acá»', () => {
         expect(historyOf('pedro').at(-1)).toMatchObject({ changed_by: OWNER, kind: 'edit', changes: { household_member_removed: { id: added.membershipId, householdId: 'hh-pedro', reason: 'not_living_together', linkedId: 'marta' } } });
         expect(historyOf('marta').at(-1)).toMatchObject({ changed_by: OWNER, kind: 'contribution', changes: { household_not_living_together: { hostId: 'pedro', hostName: 'Pedro Paez', householdId: 'hh-pedro' } } });
 
-        // Marta's team and Pedro's team hear it — never the actor.
+        // Marta's team hears it — never the actor, and not the actor's teammate MATE
+        // («Avisame de cambios hechos por: Otros rescatistas», the default).
         const removed = noticesOfType('household_member_removed');
-        expect(removed.map(n => n.userId).sort()).toEqual([MATE, OTHER].sort());
+        expect(removed.map(n => n.userId)).toEqual([OTHER]);
         expect(removed[0]).toMatchObject({ template: { key: 'household_member_removed', params: expect.objectContaining({ personName: 'Marta Paez', hostName: 'Pedro Paez', reason: 'not_living' }) } });
+    });
+
+    it("«… y mi equipo»: the actor's teammate who chose it hears a teammate's «No vive acá»", async () => {
+        chooseProfileChangesFrom(sqlite, MATE, 'team');
+        const added = await as(OWNER, () => addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta', relationship: 'partner' }));
+        if (!added.ok) throw new Error(added.error);
+        notify.create.length = 0;
+        await as(OWNER, () => removeHouseholdMembership({ membershipId: added.membershipId, reason: 'not_living' }));
+        expect(noticesOfType('household_member_removed').map(n => n.userId).sort()).toEqual([MATE, OTHER].sort());
     });
 
     it('«Lo cargué por error»: no correction, history says so on the person and the housemates', async () => {
@@ -768,12 +791,27 @@ describe('Task 2 fix round 1', () => {
         expect(vi.mocked(logAudit)).toHaveBeenCalledWith({ userEmail: STRANGER, action: 'adopter_created', target: res.profileId, details: { name: 'Lucas Paez', via: 'household' } });
     });
 
-    it("10: an admin outside Pedro's team adding someone → Pedro's owner is told; a teammate's add stays silent", async () => {
+    it("10: an admin outside Pedro's team adding someone → Pedro's owner is told; a teammate's add stays silent for the team by default", async () => {
         await as(ADMIN, () => addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Lucas Paez' }));
         expect(noticesOfType('household_contribution').map(n => n.userId)).toEqual([OWNER]);
         notify.create.length = 0;
         await as(MATE, () => addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Luz Paez' }));
-        expect(notify.create).toEqual([]);
+        // OWNER (MATE's teammate, «Otros rescatistas») hears nothing; ADMIN — an editor of Pedro
+        // since the add above, and not on MATE's team — is told, like any change from outside theirs.
+        expect(notify.create.map(n => n.userId)).toEqual([ADMIN]);
+    });
+
+    it("10: a teammate's add reaches the owner who chose «Otros rescatistas y mi equipo» (and never the teammate)", async () => {
+        chooseProfileChangesFrom(sqlite, OWNER, 'team');
+        await as(MATE, () => addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Luz Paez' }));
+        expect(noticesOfType('household_contribution').map(n => n.userId)).toEqual([OWNER]);
+        expect(notify.create.some(n => n.userId === MATE)).toBe(false);
+    });
+
+    it("10: a choice of «… y mi equipo» changes nothing for an outsider's add (the owner is told either way)", async () => {
+        chooseProfileChangesFrom(sqlite, OWNER, 'outside');
+        await as(STRANGER, () => addHouseholdPerson({ anchorAdopterId: 'pedro', name: 'Luz Paez' }));
+        expect(noticesOfType('household_contribution').map(n => n.userId)).toEqual([OWNER]);
     });
 });
 
