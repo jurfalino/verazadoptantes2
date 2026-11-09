@@ -44,6 +44,7 @@ const PATHS = {
     person: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
     contacts: 'M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm9 4a3 3 0 100 6 3 3 0 000-6zm-4.5 9.5h9a4.5 4.5 0 00-9 0z',
     chevron: 'M9 5l7 7-7 7',
+    plus: 'M12 5v14m-7-7h14',
 } as const;
 
 function Icon({ name, className = 'w-5 h-5' }: { name: keyof typeof PATHS; className?: string }) {
@@ -59,22 +60,39 @@ const count = (t: T, n: number, one: string, many: string) => interpolate(t(n ==
 
 // ── Building blocks ────────────────────────────────────────────────────────
 
-/** The header (icon + title + summary) opens the module's page in every state. */
-function ModuleShell({ icon, title, summary, href, children, testId }: {
-    icon: keyof typeof PATHS; title: string; summary?: string; href: string; children: ReactNode; testId: string;
+/** «+ Agregar» beside the title: `label` is the visible word, `aria` names what it adds. */
+type ModuleAdd = { href: string; label: string; aria: string };
+
+/**
+ * The header (icon + title + summary) opens the module's page in every state.
+ * With `add`, a «+ Agregar» button takes the chevron's place beside it — the
+ * module's create action, shown whatever the card's state (Jon 2026-11-09).
+ * It is a sibling of the title link, never inside it.
+ */
+function ModuleShell({ icon, title, summary, href, children, testId, add }: {
+    icon: keyof typeof PATHS; title: string; summary?: string; href: string; children: ReactNode; testId: string; add?: ModuleAdd;
 }) {
     return (
         <section data-testid={testId} className="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm">
-            <Link href={href} data-testid={`${testId}-header`} className="flex items-center gap-3 min-h-11 group">
-                <span className="w-10 h-10 shrink-0 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
-                    <Icon name={icon} />
-                </span>
-                <span className="flex-1 min-w-0">
-                    <span className="block text-base font-bold text-stone-900 leading-tight group-hover:text-teal-700">{title}</span>
-                    {summary && <span data-testid={`${testId}-summary`} className="block text-sm text-stone-500 leading-snug">{summary}</span>}
-                </span>
-                <Icon name="chevron" className="w-4 h-4 text-stone-400 shrink-0" />
-            </Link>
+            <div className="flex items-center gap-3">
+                <Link href={href} data-testid={`${testId}-header`} className="flex flex-1 min-w-0 items-center gap-3 min-h-11 group">
+                    <span className="w-10 h-10 shrink-0 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
+                        <Icon name={icon} />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                        <span className="block text-base font-bold text-stone-900 leading-tight group-hover:text-teal-700">{title}</span>
+                        {summary && <span data-testid={`${testId}-summary`} className="block text-sm text-stone-500 leading-snug">{summary}</span>}
+                    </span>
+                    {!add && <Icon name="chevron" className="w-4 h-4 text-stone-400 shrink-0" />}
+                </Link>
+                {add && (
+                    <Link href={add.href} data-testid={`${testId}-add`} aria-label={add.aria}
+                        className="btn btn-compact btn-secondary min-h-11 shrink-0 whitespace-nowrap">
+                        <Icon name="plus" className="w-4 h-4" />
+                        {add.label}
+                    </Link>
+                )}
+            </div>
             <div className="mt-4 space-y-4">{children}</div>
         </section>
     );
@@ -159,7 +177,7 @@ function SectionError({ errorId, t }: { errorId: string; t: T }) {
 
 // ── Mis adoptantes ─────────────────────────────────────────────────────────
 
-function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<HomeAdoptersData>; contacts: ReactNode; t: T; rel: (ms: number) => string }) {
+export function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<HomeAdoptersData>; contacts: ReactNode; t: T; rel: (ms: number) => string }) {
     if (!section.ok) {
         return <ModuleShell icon="people" title={t('homeModules.adopters_title')} href="/my-adopters" testId="home-adopters"><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
@@ -172,7 +190,8 @@ function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<Home
             ? interpolate(t('homeModules.created'), { when: rel(r.createdAt) })
             : interpolate(t('homeModules.created_by'), { name: r.creatorName, when: rel(r.createdAt) });
     return (
-        <ModuleShell icon="people" title={t('homeModules.adopters_title')} summary={count(t, d.total, 'homeModules.adopters_one', 'homeModules.adopters_many')} href="/my-adopters" testId="home-adopters">
+        <ModuleShell icon="people" title={t('homeModules.adopters_title')} summary={count(t, d.total, 'homeModules.adopters_one', 'homeModules.adopters_many')} href="/my-adopters" testId="home-adopters"
+            add={{ href: '/adopter/create', label: t('homeModules.add'), aria: t('homeModules.add_adopter') }}>
             {hasTodo && (
                 <div className="space-y-2">
                     {d.pendingReview > 0 && (
@@ -192,19 +211,14 @@ function AdoptersCard({ section, contacts, t, rel }: { section: HomeSection<Home
                     <MoreRow href="/my-adopters" testId="home-adopters-more" label={interpolate(t('homeModules.see_adopters'), { n: d.total })} />
                 )}
             </div>
-            {!hasTodo && (
-                <div>
-                    <Link href="/adopter/create" className="btn btn-standard btn-secondary w-full">{t('homeModules.register_adopter')}</Link>
-                    {contacts}
-                </div>
-            )}
+            {!hasTodo && contacts}
         </ModuleShell>
     );
 }
 
 // ── Mis animales ───────────────────────────────────────────────────────────
 
-function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t: T }) {
+export function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t: T }) {
     if (!section.ok) {
         return <ModuleShell icon="paw" title={t('homeModules.animals_title')} href="/my-animals" testId="home-animals"><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
@@ -224,7 +238,8 @@ function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t:
     };
     const moreDue = d.dueCount - d.rows.filter(a => a.due).length;
     return (
-        <ModuleShell icon="paw" title={t('homeModules.animals_title')} summary={summary} href={d.available === 0 ? '/my-animals?view=adopted' : '/my-animals'} testId="home-animals">
+        <ModuleShell icon="paw" title={t('homeModules.animals_title')} summary={summary} href={d.available === 0 ? '/my-animals?view=adopted' : '/my-animals'} testId="home-animals"
+            add={{ href: '/my-animals/new', label: t('homeModules.add'), aria: t('homeModules.add_animal') }}>
             {d.rows.length > 0 && (
                 <div className="space-y-2">
                     {/* Animals that need you first (a check-up due), then the most recently updated. */}
@@ -245,9 +260,6 @@ function AnimalsCard({ section, t }: { section: HomeSection<HomeAnimalsData>; t:
                         <MoreRow href="/my-animals?view=todos" testId="home-animals-more" label={interpolate(t('homeModules.see_all_animals'), { n: d.total })} />
                     )}
                 </div>
-            )}
-            {d.dueCount === 0 && (
-                <Link href="/my-animals/new" className="btn btn-standard btn-secondary w-full">{t('homeModules.add_animal')}</Link>
             )}
         </ModuleShell>
     );
