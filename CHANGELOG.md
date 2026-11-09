@@ -2,6 +2,30 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.38] - 2026-11-09
+
+### Added — «Avisame de cambios hechos por:» (who your profile-change notices come from)
+- **New choice in /settings under «Cambios en tus perfiles»:** «Otros rescatistas» (default) or «Otros
+  rescatistas y mi equipo». It covers the bell and email together. With the default, a teammate's change
+  to your profiles sends no notice (it stays in the profile's history). Your own changes never notify you.
+- **The owner's team hears what someone else added to a profile:** one notice per save, e.g. «Ana agregó
+  un registro (Adopción, 4★), 3 fotos y una dirección de entrega a Marta Paez.» A second save by the same
+  person within 10 minutes joins the same notice. Imports by the owner's own team stay silent; imports by
+  anyone else notify.
+- **Transfers notify only the new owner.**
+
+### Fixed — notice content now lives on the profile (H1–H4)
+- **H1.** A signed contract's record opens «Contrato firmado (PDF)» and «Datos y posibles duplicados», even
+  with the notice deleted (migration 0103).
+- **H2.** The newest «Perfiles unidos» history row offers «Son dos personas distintas»; an admin keeping the
+  merge writes «Unión revisada» to the history.
+- **H3.** A turned-down requester sees «Tu solicitud no fue aprobada» with the note; after a revoke,
+  «El responsable quitó tu acceso el …», or «Un administrador quitó tu acceso el …» when an admin did it.
+- **H4.** The owner's team sees open «Reportar inexactitud» reports on the profile and closes them with
+  «Ya lo corregí».
+- **Creating a profile with more than 20 images, or one too big,** saves the profile and says which images
+  weren't saved.
+
 ## [2.58.37] - 2026-11-08
 
 ### Fixed — follow-ups found while updating the help pages (F1–F10)
