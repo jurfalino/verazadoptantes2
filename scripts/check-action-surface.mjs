@@ -421,7 +421,14 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // One UPDATE per shown id, each scoped to that id AND adopter_id AND request_type='inaccuracy' AND
 // status='pending' — a report filed after the page loaded stays open; never a
 // deletion request, another profile or an already-closed report; returns only a count; audited.
-const EXPECTED_ACTIONS = 178;
+// 179 = 178 + 1. 2026-11-08 «Avisame de cambios hechos por:» (/settings, under «Cambios en tus
+// perfiles»; src/domain/teamChangeAudience.ts): +saveProfileChangesFrom(from) in
+// src/app/actions/settings.ts — session required (else refused with an errorId); `from` must be
+// exactly 'outside' or 'team' (anything else refused, nothing written); writes only the caller's
+// own user_profiles.profile_changes_from (the user row is looked up by the SESSION email; no user
+// row → refused); a "view as" session is read-only (warn + errorId); audited; returns no data.
+// getEmailPrefs (already counted) now also returns the caller's own choice. MEASURED (npm run build): 179.
+const EXPECTED_ACTIONS = 179;
 
 let manifest;
 try {

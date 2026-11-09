@@ -47,6 +47,9 @@ interface NotificationTypeStat {
  * item 6); only this page's explanation lives here. A type not in
  * NOTIFICATION_TYPES (an old row) shows its raw key.
  */
+/** «Avisame de cambios hechos por:» (/settings, Jon 2026-11-08) — src/lib/teamChangeAudience.ts. */
+const TEAM_CHOICE = ' Un cambio hecho por alguien del propio equipo avisa solo a quien eligió «Otros rescatistas y mi equipo».';
+
 const TYPE_DESCRIPTIONS: Record<string, string> = {
     'contract_result': 'Cuando un adoptante firma un contrato de adopción.',
     'form_result': 'Tipo antiguo: respuestas al formulario de adopción (hoy «form_submission»).',
@@ -54,13 +57,13 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
     'import_result': 'Tipo antiguo: estado de importaciones de redes sociales.',
     // v2.55.17: the followup-cron Worker checks NOTIF_ENABLED_follow_up_due
     // before inserting — the follow_up_due row is its kill switch.
-    'contact_entry_added': 'Al dueño (y editores) cuando otra persona agrega un dato de contacto a su registro.',
+    'contact_entry_added': 'Al dueño (y editores) cuando otra persona agrega un dato de contacto a su registro.' + TEAM_CHOICE,
     'pii_access_request': 'Al dueño cuando alguien pide ver los datos de contacto de su registro. Se aprueba o rechaza desde el perfil.',
     'pii_access_revoked': 'A quien tenía acceso, cuando el dueño o un admin se lo quita.',
-    'ownership_transferred': 'A ambas partes cuando un admin transfiere un registro.',
+    'ownership_transferred': 'Al nuevo dueño cuando un admin le transfiere un registro (el dueño anterior no recibe aviso).',
     'adopter_flagged': 'A los admins cuando alguien reporta un adoptante.',
     'duplicate_flagged': 'A quienes cargaron dos perfiles cuando alguien los marca como posible duplicado.',
-    'inaccuracy_reported': 'A quienes pueden editar un perfil (quien lo cargó, su equipo y los admins) cuando otra persona avisa que hay información incorrecta.',
+    'inaccuracy_reported': 'A quienes pueden editar un perfil (quien lo cargó, su equipo y los admins) cuando otra persona avisa que hay información incorrecta.' + TEAM_CHOICE,
     'deletion_request': 'A los admins cuando alguien pide eliminar un registro.',
     'member_joined': 'A los miembros de una organización cuando se suma alguien.',
     'member_removed': 'A quien otro miembro quita de un grupo. Solo en la app, sin email.',
@@ -68,16 +71,16 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
     'api_record': 'Al rescatista (y su organización) cuando una herramienta conectada guarda un registro con su clave.',
     'contract_attached': 'Cuando un contrato firmado se vincula a un perfil.',
     'adopter_merged': 'A quienes cargaron dos perfiles cuando un admin los une y elige avisarles.',
-    'household_linked': 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.',
-    'household_link_removed': 'Al dueño (y su equipo) del perfil anfitrión cuando el equipo del perfil vinculado indica que esa persona no convive: se quita de los dos perfiles.',
-    'household_contribution': 'Al dueño (y editores) cuando otra persona agrega un conviviente, o un dato de contacto de un conviviente, a su registro.',
+    'household_linked': 'Al dueño (y su equipo) de un perfil cuando otra persona lo anota como conviviente de otro adoptante.' + TEAM_CHOICE,
+    'household_link_removed': 'Al dueño (y su equipo) del perfil anfitrión cuando el equipo del perfil vinculado indica que esa persona no convive: se quita de los dos perfiles.' + TEAM_CHOICE,
+    'household_contribution': 'Al dueño (y editores) cuando otra persona agrega un conviviente, o un dato de contacto de un conviviente, a su registro.' + TEAM_CHOICE,
     'household_link_disputed': 'A los administradores cuando alguien vuelve a agregar como conviviente a una persona cuyo equipo ya indicó que no conviven.',
-    'household_also_lives_with': 'A los equipos de un hogar cuando alguien anota que una persona de ese hogar también vive con otro adoptante.',
-    'household_relationship_changed': 'A los equipos de los perfiles de un hogar cuando alguien cambia el parentesco de una persona.',
-    'household_member_removed': 'A los equipos de los perfiles de un hogar cuando alguien quita a una persona: «Lo cargué por error» o «No vive acá».',
-    'profile_renamed': 'Al equipo del dueño de un perfil cuando alguien le cambia el nombre (con «Deshacer»).',
+    'household_also_lives_with': 'A los equipos de un hogar cuando alguien anota que una persona de ese hogar también vive con otro adoptante.' + TEAM_CHOICE,
+    'household_relationship_changed': 'A los equipos de los perfiles de un hogar cuando alguien cambia el parentesco de una persona.' + TEAM_CHOICE,
+    'household_member_removed': 'A los equipos de los perfiles de un hogar cuando alguien quita a una persona: «Lo cargué por error» o «No vive acá».' + TEAM_CHOICE,
+    'profile_renamed': 'Al equipo del dueño de un perfil cuando alguien le cambia el nombre (con «Deshacer»).' + TEAM_CHOICE,
     'profile_rename_undone': 'A quien cambió el nombre de un perfil cuando el equipo del dueño lo deshace.',
-    'profile_age_changed': 'Al equipo del dueño de un perfil cuando alguien cambia la edad o lo marca como menor de edad.',
+    'profile_age_changed': 'Al equipo del dueño de un perfil cuando alguien cambia la edad o lo marca como menor de edad.' + TEAM_CHOICE,
     'household_member_disputed': 'A los administradores cuando alguien vuelve a agregar a una persona a un hogar después de que se indicó que no vive ahí.',
     'form_attached': 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.',
     'follow_up_due': 'Recordatorio diario (cron) cuando toca el seguimiento de una adopción o un tránsito.',

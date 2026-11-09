@@ -77,10 +77,11 @@ export async function POST(req: NextRequest) {
             const profileId = adopterId;
             await runAfterResponse('dataRequest.notifyInaccuracy', async () => {
                 let told: string[] = [];
+                let skipped: string[] = [];
                 let adopterName: string | null = null;
                 try {
                     const { notifyInaccuracyReportEditors } = await import('@/lib/inaccuracyReportNotices');
-                    ({ told, adopterName } = await notifyInaccuracyReportEditors({ adopterId: profileId, reporter: requester, details }));
+                    ({ told, skipped, adopterName } = await notifyInaccuracyReportEditors({ adopterId: profileId, reporter: requester, details }));
                 } catch (e) {
                     logger.warn('dataRequest: inaccuracy notices to editors not sent', {
                         adopterId: profileId, actor: requester, error: e instanceof Error ? e.message : String(e),
@@ -91,7 +92,8 @@ export async function POST(req: NextRequest) {
                 ]);
                 const quoted = noticeDetails(details);
                 await notifyAdmins({
-                    skip: told,
+                    // Already told, or left out by their own «Avisame de cambios hechos por:» choice.
+                    skip: [...told, ...skipped],
                     actorEmail: requester,
                     type: 'inaccuracy_reported',
                     ...notificationContent({ key: 'inaccuracy_reported', params: { reporterName: requesterName, ...(adopterName ? { adopterName } : {}), ...(quoted ? { details: quoted } : {}) } }),

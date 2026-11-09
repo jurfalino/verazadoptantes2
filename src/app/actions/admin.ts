@@ -810,38 +810,45 @@ export async function transferAdopterOwnership(adopterId: string, toEmail: strin
             .set({ addedBy: normalizedTo, updatedAt: new Date() })
             .where(eq(adopters.id, adopterId));
 
-        // 4. Notify both parties after the response (kept alive by
-        //    runAfterResponse, which also logs a module-load failure).
-        await runAfterResponse('transferAdopterOwnership.notify', async () => {
-            const [{ createNotification, resolveDisplayNames }, { notificationContent }] = await Promise.all([
-                import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
-            ]);
-            const url = `/adopter/${adopterId}`;
-            const targets = [from, normalizedTo].filter(e => e && e.includes('@') && e !== 'anonymous');
-            // v2.19.23: include the adopter name in both notification bodies
-            // so the recipient knows *which* record changed hands without
-            // having to click through. "an adopter" was useless when an
-            // admin transferred several in a sweep — the notifications all
-            // looked identical.
-            // Rescuers read names, never addresses (resolveDisplayNames falls back to the handle).
-            const names = await resolveDisplayNames([actor, normalizedTo]);
-            const nameOf = (e: string) => names.get(e.toLowerCase().trim()) ?? e.split('@')[0];
-            const params = {
-                actorName: nameOf(actor), toName: nameOf(normalizedTo),
-                ...(current.name?.trim() ? { adopterName: current.name.trim() } : {}),
-            };
-            await Promise.all(targets.map(email => createNotification({
-                userId: email,
-                type: 'ownership_transferred',
-                ...notificationContent({ key: 'ownership_transferred', params: { ...params, role: email === normalizedTo ? 'to' : 'from' } }),
-                url,
-            }).catch((e: unknown) => {
-                logger.warn('transferAdopterOwnership: createNotification failed', {
-                    adopterId, recipient: email, actor,
-                    error: e instanceof Error ? e.message : String(e),
-                });
-            })));
-        }, { adopterId, actor });
+        // 4. Notify the NEW owner only (Jon 2026-11-08: the old owner is no
+        //    longer told), after the response (kept alive by runAfterResponse,
+        //    which also logs a module-load failure). Not filtered by «Avisame de
+        //    cambios hechos por:» — a transfer always reaches the new owner —
+        //    except that your own change never notifies you.
+        if (normalizedTo === actor.toLowerCase().trim()) {
+            logger.info('transferAdopterOwnership: transferred to the actor — no notice', { adopterId, actor });
+        } else {
+            await runAfterResponse('transferAdopterOwnership.notify', async () => {
+                const [{ createNotification, resolveDisplayNames }, { notificationContent }] = await Promise.all([
+                    import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
+                ]);
+                const url = `/adopter/${adopterId}`;
+                const targets = [normalizedTo];
+                // v2.19.23: include the adopter name in the notification body
+                // so the recipient knows *which* record changed hands without
+                // having to click through. "an adopter" was useless when an
+                // admin transferred several in a sweep — the notifications all
+                // looked identical.
+                // Rescuers read names, never addresses (resolveDisplayNames falls back to the handle).
+                const names = await resolveDisplayNames([actor, normalizedTo]);
+                const nameOf = (e: string) => names.get(e.toLowerCase().trim()) ?? e.split('@')[0];
+                const params = {
+                    actorName: nameOf(actor), toName: nameOf(normalizedTo),
+                    ...(current.name?.trim() ? { adopterName: current.name.trim() } : {}),
+                };
+                await Promise.all(targets.map(email => createNotification({
+                    userId: email,
+                    type: 'ownership_transferred',
+                    ...notificationContent({ key: 'ownership_transferred', params: { ...params, role: 'to' } }),
+                    url,
+                }).catch((e: unknown) => {
+                    logger.warn('transferAdopterOwnership: createNotification failed', {
+                        adopterId, recipient: email, actor,
+                        error: e instanceof Error ? e.message : String(e),
+                    });
+                })));
+            }, { adopterId, actor });
+        }
 
         logger.info('Adopter ownership transferred', { adopterId, from, to: normalizedTo, actor });
         revalidatePath(`/adopter/${adopterId}`);

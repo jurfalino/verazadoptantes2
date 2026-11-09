@@ -43,6 +43,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { POST } from './route';
+import { chooseProfileChangesFrom } from '@/test-utils/profileChangesFrom';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -114,6 +115,22 @@ describe('POST /api/data-request', () => {
         expect([...(notify.admins[0].skip as string[])].sort()).toEqual([ADMIN, MATE, OWNER].sort());
         // It quotes the report on one line.
         expect(JSON.stringify(notify.admins[0])).toContain('El teléfono ya no es suyo.');
+    });
+
+    it("a teammate's report («Avisame de cambios hechos por:»): the owner, by default not told, and kept out of the admins' copy too; editors outside the team told", async () => {
+        state.sessionEmail = MATE;
+        expect((await post({ adopterId: 'pedro', requestType: 'inaccuracy', details: 'x' })).status).toBe(200);
+        expect(editorNotices().map(n => n.userId)).toEqual([ADMIN]);
+        // Skipped by their choice → skipped by the admins' notice as well (no notice at all).
+        expect([...(notify.admins[0].skip as string[])].sort()).toEqual([ADMIN, OWNER].sort());
+    });
+
+    it("a teammate's report reaches the owner who chose «Otros rescatistas y mi equipo»", async () => {
+        chooseProfileChangesFrom(sqlite, OWNER, 'team');
+        state.sessionEmail = MATE;
+        await post({ adopterId: 'pedro', requestType: 'inaccuracy', details: 'x' });
+        expect(editorNotices().map(n => n.userId).sort()).toEqual([ADMIN, OWNER].sort());
+        expect(notify.create.some(n => n.userId === MATE)).toBe(false);
     });
 
     it('a repeat report from the same person on the same profile is kept, succeeds, and tells no one', async () => {

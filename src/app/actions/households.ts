@@ -382,11 +382,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
             logger.info('addHouseholdPerson: existing profile missing, deleted or the anchor itself', ctx);
             return { ok: false, error: 'not_found' };
         }
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-        const [privilegedOnAnchor, onAnchorTeam] = await Promise.all([
-            isPrivilegedOnProfile(actor, anchor.addedBy),
-            isOwnerOrOrgMate(actor, anchor.addedBy),
-        ]);
+        const privilegedOnAnchor = await isPrivilegedOnProfile(actor, anchor.addedBy);
 
         // Where they go — checked BEFORE a profile is made, so a refusal leaves nothing behind.
         let householdId = '';
@@ -541,7 +537,7 @@ export async function addHouseholdPerson(input: AddHouseholdPersonInput): Promis
                     householdId: placed.householdId, membershipId: placed.membershipId,
                     anchor: { id: anchor.id, name: anchor.name, addedBy: anchor.addedBy },
                     person: { id: person.id, name: person.name },
-                    actor, onAnchorTeam, existingProfile: !!existing,
+                    actor, unattended: false, existingProfile: !!existing,
                 });
                 if (await hasCorrection(db, placed.householdId, person.id)) {
                     logger.info('addHouseholdPerson: re-added after «No vive acá», dispute', out);

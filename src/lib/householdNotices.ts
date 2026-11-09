@@ -4,13 +4,14 @@
  * the actor as an argument and must never be browser-callable endpoints.
  *
  * "A household's teams" = the real owner and org-mates of every live profile
- * in it, never the actor. Each recipient gets one notice per event, linked to
+ * in it, never the actor — and, like every «Cambios en tus perfiles» notice,
+ * a teammate of the actor only if they chose «Otros rescatistas y mi equipo»
+ * (keepChangeRecipients, src/lib/teamChangeAudience.ts; Jon 2026-11-08). Each recipient gets one notice per event, linked to
  * the first profile of theirs it concerns. Everything runs after the response
  * (`runAfterResponse`: Workers kill bare fire-and-forget work) and never throws.
  *
- * - `notifyHouseholdPersonAdded`: the anchor's owner + editors when the adder
- *   is not on its team — a stranger, or an admin from outside it (D54 'household_contribution', the shared
- *   contribution path); the teams of the household's other profiles,
+ * - `notifyHouseholdPersonAdded`: the anchor's owner + editors when a person
+ *   adds (D54 'household_contribution', the shared contribution path); the teams of the household's other profiles,
  *   including the person added ('household_linked', D45); the teams of any
  *   other household the person already lives in ('household_also_lives_with').
  * - `notifyHouseholdReaddDisputed`: a person put back where someone said
@@ -27,6 +28,7 @@ import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { namesFor } from '@/lib/profileSummary';
 import { notifyApprovers } from '@/lib/contributionSideEffects';
+import { keepChangeRecipients } from '@/lib/teamChangeAudience';
 import { householdIdsOf, membershipsOf } from '@/lib/households';
 import { realOwner } from '@/domain/dedupPair';
 import { linkNoticeRecipients, personLabel } from '@/domain/householdLinks';
@@ -87,13 +89,21 @@ export async function actorNameOf(actor: string, ctx: Ctx): Promise<string> {
     return personLabel(actor, await namesFor([actor], ctx)) ?? '';
 }
 
+/**
+ * One notice each to `teams` (recipient → their profile), after the one rule of
+ * «Avisame de cambios hechos por:» (keepChangeRecipients): never the actor, a
+ * teammate of the actor only if they chose «Otros rescatistas y mi equipo».
+ */
 async function send(
-    recipients: Map<string, string>,
+    teams: Map<string, string>,
     type: NotificationType,
     template: NotificationTemplate,
     metadata: Record<string, unknown>,
+    actor: string,
     ctx: Ctx,
 ): Promise<void> {
+    const kept = new Set(await keepChangeRecipients(teams.keys(), actor, { ...ctx, op: type }));
+    const recipients = new Map([...teams].filter(([r]) => kept.has(r)));
     if (recipients.size === 0) {
         logger.info(`householdNotices: ${type} — no recipients`, ctx);
         return;
@@ -122,8 +132,13 @@ export type PersonAddedNotice = {
     anchor: { id: string; name: string; addedBy: string | null };
     person: { id: string; name: string };
     actor: string;
-    /** The actor is the anchor's owner or an org-mate: no contribution notice (D54). An admin from outside the team is not. */
-    onAnchorTeam: boolean;
+    /**
+     * No person acted (a form's or an import's unattended attach; `actor` is then
+     * the form's owner standing in): no contribution notice. A person's add always
+     * reaches the anchor's owner + editors through the one rule (keepChangeRecipients):
+     * an outsider's always, a teammate's only for those who chose «… y mi equipo».
+     */
+    unattended: boolean;
     /** An existing profile was linked: the teams of its other households hear too. */
     existingProfile: boolean;
 };
@@ -133,14 +148,14 @@ export async function notifyHouseholdPersonAdded(n: PersonAddedNotice): Promise<
     await runAfterResponse('household.person_added', async () => {
         const db = await getDb();
         if (!db) return;
-        if (!n.onAnchorTeam) {
+        if (!n.unattended) {
             await notifyApprovers({
                 op: 'addHouseholdPerson', adopterId: n.anchor.id, actor: n.actor, type: 'household_contribution',
                 build: (actorName) => ({ key: 'household_contribution', params: { actorName, what: 'member', ...(n.anchor.name ? { adopterName: n.anchor.name } : {}), ...(n.person.name?.trim() ? { personName: n.person.name.trim() } : {}) } }),
                 metadata: { membershipId: n.membershipId, profileId: n.person.id, householdId: n.householdId, what: 'member' },
             });
         }
-        // The anchor's team is told through the contribution path (or acted themselves).
+        // The anchor's team is told through the contribution path (or chose not to hear their team, or acted themselves).
         const anchorTeam = await teamsOf(db, [n.anchor.id], n.actor, new Set(), ctx);
         const skip = new Set<string>([norm(n.actor), ...anchorTeam.keys()]);
         const actorName = await actorNameOf(n.actor, ctx);
@@ -149,7 +164,7 @@ export async function notifyHouseholdPersonAdded(n: PersonAddedNotice): Promise<
         const linked = await teamsOf(db, [n.person.id, ...others], n.actor, skip, ctx);
         await send(linked, 'household_linked',
             { key: 'household_linked', params: { actorName, hostName: n.anchor.name, linkedName: n.person.name } },
-            { hostId: n.anchor.id, linkedId: n.person.id, householdId: n.householdId }, ctx);
+            { hostId: n.anchor.id, linkedId: n.person.id, householdId: n.householdId }, n.actor, ctx);
         if (!n.existingProfile) return;
         const elsewhere = (await householdIdsOf(db, n.person.id)).filter(h => h !== n.householdId).slice(0, MAX_HOUSEHOLDS_PER_PROFILE);
         if (elsewhere.length === 0) return;
@@ -157,7 +172,7 @@ export async function notifyHouseholdPersonAdded(n: PersonAddedNotice): Promise<
         const also = await teamsOf(db, mates, n.actor, new Set([...skip, ...linked.keys()]), ctx);
         await send(also, 'household_also_lives_with',
             { key: 'household_also_lives_with', params: { actorName, personName: n.person.name, hostName: n.anchor.name } },
-            { hostId: n.anchor.id, personId: n.person.id, householdId: n.householdId }, ctx);
+            { hostId: n.anchor.id, personId: n.person.id, householdId: n.householdId }, n.actor, ctx);
     }, ctx);
 }
 
@@ -196,7 +211,7 @@ export async function notifyHouseholdRelationshipChanged(n: {
         const actorName = await actorNameOf(n.actor, ctx);
         await send(recipients, 'household_relationship_changed',
             { key: 'household_relationship_changed', params: { actorName, personName: n.person.name, relationship: n.relationship, ...(n.relativeName ? { relativeName: n.relativeName } : {}) } },
-            { householdId: n.householdId, membershipId: n.membershipId, personId: n.person.id }, ctx);
+            { householdId: n.householdId, membershipId: n.membershipId, personId: n.person.id }, n.actor, ctx);
     }, ctx);
 }
 
@@ -212,6 +227,6 @@ export async function notifyHouseholdMemberRemoved(n: {
         const actorName = await actorNameOf(n.actor, ctx);
         await send(recipients, 'household_member_removed',
             { key: 'household_member_removed', params: { actorName, personName: n.person.name, reason: n.reason, ...(n.hostName ? { hostName: n.hostName } : {}) } },
-            { householdId: n.householdId, membershipId: n.membershipId, personId: n.person.id, reason: n.reason }, ctx);
+            { householdId: n.householdId, membershipId: n.membershipId, personId: n.person.id, reason: n.reason }, n.actor, ctx);
     }, ctx);
 }

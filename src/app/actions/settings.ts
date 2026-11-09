@@ -456,21 +456,27 @@ import { apiKeys } from '@/db/schema';
 import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
 import { getEmailPrefsForEmail, getLocaleForEmail, setEmailPrefForEmail, setLocaleForEmail } from '@/lib/emailPrefs';
 import { READ_ONLY_ERROR_NAME } from '@/lib/readOnlyGuard';
+import { PROFILE_CHANGES_FROM, type ProfileChangesFrom } from '@/domain/teamChangeAudience';
+import { getProfileChangesFromForEmail, setProfileChangesFromForEmail } from '@/lib/teamChangeAudience';
 
-/** The viewer's email switches + whether they hold a live API key (null = no session). */
-export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean } | null> {
+/**
+ * The viewer's email switches, whether they hold a live API key, and their
+ * «Avisame de cambios hechos por:» choice (null = no session).
+ */
+export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean; profileChangesFrom: ProfileChangesFrom } | null> {
     let userEmail: string | undefined;
     try {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
 
         const db = await getDb();
-        const [prefs, keys] = await Promise.all([
+        const [prefs, keys, profileChangesFrom] = await Promise.all([
             getEmailPrefsForEmail(db, userEmail),
             db.select({ id: apiKeys.id }).from(apiKeys)
                 .where(and(eq(apiKeys.ownerEmail, userEmail), isNull(apiKeys.revokedAt))).limit(1),
+            getProfileChangesFromForEmail(db, userEmail),
         ]);
-        return { prefs, hasApiKey: keys.length > 0 };
+        return { prefs, hasApiKey: keys.length > 0, profileChangesFrom };
     } catch (error) {
         logger.error('getEmailPrefs failed', error, { userEmail });
         return null;
@@ -494,6 +500,35 @@ export async function saveEmailPref(category: EmailCategory, enabled: boolean): 
         return { success: true };
     } catch (error) {
         const errorId = logger.error('saveEmailPref failed', error, { userEmail, category });
+        return { success: false, errorId };
+    }
+}
+
+/**
+ * «Avisame de cambios hechos por:» under «Cambios en tus perfiles» (Jon
+ * 2026-11-08): 'outside' = «Otros rescatistas» (default), 'team' = «Otros
+ * rescatistas y mi equipo». Governs the bell AND email for those notices
+ * (src/lib/teamChangeAudience.ts), whatever that row's email switch says.
+ * Writes only the caller's own user_profiles row; anything else is refused.
+ */
+export async function saveProfileChangesFrom(from: ProfileChangesFrom): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        if (typeof from !== 'string' || !PROFILE_CHANGES_FROM.includes(from)) {
+            throw new Error(`Invalid profileChangesFrom: ${String(from).slice(0, 40)}`);
+        }
+        await setProfileChangesFromForEmail(await getDb(), userEmail, from);
+        logAudit({ userEmail, action: 'profile_changes_from_saved', details: { from } });
+        return { success: true };
+    } catch (error) {
+        if (error instanceof Error && error.name === READ_ONLY_ERROR_NAME) {
+            const errorId = generateErrorId();
+            logger.warn('saveProfileChangesFrom: read-only ("view as") session, not saved', { userEmail, from: String(from).slice(0, 40), errorId });
+            return { success: false, errorId };
+        }
+        const errorId = logger.error('saveProfileChangesFrom failed', error, { userEmail, from: String(from).slice(0, 40) });
         return { success: false, errorId };
     }
 }

@@ -200,8 +200,6 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
     const realActor = isRealActorEmail(input.actor);
     // Notices need a person: a form's sentinel acts for the form's owner.
     const noticeActor = realActor ? input.actor : input.ownerEmail;
-    const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-    const onAnchorTeam = realActor ? await isOwnerOrOrgMate(input.actor, anchor.addedBy) : true;
     const privilegedOn = async (owner: string | null) =>
         realActor ? await isPrivilegedOnProfile(input.actor, owner) : sameEmail(owner, input.ownerEmail);
 
@@ -376,7 +374,7 @@ export async function attachHouseholdPeople(db: Db, input: AttachInput): Promise
                         householdId: hh, membershipId: placed.membershipId,
                         anchor: { id: anchor.id, name: anchor.name, addedBy: anchor.addedBy },
                         person: { id: personId, name: personName },
-                        actor: noticeActor, onAnchorTeam, existingProfile: !!existing,
+                        actor: noticeActor, unattended: !realActor, existingProfile: !!existing,
                     });
                     if (await hasCorrection(db, hh, personId)) {
                         logger.info('attachHouseholdPeople: re-added after «No vive acá», dispute', out);
