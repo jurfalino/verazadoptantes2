@@ -47,10 +47,17 @@ describe('POST /api/upload-media', () => {
             .toEqual([{ user_id: MATE, body: 'Ana agregó un video a Marta Paez.' }, { user_id: OWNER, body: 'Ana agregó un video a Marta Paez.' }]);
     });
 
-    it('a video from the import wizard tells nobody (an import)', async () => {
-        state.user = STRANGER;
+    it('a video from the import wizard by the owner team tells nobody (an import)', async () => {
+        state.user = MATE;
         expect((await upload('ad1', 'import')).status).toBe(200);
         expect(sqlite.prepare(`SELECT * FROM notifications`).all()).toEqual([]);
+    });
+
+    it('«origin=import» from someone outside the team does not silence it (review I1)', async () => {
+        state.user = STRANGER;
+        expect((await upload('ad1', 'import')).status).toBe(200);
+        expect(sqlite.prepare(`SELECT user_id FROM notifications WHERE type = 'profile_content_added' ORDER BY user_id`).all())
+            .toEqual([{ user_id: MATE }, { user_id: OWNER }]);
     });
 
     it('the owner\'s own video tells nobody', async () => {

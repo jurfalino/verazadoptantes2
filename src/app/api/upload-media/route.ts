@@ -98,9 +98,11 @@ export async function POST(request: Request) {
         // The owner's team hears about a video (or photo) added to the profile —
         // one notice with the rest of the same save (src/lib/profileAdditionNotices.ts).
         // Never fails the upload.
-        if (session.user.email && !fromImport) {
+        // «origin=import» (the import wizard) is the browser's word: it only
+        // silences an upload by the owner's own team (decided server-side).
+        if (session.user.email) {
             await notifyProfileAddition(db, {
-                adopterId, actor: session.user.email, op: 'uploadMedia', recordId: adoptionId || null,
+                adopterId, actor: session.user.email, op: 'uploadMedia', recordId: adoptionId || null, quietForTeam: fromImport,
                 add: mediaType === 'video' ? { videos: 1 } : { photos: 1 },
             });
         }

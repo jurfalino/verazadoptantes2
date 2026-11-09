@@ -30,7 +30,7 @@ import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { keepChangeRecipients } from '@/lib/teamChangeAudience';
-import { getOrgMemberEmailsFor } from '@/lib/orgMembership';
+import { getOrgMemberEmailsFor, isOrgMate } from '@/lib/orgMembership';
 import { realOwner } from '@/domain/dedupPair';
 import {
     additionFromParams, additionParams, isEmptyAddition, mergeAdditions,
@@ -57,6 +57,14 @@ export interface ProfileAdditionNotice {
      * under the animal's holder but is not something added to their profile.
      */
     recordId?: string | null;
+    /**
+     * An import (sheet/social import, import video): silent when the importer
+     * is the owner or on the owner's team — a bulk import of their own data
+     * would flood the team. Someone outside the team importing into this
+     * profile is an outsider's change and is told like any other (review I1).
+     * Decided here on the server, never by a browser-sent flag alone.
+     */
+    quietForTeam?: boolean;
 }
 
 async function sha(text: string, bytes: number): Promise<string> {
@@ -97,6 +105,10 @@ async function deliverAll(db: Db, n: ProfileAdditionNotice, ctx: Ctx): Promise<v
     const owner = realOwner(row.addedBy);
     if (!owner) {
         logger.info('profileAdditionNotices: the profile has no owner — no notice', ctx);
+        return;
+    }
+    if (n.quietForTeam && (norm(n.actor) === norm(owner) || await isOrgMate(n.actor, owner))) {
+        logger.info('profileAdditionNotices: an import by the owner team — no notice', ctx);
         return;
     }
     const team = await getOrgMemberEmailsFor(owner).catch((e: unknown) => {

@@ -77,10 +77,20 @@ describe('saveAdoption tells the owner\'s team what an outsider added', () => {
         expect(notices()).toEqual([]);
     });
 
-    it('the import\'s door (notifyOwnerTeam: false) tells nobody; the record still lands', async () => {
-        await as(STRANGER, () => saveRecordFor({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Luna', rating: 5 } as never, undefined, { notifyOwnerTeam: false }));
+    it('the import\'s door (quietForTeam) by the owner team tells nobody; the record still lands', async () => {
+        await as(MATE, () => saveRecordFor({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Luna', rating: 5 } as never, undefined, { notifyOwnerTeam: true, quietForTeam: true }));
         expect(notices()).toEqual([]);
         expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM placements WHERE adopter_id = 'ad1'`).get()!.n).toBe(1);
+    });
+
+    it('the import\'s door used by someone outside the team still tells the team (review I1)', async () => {
+        await as(STRANGER, () => saveRecordFor({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Luna', rating: 1 } as never, undefined, { notifyOwnerTeam: true, quietForTeam: true }));
+        expect(notices()).toEqual([[MATE, 'Ana agregó un registro (Adopción, 1★) a Marta Paez.'], [OWNER, 'Ana agregó un registro (Adopción, 1★) a Marta Paez.']]);
+    });
+
+    it('«scope animal» with no animal named is a plain profile photo: told (review I1)', async () => {
+        await as(STRANGER, () => saveImage('ad1', PHOTO, undefined, undefined, 'image', false, 'animal'));
+        expect(notices()).toEqual([[MATE, 'Ana agregó una foto a Marta Paez.'], [OWNER, 'Ana agregó una foto a Marta Paez.']]);
     });
 
     it('a record not on any profile (an available animal) tells nobody', async () => {

@@ -5,6 +5,14 @@ import { session, getUser, OWNER } from '@/test-utils/actionMocks';
 const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
+const { fromFails } = vi.hoisted(() => ({ fromFails: { on: false } }));
+vi.mock('@/lib/teamChangeAudience', async (orig) => {
+    const real = await orig<typeof import('@/lib/teamChangeAudience')>();
+    return { ...real, getProfileChangesFromForEmail: async (...a: Parameters<typeof real.getProfileChangesFromForEmail>) => {
+        if (fromFails.on) throw new Error('no such column: profile_changes_from');
+        return real.getProfileChangesFromForEmail(...a);
+    } };
+});
 
 import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom } from './settings';
 
@@ -22,12 +30,19 @@ beforeEach(() => {
     state.db = m.db;
     sqlite = m.sqlite as unknown as Sqlite;
     session.user = OWNER;
+    fromFails.on = false;
     sqlite.prepare(`INSERT INTO user (id, email) VALUES ('u1', ?)`).run(OWNER);
 });
 
 describe('email prefs actions', () => {
     it('no profile row: empty prefs, no api key', async () => {
         expect(await getEmailPrefs()).toEqual({ prefs: {}, hasApiKey: false, profileChangesFrom: 'outside' });
+    });
+
+    it('the choice unreadable: the email switches still show, the choice reads as the default (review M6)', async () => {
+        await saveEmailPref('forms', false);
+        fromFails.on = true;
+        expect(await getEmailPrefs()).toEqual({ prefs: { forms: false }, hasApiKey: false, profileChangesFrom: 'outside' });
     });
 
     it('signed out: null', async () => {

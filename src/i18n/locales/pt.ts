@@ -2904,7 +2904,7 @@ export const pt = {
         email_cat_contact_access: 'Acesso a dados de contato',
         email_cat_contact_access_desc: 'Respostas aos seus pedidos de acesso a dados de contato.',
         email_cat_profile_changes: 'Alterações nos seus perfis',
-        email_cat_profile_changes_desc: 'O que adicionam ou mudam nos seus perfis: registros e avaliações, fotos, endereços de entrega, contatos, denúncias, nome e lar. Também as transferências.',
+        email_cat_profile_changes_desc: 'O que adicionam ou mudam nos seus perfis: registros e avaliações, fotos, endereços de entrega, contatos, avisos de informação incorreta, nome e lar. Também as transferências.',
         changes_from_label: 'Me avise de mudanças feitas por:',
         changes_from_outside: 'Outros resgatistas',
         changes_from_team: 'Outros resgatistas e minha equipe',

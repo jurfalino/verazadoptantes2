@@ -111,6 +111,21 @@ describe('notifyProfileAddition', () => {
         expect(notices().map(n => n.user_id)).toEqual([MATE]);
     });
 
+    it('an import (quietForTeam) by the owner team, even for teammates who chose «… y mi equipo»: nobody (review I1)', async () => {
+        chooseTeam(OWNER);
+        await notifyProfileAddition(state.db as never, { adopterId: 'ad1', actor: MATE, add: { records: [{ type: 'adoption', rating: 1 }] }, op: 'test', quietForTeam: true });
+        await notifyProfileAddition(state.db as never, { adopterId: 'ad1', actor: OWNER, add: { photos: 2 }, op: 'test', quietForTeam: true });
+        expect(notices()).toEqual([]);
+    });
+
+    it('an import (quietForTeam) by someone outside the owner team still reaches the team (review I1)', async () => {
+        await notifyProfileAddition(state.db as never, { adopterId: 'ad1', actor: STRANGER, add: { records: [{ type: 'adoption', rating: 1 }] }, op: 'test', quietForTeam: true });
+        expect(bodies()).toEqual([
+            [MATE, 'Ana agregó un registro (Adopción, 1★) a Marta Paez.'],
+            [OWNER, 'Ana agregó un registro (Adopción, 1★) a Marta Paez.'],
+        ]);
+    });
+
     it('a photo on one of the profile\'s records is told; one on an animal event (stored under the holder) is not', async () => {
         sqlite.prepare(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('an1', 'Nina', 'cat', ?, 1, 1)`).run(STRANGER);
         sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('an1-plc', 'an1', 'ad1', 'adoption', 1, ?)`).run(STRANGER);

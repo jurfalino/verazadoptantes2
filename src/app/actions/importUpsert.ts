@@ -126,8 +126,10 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
         }
 
         if (plan.addActivity) {
-            // An import adds in bulk: the owner's team is not told row by row
-            // (it would flood the bell) — the record still lands in the history.
+            // An import adds in bulk: when the importer is on the owner's team,
+            // the team is not told row by row (it would flood the bell) — the
+            // record still lands in the history. Someone outside the team
+            // importing into this profile is told like any outsider's add (review I1).
             await saveRecordFor({
                 id: input.activityId ?? crypto.randomUUID(), // deterministic on import ⇒ retry-safe
                 adopterId: input.adopterId,
@@ -143,7 +145,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
                 sex: input.adoption.sex ?? null,
                 color: input.adoption.color ?? null,
                 microchip: input.adoption.microchip ?? null,
-            }, undefined, { notifyOwnerTeam: false });
+            }, undefined, { notifyOwnerTeam: true, quietForTeam: true });
         }
 
         // Re-tokenize so the newly added contacts / filled name are matchable.

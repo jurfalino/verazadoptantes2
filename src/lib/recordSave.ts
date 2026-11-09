@@ -3,7 +3,7 @@
  * module, NOT 'use server': its `how` option (whether the owner's team is told)
  * is never the browser's to choose. The browser door is
  * src/app/actions/adoptions.ts `saveAdoption`, which always tells; the
- * duplicate-aware import (importUpsert) calls this with `notifyOwnerTeam: false`.
+ * duplicate-aware import (importUpsert) calls this with `quietForTeam: true` (silent only for the owner team).
  */
 import { adoptions, adopterHistory, adopterFlags } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -53,6 +53,8 @@ export interface SaveRecordHow {
      * browser's to choose; the browser door is saveAdoption, which always tells.
      */
     notifyOwnerTeam: boolean;
+    /** An import: silent only when the importer is on the owner's team (review I1; see ProfileAdditionNotice.quietForTeam). */
+    quietForTeam?: boolean;
 }
 
 export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: { loaded?: Partial<Record<RecordField, unknown>> } | undefined, how: SaveRecordHow): Promise<RecordSaveResult> {
@@ -183,7 +185,7 @@ export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: {
             const recordType = normalizeRecordType(data.recordType);
             if (how.notifyOwnerTeam && data.adopterId && (isEventType(recordType) || isPlacementType(recordType))) {
                 await notifyProfileAddition(db, {
-                    adopterId: data.adopterId, actor: changedBy, op: 'saveAdoption.create',
+                    adopterId: data.adopterId, actor: changedBy, op: 'saveAdoption.create', quietForTeam: how.quietForTeam,
                     add: { records: [addedRecord(recordType, data.rating)], address: deliveryAddressGiven(recordType, data.deliveredToHome, data.verifiedAddress) },
                 });
             }
@@ -296,7 +298,7 @@ async function updateRecordFields(
                     changedBy, op: 'saveAdoption.edit',
                 });
             }
-            if (how.notifyOwnerTeam) await notifyEditAddition(db, apply, payload, currentVals, changedBy);
+            if (how.notifyOwnerTeam) await notifyEditAddition(db, apply, payload, currentVals, changedBy, how.quietForTeam);
         }
 
         const named = await recordFieldAuthors(db, recordId, [...new Set([...plan.conflicts, ...plan.updatedByOthers])]);
@@ -335,6 +337,7 @@ async function notifyEditAddition(
     payload: Record<string, unknown>,
     before: Record<string, unknown>,
     changedBy: string,
+    quietForTeam?: boolean,
 ): Promise<void> {
     const after = (f: RecordField) => (apply.includes(f) ? payload[f] : before[f]);
     const adopterId = after('adopterId') as string | null | undefined;
@@ -348,7 +351,7 @@ async function notifyEditAddition(
     const addressAdded = addressNow && (placedOnto || !addressBefore);
     if (!placedOnto && !addressAdded) return;
     await notifyProfileAddition(db, {
-        adopterId, actor: changedBy, op: 'saveAdoption.edit',
+        adopterId, actor: changedBy, op: 'saveAdoption.edit', quietForTeam,
         add: { ...(placedOnto ? { records: [addedRecord(type, after('rating'))] } : {}), address: addressAdded },
     });
 }

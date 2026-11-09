@@ -474,7 +474,11 @@ export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: b
             getEmailPrefsForEmail(db, userEmail),
             db.select({ id: apiKeys.id }).from(apiKeys)
                 .where(and(eq(apiKeys.ownerEmail, userEmail), isNull(apiKeys.revokedAt))).limit(1),
-            getProfileChangesFromForEmail(db, userEmail),
+            // Its own fallback: an unreadable choice must not hide every email switch (review M6).
+            getProfileChangesFromForEmail(db, userEmail).catch((e): ProfileChangesFrom => {
+                logger.warn('getEmailPrefs: profile_changes_from unreadable, shown as the default', { userEmail, error: e instanceof Error ? e.message : String(e) });
+                return 'outside';
+            }),
         ]);
         return { prefs, hasApiKey: keys.length > 0, profileChangesFrom };
     } catch (error) {
