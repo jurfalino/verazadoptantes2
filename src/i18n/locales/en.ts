@@ -986,6 +986,7 @@ export const en = {
         pii_request_denied: 'Your request was not approved.',
         pii_request_denied_reason: 'Reason',
         pii_access_revoked_on: 'The person in charge removed your access on {date}.',
+        pii_access_revoked_by_admin_on: 'An administrator removed your access on {date}.',
         pii_request_sent: 'Request sent',
         pii_request_error: 'Could not complete the request.',
         pii_modal_title: 'Request contact access',

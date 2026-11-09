@@ -122,16 +122,19 @@ describe('H3: «El responsable quitó tu acceso» lives on the profile (notice d
         expect(c.masked).toBe(true);
         expect(c.requestState.denied).toBe(false);
         expect(c.requestState.accessRevokedAt).toEqual(expect.any(Number));
+        expect(c.requestState.revokedByAdmin).toBe(false);
         expect(c.requestState.cooldownUntil).toBeNull();
 
         expect((await as(STRANGER, () => requestPiiAccess('p1', { justification: 'por favor' }))).status).toBe('created');
         expect((await ctx()).requestState).toMatchObject({ pending: true, accessRevokedAt: null });
     });
 
-    it('an admin revoke shows the same line (wording proposed in the report)', async () => {
+    it('an admin revoke reads «Un administrador quitó tu acceso» (Jon 2026-11-09)', async () => {
         await approveThenRevoke(ADMIN);
         noNotices();
-        expect((await ctx()).requestState.accessRevokedAt).toEqual(expect.any(Number));
+        const c = await ctx();
+        expect(c.requestState.accessRevokedAt).toEqual(expect.any(Number));
+        expect(c.requestState.revokedByAdmin).toBe(true);
     });
 
     it('TRAP: a contributor taking back their own contacts never shows the line', async () => {

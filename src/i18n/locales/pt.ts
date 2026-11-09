@@ -993,6 +993,7 @@ export const pt = {
         pii_request_denied: 'Sua solicitação não foi aprovada.',
         pii_request_denied_reason: 'Motivo',
         pii_access_revoked_on: 'O responsável removeu seu acesso em {date}.',
+        pii_access_revoked_by_admin_on: 'Um administrador removeu seu acesso em {date}.',
         pii_request_sent: 'Solicitação enviada',
         pii_request_error: 'Não foi possível concluir a solicitação.',
         pii_modal_title: 'Solicitar acesso ao contato',

@@ -245,6 +245,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
             denied: !!effectivePiiContext.requestState.denied,
             note: effectivePiiContext.requestState.lastResolutionNote,
             accessRevokedAt: effectivePiiContext.requestState.accessRevokedAt ?? null,
+            revokedByAdmin: !!effectivePiiContext.requestState.revokedByAdmin,
         }
         : null;
 

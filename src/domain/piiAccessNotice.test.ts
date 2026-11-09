@@ -15,7 +15,7 @@ const notice = (requests: AccessRequestFact[], grants: AccessGrantFact[] = [], v
 
 describe('piiAccessNotice — denial', () => {
     it('no requests → nothing', () => {
-        expect(notice([])).toEqual({ denial: null, accessRevokedAt: null });
+        expect(notice([])).toEqual({ denial: null, accessRevokedAt: null, accessRevokedBy: null });
     });
 
     it('a denial with a note shows the note (trimmed)', () => {
@@ -73,7 +73,7 @@ describe('piiAccessNotice — «El responsable quitó tu acceso»', () => {
             [req({ status: 'approved', createdAt: 1000, resolvedAt: 2000 })],
             [grant({ createdAt: 2000, revokedAt: 5000, revokedByEmail: OWNER })],
         );
-        expect(r).toEqual({ denial: null, accessRevokedAt: 5000 });
+        expect(r).toEqual({ denial: null, accessRevokedAt: 5000, accessRevokedBy: OWNER });
     });
 
     it('denial → approved → revoked: no denial note, the revoke line shows', () => {
@@ -84,7 +84,7 @@ describe('piiAccessNotice — «El responsable quitó tu acceso»', () => {
             ],
             [grant({ createdAt: 2000, revokedAt: 5000, revokedByEmail: OWNER })],
         );
-        expect(r).toEqual({ denial: null, accessRevokedAt: 5000 });
+        expect(r).toEqual({ denial: null, accessRevokedAt: 5000, accessRevokedBy: OWNER });
     });
 
     it('a live profile-wide grant → no line', () => {
@@ -141,7 +141,7 @@ describe('piiAccessNotice — «El responsable quitó tu acceso»', () => {
             ],
             [grant({ createdAt: 2000, revokedAt: 5000, revokedByEmail: OWNER })],
         );
-        expect(r).toEqual({ denial: { note: 'no' }, accessRevokedAt: null });
+        expect(r).toEqual({ denial: { note: 'no' }, accessRevokedAt: null, accessRevokedBy: null });
     });
 
     it('a later self-revoke of a contribution is the latest event → the older owner revoke is no longer shown', () => {

@@ -3,6 +3,7 @@ import { and, eq, desc } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger';
+import { isAdminAsync } from '@/config/admins';
 import { resolveAdopterVisibility } from '@/lib/piiAccessServer';
 import { isRealActorEmail, piiCooldownUntil, type RequestPiiAccessResult, type PiiAccessRequestState } from '@/lib/piiAccess';
 import { piiAccessNotice } from '@/domain/piiAccessNotice';
@@ -212,5 +213,8 @@ export async function loadViewerRequestState(db: Db, adopterId: string, viewer: 
         lastResolutionNote: notice.denial?.note ?? null,
         denied: !!notice.denial,
         accessRevokedAt: notice.accessRevokedAt,
+        // isAdminAsync logs and answers false on a failed lookup: the line
+        // then reads «El responsable…», which is never hidden.
+        revokedByAdmin: notice.accessRevokedBy ? await isAdminAsync(notice.accessRevokedBy) : false,
     };
 }

@@ -11,6 +11,8 @@ export interface PiiAccessHistory {
     note: string | null;
     /** Epoch ms the person in charge took a profile-wide grant back, or null. */
     accessRevokedAt: number | null;
+    /** That revoke was an admin's: «Un administrador quitó tu acceso…». */
+    revokedByAdmin?: boolean;
 }
 
 /**
@@ -39,7 +41,7 @@ export default function PiiAccessHistoryNote({ history }: { history: PiiAccessHi
             )}
             {history.accessRevokedAt != null && (
                 <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {t('adopter.pii_access_revoked_on').replace('{date}', formatShortDate(new Date(history.accessRevokedAt)))}
+                    {t(history.revokedByAdmin ? 'adopter.pii_access_revoked_by_admin_on' : 'adopter.pii_access_revoked_on').replace('{date}', formatShortDate(new Date(history.accessRevokedAt)))}
                 </p>
             )}
         </div>

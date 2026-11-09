@@ -1176,6 +1176,9 @@ export interface PiiAccessRequestState {
     denied?: boolean;
     /** H3: epoch ms of «El responsable quitó tu acceso el …», or null. */
     accessRevokedAt?: number | null;
+    /** H3: that revoke was an admin's — «Un administrador quitó tu acceso…»
+     *  instead of «El responsable…» (Jon 2026-11-09). */
+    revokedByAdmin?: boolean;
 }
 
 /** A live `all_contact` grant as shown in the owner "who has access" disclosure. */

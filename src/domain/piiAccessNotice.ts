@@ -34,6 +34,9 @@ export interface PiiAccessNotice {
     denial: { note: string | null } | null;
     /** Epoch ms of the revoke to show as «El responsable quitó tu acceso el …», or null. */
     accessRevokedAt: number | null;
+    /** Who took it back (the revoke shown in `accessRevokedAt`), or null. The
+     *  caller decides whether that person reads as «Un administrador». */
+    accessRevokedBy: string | null;
 }
 
 const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
@@ -80,6 +83,7 @@ export function piiAccessNotice(input: {
     // taking back a profile-wide grant. Self-revokes (a contributor taking back
     // their own contacts writes revokedByEmail = grantee) never count.
     let accessRevokedAt: number | null = null;
+    let accessRevokedBy: string | null = null;
     const liveProfileGrant = grants.some(g => g.scope === 'all_contact' && g.revokedAt == null);
     if (!liveProfileGrant && !hasPending) {
         type Ev = { at: number; revoke: AccessGrantFact | null };
@@ -98,8 +102,9 @@ export function piiAccessNotice(input: {
         if (g && g.scope === 'all_contact' && !machineGranted(g)
             && norm(g.revokedByEmail) !== '' && norm(g.revokedByEmail) !== viewer) {
             accessRevokedAt = g.revokedAt;
+            accessRevokedBy = g.revokedByEmail;
         }
     }
 
-    return { denial, accessRevokedAt };
+    return { denial, accessRevokedAt, accessRevokedBy };
 }
