@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.39] - 2026-11-09
+
+### Changed — «+ Agregar» next to the title of the home cards
+- **Mis adoptantes and Mis animales** (home, when the clean homepage is off) now show a «+ Agregar» button
+  beside the card title, in every state. Before, the create button sat at the bottom and disappeared
+  whenever the card had something pending. The bottom button is gone, so each card has one create action.
+- **Same words on the list pages:** «+ Agregar adoptante» and «+ Agregar animal» (were «+ Agregar
+  Adoptante» / «+ Agregar Animal»); the add-animal page's title and save button follow.
+
 ## [2.58.38] - 2026-11-09
 
 ### Added — «Avisame de cambios hechos por:» (who your profile-change notices come from)
