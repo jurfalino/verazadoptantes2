@@ -3070,6 +3070,7 @@ export const en = {
             profile_renamed: 'Name changed',
             profile_rename_undone: 'Name change undone',
             profile_age_changed: 'Age changed',
+            profile_content_added: 'Added to a profile',
             pii_access_request: 'Contact access',
             pii_access_approved: 'Access approved',
             pii_access_denied: 'Access denied',

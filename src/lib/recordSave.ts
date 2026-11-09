@@ -16,12 +16,14 @@ import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { saveAdoptionSchema } from '@/app/actions/validation';
 import { planFieldSave, canonField, holdTogether, SAVE_BUSY, ANIMAL_ALREADY_PLACED } from '@/domain/fieldCollab';
 import { recordFieldAuthors } from '@/lib/collabAttribution';
-import { insertRecord, updateRecord, isActivePlacementConflict, normalizeRecordType } from '@/app/actions/_recordWrite';
+import { insertRecord, updateRecord, isActivePlacementConflict, normalizeRecordType, isEventType, isPlacementType } from '@/app/actions/_recordWrite';
 import { copyDeliveryAddressToContacts } from '@/lib/deliveryAddressCopy';
 import { recordHandoverFields } from '@/domain/recordEditAccess';
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
 import { historyKindFor } from '@/lib/profilePrivilege';
 import { DELIVERY_ADDRESS_COPY_PREFIX } from '@/domain/flags';
+import { deliveryAddressGiven, type AddedRecord } from '@/domain/profileAdditions';
+import { notifyProfileAddition } from '@/lib/profileAdditionNotices';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
 export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
@@ -90,7 +92,7 @@ export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: {
             // fields this editor changed are written, each only if nobody
             // changed it since the form loaded (`opts.loaded`). Callers that
             // send no baseline keep the old behaviour (write what differs).
-            return await updateRecordFields(db, data, existing, opts?.loaded, changedBy);
+            return await updateRecordFields(db, data, existing, opts?.loaded, changedBy, how);
         } else {
             // Create new — normalized write routes to animals/placements/events.
             // Returns the animal id (available/foster/adoption) or event id, which
@@ -175,6 +177,17 @@ export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: {
             // (ENABLE_PENDING_SEARCHES). Best-effort inside the helper.
             if (data.adopterId) await closePendingSearchesForAdopter(db, changedBy, data.adopterId);
 
+            // The owner's team hears what was added (one notice with the photos
+            // that follow; src/lib/profileAdditionNotices.ts). Only a record that
+            // lands ON the profile — an «available» animal is not on it.
+            const recordType = normalizeRecordType(data.recordType);
+            if (how.notifyOwnerTeam && data.adopterId && (isEventType(recordType) || isPlacementType(recordType))) {
+                await notifyProfileAddition(db, {
+                    adopterId: data.adopterId, actor: changedBy, op: 'saveAdoption.create',
+                    add: { records: [addedRecord(recordType, data.rating)], address: deliveryAddressGiven(recordType, data.deliveredToHome, data.verifiedAddress) },
+                });
+            }
+
             return { success: true, id };
         }
     } catch (error) {
@@ -198,6 +211,7 @@ async function updateRecordFields(
     existing: typeof adoptions.$inferSelect,
     loadedIn: Partial<Record<RecordField, unknown>> | undefined,
     changedBy: string,
+    how: SaveRecordHow,
 ): Promise<RecordSaveResult> {
     const recordId = existing.id;
     const sent = data as Record<string, unknown>;
@@ -282,6 +296,7 @@ async function updateRecordFields(
                     changedBy, op: 'saveAdoption.edit',
                 });
             }
+            if (how.notifyOwnerTeam) await notifyEditAddition(db, apply, payload, currentVals, changedBy);
         }
 
         const named = await recordFieldAuthors(db, recordId, [...new Set([...plan.conflicts, ...plan.updatedByOthers])]);
@@ -299,4 +314,41 @@ async function updateRecordFields(
     // «otra persona estaba guardando…» for this marker (isSaveBusyError).
     const errorId = logger.error('saveAdoption: lost the race twice', new Error('busy'), { adoptionId: recordId, changedBy });
     throw new Error(`${SAVE_BUSY} (Error ID: ${errorId})`);
+}
+
+function addedRecord(type: string, rating: unknown): AddedRecord {
+    const r = Number(rating);
+    return Number.isInteger(r) && r >= 1 && r <= 5 ? { type, rating: r } : { type };
+}
+
+/**
+ * An edit that adds to a profile tells its owner's team (one notice, merged
+ * with any photos): the record placed on a profile it was not on (an
+ * available animal adopted, a record moved), and a delivery address the
+ * record did not carry before (marked delivered, or a different address).
+ * Judged on the record's own fields as this save landed them — not on the
+ * contacts copy, which can be a no-op (already there, full, busy).
+ */
+async function notifyEditAddition(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    apply: string[],
+    payload: Record<string, unknown>,
+    before: Record<string, unknown>,
+    changedBy: string,
+): Promise<void> {
+    const after = (f: RecordField) => (apply.includes(f) ? payload[f] : before[f]);
+    const adopterId = after('adopterId') as string | null | undefined;
+    if (!adopterId) return;
+    const type = normalizeRecordType(after('recordType') as string | null);
+    if (!isEventType(type) && !isPlacementType(type)) return;
+    const placedOnto = apply.includes('adopterId') && canonField('adopterId', payload.adopterId) !== canonField('adopterId', before.adopterId);
+    const addressNow = deliveryAddressGiven(type, after('deliveredToHome'), after('verifiedAddress'));
+    const addressBefore = deliveryAddressGiven(normalizeRecordType(before.recordType as string | null), before.deliveredToHome, before.verifiedAddress)
+        && canonField('verifiedAddress', before.verifiedAddress) === canonField('verifiedAddress', after('verifiedAddress'));
+    const addressAdded = addressNow && (placedOnto || !addressBefore);
+    if (!placedOnto && !addressAdded) return;
+    await notifyProfileAddition(db, {
+        adopterId, actor: changedBy, op: 'saveAdoption.edit',
+        add: { ...(placedOnto ? { records: [addedRecord(type, after('rating'))] } : {}), address: addressAdded },
+    });
 }

@@ -34,6 +34,7 @@ describe('categoryForType', () => {
         ['profile_renamed', 'profile_changes'],
         ['profile_rename_undone', 'profile_changes'],
         ['profile_age_changed', 'profile_changes'],
+        ['profile_content_added', 'profile_changes'],
         ['api_record', 'api'],
         ['member_joined', 'other'],
     ] as const)('%s -> %s', (type, cat) => {

@@ -6,6 +6,7 @@ import { adopterImages } from '@/db/schema';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { uploadToR2 } from '@/lib/r2';
+import { notifyProfileAddition } from '@/lib/profileAdditionNotices';
 
 /**
  * POST /api/upload-media
@@ -90,6 +91,16 @@ export async function POST(request: Request) {
             isProfilePicture: 0,
             thumbnailUrl,
         });
+
+        // The owner's team hears about a video (or photo) added to the profile —
+        // one notice with the rest of the same save (src/lib/profileAdditionNotices.ts).
+        // Never fails the upload.
+        if (session.user.email) {
+            await notifyProfileAddition(db, {
+                adopterId, actor: session.user.email, op: 'uploadMedia', recordId: adoptionId || null,
+                add: mediaType === 'video' ? { videos: 1 } : { photos: 1 },
+            });
+        }
 
         return NextResponse.json({ success: true, id: imageId, url: r2Url });
     } catch (error) {

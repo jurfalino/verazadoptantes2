@@ -21,6 +21,7 @@ vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
 vi.mock('@/config/admins', () => ({ isAdminAsync: isAdmin, isModeratorOrAdminAsync: isAdmin }));
 vi.mock('@/lib/orgMembership', () => ({
     isOrgMate: mocks.isOrgMate,
+    getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor,
     isOwnerOrOrgMate: async (a: string, b: string) => {
         const hook = state.interleave;
         state.interleave = null;
@@ -28,6 +29,8 @@ vi.mock('@/lib/orgMembership', () => ({
         return mocks.isOwnerOrOrgMate(a, b);
     },
 }));
+// The owner-team notice (profile_content_added) writes through @/lib/db: keep it on the test database, never local.db.
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => undefined) }));
 vi.mock('@/lib/pendingSearchLog', () => ({ closePendingSearchesForAdopter: vi.fn(async () => undefined) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));

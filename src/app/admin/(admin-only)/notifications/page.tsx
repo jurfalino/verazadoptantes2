@@ -78,6 +78,7 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
     'profile_renamed': 'Al equipo del dueño de un perfil cuando alguien le cambia el nombre (con «Deshacer»).',
     'profile_rename_undone': 'A quien cambió el nombre de un perfil cuando el equipo del dueño lo deshace.',
     'profile_age_changed': 'Al equipo del dueño de un perfil cuando alguien cambia la edad o lo marca como menor de edad.',
+    'profile_content_added': 'Al equipo del dueño de un perfil cuando otra persona le agrega un registro (con su calificación), fotos o videos, o una dirección de entrega: un solo aviso por vez. Las importaciones, la API, los formularios y los contratos no lo envían.',
     'household_member_disputed': 'A los administradores cuando alguien vuelve a agregar a una persona a un hogar después de que se indicó que no vive ahí.',
     'form_attached': 'Al creador de un perfil cuando otra persona le vincula una solicitud de adopción del formulario.',
     'follow_up_due': 'Recordatorio diario (cron) cuando toca el seguimiento de una adopción o un tránsito.',

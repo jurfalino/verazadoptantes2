@@ -9,6 +9,7 @@ import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { historyKindFor } from '@/lib/profilePrivilege';
+import { notifyProfileAddition } from '@/lib/profileAdditionNotices';
 
 /**
  * v2.26.2: changing an adopter's PROFILE PHOTO (setting an existing image as the
@@ -155,6 +156,15 @@ export async function saveImage(
                 mediaType: mediaType || 'image',
                 isProfilePicture: !!isProfilePicture,
             },
+        });
+
+        // The owner's team hears about a photo added to the profile — merged
+        // into one notice with the record and the other photos of the same
+        // save. An animal's photo (keyed on an email / «__available__») or an
+        // animal event's photo is not on a profile: nobody is told. Never fails the upload.
+        await notifyProfileAddition(db, {
+            adopterId, actor: addedBy, op: 'saveImage', recordId: adoptionId || null,
+            add: mediaType === 'video' ? { videos: 1 } : { photos: 1 },
         });
 
         return { success: true, id };

@@ -16,6 +16,7 @@
  */
 import { DEFAULT_TIMEZONE, formatShortDate } from '@/lib/dates';
 import { formSubmissionOwnerTitle } from '@/domain/formNotification';
+import { additionFromParams, type ProfileAdditionParams } from '@/domain/profileAdditions';
 
 export type NotificationLocale = 'es' | 'en' | 'pt';
 
@@ -120,6 +121,8 @@ export interface NotificationTemplateParams {
     profile_rename_undone: { actorName: string; restoredName?: string; revertedName?: string };
     /** The owner's team: `actorName` set `personName`'s age (`age`, digits) or, with no age, marked them a minor (`minor: '1'`). */
     profile_age_changed: { actorName: string; personName?: string; age?: string; minor?: string };
+    /** The owner's team: what `actorName` added to the profile in one go (src/domain/profileAdditions.ts params). */
+    profile_content_added: { actorName: string; adopterName?: string } & ProfileAdditionParams;
 }
 
 export type NotificationTemplateKey = keyof NotificationTemplateParams;
@@ -226,6 +229,62 @@ const fieldList = (codes: string | undefined, l: NotificationLocale) =>
     (codes ?? '').split(',').map(c => c.trim()).filter(Boolean).map(c => lookup(API_FIELD[l], c)).join(', ');
 
 const count = (s: string): number | null => (/^\d+$/.test(s) ? Number(s) : null);
+
+/** A record type as the notice names it (capitalized, inside the parentheses). */
+const ADDED_RECORD: Record<NotificationLocale, Record<string, string>> = {
+    es: { adoption: 'Adopción', adoption_request: 'Solicitud', observation: 'Observación', follow_up: 'Seguimiento', returned_pet: 'Devolución', foster: 'Tránsito' },
+    en: { adoption: 'Adoption', adoption_request: 'Request', observation: 'Note', follow_up: 'Follow-up', returned_pet: 'Return', foster: 'Foster' },
+    pt: { adoption: 'Adoção', adoption_request: 'Solicitação', observation: 'Observação', follow_up: 'Acompanhamento', returned_pet: 'Devolução', foster: 'Lar temporário' },
+};
+const ADDED_WORDS: Record<NotificationLocale, {
+    record: [string, string]; photo: [string, string]; video: [string, string]; address: string; and: string;
+    title: { record: [string, string]; photo: [string, string]; video: [string, string]; address: string };
+    added: string; to: (name: string | undefined) => string;
+}> = {
+    es: {
+        record: ['un registro', 'registros'], photo: ['una foto', 'fotos'], video: ['un video', 'videos'], address: 'una dirección de entrega', and: 'y',
+        title: { record: ['Nuevo registro', 'Nuevos registros'], photo: ['Nueva foto', 'Nuevas fotos'], video: ['Nuevo video', 'Nuevos videos'], address: 'Nueva dirección de entrega' },
+        added: 'agregó', to: n => (n ? `a ${n}` : 'al adoptante'),
+    },
+    en: {
+        record: ['a record', 'records'], photo: ['a photo', 'photos'], video: ['a video', 'videos'], address: 'a delivery address', and: 'and',
+        title: { record: ['New record', 'New records'], photo: ['New photo', 'New photos'], video: ['New video', 'New videos'], address: 'New delivery address' },
+        added: 'added', to: n => `to ${n || 'the adopter'}`,
+    },
+    pt: {
+        record: ['um registro', 'registros'], photo: ['uma foto', 'fotos'], video: ['um vídeo', 'vídeos'], address: 'um endereço de entrega', and: 'e',
+        title: { record: ['Novo registro', 'Novos registros'], photo: ['Nova foto', 'Novas fotos'], video: ['Novo vídeo', 'Novos vídeos'], address: 'Novo endereço de entrega' },
+        added: 'adicionou', to: n => (n ? `a ${n}` : 'ao adotante'),
+    },
+};
+function profileContentAdded(p: NotificationTemplateParams['profile_content_added'], l: NotificationLocale): NotificationText | null {
+    const add = additionFromParams(p);
+    const w = ADDED_WORDS[l];
+    const items: string[] = [];
+    const records = add.records ?? [];
+    if (records.length) {
+        const labels = records.map(r => {
+            const label = Object.hasOwn(ADDED_RECORD[l], r.type) ? ADDED_RECORD[l][r.type] : null;
+            return label && r.rating ? `${label}, ${r.rating}★` : label;
+        });
+        // A code this text doesn't know shows no labels (never a raw code).
+        const shown = labels.every(Boolean) ? ` (${labels.join('; ')})` : '';
+        items.push(records.length === 1 ? `${w.record[0]}${shown}` : `${records.length} ${w.record[1]}${shown}`);
+    }
+    const counted = (n: number | undefined, pair: [string, string]) => { if (n) items.push(n === 1 ? pair[0] : `${n} ${pair[1]}`); };
+    counted(add.photos, w.photo);
+    counted(add.videos, w.video);
+    if (add.address) items.push(w.address);
+    if (!items.length) return null;
+    const list = items.length === 1 ? items[0] : `${items.slice(0, -1).join(', ')} ${w.and} ${items[items.length - 1]}`;
+    const t = w.title;
+    const head = records.length ? t.record[records.length === 1 ? 0 : 1]
+        : add.photos ? t.photo[add.photos === 1 && !add.videos ? 0 : 1]
+            : add.videos ? t.video[add.videos === 1 ? 0 : 1]
+                : t.address;
+    const name = p.adopterName?.trim() || undefined;
+    return { title: name ? `${head}: ${name}` : head, body: `${p.actorName} ${w.added} ${list} ${w.to(name)}.` };
+}
 
 // ── Templates ────────────────────────────────────────────────────
 
@@ -706,6 +765,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
             const body = p.age !== undefined ? `${p.actorName} indicou que ${who} tem ${p.age} anos.` : p.minor === '1' ? `${p.actorName} indicou que ${who} é menor de idade.` : `${p.actorName} removeu a idade de ${who}.`;
             return { title: `Idade alterada: ${who}`, body };
         },
+    },
+    profile_content_added: {
+        required: ['actorName'],
+        es: p => profileContentAdded(p, 'es'),
+        en: p => profileContentAdded(p, 'en'),
+        pt: p => profileContentAdded(p, 'pt'),
     },
     household_member_disputed: {
         required: ['actorName'],
