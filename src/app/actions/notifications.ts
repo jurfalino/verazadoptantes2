@@ -49,6 +49,12 @@ export async function createNotification(data: {
     icon?: string;
     metadata?: Record<string, unknown>;
     template?: NotificationTemplate;
+    /**
+     * With a caller-chosen `id`: a row with that id already there is not an
+     * error — nothing is written or emailed and null is returned (a concurrent
+     * sender created it first; src/lib/profileAdditionNotices.ts merges into it).
+     */
+    ifAbsent?: boolean;
 }): Promise<string | null> {
     try {
         const db = await getDb();
@@ -83,7 +89,7 @@ export async function createNotification(data: {
             else logger.warn('createNotification: template did not render, stored text kept', { id, type, key: data.template.key });
         }
         const metadata = data.template ? { ...data.metadata, template: data.template } : data.metadata;
-        await db.insert(notifications).values({
+        const values = {
             id,
             userId: data.userId,
             type,
@@ -93,7 +99,16 @@ export async function createNotification(data: {
             icon: data.icon || '📋',
             metadata: metadata ? JSON.stringify(metadata) : null,
             createdAt: new Date(),
-        });
+        };
+        if (data.ifAbsent) {
+            const won = await db.insert(notifications).values(values).onConflictDoNothing({ target: notifications.id }).returning({ id: notifications.id });
+            if (!won.length) {
+                logger.info('createNotification: already there (ifAbsent), skipped', { id, type });
+                return null;
+            }
+        } else {
+            await db.insert(notifications).values(values);
+        }
 
         logger.info('Notification created', { id, userId: data.userId, type });
 

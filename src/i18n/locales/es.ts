@@ -3082,6 +3082,7 @@ export const es = {
             profile_renamed: 'Nombre cambiado',
             profile_rename_undone: 'Cambio de nombre deshecho',
             profile_age_changed: 'Edad cambiada',
+            profile_content_added: 'Agregado a un perfil',
             pii_access_request: 'Acceso a contacto',
             pii_access_approved: 'Acceso aprobado',
             pii_access_denied: 'Acceso no aprobado',

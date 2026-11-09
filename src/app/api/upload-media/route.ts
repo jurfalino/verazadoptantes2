@@ -6,6 +6,7 @@ import { adopterImages } from '@/db/schema';
 import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { uploadToR2 } from '@/lib/r2';
+import { notifyProfileAddition } from '@/lib/profileAdditionNotices';
 
 /**
  * POST /api/upload-media
@@ -19,6 +20,8 @@ import { uploadToR2 } from '@/lib/r2';
  * - adoptionId: optional
  * - caption: optional
  * - mediaType: 'video' | 'image'
+ * - origin: 'import' from the import wizard — an import tells the owner's team
+ *   nothing (bulk; its record went through the add-record API, which doesn't either)
  */
 export async function POST(request: Request) {
     const session = await auth();
@@ -33,6 +36,7 @@ export async function POST(request: Request) {
         const adoptionId = formData.get('adoptionId') as string | null;
         const caption = formData.get('caption') as string | null;
         const mediaType = formData.get('mediaType') as string || 'image';
+        const fromImport = formData.get('origin') === 'import';
 
         if (!file || !adopterId) {
             return NextResponse.json({ error: 'Missing file or adopterId' }, { status: 400 });
@@ -90,6 +94,16 @@ export async function POST(request: Request) {
             isProfilePicture: 0,
             thumbnailUrl,
         });
+
+        // The owner's team hears about a video (or photo) added to the profile —
+        // one notice with the rest of the same save (src/lib/profileAdditionNotices.ts).
+        // Never fails the upload.
+        if (session.user.email && !fromImport) {
+            await notifyProfileAddition(db, {
+                adopterId, actor: session.user.email, op: 'uploadMedia', recordId: adoptionId || null,
+                add: mediaType === 'video' ? { videos: 1 } : { photos: 1 },
+            });
+        }
 
         return NextResponse.json({ success: true, id: imageId, url: r2Url });
     } catch (error) {

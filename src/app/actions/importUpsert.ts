@@ -18,7 +18,8 @@ import { deserializeContactEntries, detectSocialPlatform, stripRenameMarks, stri
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { planRecordMerge, type MergeContact } from '@/domain/importMerge';
 import { addContactEntry } from './addContactEntry';
-import { saveAdoption, getAdoptions } from './adoptions';
+import { getAdoptions } from './adoptions';
+import { saveRecordFor } from '@/lib/recordSave';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { importDateToNoon } from '@/domain/importRow';
 import { logger } from '@/lib/logger';
@@ -125,7 +126,9 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
         }
 
         if (plan.addActivity) {
-            await saveAdoption({
+            // An import adds in bulk: the owner's team is not told row by row
+            // (it would flood the bell) — the record still lands in the history.
+            await saveRecordFor({
                 id: input.activityId ?? crypto.randomUUID(), // deterministic on import ⇒ retry-safe
                 adopterId: input.adopterId,
                 recordType: input.adoption.recordType as 'adoption' | 'adoption_request' | 'observation' | 'follow_up' | 'returned_pet' | 'available' | 'foster',
@@ -140,7 +143,7 @@ export async function upsertImportRecord(input: ImportUpsertInput): Promise<Impo
                 sex: input.adoption.sex ?? null,
                 color: input.adoption.color ?? null,
                 microchip: input.adoption.microchip ?? null,
-            });
+            }, undefined, { notifyOwnerTeam: false });
         }
 
         // Re-tokenize so the newly added contacts / filled name are matchable.

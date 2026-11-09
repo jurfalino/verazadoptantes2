@@ -3080,6 +3080,7 @@ export const pt = {
             profile_renamed: 'Nome alterado',
             profile_rename_undone: 'Alteração de nome desfeita',
             profile_age_changed: 'Idade alterada',
+            profile_content_added: 'Adicionado a um perfil',
             pii_access_request: 'Acesso a contato',
             pii_access_approved: 'Acesso aprovado',
             pii_access_denied: 'Acesso não aprovado',

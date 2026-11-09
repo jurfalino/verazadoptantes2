@@ -7,7 +7,7 @@
  * domain NOTIFICATION_TYPES; an unknown (legacy) type gets the bell and no label.
  */
 import {
-    ArrowRightLeft, Ban, Bell, CalendarDays, ClipboardList, FileSignature, Flag, GitMerge, Home, Lock, LockOpen,
+    ArrowRightLeft, Ban, Bell, CalendarDays, ClipboardList, FilePlus, FileSignature, Flag, GitMerge, Home, Lock, LockOpen,
     MessageSquare, PencilLine, Plug, Settings, ShieldQuestion, Trash2, UserMinus, UserPlus, Users, type LucideIcon,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -17,7 +17,7 @@ export const NOTIFICATION_TYPE_ICON: Record<NotificationType, LucideIcon> = {
     contract_result: FileSignature, contract_attached: FileSignature,
     form_submission: ClipboardList, form_attached: ClipboardList,
     api_record: Plug, api_access: Plug, api_access_requested: Plug,
-    profile_renamed: PencilLine, profile_rename_undone: PencilLine, profile_age_changed: CalendarDays,
+    profile_renamed: PencilLine, profile_rename_undone: PencilLine, profile_age_changed: CalendarDays, profile_content_added: FilePlus,
     pii_access_request: Lock, pii_access_approved: LockOpen, pii_access_denied: Lock, pii_access_revoked: Lock,
     contact_entry_added: UserPlus, follow_up_due: Bell, ownership_transferred: ArrowRightLeft,
     adopter_flagged: Flag, duplicate_flagged: GitMerge, inaccuracy_reported: PencilLine, deletion_request: Trash2, member_joined: Users, member_removed: UserMinus, adopter_login_blocked: Ban,

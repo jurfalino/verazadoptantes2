@@ -65,7 +65,7 @@ export const IMPORT_FLAGS = {
 export const NOTIFICATION_TYPES = [
     'contract_result', 'contract_attached', 'form_submission', 'form_attached',
     'api_record', 'api_access', 'api_access_requested',
-    'profile_renamed', 'profile_rename_undone', 'profile_age_changed',
+    'profile_renamed', 'profile_rename_undone', 'profile_age_changed', 'profile_content_added',
     'pii_access_request', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked',
     'contact_entry_added', 'follow_up_due', 'ownership_transferred', 'adopter_flagged', 'duplicate_flagged', 'inaccuracy_reported', 'deletion_request', 'member_joined', 'member_removed',
     'adopter_login_blocked',
