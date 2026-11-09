@@ -771,6 +771,9 @@ export const userProfiles = sqliteTable("user_profiles", {
     followupSettings: text("followup_settings"),
     // Email notification preferences — EmailPrefs JSON, NULL = defaults.
     emailPrefs: text("email_prefs"),
+    // «Avisame de cambios hechos por:» (src/domain/teamChangeAudience.ts):
+    // NULL/'outside' = other rescuers only (default), 'team' = also my team. Bell and email.
+    profileChangesFrom: text("profile_changes_from"),
     // Homepage modules: what the person hid (the «Para empezar» card) —
     // Unused since 2.58.28 (the homepage «Ocultar» was removed). Kept: migration 0102 already ran on staging.
     homePrefs: text("home_prefs"),
