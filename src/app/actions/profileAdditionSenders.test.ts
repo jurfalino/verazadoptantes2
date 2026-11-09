@@ -19,7 +19,9 @@ vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => und
 vi.mock('@/lib/pendingSearchLog', () => ({ closePendingSearchesForAdopter: vi.fn(async () => undefined) }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
-vi.mock('@/lib/r2', () => ({ processImageForStorage: vi.fn(async (url: string) => url) }));
+vi.mock('@/lib/r2', () => ({ processImageForStorage: vi.fn(async (url: string) => url), uploadToR2: vi.fn(async (key: string) => `https://r2.example/${key}`) }));
+vi.mock('@/lib/contractStorage', () => ({ readSelfie: vi.fn(async () => ({ body: new Uint8Array([0xff, 0xd8, 0xff]), httpMetadata: { contentType: 'image/jpeg' } })) }));
+vi.mock('./_applicants', () => ({ canAccessFormSubmission: vi.fn(async () => true) }));
 vi.mock('@/config/features', () => ({ getFeatureFlag: async () => true }));
 vi.mock('@/lib/notificationEmail', () => ({ sendNotificationEmail: vi.fn(async (n: unknown) => { emails.push(n); return 'sent'; }) }));
 
@@ -102,8 +104,21 @@ describe('saveAdoption tells the owner\'s team what an outsider added', () => {
         expect(notices()).toEqual([[MATE, 'Ana agregó un registro (Adopción, 3★) a Marta Paez.'], [OWNER, 'Ana agregó un registro (Adopción, 3★) a Marta Paez.']]);
     });
 
-    it('an animal photo keyed on the owner\'s email or «__available__» tells nobody', async () => {
+    it('an animal\'s own picture tells nobody — even stored under the holder\'s profile, with its placement there', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('an1', 'Nina', 'cat', ?, 1, 1)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('an1-plc', 'an1', 'ad1', 'adoption', 1, ?)`).run(STRANGER);
+        await as(STRANGER, () => saveImage('ad1', PHOTO, undefined, 'an1', 'image', false, 'animal'));
         await as(STRANGER, () => saveImage('__available__', PHOTO, 'Photo', undefined, 'image', false, 'animal'));
+        expect(notices()).toEqual([]);
+        // The same animal's placement photo IS on the profile.
+        await as(STRANGER, () => saveImage('ad1', PHOTO, 'Photo for Nina', 'an1', 'image', false, 'placement'));
+        expect(notices()).toHaveLength(2);
+    });
+
+    it('a form\'s selfie copied onto the profile tells nobody (forms have their own notices)', async () => {
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selfie_key, linked_adopter_id) VALUES ('fs1', ?, 'Marta Paez', 'selfies/fs1.jpg', 'ad1')`).run(OWNER);
+        await as(STRANGER, () => saveImage('ad1', '/api/files/selfie/fs1', 'Selfie'));
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopter_images WHERE adopter_id = 'ad1'`).get()!.n).toBe(1);
         expect(notices()).toEqual([]);
     });
 });

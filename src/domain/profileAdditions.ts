@@ -29,7 +29,7 @@ export type ProfileAdditionParams = {
     address?: string;
 };
 
-/** The notice lists at most this many records (later ones still count in the merge, not in the list). */
+/** A notice keeps at most this many records (a later one past it is left out of the notice; it is in the profile's history). */
 export const MAX_LISTED_RECORDS = 10;
 
 /**

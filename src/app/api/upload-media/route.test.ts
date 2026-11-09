@@ -22,8 +22,9 @@ let sqlite: { prepare: (s: string) => { all: (...a: unknown[]) => Row[]; run: (.
 
 // An MP4 header (ftyp box) — the route checks magic bytes.
 const MP4 = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
-function upload(adopterId: string) {
+function upload(adopterId: string, origin?: string) {
     const fd = new FormData();
+    if (origin) fd.append('origin', origin);
     fd.append('file', new File([MP4], 'clip.mp4', { type: 'video/mp4' }));
     fd.append('adopterId', adopterId);
     fd.append('mediaType', 'video');
@@ -44,6 +45,12 @@ describe('POST /api/upload-media', () => {
         expect((await upload('ad1')).status).toBe(200);
         expect(sqlite.prepare(`SELECT user_id, body FROM notifications WHERE type = 'profile_content_added' ORDER BY user_id`).all())
             .toEqual([{ user_id: MATE, body: 'Ana agregó un video a Marta Paez.' }, { user_id: OWNER, body: 'Ana agregó un video a Marta Paez.' }]);
+    });
+
+    it('a video from the import wizard tells nobody (an import)', async () => {
+        state.user = STRANGER;
+        expect((await upload('ad1', 'import')).status).toBe(200);
+        expect(sqlite.prepare(`SELECT * FROM notifications`).all()).toEqual([]);
     });
 
     it('the owner\'s own video tells nobody', async () => {

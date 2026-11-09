@@ -160,12 +160,16 @@ export async function saveImage(
 
         // The owner's team hears about a photo added to the profile — merged
         // into one notice with the record and the other photos of the same
-        // save. An animal's photo (keyed on an email / «__available__») or an
-        // animal event's photo is not on a profile: nobody is told. Never fails the upload.
-        await notifyProfileAddition(db, {
-            adopterId, actor: addedBy, op: 'saveImage', recordId: adoptionId || null,
-            add: mediaType === 'video' ? { videos: 1 } : { photos: 1 },
-        });
+        // save. Not told: an animal's own picture (scope 'animal', stored under
+        // its holder or «__available__»), an animal event's photo (its record
+        // is not on the profile), and a form's selfie (forms have their own
+        // notices). Never fails the upload.
+        if (scope !== 'animal' && !selfie) {
+            await notifyProfileAddition(db, {
+                adopterId, actor: addedBy, op: 'saveImage', recordId: adoptionId || null,
+                add: mediaType === 'video' ? { videos: 1 } : { photos: 1 },
+            });
+        }
 
         return { success: true, id };
     } catch (error) {

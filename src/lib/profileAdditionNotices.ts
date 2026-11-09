@@ -29,8 +29,8 @@ import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { isRealActorEmail } from '@/lib/piiAccess';
-import { getProfileChangesFromForEmail, keepChangeRecipients } from '@/lib/teamChangeAudience';
-import { getOrgMemberEmailsFor, isOrgMate } from '@/lib/orgMembership';
+import { keepChangeRecipients } from '@/lib/teamChangeAudience';
+import { getOrgMemberEmailsFor } from '@/lib/orgMembership';
 import { realOwner } from '@/domain/dedupPair';
 import {
     additionFromParams, additionParams, isEmptyAddition, mergeAdditions,
@@ -103,10 +103,7 @@ async function deliverAll(db: Db, n: ProfileAdditionNotice, ctx: Ctx): Promise<v
         logger.warn('profileAdditionNotices: team lookup failed, only the owner told', { ...ctx, error: errMsg(e) });
         return [] as string[];
     });
-    const recipients = await keepChangeRecipients([owner, ...team], n.actor, ctx, {
-        isTeammate: (recipient, actor) => isOrgMate(recipient, actor),
-        fromOf: (recipient) => getProfileChangesFromForEmail(db, recipient),
-    });
+    const recipients = await keepChangeRecipients([owner, ...team], n.actor, ctx);
     if (!recipients.length) {
         logger.info('profileAdditionNotices: nobody to tell', ctx);
         return;
