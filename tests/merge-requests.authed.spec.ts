@@ -224,3 +224,41 @@ test('/settings «Avisos por email»: requests are always on; the API row follow
 
     await expect(section.getByTestId('email-pref-api')).toHaveCount(hasLiveKey ? 1 : 0);
 });
+
+test('/settings «Avisame de cambios hechos por:» under «Cambios en tus perfiles»: two choices, saved, shown even with the email switch off', async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto('/settings');
+    await dismissCountryBanner(page);
+    const row = page.getByTestId('email-pref-profile_changes');
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    const group = row.getByRole('radiogroup');
+    await expect(group).toBeVisible();
+    await expect(group.getByRole('radio')).toHaveCount(2);
+    const outside = row.getByTestId('profile-changes-from-outside');
+    const team = row.getByTestId('profile-changes-from-team');
+    const hint = row.getByTestId('profile-changes-from-hint');
+    const toggle = row.getByTestId('email-pref-toggle-profile_changes');
+    const switchWasOn = (await toggle.getAttribute('aria-checked')) === 'true';
+    const startedOnTeam = await team.isChecked();
+    try {
+        await outside.check();
+        await expect(hint).toContainText(/history|historial|histórico/);
+        await team.check();
+        await expect(hint).not.toContainText(/history|historial|histórico/);
+        // Saved: the choice survives a reload.
+        await expect.poll(() => rows(`SELECT p.profile_changes_from AS f FROM user_profiles p JOIN user u ON u.id = p.user_id WHERE lower(u.email) = lower('${ADMIN_EMAIL}')`)[0]?.f).toBe('team');
+        await page.reload();
+        await expect(page.getByTestId('profile-changes-from-team')).toBeChecked({ timeout: 30_000 });
+        // The email switch off keeps the choice visible and usable (it decides the bell too).
+        if (switchWasOn) await page.getByTestId('email-pref-toggle-profile_changes').click();
+        await expect(page.getByTestId('email-pref-toggle-profile_changes')).toHaveAttribute('aria-checked', 'false');
+        await page.getByTestId('profile-changes-from-outside').check();
+        await expect(page.getByTestId('profile-changes-from-outside')).toBeChecked();
+    } finally {
+        // Leave the admin as found (other specs read the bell).
+        if (startedOnTeam) await page.getByTestId('profile-changes-from-team').check();
+        else await page.getByTestId('profile-changes-from-outside').check();
+        const now = (await page.getByTestId('email-pref-toggle-profile_changes').getAttribute('aria-checked')) === 'true';
+        if (now !== switchWasOn) await page.getByTestId('email-pref-toggle-profile_changes').click();
+    }
+});
