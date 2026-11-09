@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.40] - 2026-11-09
+
+### Changed — home cards polish
+- **Mis animales summary breaks only after «·»:** «5 disponibles ·» / «278 adoptados», never «278» /
+  «adoptados» (desktop cards are two-up and narrow).
+- **Import link reads «Importar desde tus contactos»** (was «o importá…», which followed the old bottom button).
+
 ## [2.58.39] - 2026-11-09
 
 ### Changed — «+ Agregar» next to the title of the home cards
