@@ -3815,7 +3815,7 @@ export const en = {
         via_form: 'Form · {when}',
         add: 'Add',
         add_adopter: 'Add adopter',
-        import_contacts: 'or import from your contacts',
+        import_contacts: 'Import from your contacts',
         animals_title: 'My animals',
         available_one: '1 available',
         available_many: '{n} available',

@@ -19,7 +19,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { timeAgo } from '@/lib/timeAgo';
 import { RatingBadge } from '@/components/RatingBadge';
 import { GroupChip } from '@/components/GroupChip';
-import { keepNumberWithUnit } from '@/lib/keepNumberWithUnit';
+import { keepNumberWithUnit, keepCountsTogether } from '@/lib/keepNumberWithUnit';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
 import { getHomeModules } from '@/app/actions/homeModules';
@@ -81,7 +81,7 @@ function ModuleShell({ icon, title, summary, href, children, testId, add }: {
                     </span>
                     <span className="flex-1 min-w-0">
                         <span className="block text-base font-bold text-stone-900 leading-tight group-hover:text-teal-700">{title}</span>
-                        {summary && <span data-testid={`${testId}-summary`} className="block text-sm text-stone-500 leading-snug">{summary}</span>}
+                        {summary && <span data-testid={`${testId}-summary`} className="block text-sm text-stone-500 leading-snug">{keepCountsTogether(summary)}</span>}
                     </span>
                     {!add && <Icon name="chevron" className="w-4 h-4 text-stone-400 shrink-0" />}
                 </Link>

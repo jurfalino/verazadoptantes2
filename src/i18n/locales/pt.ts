@@ -3820,7 +3820,7 @@ export const pt = {
         via_form: 'Formulário · {when}',
         add: 'Adicionar',
         add_adopter: 'Adicionar adotante',
-        import_contacts: 'ou importe dos seus contatos',
+        import_contacts: 'Importar dos seus contatos',
         animals_title: 'Meus animais',
         available_one: '1 disponível',
         available_many: '{n} disponíveis',

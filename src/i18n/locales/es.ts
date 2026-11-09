@@ -3822,7 +3822,7 @@ export const es = {
         via_form: 'Formulario · {when}',
         add: 'Agregar',
         add_adopter: 'Agregar adoptante',
-        import_contacts: 'o importá desde tus contactos',
+        import_contacts: 'Importar desde tus contactos',
         animals_title: 'Mis animales',
         available_one: '1 disponible',
         available_many: '{n} disponibles',

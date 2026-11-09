@@ -52,7 +52,7 @@ describe('Mis adoptantes card — «+ Agregar» next to the title', () => {
         expect(anchor(html, 'home-adopters-header')).not.toContain('/adopter/create');
     });
 
-    it('«o importá desde tus contactos» still shows at the bottom when nothing is pending', () => {
+    it('the import link still shows at the bottom when nothing is pending', () => {
         const html = renderToStaticMarkup(<AdoptersCard section={{ ok: true, data: adopters(0) }} contacts={<span data-testid="contacts-slot" />} t={t} rel={rel} />);
         expect(html).toContain('data-testid="contacts-slot"');
     });
@@ -74,6 +74,24 @@ describe('Mis animales card — «+ Agregar» next to the title', () => {
             expect(add).toContain('aria-label="Agregar animal"');
         });
     }
+});
+
+describe('Mis animales summary — breaks only after «·»', () => {
+    it('«5 disponibles · 278 adoptados» keeps each count with its word', () => {
+        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: { ...animals(0), available: 5, adopted: 278 } }} t={t} />);
+        const summary = html.match(/data-testid="home-animals-summary"[^>]*>([^<]*)</)?.[1];
+        expect(summary).toBe('5\u00a0disponibles\u00a0· 278\u00a0adoptados');
+    });
+});
+
+describe('the import link stands on its own now that no button sits above it (Jon 2026-11-09)', () => {
+    it.each([
+        ['es', es, 'Importar desde tus contactos'],
+        ['en', en, 'Import from your contacts'],
+        ['pt', pt, 'Importar dos seus contatos'],
+    ])('%s', (_l, dict, label) => {
+        expect(get(dict, 'homeModules.import_contacts')).toBe(label);
+    });
 });
 
 describe('the list pages use the same sentence-case words', () => {
