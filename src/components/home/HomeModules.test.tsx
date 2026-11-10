@@ -31,10 +31,12 @@ const rel = () => 'hace 1 día';
 const adopters = (pendingReview: number): HomeAdoptersData => ({ total: 4, pendingReview, pending: [], recent: [] });
 const animals = (dueCount: number): HomeAnimalsData => ({ available: 1, adopted: 2, total: 3, dueCount, rows: [] });
 
+/** A string as a literal inside a RegExp: every metacharacter escaped, backslash included (CodeQL js/incomplete-sanitization). */
+const reLiteral = (v: string) => v.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
 /** Every <a …> opening tag whose href is `href`. */
-const linksTo = (html: string, href: string) => html.match(new RegExp(`<a[^>]*href="${href.replace(/[/?]/g, '\\$&')}"[^>]*>`, 'g')) ?? [];
+const linksTo = (html: string, href: string) => html.match(new RegExp(`<a[^>]*href="${reLiteral(href)}"[^>]*>`, 'g')) ?? [];
 /** The markup of the anchor carrying data-testid=`id`, up to its closing tag. */
-const anchor = (html: string, id: string) => html.match(new RegExp(`<a[^>]*data-testid="${id}"[^>]*>[\\s\\S]*?</a>`))?.[0] ?? '';
+const anchor = (html: string, id: string) => html.match(new RegExp(`<a[^>]*data-testid="${reLiteral(id)}"[^>]*>[\\s\\S]*?</a>`))?.[0] ?? '';
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('Mis adoptantes card — «+ Agregar» next to the title', () => {

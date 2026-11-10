@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.52] - 2026-11-10
+
+### Fixed
+- Test helper escapes every regular-expression character (CodeQL high alert on the release PR; test code only,
+  no user-facing change).
+
 ## [2.58.51] - 2026-11-10
 
 ### Changed — senior UX + EM review of 2.58.41–50 (Jon)
