@@ -19,8 +19,9 @@
  * is unit-tested by compiling the SQL (applicantScope.test.ts).
  */
 
-import { and, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { applications, formSubmissions } from '@/db/schema';
+import { APPLICATION_STATES } from '@/domain/constants';
 
 /** Lower-case, trim, dedupe, drop blanks. `getTeamEmails` already lower-cases;
  *  `form_submissions.user_id` is the raw `users.email`, so both sides are
@@ -41,6 +42,9 @@ export function isInTeamScope(formLinkOwner: string | null | undefined, scope: r
     return !!e && scope.includes(e);
 }
 
+/** A «replaced» application (superseded by a merge) is in no list, count or access decision. */
+const notReplaced = ne(applications.state, APPLICATION_STATES.REPLACED);
+
 /** An OR of one bound `lower(user_id) = ?` per email — never `IN (array)` (D1 binds it as one value). */
 function linkOwnerInTeam(scope: readonly string[]): SQL | undefined {
     return or(...scope.map(e => sql`lower(${formSubmissions.userId}) = ${e}`));
@@ -53,6 +57,7 @@ function linkOwnerInTeam(scope: readonly string[]): SQL | undefined {
  * Returns `null` (caller must not query) for an empty team or animal id:
  * drizzle's `or()` of nothing is `undefined` and `and(x, undefined)` silently
  * drops it, which would list every row for the animal, forged ones included.
+ * Excludes «replaced» applications.
  */
 export function applicantScopeWhere(
     animalId: string,
@@ -62,7 +67,7 @@ export function applicantScopeWhere(
     if (!animalId || scope.length === 0) return null;
     const inTeam = linkOwnerInTeam(scope);
     if (!inTeam) return null;
-    return and(eq(applications.animalId, animalId), inTeam) ?? null;
+    return and(eq(applications.animalId, animalId), inTeam, notReplaced) ?? null;
 }
 
 /**
@@ -74,7 +79,7 @@ export function generalScopeWhere(teamEmails: ReadonlyArray<string | null | unde
     if (scope.length === 0) return null;
     const inTeam = linkOwnerInTeam(scope);
     if (!inTeam) return null;
-    return and(isNull(applications.animalId), inTeam) ?? null;
+    return and(isNull(applications.animalId), inTeam, notReplaced) ?? null;
 }
 
 /**

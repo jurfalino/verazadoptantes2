@@ -12,6 +12,7 @@
 import { animals, applications, formSubmissions } from '@/db/schema';
 import { and, eq, or } from 'drizzle-orm';
 import { applicantScopeWhere } from '@/lib/applicantScope';
+import { healMissingApplications } from '@/lib/applicationWrites';
 import type { getDb } from '@/lib/db';
 import { isPiiGatingEnabled, resolveAdopterVisibility, buildMaskOptions } from '@/lib/piiAccessServer';
 import { getTeamEmails, isOwnerOrOrgMate } from '@/lib/orgMembership';
@@ -47,7 +48,9 @@ export async function resolveInvitationAccess(
 ): Promise<InvitationAccess> {
     const animal = await db.select({ addedBy: animals.addedBy, deletedAt: animals.deletedAt })
         .from(animals).where(eq(animals.id, animalId)).get();
-    const scope = animal && !animal.deletedAt ? applicantScopeWhere(animalId, await getTeamEmails(animal.addedBy)) : null;
+    const team = animal && !animal.deletedAt ? await getTeamEmails(animal.addedBy) : [];
+    await healMissingApplications(db, team);
+    const scope = animal && !animal.deletedAt ? applicantScopeWhere(animalId, team) : null;
     const [submissions, gatingOn, visibility, maskOptions, isOwnerOrTeammate] = await Promise.all([
         // No scope (unknown or deleted animal, empty team) → not an applicant: fail closed.
         scope

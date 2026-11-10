@@ -361,6 +361,9 @@ INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption
 INSERT OR REPLACE INTO form_submissions (id, user_id, name, status, created_at) VALUES
 ('test-formsub-fixture-teammate-1', 'e2e-teammate@example.com', 'Solicitante Fixture', 'pending', strftime('%s','now'));
 
+INSERT OR REPLACE INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES
+('app-test-formsub-fixture-teammate-1', 'test-formsub-fixture-teammate-1', NULL, 'form', 'open', strftime('%s','now'));
+
 INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon, read, metadata, created_at) VALUES
 ('test-notif-fixture-teammate-1', 'e2e-teammate@example.com', 'contract_result', 'Fixture contrato', 'Fixture', '/contract-results/test-notif-fixture-teammate-1', '📋', 1, '{}', strftime('%s','now'));
 -- ============================================================

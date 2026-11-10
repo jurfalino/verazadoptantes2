@@ -59,7 +59,13 @@ describe('applicantScopeWhere', () => {
         const userMatches = q.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g) ?? [];
         expect(userMatches).toHaveLength(2);
         expect(q.sql).toContain(' or ');
-        expect(q.params).toEqual(['animal-1', 'owner@example.com', 'mate@example.com']);
+        expect(q.params).toEqual(['animal-1', 'owner@example.com', 'mate@example.com', 'replaced']);
+    });
+
+    it('never matches a «replaced» application (one scope rule for every caller)', () => {
+        const q = compile('animal-1', ['a@example.com'])!;
+        expect(q.sql).toContain('"applications"."state" <> ?');
+        expect(q.params).toContain('replaced');
     });
 
     it('never binds an array (D1 binds it as ONE value)', () => {
@@ -70,7 +76,7 @@ describe('applicantScopeWhere', () => {
 
     it('dedupes the team before building the OR', () => {
         const q = compile('animal-1', ['a@example.com', 'A@example.com '])!;
-        expect(q.params).toEqual(['animal-1', 'a@example.com']);
+        expect(q.params).toEqual(['animal-1', 'a@example.com', 'replaced']);
     });
 
     it('fails CLOSED (null, no query) for an empty or all-blank team', () => {
@@ -88,7 +94,8 @@ describe('generalScopeWhere', () => {
         const q = dialect.sqlToQuery(generalScopeWhere(['Owner@Example.com', 'mate@example.com'])!);
         expect(q.sql).toContain('"applications"."animal_id" is null');
         expect(q.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g)).toHaveLength(2);
-        expect(q.params).toEqual(['owner@example.com', 'mate@example.com']);
+        expect(q.params).toEqual(['owner@example.com', 'mate@example.com', 'replaced']);
+        expect(q.sql).toContain('"applications"."state" <> ?');
         expect(q.sql).not.toMatch(/\bin\s*\(/i);
     });
 

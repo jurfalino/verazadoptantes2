@@ -17,8 +17,9 @@ import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
 import { NO_PERIOD_ALERTS, periodAlerts } from '@/domain/periodAlerts';
 import { NO_HOUSEMATE_ALERT } from '@/domain/households';
-import { APPLICATION_STATES, APPLICATION_ORIGINS, RECORD_TYPES, type ApplicationState, type ApplicationCloseReason } from '@/domain/constants';
+import { APPLICATION_ORIGINS, RECORD_TYPES, type ApplicationState, type ApplicationCloseReason } from '@/domain/constants';
 import { applicationStatus, panelOrder, type InvitationLike } from '@/domain/applications';
+import { healMissingApplications } from '@/lib/applicationWrites';
 import { applicantScopeWhere, generalScopeWhere, teammateVisibleAnimal } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
 import type { ApplicantSummary, ApplicantAdopterContext } from './applicants';
@@ -146,11 +147,11 @@ export async function listApplicantIdsForAnimal(
     const where = applicantScopeWhere(animalId, teamEmails);
     if (!where) return [];
     const { applications, formSubmissions } = await import('@/db/schema');
-    const { and, eq, ne } = await import('drizzle-orm');
+    const { eq } = await import('drizzle-orm');
     const rows = await db.select({ applicationId: applications.id, submissionId: applications.submissionId })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
-        .where(and(where, ne(applications.state, APPLICATION_STATES.REPLACED)))
+        .where(where)
         .all() as Array<{ applicationId: string; submissionId: string }>;
     return rows.map(r => ({ submissionId: r.submissionId, applicationId: r.applicationId }));
 }
@@ -166,10 +167,10 @@ type ApplicationRow = {
     linkedAdopterId: string | null; createdAt: Date | null;
 };
 
-/** The application columns every list reads, joined to its form; «replaced» rows never show. */
+/** The application columns every list reads, joined to its form (the scope already drops «replaced» rows). */
 async function selectApplicationRows(db: Db, where: unknown): Promise<ApplicationRow[]> {
     const { applications, formSubmissions } = await import('@/db/schema');
-    const { and, eq, ne } = await import('drizzle-orm');
+    const { eq } = await import('drizzle-orm');
     return await db.select({
         applicationId: applications.id,
         origin: applications.origin,
@@ -197,7 +198,7 @@ async function selectApplicationRows(db: Db, where: unknown): Promise<Applicatio
     })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
-        .where(and(where as never, ne(applications.state, APPLICATION_STATES.REPLACED)))
+        .where(where as never)
         .all() as ApplicationRow[];
 }
 
@@ -220,6 +221,7 @@ export async function loadApplicantsForAnimal(
         logger.warn('loadApplicantsForAnimal: empty team scope — failing closed', { animalId: animal.id });
         return [];
     }
+    await healMissingApplications(db, teamEmails);
     const rows = await selectApplicationRows(db, where);
     return panelOrder(await enrichApplicantRows(db, rows, { op: 'loadApplicantsForAnimal', animalId: animal.id, teamEmails, viewerEmail }));
 }
@@ -238,6 +240,7 @@ export async function loadGeneralApplications(
         logger.warn('loadGeneralApplications: empty team scope — failing closed', { viewer: viewerEmail ?? null });
         return [];
     }
+    await healMissingApplications(db, teamEmails);
     const rows = await selectApplicationRows(db, where);
     return panelOrder(await enrichApplicantRows(db, rows, { op: 'loadGeneralApplications', animalId: null, teamEmails, viewerEmail }));
 }
