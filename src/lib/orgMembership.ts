@@ -139,6 +139,14 @@ export async function getOrgMatesOf(
 ): Promise<Array<{ email: string; orgs: OrgRef[] }>> {
     const e = normEmail(email);
     if (!e) return [];
+    // Once per email per request (src/lib/requestMemo.ts): team scope is asked by every card and
+    // check on a page, each 2–3 D1 round trips deep. Copies out, so a caller can't edit the memo.
+    const { perRequest } = await import('@/lib/requestMemo');
+    const mates = await perRequest(`orgMatesOf:${e}`, () => loadOrgMatesOf(e));
+    return mates.map(m => ({ email: m.email, orgs: [...m.orgs] }));
+}
+
+async function loadOrgMatesOf(e: string): Promise<Array<{ email: string; orgs: OrgRef[] }>> {
     try {
         const orgs = await getOrgsForEmail(e);
         if (orgs.length === 0) return [];

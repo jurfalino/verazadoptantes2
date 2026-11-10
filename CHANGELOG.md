@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.53] - 2026-11-10
+
+### Changed — faster home cards (EM review)
+- Pages Functions use Cloudflare smart placement, to run next to the database instead of next to the visitor
+  (from Argentina each database query was a ~180 ms round trip, and the homepage chained ~30).
+- Mis adoptantes' pending rows: the privacy checks for all items run at once instead of one after another.
+- Who-you-are, your role and your team are looked up once per page load instead of several times.
+- The homepage timing log carries the per-card split and where it ran (the logging service dropped new fields).
+
 ## [2.58.52] - 2026-11-10
 
 ### Fixed

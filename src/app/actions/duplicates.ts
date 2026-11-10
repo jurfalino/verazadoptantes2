@@ -1441,6 +1441,11 @@ export async function getPendingDuplicatesForUser(
             }));
         }
 
+        // Every side's visibility at once — they're independent, and the loop below then reads the
+        // cached answers. Awaited pair by pair they cost ~3 D1 round trips each, in series: ~1.6 s
+        // from Argentina for the homepage's 4 pairs (EM review 2026-11-10). Same result.
+        await Promise.all([...byId.values()].map(r => visibilityOf(r)));
+
         const pairs: PendingDedupPair[] = [];
         for (const c of pageCandidates) {
             const a = byId.get(c.adopter1Id);

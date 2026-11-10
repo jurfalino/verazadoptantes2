@@ -69,7 +69,18 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
         postsOn ? section('posts', async () => loadHomePosts(db, email, await members)) : Promise.resolve(null),
     ]);
 
-    // Per-card time, to keep the homepage honest (each card waits for the slowest read).
-    logger.info('getHomeModules timings', { userEmail: email, totalMs: Date.now() - started, ...timings });
+    // Per-card time, to keep the homepage honest (each card waits for the slowest read). The split
+    // and the Cloudflare location that ran it ride in `note` as JSON: the Axiom dataset is at its
+    // field cap and silently drops NEW keys (EM review 2026-11-10 — animals/posts/pendingReview
+    // never arrived). `colo` shows where the code ran: next to D1 (placement) or next to the user.
+    let colo: string | null = null;
+    try {
+        const { getRequestContext } = await import('@/lib/requestContext');
+        colo = (getRequestContext().cf as { colo?: string } | undefined)?.colo ?? null;
+    } catch { colo = null; /* no request context (local dev without the Cloudflare shim): no colo */ }
+    logger.info('getHomeModules timings', {
+        userEmail: email, totalMs: Date.now() - started, ...timings,
+        note: JSON.stringify({ ...timings, colo }),
+    });
     return { adopters, animals, posts };
 }
