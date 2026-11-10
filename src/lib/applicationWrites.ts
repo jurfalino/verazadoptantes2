@@ -3,12 +3,13 @@
  */
 
 import { adopterHistory, applications, formSubmissions } from '@/db/schema';
-import { planAdoptionClose, submissionApplication, type AdoptionVia } from '@/domain/applications';
-import { APPLICATION_AUTO_ACTOR, APPLICATION_ORIGINS, APPLICATION_STATES } from '@/domain/constants';
+import { planAdoptionClose, planMergeDedupe, submissionApplication, type AdoptionVia, type MergeApp } from '@/domain/applications';
+import { APPLICATION_AUTO_ACTOR, APPLICATION_ORIGINS, APPLICATION_STATES, type ApplicationState } from '@/domain/constants';
 import { applicantScopeWhere, normalizeTeamScope } from '@/lib/applicantScope';
 import { logger } from '@/lib/logger';
 import { getTeamEmails } from '@/lib/orgMembership';
 import { and, eq, sql } from 'drizzle-orm';
+import { createOwnerTeamResolver } from '@/app/actions/_applicants';
 import type { getDb } from '@/lib/db';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -142,5 +143,83 @@ export async function closeApplicationsOnAdoption(db: Db, input: {
     } catch (e) {
         logger.error('closeApplicationsOnAdoption failed', e, { animalId, adopterId, via });
         return 0;
+    }
+}
+
+/** What a merge changed on one application, so undo can put it back. */
+export type ApplicationStateUndo = { id: string; state: ApplicationState; replacedBy: string | null };
+
+/**
+ * Two profiles became one: of the survivor's open applications, the newest per
+ * animal stays and the older ones read «replaced»; a general application ends
+ * as «also_applied» when the same team has the person's open application for an
+ * animal. Only OPEN rows are touched (conditional UPDATE), so a concurrent
+ * decision wins. Returns the prior state of each row it changed.
+ *
+ * Never throws: the merge has already landed, so a failure is logged and
+ * answered with [] (nothing to undo).
+ */
+export async function dedupeApplicationsAfterMerge(
+    db: Db,
+    survivorId: string,
+    ctx: { actorEmail: string },
+): Promise<ApplicationStateUndo[]> {
+    try {
+        const rows = await db
+            .select({
+                id: applications.id,
+                animalId: applications.animalId,
+                state: applications.state,
+                createdAt: applications.createdAt,
+                formOwner: formSubmissions.userId,
+            })
+            .from(applications)
+            .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+            .where(eq(formSubmissions.linkedAdopterId, survivorId));
+        const apps: MergeApp[] = rows.map((r: { id: string; animalId: string | null; state: string; createdAt: Date | null; formOwner: string | null }) => ({
+            id: r.id,
+            animalId: r.animalId,
+            state: r.state as ApplicationState,
+            createdAt: r.createdAt ? Math.floor(r.createdAt.getTime() / 1000) : 0,
+            formOwner: (r.formOwner ?? '').toLowerCase(),
+        }));
+        // sameTeam is sync: resolve every distinct owner's team first (one lookup each).
+        const resolveTeam = createOwnerTeamResolver();
+        const teams = new Map<string, Set<string>>();
+        for (const owner of new Set(apps.map(a => a.formOwner))) {
+            teams.set(owner, new Set((await resolveTeam(owner)).map(e => e.toLowerCase())));
+        }
+        const sameTeam = (a: string, b: string) => teams.get(a)?.has(b.toLowerCase()) ?? false;
+
+        const nowSec = Math.floor(Date.now() / 1000);
+        const undo: ApplicationStateUndo[] = [];
+        for (const step of planMergeDedupe(apps, sameTeam)) {
+            const won = await db.update(applications)
+                .set({
+                    state: step.state,
+                    replacedByApplicationId: step.replacedBy,
+                    closedAt: nowSec,
+                    closedBy: APPLICATION_AUTO_ACTOR,
+                })
+                .where(and(eq(applications.id, step.id), eq(applications.state, APPLICATION_STATES.OPEN)))
+                .returning({ id: applications.id });
+            if (won.length) undo.push({ id: step.id, state: APPLICATION_STATES.OPEN, replacedBy: null });
+        }
+        return undo;
+    } catch (e) {
+        logger.error('dedupeApplicationsAfterMerge failed', e, { survivorId, actor: ctx.actorEmail });
+        return [];
+    }
+}
+
+/**
+ * Undo of a merge: put each application back to the state the merge found it
+ * in (the merge only changes OPEN rows, so closing fields go back to empty).
+ */
+export async function restoreApplicationStates(db: Db, undo: readonly ApplicationStateUndo[]): Promise<void> {
+    for (const u of undo) {
+        await db.update(applications)
+            .set({ state: u.state, replacedByApplicationId: u.replacedBy, closedAt: null, closedBy: null })
+            .where(eq(applications.id, u.id));
     }
 }
