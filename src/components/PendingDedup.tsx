@@ -41,13 +41,12 @@ import {
     type PendingDedupSide,
 } from '@/app/actions/duplicates';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
-import PairRow, { GROUP_ORDER, groupLabel, type RowAction } from '@/components/pendientes/PairRow';
+import PairRow, { groupLabel, type RowAction } from '@/components/pendientes/PairRow';
 import ConfirmCombine, { type ConfirmMode } from '@/components/pendientes/ConfirmCombine';
 import IdentityChoice from '@/components/pendientes/IdentityChoice';
 import WriteMessage from '@/components/pendientes/WriteMessage';
 import MergedRow, { keptSentence, mergedInfo, type MergedInfo } from '@/components/pendientes/MergedRow';
 import { pendientesSections } from '@/components/pendientes/sections';
-import { needsViewer } from '@/domain/pendingRowRules';
 import { Modal } from '@/components/ui/Modal';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
@@ -224,8 +223,9 @@ export default function PendingDedup({ home }: {
 
     const dropRow = (pair: PendingDedupPair) => {
         setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
-        setTotal(n => Math.max(0, n - 1));
-        if (needsViewer(pair)) setNeeds(n => Math.max(0, n - 1));
+        // `total` pages what waits on the viewer: only those rows move it.
+        if (pair.needsViewer) setTotal(n => Math.max(0, n - 1));
+        if (pair.needsViewer) setNeeds(n => Math.max(0, n - 1));
         if (home) void load(); // the next one
     };
 
@@ -233,8 +233,9 @@ export default function PendingDedup({ home }: {
     const markMerged = (pair: PendingDedupPair, kept: KeepSide, title: string) => {
         const info = mergedInfo(pair, sideOf(pair, kept), t);
         setMerged(prev => [...prev.filter(m => m.candidateId !== pair.candidateId), info]);
-        setTotal(n => Math.max(0, n - 1));
-        if (needsViewer(pair)) setNeeds(n => Math.max(0, n - 1));
+        // `total` pages what waits on the viewer: only those rows move it.
+        if (pair.needsViewer) setTotal(n => Math.max(0, n - 1));
+        if (pair.needsViewer) setNeeds(n => Math.max(0, n - 1));
         setOpenId(id => (id === pair.candidateId ? null : id));
         // The panel shows pairs[0]: take the merged pair off it, so its buttons can't fire again while the next one loads.
         if (home) { setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []); void load(); }
@@ -549,9 +550,17 @@ export default function PendingDedup({ home }: {
         );
     }
 
-    if (pairs === null) return null; // not loaded yet
+    // Not loaded yet: hold the header's place (it used to pop in seconds after the list and push it
+    // down ~90px under a finger). If nothing turns out to be pending, the placeholder goes.
+    if (pairs === null) return (
+        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse">
+            <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
+            <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
+        </section>
+    );
     // A pair just combined keeps the section on screen (D52), even the last one.
-    if (total === 0 && merged.length === 0) return null;
+    // `total` counts what waits on the viewer; the section stays while anything is listed (a sent request too).
+    if (total === 0 && pairs.length === 0 && merged.length === 0) return null;
 
 
     return (
@@ -585,7 +594,7 @@ export default function PendingDedup({ home }: {
                 <>
                     {/* Rows are the list's direct <div> children; group headers are <h3>s between them. */}
                     <div id="pending-dedup-list" className="rounded-2xl bg-white border border-[var(--border-default)] shadow-sm overflow-hidden">
-                        {pendientesSections(pairs, merged, GROUP_ORDER).flatMap(section => {
+                        {pendientesSections(pairs, merged).flatMap(section => {
                             // Combined on this visit (D52): their own section at the end, never under
                             // «Necesitan tu respuesta» — nothing is left to answer (audit C7).
                             if (section.kind === 'merged') return [
@@ -599,7 +608,7 @@ export default function PendingDedup({ home }: {
                             return [
                                 <h3 key={`h-${group}`}
                                     className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${group === 'received' ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
-                                    {groupLabel(group, t)} · {list.length}
+                                    {groupLabel(group === 'declined_done' ? 'declined' : group, t)} · {list.length}
                                 </h3>,
                                 ...list.map(pair => (
                                     <PairRow

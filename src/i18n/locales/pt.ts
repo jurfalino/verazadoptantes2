@@ -3882,7 +3882,7 @@ export const pt = {
         error_code: 'Código',
         see_animal_page: 'Ver a ficha de {name}',
         due_panel_failed: 'Não conseguimos carregar os controles deste animal.',
-        pending_position: '1 de {n}',
+        pending_position: 'restam {n}',
         pending_asks: '{name} pede para unir',
         pending_declined: '{name} não aceitou unir',
         more_pending_one: '1 a mais espera sua resposta',

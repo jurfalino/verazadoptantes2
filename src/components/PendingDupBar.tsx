@@ -8,6 +8,8 @@ import { pairKey } from '@/domain/dedupPair';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 
 export interface PendingDupBarPair {
+    /** False: the pair waits on someone else (a request you sent / one you declined) — no marker on the list. */
+    waitsOnViewer?: boolean;
     otherAdopterId: string;
     otherAdopterName: string;
     /** On the viewer's «Pendientes de revisar» list — only then is «Revisar» offered. */

@@ -519,7 +519,11 @@ function entriesAsShown(side: PendingDedupSide): Array<{ type: string; value: st
 }
 
 /** Order of the groups on the list (D21). */
-const GROUP_ORDER: ReadonlyArray<PendingDedupPair['group']> = ['received', 'sent', 'declined', 'pair'];
+/** Rows that don't wait on the viewer, shown under every page (sent / declined by them): at most this many. */
+const MAX_OTHERS_SHOWN = 20;
+/** Rows that wait on the viewer first (needsViewer: received, their declined request, possible duplicates), then the rest. */
+const RANK_WAITING: Readonly<Record<PendingDedupPair['group'], number>> = { received: 0, declined: 1, pair: 2, sent: 3 };
+const RANK_OTHERS: Readonly<Record<PendingDedupPair['group'], number>> = { received: 4, declined: 5, pair: 6, sent: 4 };
 
 /** Tolerant parse of `duplicate_candidates.match_values`. Null (per-save path)
  *  or malformed JSON both degrade to "no values", never to a thrown render. */
@@ -577,6 +581,8 @@ export interface PendingDedupPair {
      * (a possible duplicate with no request).
      */
     group: 'received' | 'sent' | 'declined' | 'pair';
+    /** The next move is the viewer's (needsViewer) — listed first; the rest go under «No necesitan nada tuyo». */
+    needsViewer: boolean;
     /**
      * The closed row's «Coinciden: … · Distinto: …» (D22), from matchBreakdown
      * on what this viewer may see (new side = the rescuer's data, existing side
@@ -1287,16 +1293,6 @@ export async function getPendingDuplicatesForUser(
             if (r.status === 'declined') return 'declined';
             return normEmail(r.requesterEmail) === normEmail(viewer) ? 'sent' : 'received';
         };
-        const requestTime = (c: FeedCandidate) => requests.get(pairKey(c.adopter1Id, c.adopter2Id))?.createdAt?.getTime() ?? 0;
-        eligible.sort((x, y) => {
-            const gx = groupOf(x), gy = groupOf(y);
-            return (GROUP_ORDER.indexOf(gx) - GROUP_ORDER.indexOf(gy))
-                || (gx === 'pair'
-                    ? (storedScoreToPercent(y.score) - storedScoreToPercent(x.score))
-                        || ((y.detectedAt?.getTime() ?? 0) - (x.detectedAt?.getTime() ?? 0))
-                    : requestTime(y) - requestTime(x))
-                || (x.candidateId < y.candidateId ? -1 : x.candidateId > y.candidateId ? 1 : 0);
-        });
 
         // «The next move is the viewer's» (needsViewer, Jon 2026-11-09). Every
         // group decides from the request alone except a declined request the
@@ -1334,16 +1330,34 @@ export async function getPendingDuplicatesForUser(
             }
         }));
         const needsViewerCount = needs.size;
+        // By what waits on the viewer first (D21's groups within each part).
+        const requestTime = (c: FeedCandidate) => requests.get(pairKey(c.adopter1Id, c.adopter2Id))?.createdAt?.getTime() ?? 0;
+        eligible.sort((x, y) => {
+            const gx = groupOf(x), gy = groupOf(y);
+            const rank = (c: FeedCandidate, g: PendingDedupPair['group']) => (needs.has(c.candidateId) ? RANK_WAITING : RANK_OTHERS)[g];
+            return (rank(x, gx) - rank(y, gy))
+                || (gx === 'pair'
+                    ? (storedScoreToPercent(y.score) - storedScoreToPercent(x.score))
+                        || ((y.detectedAt?.getTime() ?? 0) - (x.detectedAt?.getTime() ?? 0))
+                    : requestTime(y) - requestTime(x))
+                || (x.candidateId < y.candidateId ? -1 : x.candidateId > y.candidateId ? 1 : 0);
+        });
         if (onlyNeedsViewer) {
             for (let i = eligible.length - 1; i >= 0; i--) if (!needs.has(eligible[i].candidateId)) eligible.splice(i, 1);
         }
 
-        const total = eligible.length;
-        const focusIndex = focusPair ? eligible.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
+        // Pages hold what waits on the viewer; what doesn't (a request they sent, one they declined —
+        // a handful, capped) follows on EVERY page, so it's never buried 7 pages in (UX review
+        // 2026-11-10). `total` = the paged rows, so the pager and «N esperan tu respuesta» agree.
+        const waiting = eligible.filter(c => needs.has(c.candidateId));
+        const others = onlyNeedsViewer ? [] : eligible.filter(c => !needs.has(c.candidateId)).slice(0, MAX_OTHERS_SHOWN);
+        const total = waiting.length;
+        const focusIndex = focusPair ? waiting.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
         if (focusIndex >= 0) page = Math.floor(focusIndex / pageSize) + 1;
-        const focusCandidateId = focusIndex >= 0 ? eligible[focusIndex].candidateId : undefined;
+        const focusOther = focusPair && focusIndex < 0 ? others.find(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : undefined;
+        const focusCandidateId = focusIndex >= 0 ? waiting[focusIndex].candidateId : focusOther?.candidateId;
         const start = Math.max(0, (page - 1) * pageSize);
-        const pageCandidates = eligible.slice(start, start + pageSize);
+        const pageCandidates = [...waiting.slice(start, start + pageSize), ...others];
         if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page, needsViewer: needsViewerCount };
 
         // Fan out only over the ids on THIS page: at most 2 × pageSize.
@@ -1460,6 +1474,7 @@ export async function getPendingDuplicatesForUser(
                 confidencePercent: isAdmin ? storedScoreToPercent(c.score) : null,
                 adminScore: isAdmin && source === 'detected' && !c.rebuilt ? storedScoreToPercent(c.score) : null,
                 group: groupOf(c),
+                needsViewer: needs.has(c.candidateId),
                 summary: { same, diff, flagged: source === 'flagged' },
                 // With no survivor allowed (a pair the viewer only answers) it reads 'merge'.
                 mergeAction: choices.actionByKeep[choices.defaultKeep] ?? 'merge',

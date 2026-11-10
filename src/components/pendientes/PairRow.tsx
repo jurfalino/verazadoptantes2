@@ -62,7 +62,7 @@ const ROW_META: Record<Group, { groupKey: string; groupFallback: string; icon: R
     },
 };
 
-export const GROUP_ORDER: Group[] = ['received', 'sent', 'declined', 'pair'];
+// The order of the sections: SECTION_ORDER in ./sections (what waits on the viewer first).
 
 export function groupLabel(group: Group, t: T): string {
     return t(ROW_META[group].groupKey) || ROW_META[group].groupFallback;
@@ -214,9 +214,14 @@ function KeepSwitch({ pair, keep, onKeep, t, formatShortDate }: {
     t: T;
     formatShortDate: (v: number) => string;
 }) {
-    const label = (s: PendingDedupSide) => s.isMine ? (t('myAdopters.pending_d_keep_mine') || 'El tuyo')
+    const ownerLabel = (s: PendingDedupSide) => s.isMine ? (t('myAdopters.pending_d_keep_mine') || 'El tuyo')
         : s.createdByName ? fill(t('myAdopters.pending_d_keep_of') || 'El de {name}', { name: s.createdByName })
             : (t('myAdopters.pending_d_keep_anonymous') || 'El anónimo');
+    // Both «El tuyo» (or both «El de María»): the owner can't tell them apart — the profile's name can
+    // (UX review 2026-11-10). Same name too: the owner words plus the date underneath still differ.
+    const sameOwner = ownerLabel(pair.newAdopter) === ownerLabel(pair.existingAdopter);
+    const sameName = pair.newAdopter.name.trim() === pair.existingAdopter.name.trim();
+    const label = (s: PendingDedupSide) => (sameOwner && !sameName ? s.name : ownerLabel(s));
     const question = t('myAdopters.pending_d_keep_question') || '¿Cuál se conserva?';
     return (
         <div className="mb-3">

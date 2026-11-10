@@ -3877,7 +3877,7 @@ export const en = {
         error_code: 'Code',
         see_animal_page: "Open {name}'s page",
         due_panel_failed: "We couldn't load this animal's check-ups.",
-        pending_position: '1 of {n}',
+        pending_position: '{n} left',
         pending_asks: '{name} asks to merge',
         pending_declined: '{name} declined to merge',
         more_pending_one: '1 more waiting for your answer',

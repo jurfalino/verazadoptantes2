@@ -10,7 +10,7 @@
 
 import { FileText, Search, Share2, SlidersHorizontal, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { appliedCount, groupOf, SORT_KEYS, type FilterKey, type ListView, type SortKey } from '@/domain/adopterListView';
+import { appliedCount, DEFAULT_PINS, groupOf, SORT_KEYS, type FilterKey, type ListView, type SortKey } from '@/domain/adopterListView';
 
 type T = (key: string) => string;
 
@@ -23,12 +23,13 @@ export function filterLabel(k: FilterKey, t: T): string {
         case 'src:api': return t('myAdopters.filter_api');
         case 'src:contract': return t('myAdopters.filter_contract');
         case 'src:manual': return t('myAdopters.filter_manual');
-        case 'rating:none': return t('ratings.none') || 'Sin calificar';
+        // The row pill's own words (RatingBadge): «Sin calificación», «★ 2 · Riesgoso».
+        case 'rating:none': return t('adopter.hh_link_unrated') || 'Sin calificación';
         case 'alert:housemate': return t('myAdopters.filter_housemate');
         default: {
             const n = k.slice('rating:'.length);
             const word = t(`ratings.${['', 'dangerous', 'poor', 'average', 'good', 'excellent'][Number(n)]}`);
-            return `${n}★ ${word}`;
+            return `★ ${n} · ${word}`;
         }
     }
 }
@@ -75,8 +76,9 @@ export default function AdopterListToolbar({ view, onView, pins, counts, total, 
     };
     const applied = appliedCount(view);
     const panelCount = view.selected.size;
-    // A pinned filter with nobody in it stays out of the way (as the «Desde un post» tab did), unless it's on.
-    const pinned = pins.filter(k => counts[k] > 0 || view.selected.has(k));
+    // A pin the person chose always shows (even at 0 — they asked for it). The two default pins, the
+    // old tabs, step aside when nobody is in them (as the «Desde un post» tab did), unless on.
+    const pinned = pins.filter(k => !DEFAULT_PINS.includes(k) || counts[k] > 0 || view.selected.has(k));
     const unpinnedOn = [...view.selected].filter(k => !pins.includes(k));
 
     return (
@@ -139,10 +141,10 @@ export default function AdopterListToolbar({ view, onView, pins, counts, total, 
             {unpinnedOn.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2" data-testid="adopter-list-active">
                     {unpinnedOn.map(k => (
-                        <span key={k} className="inline-flex items-center gap-1 min-h-[32px] pl-3 pr-1 rounded-full bg-[var(--accent-subtle-bg)] border border-teal-200 text-teal-800 text-xs font-semibold">
+                        <span key={k} className="inline-flex items-center gap-1 min-h-11 pl-3 pr-0 rounded-full bg-[var(--accent-subtle-bg)] border border-teal-200 text-teal-800 text-xs font-semibold">
                             {groupLabel(k, t)}: {filterLabel(k, t)}
                             <button type="button" onClick={() => toggle(k)} aria-label={`${t('myAdopters.filter_remove')}: ${filterLabel(k, t)}`}
-                                className="w-8 h-8 grid place-items-center rounded-full hover:bg-teal-100">
+                                className="w-11 h-11 grid place-items-center rounded-full hover:bg-teal-100">
                                 <X className="w-3.5 h-3.5" strokeWidth={2.5} aria-hidden="true" />
                             </button>
                         </span>

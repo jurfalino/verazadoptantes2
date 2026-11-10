@@ -260,6 +260,10 @@ const listRow = (a: Adopter): ListRow => ({
     fromPost: a.fromPost, housemateChip: hasHousemateChip(a.housemateAlert), latestFormAt: a.latestForm?.submittedAt ?? null,
 });
 
+// The amber border and the «Posible duplicado» pill mark only pairs that wait on the viewer
+// (not a request they sent, nor one they declined) — the same rule as «N esperan tu respuesta».
+const waitingDups = (a: Adopter) => (a.pendingDuplicates ?? []).filter(p => p.waitsOnViewer !== false);
+
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
@@ -390,7 +394,7 @@ export default function MyAdoptersPage() {
                                         // The row is NOT a link (fix round 2, item 19): its one link is the name, stretched
                                         // over the row (ROW_LINK), and the pills, the form line and the rating hint sit
                                         // beside it (ROW_CONTROL) — never an <a>/<button> inside an <a>.
-                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.pendingDuplicates?.length ? 'border-l-4 border-amber-400' : ''}`}
+                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${waitingDups(adopter).length ? 'border-l-4 border-amber-400' : ''}`}
                                     >
                                         {/* Name + Thumbnail */}
                                         <div className="col-span-4 flex items-center gap-3 min-w-0">
@@ -412,7 +416,7 @@ export default function MyAdoptersPage() {
                                                         on "¿es la misma persona?", that is the pair the duplicate
                                                         pill would point at — and the form path also files the
                                                         request in the right history. */}
-                                                    {!!adopter.pendingDuplicates?.length && <PendingDupPill adopterId={adopter.id} pairs={adopter.pendingDuplicates} t={t} />}
+                                                    {!!waitingDups(adopter).length && <PendingDupPill adopterId={adopter.id} pairs={waitingDups(adopter)} t={t} />}
                                                 </div>
                                                 <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
                                                 {/* Inline addedBy was moved to its own column in v2.19.6 —
@@ -495,7 +499,7 @@ export default function MyAdoptersPage() {
                                     data-testid="my-adopters-row"
                                     // v2.19.13: amber left-border for pending-dup cards,
                                     // mirrors the desktop row treatment. Not a link: see the desktop row (item 19).
-                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.pendingDuplicates?.length ? 'border-l-4 border-l-amber-400' : ''}`}
+                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${waitingDups(adopter).length ? 'border-l-4 border-l-amber-400' : ''}`}
                                 >
                                     {/* Top Row: Avatar + Name + Rating */}
                                     <div className="flex items-center gap-3 mb-3">
@@ -579,10 +583,10 @@ export default function MyAdoptersPage() {
                                     </div>
                                     {/* The profile's own bar (spec 2026-11-05): the same component and copy,
                                         a ≥44px «Revisar» instead of a 23px pill on a phone. */}
-                                    {!!adopter.pendingDuplicates?.length && (
+                                    {!!waitingDups(adopter).length && (
                                         <div className={`mt-3 ${ROW_CONTROL}`}>
                                             {/* Positioned (ROW_CONTROL) so it paints above the name link stretched over the card. */}
-                                            <PendingDupBar adopterId={adopter.id} pairs={adopter.pendingDuplicates} testId="row-pending-dup-bar" stacked />
+                                            <PendingDupBar adopterId={adopter.id} pairs={waitingDups(adopter)} testId="row-pending-dup-bar" stacked />
                                         </div>
                                     )}
                                 </div>

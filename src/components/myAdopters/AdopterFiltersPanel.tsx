@@ -69,7 +69,7 @@ export default function AdopterFiltersPanel({ view, onView, pins, onPin, counts,
             ))}
             <div className="flex gap-2 pt-1">
                 <Button type="button" variant="secondary" size="compact" layoutClassName="flex-1"
-                    onClick={() => onView({ ...view, selected: new Set() })} disabled={view.selected.size === 0} data-testid="adopter-filters-clear">
+                    onClick={() => onView({ ...view, selected: new Set(), q: '' })} disabled={view.selected.size === 0 && !view.q.trim()} data-testid="adopter-filters-clear">
                     {t('myAdopters.filters_clear')}
                 </Button>
                 <Button type="button" variant="primary" size="compact" layoutClassName="flex-1" onClick={onClose} data-testid="adopter-filters-done">

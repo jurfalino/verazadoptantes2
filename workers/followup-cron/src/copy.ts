@@ -57,7 +57,8 @@ export function bellNotice(items: BellItem[]): { title: string; body: string; ur
     const rest = names.length - shown.length;
     const list = rest > 0 ? `${shown.join(', ')} y ${rest} más` : shown.join(' y ');
     return {
-        title: `${items.length} controles para hacer`,
+        // No count: the notice is marked read only when all are done, so «3» would go stale after 2.
+        title: 'Controles para hacer',
         body: `${list}. Tocá para verlos en Mis animales.`,
         url: '/my-animals?view=pendientes',
     };

@@ -51,7 +51,7 @@ export function useDueSlotCopy() {
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => onContactClick(s)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 min-h-11 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap"
             data-testid={`contact-${s.key}`}
         >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" /></svg>
@@ -91,7 +91,7 @@ export default function DueNowBlock({ slots, placementId, onRegister, anchorId, 
                         <button
                             type="button"
                             onClick={() => onRegister(s)}
-                            className="inline-flex px-3 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
+                            className="inline-flex items-center min-h-11 px-3 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
                             data-testid={`register-${s.key}`}
                         >
                             {t('followups.register') || 'Registrar'}

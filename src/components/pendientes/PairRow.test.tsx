@@ -46,6 +46,7 @@ const side = (id: string, over: Partial<PendingDedupSide> = {}): PendingDedupSid
 
 const pair = (over: Partial<PendingDedupPair>): PendingDedupPair => ({
     candidateId: 'c1',
+    needsViewer: true,
     source: 'detected',
     newAdopter: side('mine', { isMine: true, teamOwned: true }),
     existingAdopter: side('theirs', { createdByName: 'María' }),
