@@ -78,6 +78,9 @@ From the decision page:
 ### Destination pages (every home count equals the page it opens)
 
 - **Mis animales:** a new tab «Con solicitudes por evaluar» (`?view=solicitudes`), shaped like «Con controles pendientes»: its count equals the sum on the home, and «N animales más con solicitudes» lands there.
+  - It lists the usual animal cards. On each, an amber row «N solicitudes por evaluar» sits in the card footer where the overdue check-up row goes today (both show when an animal has both); it opens the applicant panel. The teal «N interesadas» pill stays as it is.
+  - **«Sin animal elegido» is the first card of this tab, and appears only in this tab** (it is not an animal): a card with the form icon instead of a photo, «Formularios generales, y los que pidieron un animal que ya fue adoptado.», and its amber row «N solicitudes por evaluar» opening the panel with the general applications (Jon 2026-11-10: the prototype had to show it on the page).
+  - The panel opened from this page returns to it («← Volver»), not to the home.
 - **Mis adoptantes:** general applications por evaluar — **open question Q1.**
 
 ### The applicant panel (`ApplicantDetailPanel`)
