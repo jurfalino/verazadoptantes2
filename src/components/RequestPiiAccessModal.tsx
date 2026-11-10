@@ -5,6 +5,8 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { requestPiiAccess } from '@/app/actions/piiAccess';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 
 interface RequestPiiAccessModalProps {
     adopterId: string;
@@ -45,56 +47,40 @@ export default function RequestPiiAccessModal({
             } else {
                 toast.error(t('errors.generic'), res.error || t('adopter.pii_request_error'));
             }
-        } catch {
-            toast.error(t('errors.generic'), t('adopter.pii_request_error'));
+        } catch (e) {
+            toast.error(t('errors.generic'), t('adopter.pii_request_error'), resolveErrorId(e, 'RequestPiiAccessModal'));
         } finally {
             setSubmitting(false);
         }
     }
 
+    // The shared dialog shell (ui/Modal): on <body>, above any other dialog it opens from (the
+    // homepage's «¿Es la misma persona?» panel), and only the topmost answers Escape and Tab.
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }}>
-            <div className="rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4" style={{ background: 'var(--surface-card)' }}>
-                <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {t('adopter.pii_modal_title')}
-                </h3>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {t('adopter.pii_modal_body').replace('{name}', adopterDisplayName({ name: adopterName }, t('adopter.nameless')))}
-                </p>
-                <div className="space-y-1.5">
-                    <label htmlFor="pii-justification" className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
-                        {t('adopter.pii_modal_justification_label')}
-                    </label>
-                    <textarea
-                        id="pii-justification"
-                        rows={3}
-                        value={justification}
-                        onChange={e => setJustification(e.target.value)}
-                        maxLength={1000}
-                        placeholder={t('adopter.pii_modal_justification_ph')}
-                        className="w-full rounded-xl border border-teal-200 bg-white text-teal-900 text-sm p-3 outline-none focus:border-teal-500 resize-y"
-                    />
-                </div>
-                <div className="flex gap-3 pt-1">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        disabled={submitting}
-                        className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
-                        style={{ background: 'var(--surface-muted)', color: 'var(--text-primary)' }}
-                    >
-                        {t('adopter.pii_modal_cancel')}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={submit}
-                        disabled={submitting || !justification.trim()}
-                        className="flex-1 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {submitting ? '...' : t('adopter.pii_modal_submit')}
-                    </button>
-                </div>
+        <Modal title={t('adopter.pii_modal_title')} onClose={onClose} busy={submitting} testId="pii-request-dialog">
+            <ModalText>
+                {t('adopter.pii_modal_body').replace('{name}', adopterDisplayName({ name: adopterName }, t('adopter.nameless')))}
+            </ModalText>
+            <div className="space-y-1.5">
+                <label htmlFor="pii-justification" className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
+                    {t('adopter.pii_modal_justification_label')}
+                </label>
+                <textarea
+                    id="pii-justification"
+                    rows={3}
+                    value={justification}
+                    onChange={e => setJustification(e.target.value)}
+                    maxLength={1000}
+                    placeholder={t('adopter.pii_modal_justification_ph')}
+                    className="w-full rounded-xl border border-teal-200 bg-white text-teal-900 text-sm p-3 outline-none focus:border-teal-500 resize-y"
+                />
             </div>
-        </div>
+            <ModalActions
+                onCancel={onClose}
+                cancelLabel={t('adopter.pii_modal_cancel')}
+                busy={submitting}
+                confirm={{ label: t('adopter.pii_modal_submit'), onClick: submit, tone: 'primary', disabled: !justification.trim() }}
+            />
+        </Modal>
     );
 }

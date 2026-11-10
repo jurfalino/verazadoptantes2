@@ -64,10 +64,12 @@ export function combineTheirsSide(pair: RowPair): KeepSide | null {
  * - A possible duplicate (theirs or their team's): yes — «¿Es la misma persona?».
  * - A request asking the viewer or their team: yes — accept, decline, keep mine.
  * - A request the viewer sent, still pending: no — it waits on the other side.
- * - A declined request: yes while it still offers a decision — the decliner's
- *   «Aceptar ahora», or the requester's «Unir conservando el de …» / «Pedir
- *   revisión a un administrador» (combineTheirsSide); no when only hiding or
- *   writing is left.
+ * - A declined request the viewer (or their team) declined: no — they already
+ *   decided; «Aceptar ahora» stays on the row for a change of mind (Jon
+ *   2026-11-09, «ya decidí»).
+ * - A declined request the viewer filed: yes while «Unir conservando el de …»
+ *   / «Pedir revisión a un administrador» is offered (combineTheirsSide); no
+ *   when only hiding or writing is left.
  */
 export function needsViewer(pair: RowPair): boolean {
     switch (pair.group) {
@@ -77,6 +79,6 @@ export function needsViewer(pair: RowPair): boolean {
         case 'sent':
             return false;
         case 'declined':
-            return pair.request?.direction === 'received' || combineTheirsSide(pair) !== null;
+            return combineTheirsSide(pair) !== null;
     }
 }

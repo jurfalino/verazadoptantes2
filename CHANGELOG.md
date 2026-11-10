@@ -2,6 +2,27 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.42] - 2026-11-09
+
+### Added — act on what's pending without leaving the home
+- **Mis animales:** tapping an animal with a check-up due opens its «Para hacer ahora» over the home — the same
+  block as the animal's page: WhatsApp and «Registrar» for every due check-up. After saving, the card updates
+  and the panel shows what's still due (or closes). «Ver la ficha de …» is still there. The row looks as before.
+- **Mis adoptantes:** the amber row names the first item waiting on you — «¿Es la misma persona? · 1 de N»
+  (or «María te pide unir · 1 de N») over the two names — and opens it over the home, already open, with the
+  same comparison and buttons as Mis adoptantes. After answering, the next one appears there.
+
+### Changed — the «pendientes» number counts only what waits on you
+- Counted (yours and your team's): possible duplicates, requests asking you or your team to merge, and
+  your requests someone declined while «Unir conservando el de …» / «Pedir revisión a un administrador» is
+  still offered (the amber row reads «María no aceptó unir»). Not counted: requests you sent that wait on the
+  other person, requests you (or your team) declined — you already decided; «Aceptar ahora» stays on the row —
+  and declined ones where only «Quitar de la lista» / «Escribirle» is left. All of them are still listed in
+  Mis adoptantes › Pendientes de revisar. The section's header shows the same number as the home card.
+
+### Fixed
+- «Pedir acceso a quien lo cargó» uses the shared dialog shell: it opens above any dialog it's called from.
+
 ## [2.58.41] - 2026-11-09
 
 ### Changed — home cards Mis adoptantes / Mis animales are the same height

@@ -3853,6 +3853,7 @@ export const pt = {
         due_panel_failed: 'Não conseguimos carregar os controles deste animal.',
         pending_position: '1 de {n}',
         pending_asks: '{name} pede para unir',
+        pending_declined: '{name} não aceitou unir',
         pending_see_all: 'Ver tudo em Meus adotantes',
     },
 };

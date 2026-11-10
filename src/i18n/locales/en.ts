@@ -3848,6 +3848,7 @@ export const en = {
         due_panel_failed: "We couldn't load this animal's check-ups.",
         pending_position: '1 of {n}',
         pending_asks: '{name} asks to merge',
+        pending_declined: '{name} declined to merge',
         pending_see_all: 'See everything in My adopters',
     },
 };

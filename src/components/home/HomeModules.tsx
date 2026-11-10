@@ -307,16 +307,18 @@ export function AdoptersCard({ section, contacts, t, rel, className, onOpenPendi
 /**
  * Mis adoptantes' amber row, naming the first row whose next move is the
  * viewer's (Jon 2026-11-09, option A): «¿Es la misma persona? · 1 de N» (or
- * «María te pide unir · 1 de N») over the two names as «Pendientes de
+ * «María te pide unir», or — the viewer's request declined — «María no aceptó
+ * unir») over the two names as «Pendientes de
  * revisar» shows them. It opens that row over the home. Same 44px as the
  * other amber rows, one slot.
  */
 function PendingItemRow({ item, n, onOpen, t, className = '' }: { item: HomePendingItem; n: number; onOpen: () => void; t: T; className?: string }) {
     const [a, b] = item.names;
     const names = a.trim() === b.trim() ? `${a} ×2` : `${a} / ${b}`;
-    const head = item.group === 'received' && item.by
-        ? interpolate(t('homeModules.pending_asks'), { name: item.by })
-        : t('samePerson.question');
+    const who = item.by || t('myAdopters.pending_dedup_a_user');
+    const head = item.group === 'received' ? interpolate(t('homeModules.pending_asks'), { name: who })
+        : item.group === 'declined' ? interpolate(t('homeModules.pending_declined'), { name: who })
+            : t('samePerson.question');
     return (
         <button type="button" onClick={onOpen} aria-haspopup="dialog" data-testid="home-adopters-pending"
             className={`flex items-center gap-2 w-full min-h-11 md:h-11 px-4 py-1.5 rounded-lg text-left bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors ${className}`}>
@@ -469,14 +471,18 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
 
     // First load shows the skeleton; a reload (after registering a check-up
     // from the panel) keeps the cards on screen and swaps the data in.
+    const loaded = useRef(false);
     const load = useCallback(() => {
         getHomeModules()
-            .then(d => { if (alive.current) setData(d); })
+            .then(d => { if (!alive.current) return; loaded.current = true; setData(d); setFailedId(null); })
             .catch((e: unknown) => {
                 if (!alive.current) return;
                 // An older tab: the page reloads itself; meanwhile show nothing rather than a skeleton forever.
                 if (handledAsStale(e)) { setData(null); return; }
-                setFailedId(resolveErrorId(e, 'HomeModules'));
+                const errorId = resolveErrorId(e, 'HomeModules');
+                // A reload after a panel action that fails keeps the cards on screen (one may be a
+                // little behind); only a first load with nothing to show becomes the error box.
+                if (!loaded.current) setFailedId(errorId);
             });
     }, []);
 

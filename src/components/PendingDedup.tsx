@@ -136,8 +136,9 @@ export default function PendingDedup({ home }: { home?: { onChanged: () => void;
                 setNeeds(data.needsViewer);
                 setOpenId(data.pairs[0]?.candidateId ?? null);
                 if (reload) home.onChanged();
-                // Nothing left (or it was answered elsewhere meanwhile): the card shows what's true.
-                if (data.total === 0) { if (!reload) home.onChanged(); home.onClose(); }
+                // Nothing left, or nothing it can show (answered elsewhere meanwhile, a side merged
+                // away): close, and the card shows what's true — never a placeholder that never fills.
+                if (data.pairs.length === 0) { if (!reload) home.onChanged(); home.onClose(); }
             } catch (e) {
                 if (handledAsStale(e)) { home.onClose(); return; }
                 toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
@@ -225,7 +226,8 @@ export default function PendingDedup({ home }: { home?: { onChanged: () => void;
         setTotal(n => Math.max(0, n - 1));
         if (needsViewer(pair)) setNeeds(n => Math.max(0, n - 1));
         setOpenId(id => (id === pair.candidateId ? null : id));
-        if (home) void load(); // the next one
+        // The panel shows pairs[0]: take the merged pair off it, so its buttons can't fire again while the next one loads.
+        if (home) { setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []); void load(); }
         toast.success(title, keptSentence(info, t), { label: t('adopter.dup_action_view') || 'Ver perfil', href: `/adopter/${encodeURIComponent(info.keptId)}` });
     };
 

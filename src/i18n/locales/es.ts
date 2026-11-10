@@ -3855,6 +3855,7 @@ export const es = {
         due_panel_failed: 'No pudimos cargar los controles de este animal.',
         pending_position: '1 de {n}',
         pending_asks: '{name} te pide unir',
+        pending_declined: '{name} no aceptó unir',
         pending_see_all: 'Ver todo en Mis adoptantes',
     },
 };

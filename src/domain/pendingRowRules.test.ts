@@ -56,8 +56,8 @@ describe('needsViewer — the next move is the viewer\'s (Jon 2026-11-09)', () =
         expect(needsViewer(pair({ group: 'sent', request: { direction: 'sent', keepId: 'n' } }))).toBe(false);
     });
 
-    it('declined, seen by whoever declined: yes — «Aceptar ahora»', () => {
-        expect(needsViewer(pair({ group: 'declined', request: { direction: 'received', keepId: 'e' } }))).toBe(true);
+    it('declined by the viewer (or their team): no — already decided; «Aceptar ahora» stays on the row', () => {
+        expect(needsViewer(pair({ group: 'declined', request: { direction: 'received', keepId: 'e' } }))).toBe(false);
     });
 
     it('declined, seen by the requester: yes while «Unir conservando el de …» / «Pedir revisión» is offered', () => {

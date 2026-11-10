@@ -1151,6 +1151,11 @@ export async function getPendingDuplicatesForUser(
                 sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
                     AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
                 sql`(${eitherSideTeamOwned} OR ${requestOnPair})`,
+                // Both profiles still there: a flag whose other side was merged away (merges re-point
+                // adopter_id, not target_adopter_id) has no row to show — the page skips it — so it
+                // must not be counted either, or «1 de N» and the panel point at nothing.
+                sql`EXISTS (SELECT 1 FROM adopters l1 WHERE l1.id = ${adopterFlags.adopterId} AND l1.deleted_at IS NULL)`,
+                sql`EXISTS (SELECT 1 FROM adopters l2 WHERE l2.id = ${adopterFlags.targetAdopterId} AND l2.deleted_at IS NULL)`,
             )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));

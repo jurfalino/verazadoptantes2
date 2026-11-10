@@ -205,6 +205,11 @@ describe('Mis adoptantes — the amber row names the first row that waits on you
             .toBe('María te pide unir · 1 de 2 Marcos Díaz / Marcos A. Díaz');
     });
 
+    it('your request, declined (merge keeping theirs / ask an admin is still open): «Lucía no aceptó unir»', () => {
+        expect(text(row(render(withFirst({ group: 'declined', names: ['Ana Gómez', 'Ana G. Gómez'], by: 'Lucía' }, 3), () => {}))))
+            .toBe('Lucía no aceptó unir · 1 de 3 Ana Gómez / Ana G. Gómez');
+    });
+
     it('the same name twice reads «×2», as on the row it opens', () => {
         expect(text(row(render(withFirst({ group: 'pair', names: ['Luz', 'Luz '], by: null }), () => {})))).toContain('Luz ×2');
     });
