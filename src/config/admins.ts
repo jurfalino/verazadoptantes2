@@ -25,6 +25,25 @@ export function isAdmin(email: string | null | undefined): boolean {
  * To grant admin access to a new user, run this SQL in the admin SQL runner:
  *   UPDATE user_profiles SET role = 'admin' WHERE user_id = (SELECT id FROM user WHERE email = 'user@example.com');
  */
+type RoleDb = { prepare: (q: string) => { bind: (...a: unknown[]) => { first: <T>() => Promise<T | null> } } };
+
+/**
+ * user_profiles.role for an email, read once per request (src/lib/requestMemo.ts): the admin and
+ * moderator checks asked the same row once per pair side on the homepage. A failed read rejects
+ * (and is not remembered), so isAdminAsyncStrict still tells «lookup failed» from «stranger».
+ */
+async function roleOf(db: RoleDb, email: string): Promise<string | null> {
+    const { perRequest } = await import('@/lib/requestMemo');
+    return perRequest(`role:${email}`, async () => {
+        const result = await db.prepare(
+            `SELECT up.role FROM user_profiles up
+             INNER JOIN user u ON u.id = up.user_id
+             WHERE u.email = ? LIMIT 1`
+        ).bind(email).first<{ role: string }>();
+        return result?.role ?? null;
+    });
+}
+
 export async function isAdminAsync(email: string | null | undefined): Promise<boolean> {
     try {
         return await isAdminAsyncStrict(email);
@@ -54,14 +73,9 @@ export async function isAdminAsyncStrict(email: string | null | undefined): Prom
     }
     if (!db) return false;
 
-    // Check DB role via raw D1 query (auth tables aren't in Drizzle schema)
-    const result = await db.prepare(
-        `SELECT up.role FROM user_profiles up
-         INNER JOIN user u ON u.id = up.user_id
-         WHERE u.email = ? LIMIT 1`
-    ).bind(email).first<{ role: string }>();
-
-    return result?.role === 'admin';
+    // Check DB role via raw D1 query (auth tables aren't in Drizzle schema) — once per request.
+    const role = await roleOf(db, email);
+    return role === 'admin';
 }
 
 /**
@@ -91,13 +105,8 @@ export async function isModeratorOrAdminAsync(email: string | null | undefined):
         const { env } = getRequestContext();
         if (!env?.DB) return false;
 
-        const result = await env.DB.prepare(
-            `SELECT up.role FROM user_profiles up
-             INNER JOIN user u ON u.id = up.user_id
-             WHERE u.email = ? LIMIT 1`
-        ).bind(email).first<{ role: string }>();
-
-        return result?.role === 'admin' || result?.role === 'moderator';
+        const role = await roleOf(env.DB as unknown as RoleDb, email);
+        return role === 'admin' || role === 'moderator';
     } catch {
         return false;
     }

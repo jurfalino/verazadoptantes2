@@ -6,6 +6,7 @@
 
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { perRequest } from '@/lib/requestMemo';
 import { isAdmin as checkIsAdmin, isAdminAsync as checkIsAdminAsync, isModeratorOrAdminAsync as checkIsModeratorOrAdminAsync } from '@/config/admins';
 
 // Re-export canonical getDb for use via actions barrel
@@ -18,14 +19,19 @@ export { checkIsAdmin, checkIsAdminAsync, checkIsModeratorOrAdminAsync };
 // (cold-start optimization — anonymous requests never touch auth)
 
 export async function getUser() {
-    try {
-        const { auth } = await import('@/auth');
-        const session = await auth();
-        if (session?.user?.email) return session.user.email;
-    } catch (e) {
-        logger.warn('getUser auth failed', { error: e instanceof Error ? e.message : String(e) });
-    }
-
+    // Once per request (src/lib/requestMemo.ts): every action and loader asks, and each auth()
+    // is a D1 read in the jwt callback — ~180 ms from Argentina.
+    const email = await perRequest('getUser', async () => {
+        try {
+            const { auth } = await import('@/auth');
+            const session = await auth();
+            return session?.user?.email ?? null;
+        } catch (e) {
+            logger.warn('getUser auth failed', { error: e instanceof Error ? e.message : String(e) });
+            return null;
+        }
+    });
+    if (email) return email;
     throw new Error('Authentication required');
 }
 

@@ -3,6 +3,13 @@ compatibility_date = "2025-01-27"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
+# Run the Pages Functions next to D1 (primary in ENAM), not next to the visitor (EM review
+# 2026-11-10): from Argentina every D1 query is a ~180 ms round trip, and the homepage chains ~30.
+# Smart placement moves the code only when Cloudflare measures it faster elsewhere; the homepage
+# timing log carries `colo` (where it ran) to check. Inherited by env.production / env.preview.
+[placement]
+mode = "smart"
+
 # Top-level bindings for wrangler CLI commands (e.g., migrations)
 [[d1_databases]]
 binding = "DB"
