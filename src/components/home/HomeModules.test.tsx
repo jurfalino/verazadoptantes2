@@ -27,7 +27,7 @@ const t = (path: string): string => {
 };
 const rel = () => 'hace 1 día';
 
-const adopters = (pendingReview: number): HomeAdoptersData => ({ total: 4, pendingReview, recent: [] });
+const adopters = (pendingReview: number): HomeAdoptersData => ({ total: 4, pendingReview, firstPending: null, recent: [] });
 const animals = (dueCount: number): HomeAnimalsData => ({ available: 1, adopted: 2, total: 3, dueCount, rows: [] });
 
 /** Every <a …> opening tag whose href is `href`. */
@@ -113,7 +113,7 @@ describe('Mis adoptantes / Mis animales — same 4 slots, so side by side they a
         id: `p${i}`, name: `Persona ${i}`, thumbnail: null, avgRating: null,
         createdAt: 0, viaForm: false, creatorIsSelf: true, creatorName: null, groupName: null,
     });
-    const people = (pendingReview: number, total = 10): HomeAdoptersData => ({ total, pendingReview, recent: [1, 2, 3, 4].map(person) });
+    const people = (pendingReview: number, total = 10): HomeAdoptersData => ({ total, pendingReview, firstPending: null, recent: [1, 2, 3, 4].map(person) });
     const renderAdopters = (data: HomeAdoptersData, contacts: ReactNode = null) =>
         renderToStaticMarkup(<AdoptersCard section={{ ok: true, data }} contacts={contacts} t={t} rel={rel} />);
     const n = (html: string, id: string) => (html.match(new RegExp(`data-testid="${id}"`, 'g')) ?? []).length;
@@ -184,5 +184,37 @@ describe('Mis animales — an animal with a check-up due opens «Para hacer ahor
         const calm = { ...dueAnimal, id: 'sol', name: 'Sol', due: null } as HomeAnimalsData['rows'][number];
         const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: { ...data, rows: [dueAnimal, calm] } }} t={t} onOpenDue={() => {}} />);
         expect(anchor(html, 'home-animal-row')).toContain('href="/my-animals/sol"');
+    });
+});
+
+describe('Mis adoptantes — the amber row names the first row that waits on you, and opens it over the home (Jon 2026-11-09, option A)', () => {
+    const withFirst = (first: HomeAdoptersData['firstPending'], n = 65): HomeAdoptersData => ({ total: 10, pendingReview: n, firstPending: first, recent: [] });
+    const render = (d: HomeAdoptersData, onOpenPending?: () => void) =>
+        renderToStaticMarkup(<AdoptersCard section={{ ok: true, data: d }} contacts={null} t={t} rel={rel} onOpenPending={onOpenPending} />);
+    const row = (html: string) => html.match(/<button[^>]*data-testid="home-adopters-pending"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+
+    it('a possible duplicate: «¿Es la misma persona? · 1 de N» over the two names, as «Pendientes de revisar» writes them', () => {
+        const html = render(withFirst({ group: 'pair', names: ['Ana Gómez', 'Ana G. Gómez'], by: null }), () => {});
+        expect(text(row(html))).toBe('¿Es la misma persona? · 1 de 65 Ana Gómez / Ana G. Gómez');
+        expect(row(html)).toContain('aria-haspopup="dialog"');
+        expect(html).not.toContain('href="/my-adopters#pendientes"');
+    });
+
+    it('a request from a teammate: «María te pide unir»', () => {
+        expect(text(row(render(withFirst({ group: 'received', names: ['Marcos Díaz', 'Marcos A. Díaz'], by: 'María' }, 2), () => {}))))
+            .toBe('María te pide unir · 1 de 2 Marcos Díaz / Marcos A. Díaz');
+    });
+
+    it('the same name twice reads «×2», as on the row it opens', () => {
+        expect(text(row(render(withFirst({ group: 'pair', names: ['Luz', 'Luz '], by: null }), () => {})))).toContain('Luz ×2');
+    });
+
+    it('still one 44px slot on desktop', () => {
+        expect(row(render(withFirst({ group: 'pair', names: ['A', 'B'], by: null }), () => {}))).toContain('md:h-11');
+    });
+
+    it('without the panel (or the first row unknown), the count links to the list, as before', () => {
+        expect(anchor(render(withFirst(null)), 'home-adopters-pending')).toContain('href="/my-adopters#pendientes"');
+        expect(anchor(render(withFirst({ group: 'pair', names: ['A', 'B'], by: null })), 'home-adopters-pending')).toContain('href="/my-adopters#pendientes"');
     });
 });

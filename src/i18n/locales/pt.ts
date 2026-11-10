@@ -3851,6 +3851,9 @@ export const pt = {
         error_code: 'Código',
         see_animal_page: 'Ver a ficha de {name}',
         due_panel_failed: 'Não conseguimos carregar os controles deste animal.',
+        pending_position: '1 de {n}',
+        pending_asks: '{name} pede para unir',
+        pending_see_all: 'Ver tudo em Meus adotantes',
     },
 };
 

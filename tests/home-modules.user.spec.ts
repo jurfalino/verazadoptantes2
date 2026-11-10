@@ -20,6 +20,11 @@ const POST_NAME = `Posteado Home ${stamp}`;
 const DUE_ADOPTER = `test-hm-fixture-home-${stamp}`;
 const DUE_ANIMAL = `test-hm-fixture-an-${stamp}`;
 const DUE_ANIMAL_NAME = `Controlin ${stamp}`;
+// A possible duplicate of the user's own: the newest and strongest, so it's the first the amber row names.
+const PAIR_A = `test-hm-fixture-pa-${stamp}`;
+const PAIR_B = `test-hm-fixture-pb-${stamp}`;
+const PAIR_CAND = `test-hm-fixture-cand-${stamp}`;
+const PAIR_NAME = `Parejita Home ${stamp}`;
 
 const numberIn = async (loc: Locator): Promise<number> => Number(((await loc.textContent()) ?? '').match(/\d+/)?.[0] ?? NaN);
 
@@ -49,6 +54,9 @@ test.describe.serial('homepage modules', () => {
             `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${DUE_ADOPTER}', 'Hogar Home ${stamp}', '', '5', '${USER}', strftime('%s','now','-40 days'), strftime('%s','now','-40 days'))`,
             `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${DUE_ANIMAL}', '${DUE_ANIMAL_NAME}', 'dog', '${USER}', strftime('%s','now','-60 days'), strftime('%s','now','-60 days'))`,
             `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('test-hm-fixture-pl-${stamp}', '${DUE_ANIMAL}', '${DUE_ADOPTER}', 'adoption', strftime('%s','now','-40 days'), '${USER}')`,
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${PAIR_A}', '${PAIR_NAME}', '', '5', '${USER}', strftime('%s','now','-2 days'), strftime('%s','now','-2 days'))`,
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${PAIR_B}', '${PAIR_NAME} G.', '', '5', '${USER}', strftime('%s','now'), strftime('%s','now'))`,
+            `INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES ('${PAIR_CAND}', '${PAIR_B}', '${PAIR_A}', '["name_word"]', '{}', 100, 'high', 'pending', strftime('%s','now','+1 day'))`,
         ]);
     });
 
@@ -59,7 +67,9 @@ test.describe.serial('homepage modules', () => {
             `DELETE FROM placements WHERE id = 'test-hm-fixture-pl-${stamp}'`,
             `DELETE FROM animals WHERE id = '${DUE_ANIMAL}'`,
             `DELETE FROM adopter_events WHERE id = 'test-hm-fixture-ev-${stamp}'`,
-            `DELETE FROM adopters WHERE id IN ('${POST_ADOPTER}', '${DUE_ADOPTER}')`,
+            `DELETE FROM duplicate_candidates WHERE id = '${PAIR_CAND}'`,
+            `DELETE FROM adopter_flags WHERE adopter_id IN ('${PAIR_A}', '${PAIR_B}') OR target_adopter_id IN ('${PAIR_A}', '${PAIR_B}')`,
+            `DELETE FROM adopters WHERE id IN ('${POST_ADOPTER}', '${DUE_ADOPTER}', '${PAIR_A}', '${PAIR_B}')`,
             `UPDATE user_profiles SET home_prefs = NULL WHERE user_id = (SELECT id FROM user WHERE email = '${USER}')`,
         ]);
     });
@@ -144,6 +154,31 @@ test.describe.serial('homepage modules', () => {
             await expect(page.getByText(DUE_ANIMAL_NAME).first()).toBeVisible({ timeout: 60_000 });
             return onCard === await numberIn(tab);
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
+    });
+
+    test('Mis adoptantes: the amber row names the first pending pair; answering it over the home moves on to the next', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        const amber = page.getByTestId('home-adopters-pending');
+        // «¿Es la misma persona? · 1 de N» over the two names — the fixture is the newest, strongest pair.
+        await expect(amber).toContainText(PAIR_NAME, { timeout: 60_000 });
+        await amber.click();
+
+        // Over the home: that pair, open, with «No, es otra persona».
+        const panel = page.getByTestId('home-pending-panel');
+        await expect(panel).toBeVisible({ timeout: 60_000 });
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        const row = panel.getByTestId('dedup-row');
+        await expect(row).toContainText(PAIR_NAME, { timeout: 60_000 });
+        await expect(panel.getByTestId('home-pending-panel-all')).toHaveAttribute('href', '/my-adopters#pendientes');
+        await row.getByTestId('dedup-keep-separate').click();
+
+        // Still on the home: the next pair (or none, and the panel closes); the card no longer names this one.
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        await expect(panel.getByTestId('dedup-row').filter({ hasText: PAIR_NAME })).toHaveCount(0, { timeout: 60_000 });
+        if (await panel.isVisible()) await panel.getByTestId('home-pending-panel-close').click();
+        await expect.poll(async () => (await amber.count()) === 0 || !((await amber.textContent()) ?? '').includes(PAIR_NAME),
+            { timeout: 60_000, intervals: [2_000] }).toBe(true);
     });
 
     // Last: it resolves the fixture's check-in, which the tests above count on.

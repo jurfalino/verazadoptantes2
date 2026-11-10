@@ -14,7 +14,8 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import { useLanguage } from '@/context/LanguageContext';
 import { timeAgo } from '@/lib/timeAgo';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -22,7 +23,9 @@ import { GroupChip } from '@/components/GroupChip';
 import { keepNumberWithUnit, keepCountsTogether } from '@/lib/keepNumberWithUnit';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
-import HomeDuePanel from '@/components/home/HomeDuePanel';
+// The panels load when first opened: the home stays light for everyone who never taps an amber row.
+const HomeDuePanel = dynamic(() => import('@/components/home/HomeDuePanel'), { ssr: false });
+const PendingDedup = dynamic(() => import('@/components/PendingDedup'), { ssr: false });
 import { getHomeModules } from '@/app/actions/homeModules';
 import { orderHomeModules, homeAdopterRowCount, HOME_CARD_SLOTS, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
 import { HOME_POSTS_WINDOW_DAYS } from '@/config/constants';
@@ -32,7 +35,7 @@ import { interpolate } from '@/lib/interpolate';
 import { detectSocialPlatform, SOCIAL_PLATFORMS } from '@/lib/contactEntries';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
-import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeModulesData, HomePostsData, HomeSection } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeModulesData, HomePendingItem, HomePostsData, HomeSection } from '@/types/homeModules';
 
 type T = (key: string) => string;
 
@@ -259,7 +262,11 @@ function animalParts(d: HomeAnimalsData) {
     return { moreDue, more: d.total > d.rows.length, slots: d.rows.length + (moreDue > 0 ? 1 : 0) };
 }
 
-export function AdoptersCard({ section, contacts, t, rel, className }: { section: HomeSection<HomeAdoptersData>; contacts: ReactNode; t: T; rel: (ms: number) => string; className?: string }) {
+export function AdoptersCard({ section, contacts, t, rel, className, onOpenPending }: {
+    section: HomeSection<HomeAdoptersData>; contacts: ReactNode; t: T; rel: (ms: number) => string; className?: string;
+    /** Opens the first pending row over the home (PendingDedup's home mode). */
+    onOpenPending?: () => void;
+}) {
     if (!section.ok) {
         return <ModuleShell icon="people" title={t('homeModules.adopters_title')} href="/my-adopters" testId="home-adopters" className={className}><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
@@ -275,7 +282,10 @@ export function AdoptersCard({ section, contacts, t, rel, className }: { section
             add={{ href: '/adopter/create', label: t('homeModules.add'), aria: t('homeModules.add_adopter') }} className={className}>
             {/* One block, so the slots sit at their own fixed spacing (SLOT_*). */}
             <div>
-                {hasTodo && (
+                {hasTodo && d.firstPending && onOpenPending && (
+                    <PendingItemRow item={d.firstPending} n={d.pendingReview} onOpen={onOpenPending} t={t} className={SLOT_GAP_BELOW} />
+                )}
+                {hasTodo && !(d.firstPending && onOpenPending) && (
                     <TodoRow href="/my-adopters#pendientes" testId="home-adopters-pending" className={SLOT_GAP_BELOW}>
                         {count(t, d.pendingReview, 'homeModules.pending_review_one', 'homeModules.pending_review_many')}
                     </TodoRow>
@@ -291,6 +301,33 @@ export function AdoptersCard({ section, contacts, t, rel, className }: { section
                 {showContacts && <div className={SLOT_GAP_ABOVE}>{contacts}</div>}
             </div>
         </ModuleShell>
+    );
+}
+
+/**
+ * Mis adoptantes' amber row, naming the first row whose next move is the
+ * viewer's (Jon 2026-11-09, option A): «¿Es la misma persona? · 1 de N» (or
+ * «María te pide unir · 1 de N») over the two names as «Pendientes de
+ * revisar» shows them. It opens that row over the home. Same 44px as the
+ * other amber rows, one slot.
+ */
+function PendingItemRow({ item, n, onOpen, t, className = '' }: { item: HomePendingItem; n: number; onOpen: () => void; t: T; className?: string }) {
+    const [a, b] = item.names;
+    const names = a.trim() === b.trim() ? `${a} ×2` : `${a} / ${b}`;
+    const head = item.group === 'received' && item.by
+        ? interpolate(t('homeModules.pending_asks'), { name: item.by })
+        : t('samePerson.question');
+    return (
+        <button type="button" onClick={onOpen} aria-haspopup="dialog" data-testid="home-adopters-pending"
+            className={`flex items-center gap-2 w-full min-h-11 md:h-11 px-4 py-1.5 rounded-lg text-left bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors ${className}`}>
+            <span className="flex-1 min-w-0">
+                <span className="block text-xs font-bold [overflow-wrap:anywhere] md:truncate">
+                    {head} <span className="font-semibold">· {interpolate(t('homeModules.pending_position'), { n })}</span>
+                </span>
+                <span title={names} className="block text-xs font-semibold text-amber-800 [overflow-wrap:anywhere] md:truncate">{names}</span>
+            </span>
+            <Icon name="chevron" className="w-4 h-4 shrink-0" />
+        </button>
     );
 }
 
@@ -449,6 +486,9 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         return () => { alive.current = false; };
     }, [load]);
     const closeDuePanel = useCallback(() => setDuePanel(null), []);
+    /** «¿Es la misma persona?» open over the home (option A). Stable, so the panel's loader isn't recreated each render. */
+    const [pendingOpen, setPendingOpen] = useState(false);
+    const pendingPanel = useMemo(() => ({ onChanged: load, onClose: () => setPendingOpen(false) }), [load]);
 
     // Same compact wording as /my-adopters' «Creado por … hace 4 sem».
     const rel = (ms: number) => timeAgo(new Date(ms), locale !== 'en');
@@ -513,7 +553,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     const spanIf = (k: HomeModuleKey) => (k === taller ? 'md:row-span-2' : '');
 
     const card = (k: HomeModuleKey) => {
-        if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} />;
+        if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} onOpenPending={() => setPendingOpen(true)} />;
         if (k === 'animals' && data.animals) return <AnimalsCard key={k} section={data.animals} t={t} className={spanIf(k)} onOpenDue={setDuePanel} />;
         if (k === 'posts' && posts) return <PostsCard key={k} section={posts} t={t} rel={rel} />;
         return null;
@@ -539,6 +579,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
                 {items}
             </div>
             {duePanel && <HomeDuePanel key={duePanel.id} animalId={duePanel.id} animalName={duePanel.name} onClose={closeDuePanel} onChanged={load} />}
+            {pendingOpen && <PendingDedup home={pendingPanel} />}
         </>
     );
 }

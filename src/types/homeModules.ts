@@ -10,11 +10,28 @@ export type HomePersonRow = {
     avgRating: number | null;
 };
 
+/**
+ * The first «Pendientes de revisar» row whose next move is the viewer's
+ * (needsViewer): the homepage's amber row names it (Jon 2026-11-09, option A).
+ */
+export type HomePendingItem = {
+    group: 'pair' | 'received' | 'declined';
+    /** The two profiles' names, as the row shows them. */
+    names: [string, string];
+    /** «{name} te pide unir»: the request's other side. */
+    by: string | null;
+};
+
 export type HomeAdoptersData = {
     /** Same number as /my-adopters «Todos». */
     total: number;
-    /** Same number as the «Pendientes de revisar» section header — form matches included (spec 2026-11-05). */
+    /**
+     * Rows whose next move is the viewer's (needsViewer) — the same number as
+     * the «Pendientes de revisar» section header. Form matches included (spec 2026-11-05).
+     */
     pendingReview: number;
+    /** The first of them, named on the amber row; null when there are none (or its profiles just went). */
+    firstPending: HomePendingItem | null;
     /** Newest created first, as /my-adopters lists them. */
     recent: Array<HomePersonRow & {
         createdAt: number;

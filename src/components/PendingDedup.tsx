@@ -47,6 +47,10 @@ import IdentityChoice from '@/components/pendientes/IdentityChoice';
 import WriteMessage from '@/components/pendientes/WriteMessage';
 import MergedRow, { keptSentence, mergedInfo, type MergedInfo } from '@/components/pendientes/MergedRow';
 import { pendientesSections } from '@/components/pendientes/sections';
+import { needsViewer } from '@/domain/pendingRowRules';
+import { Modal } from '@/components/ui/Modal';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 
@@ -72,7 +76,15 @@ const STALE_REFUSALS: Record<string, { key: string; fallback: string }> = {
     identity_not_applicable: { key: 'myAdopters.pending_d_err_identity_not_applicable', fallback: 'Estos perfiles cambiaron. Actualizamos la lista.' },
 };
 
-export default function PendingDedup() {
+/**
+ * `home`: the homepage's panel (Jon 2026-11-09, option A) — over the home, one
+ * row at a time, already open: only the rows whose next move is the viewer's
+ * (needsViewer), the first of them. Every action, dialog and refusal is this
+ * component's own, so the home and /my-adopters can never answer differently.
+ * After each answer the next row loads (and the card reloads); with none left
+ * the panel closes.
+ */
+export default function PendingDedup({ home }: { home?: { onChanged: () => void; onClose: () => void } } = {}) {
     const { t, locale } = useLanguage();
     const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
@@ -81,6 +93,8 @@ export default function PendingDedup() {
     const isAdmin = !!(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
     const [pairs, setPairs] = useState<PendingDedupPair[] | null>(null);
     const [total, setTotal] = useState(0);
+    /** Rows whose next move is the viewer's (needsViewer): the header's number, the same as the home card's. */
+    const [needs, setNeeds] = useState(0);
     const [page, setPage] = useState(1);
     // Collapsed by default: production carries hundreds of pending pairs, and a
     // wall of them above the actual adopter list buries the page. It opens
@@ -112,6 +126,25 @@ export default function PendingDedup() {
     const loadedByFocus = useRef<number | null>(null);
 
     const load = useCallback(async () => {
+        if (home) {
+            try {
+                const data = await getPendingDuplicatesForUser(1, 1, false, undefined, 'needs_viewer');
+                const reload = autoOpened.current;
+                autoOpened.current = true;
+                setPairs(data.pairs);
+                setTotal(data.total);
+                setNeeds(data.needsViewer);
+                setOpenId(data.pairs[0]?.candidateId ?? null);
+                if (reload) home.onChanged();
+                // Nothing left (or it was answered elsewhere meanwhile): the card shows what's true.
+                if (data.total === 0) { if (!reload) home.onChanged(); home.onClose(); }
+            } catch (e) {
+                if (handledAsStale(e)) { home.onClose(); return; }
+                toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
+                home.onClose();
+            }
+            return;
+        }
         if (loadedByFocus.current === page) { loadedByFocus.current = null; return; }
         try {
             const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
@@ -119,6 +152,7 @@ export default function PendingDedup() {
             if (data.page && data.page !== page) { loadedByFocus.current = data.page; setPage(data.page); }
             setPairs(data.pairs);
             setTotal(data.total);
+            setNeeds(data.needsViewer);
             // A reload after an action keeps the row the viewer is working on
             // open while it's still listed (a request just filed moves it to «Enviados»).
             setOpenId(id => (id && data.pairs.some(p => p.candidateId === id) ? id : null));
@@ -144,7 +178,7 @@ export default function PendingDedup() {
             setPairs([]);
             setTotal(0);
         }
-    }, [t, toast, page]);
+    }, [t, toast, page, home]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -180,6 +214,8 @@ export default function PendingDedup() {
     const dropRow = (pair: PendingDedupPair) => {
         setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
         setTotal(n => Math.max(0, n - 1));
+        if (needsViewer(pair)) setNeeds(n => Math.max(0, n - 1));
+        if (home) void load(); // the next one
     };
 
     /** D52: the row turns into its confirmation, and the toast offers the kept profile. */
@@ -187,7 +223,9 @@ export default function PendingDedup() {
         const info = mergedInfo(pair, sideOf(pair, kept), t);
         setMerged(prev => [...prev.filter(m => m.candidateId !== pair.candidateId), info]);
         setTotal(n => Math.max(0, n - 1));
+        if (needsViewer(pair)) setNeeds(n => Math.max(0, n - 1));
         setOpenId(id => (id === pair.candidateId ? null : id));
+        if (home) void load(); // the next one
         toast.success(title, keptSentence(info, t), { label: t('adopter.dup_action_view') || 'Ver perfil', href: `/adopter/${encodeURIComponent(info.keptId)}` });
     };
 
@@ -412,11 +450,97 @@ export default function PendingDedup() {
         };
     };
 
+    const confirmShown = confirm ? confirmView(confirm) : null;
+    const dialogs = (
+        <>
+                {identityAsk && (
+                    <IdentityChoice
+                        nameA={identityAsk.pair.newAdopter.name}
+                        nameB={identityAsk.pair.existingAdopter.name}
+                        busy={busyCandidateId === identityAsk.pair.candidateId}
+                        onSame={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'same')}
+                        onHousehold={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'household')}
+                        onCancel={() => setIdentityAsk(null)}
+                        t={t}
+                    />
+                )}
+                {confirm && confirmShown && (
+                    <ConfirmCombine
+                        {...confirmShown}
+                        busy={busyCandidateId === confirm.pair.candidateId}
+                        onConfirm={() => runConfirmed(confirm)}
+                        onCancel={() => setConfirm(null)}
+                        t={t}
+                        formatShortDate={formatShortDate}
+                    />
+                )}
+                {writeTo?.request && (
+                    <WriteMessage
+                        toName={writeTo.request.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario')}
+                        aboutName={writeTo.existingAdopter.name}
+                        busy={busyCandidateId === writeTo.candidateId}
+                        onSend={text => send(writeTo, text)}
+                        onCancel={() => setWriteTo(null)}
+                        t={t}
+                    />
+                )}
+
+                {/* Reuses the existing owner-approval flow rather than a mailto: the
+                    owner gets a real request in PiiAccessRequestPanel and can grant
+                    it there. */}
+                <RequestPiiAccessModal
+                    open={!!accessTarget}
+                    adopterId={accessTarget?.id || ''}
+                    adopterName={accessTarget?.name || ''}
+                    onClose={() => setAccessTarget(null)}
+                    onRequested={() => { setAccessTarget(null); load(); }}
+                />
+        </>
+    );
+
+    if (home) {
+        const pair = pairs?.[0] ?? null;
+        const heading = !pair ? (t('myAdopters.pending_dedup_title') || 'Pendientes de revisar')
+            : pair.group === 'pair' ? t('samePerson.question') : groupLabel(pair.group, t);
+        return (
+            <>
+                <Modal size="lg" testId="home-pending-panel" onClose={home.onClose} busy={!!busyCandidateId}
+                    title={<>{heading}{needs > 0 && <span className={`font-semibold ${T_MUTED}`}> · {fill(t('homeModules.pending_position'), { n: String(needs) })}</span>}</>}>
+                    {pair ? (
+                        <div className="-mx-6 border-y border-[var(--border-default)]">
+                            <PairRow
+                                pair={pair}
+                                open
+                                keep={keepOf(pair)}
+                                onKeep={k => setKeepChoice(prev => ({ ...prev, [pair.candidateId]: k }))}
+                                busy={busyCandidateId === pair.candidateId}
+                                locked={!!busyCandidateId}
+                                isAdmin={isAdmin}
+                                t={t}
+                                formatShortDate={formatShortDate}
+                                age={requestAge}
+                                onAction={onAction}
+                                onRequestAccess={setAccessTarget}
+                            />
+                        </div>
+                    ) : (
+                        <div aria-hidden="true" data-testid="home-pending-panel-loading" className="h-40 rounded-2xl bg-stone-100 animate-pulse" />
+                    )}
+                    <Link href={`/my-adopters#${SECTION_ID}`} data-testid="home-pending-panel-all"
+                        className="flex items-center justify-between gap-2 min-h-11 text-sm font-semibold text-teal-700 hover:underline underline-offset-4">
+                        <span>{fill(t('homeModules.pending_see_all'), { n: String(needs) })}</span>
+                        <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    </Link>
+                </Modal>
+                {dialogs}
+            </>
+        );
+    }
+
     if (pairs === null) return null; // not loaded yet
     // A pair just combined keeps the section on screen (D52), even the last one.
     if (total === 0 && merged.length === 0) return null;
 
-    const confirmShown = confirm ? confirmView(confirm) : null;
 
     return (
         <section id={SECTION_ID} ref={sectionRef} className="mb-8 scroll-mt-20">
@@ -433,7 +557,8 @@ export default function PendingDedup() {
                 </svg>
                 <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2 group-hover:text-stone-900">
                     {t('myAdopters.pending_dedup_title') || 'Pendientes de revisar'}
-                    <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]">{total}</span>
+                    {/* What waits on the viewer (needsViewer) — the home card's number. Sent requests are listed, not counted. */}
+                    {needs > 0 && <span data-testid="pending-dedup-needs" className="text-sm font-semibold px-2 py-0.5 rounded-full bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]">{needs}</span>}
                 </h2>
             </button>
             <p className="text-sm text-stone-500 mt-1 mb-3 ml-6">
@@ -508,48 +633,7 @@ export default function PendingDedup() {
                 </>
             )}
 
-            {identityAsk && (
-                <IdentityChoice
-                    nameA={identityAsk.pair.newAdopter.name}
-                    nameB={identityAsk.pair.existingAdopter.name}
-                    busy={busyCandidateId === identityAsk.pair.candidateId}
-                    onSame={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'same')}
-                    onHousehold={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'household')}
-                    onCancel={() => setIdentityAsk(null)}
-                    t={t}
-                />
-            )}
-            {confirm && confirmShown && (
-                <ConfirmCombine
-                    {...confirmShown}
-                    busy={busyCandidateId === confirm.pair.candidateId}
-                    onConfirm={() => runConfirmed(confirm)}
-                    onCancel={() => setConfirm(null)}
-                    t={t}
-                    formatShortDate={formatShortDate}
-                />
-            )}
-            {writeTo?.request && (
-                <WriteMessage
-                    toName={writeTo.request.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario')}
-                    aboutName={writeTo.existingAdopter.name}
-                    busy={busyCandidateId === writeTo.candidateId}
-                    onSend={text => send(writeTo, text)}
-                    onCancel={() => setWriteTo(null)}
-                    t={t}
-                />
-            )}
-
-            {/* Reuses the existing owner-approval flow rather than a mailto: the
-                owner gets a real request in PiiAccessRequestPanel and can grant
-                it there. */}
-            <RequestPiiAccessModal
-                open={!!accessTarget}
-                adopterId={accessTarget?.id || ''}
-                adopterName={accessTarget?.name || ''}
-                onClose={() => setAccessTarget(null)}
-                onRequested={() => { setAccessTarget(null); load(); }}
-            />
+            {dialogs}
         </section>
     );
 }

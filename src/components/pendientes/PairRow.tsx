@@ -257,7 +257,8 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
     open: boolean;
     /** The pair a profile's «Revisar» linked to: outlined so it's found at a glance. */
     highlight?: boolean;
-    onToggle: () => void;
+    /** Absent: the row is always open, with no toggle (the homepage's panel shows one row at a time). */
+    onToggle?: () => void;
     /** «¿Cuál se conserva?» for a possible duplicate (the feed's default until changed). */
     keep: KeepSide;
     onKeep: (s: KeepSide) => void;
@@ -298,29 +299,40 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
         </Button>
     );
 
+    // The closed row's face (icon, names, state, summary): a toggle in the list, a plain heading in the homepage's panel.
+    const face = (
+        <>
+            <span className={`w-10 h-10 shrink-0 rounded-full border flex items-center justify-center ${meta.dot}`}>{meta.icon}</span>
+            <span className="flex-1 min-w-0">
+                {/* Open, the names sit in the comparison blocks (D23). */}
+                {!open && <span className={`block text-[15px] font-bold truncate ${T_PRIMARY}`}>{names}</span>}
+                <span data-testid={r ? 'dedup-request-status' : undefined}
+                    className={`block text-[13px] ${group === 'received' ? 'font-bold text-[var(--status-warning-text)]' : group === 'declined' ? 'text-[var(--status-error-text)]' : T_MUTED}`}>
+                    {stateLine(pair, t, age)}
+                </span>
+                {!open && summary && <span className={`block text-[12px] mt-0.5 ${T_MUTED}`}>{summary}</span>}
+            </span>
+            {group === 'received' && !open && (
+                <span className="hidden sm:inline text-[12px] font-bold px-2 py-1 rounded-full bg-teal-700 text-white">
+                    {t('myAdopters.pending_d_respond') || 'Responder'}
+                </span>
+            )}
+        </>
+    );
+    const faceClass = 'flex-1 min-w-0 min-h-[64px] flex items-center gap-3 pl-4 pr-2 py-3 text-left';
+
     return (
         <div data-testid="dedup-row" data-group={group} data-candidate-id={pair.candidateId} data-highlight={highlight || undefined}
             className={`border-t border-[var(--border-default)] first:border-t-0 ${open ? 'bg-[var(--accent-subtle-bg)]' : ''} ${highlight ? 'ring-2 ring-inset ring-[var(--status-warning-border)]' : ''}`}>
             <div className="flex items-center">
-                <button type="button" aria-expanded={open} onClick={onToggle}
-                    className="flex-1 min-w-0 min-h-[64px] flex items-center gap-3 pl-4 pr-2 py-3 text-left">
-                    <span className={`w-10 h-10 shrink-0 rounded-full border flex items-center justify-center ${meta.dot}`}>{meta.icon}</span>
-                    <span className="flex-1 min-w-0">
-                        {/* Open, the names sit in the comparison blocks (D23). */}
-                        {!open && <span className={`block text-[15px] font-bold truncate ${T_PRIMARY}`}>{names}</span>}
-                        <span data-testid={r ? 'dedup-request-status' : undefined}
-                            className={`block text-[13px] ${group === 'received' ? 'font-bold text-[var(--status-warning-text)]' : group === 'declined' ? 'text-[var(--status-error-text)]' : T_MUTED}`}>
-                            {stateLine(pair, t, age)}
-                        </span>
-                        {!open && summary && <span className={`block text-[12px] mt-0.5 ${T_MUTED}`}>{summary}</span>}
-                    </span>
-                    {group === 'received' && !open && (
-                        <span className="hidden sm:inline text-[12px] font-bold px-2 py-1 rounded-full bg-teal-700 text-white">
-                            {t('myAdopters.pending_d_respond') || 'Responder'}
-                        </span>
-                    )}
-                    <ChevronDown className={`w-5 h-5 shrink-0 ${T_MUTED} transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
-                </button>
+                {onToggle ? (
+                    <button type="button" aria-expanded={open} onClick={onToggle} className={faceClass}>
+                        {face}
+                        <ChevronDown className={`w-5 h-5 shrink-0 ${T_MUTED} transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+                    </button>
+                ) : (
+                    <div className={faceClass}>{face}</div>
+                )}
                 {/* Admins only (D22): the same gauge as inside the card. Outside the
                     toggle — a button can't hold a button. */}
                 {showScore && (

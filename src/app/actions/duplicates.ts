@@ -5,6 +5,7 @@ import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, MERGED_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
+import { needsViewer } from '@/domain/pendingRowRules';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
@@ -965,8 +966,18 @@ export async function getPendingDuplicatesForUser(
     includeLow = false,
     /** pairKey of a pair to show (the profile banner's «Revisar»): the page holding it is returned instead of `page`. */
     focusPair?: string,
-): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string }> {
-    const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0 };
+    /**
+     * 'needs_viewer': only the rows whose next move is the viewer's
+     * (domain/pendingRowRules needsViewer) — the homepage's amber row and its
+     * panel. 'all' (default): every row, as /my-adopters lists them.
+     */
+    scope: 'all' | 'needs_viewer' = 'all',
+): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string;
+    /** Rows whose next move is the viewer's (needsViewer), whatever `scope`: the number on the home card and the section header. */
+    needsViewer: number }> {
+    const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0, needsViewer: 0 };
+    // From the browser: anything but the one known value is the full list.
+    const onlyNeedsViewer = scope === 'needs_viewer';
     // Re-review M-h: both come from the browser, and the fan-out below is bounded by the page size — so
     // the server bounds it (1–MAX_PENDING_PAGE_SIZE; anything unreadable is the default page).
     pageSize = Math.min(MAX_PENDING_PAGE_SIZE, Math.max(1, Math.floor(Number(pageSize)) || 10));
@@ -1012,6 +1023,29 @@ export async function getPendingDuplicatesForUser(
         // long list of hidden declines costs no subrequests.
         const isHidden = (key: string) => hidden.has(key) && requests.get(key)?.status !== 'pending';
         for (const key of [...requests.keys()]) if (isHidden(key)) requests.delete(key);
+
+        /**
+         * One row's sides and choices — the page's rows and the needsViewer
+         * count both run this. Newer record is the "new" side; older is the
+         * merge primary. The switch's choices by the same function the click
+         * runs (pairChoices): admin bypass (D24), ownerless (D42), no asking
+         * again after a decline (D43), nothing on a rebuilt pair.
+         */
+        const rowChoices = <R extends { id: string; addedBy: string | null; createdAt: Date | null }>(c: FeedCandidate, a: R, b: R, verdict: PairVerdict | undefined) => {
+            const oldOne = keepByAge({ row: a, createdAt: a.createdAt?.getTime() ?? 0 }, { row: b, createdAt: b.createdAt?.getTime() ?? 0 }).row;
+            const newOne = oldOne === a ? b : a;
+            const matchTypes = JSON.parse(c.matchTypes || '[]') as string[];
+            const source: 'flagged' | 'detected' = matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected';
+            // Same inputs, same order as mergePendingDedupPair's decision.
+            const dedupSide = (r: R): DedupSide => ({
+                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
+                teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
+            });
+            const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
+                isAdmin, declinedByViewer: verdict?.declinedForTeam ?? false, adminRuledSeparate: verdict?.adminRuledSeparate ?? false, rebuilt: !!c.rebuilt,
+            });
+            return { oldOne, newOne, choices, matchTypes, source };
+        };
 
         const candidates = await db.select({
             candidateId: duplicateCandidates.id,
@@ -1257,13 +1291,53 @@ export async function getPendingDuplicatesForUser(
                 || (x.candidateId < y.candidateId ? -1 : x.candidateId > y.candidateId ? 1 : 0);
         });
 
+        // «The next move is the viewer's» (needsViewer, Jon 2026-11-09). Every
+        // group decides from the request alone except a declined request the
+        // viewer filed: whether «Unir conservando el de …» / «Pedir revisión»
+        // is still offered depends on the pair's choices — the same
+        // pairChoices the page's rows run, so the count and the buttons agree.
+        // Production has no merge requests yet; a viewer's own declined ones
+        // are a handful (DECLINED_REQUESTS_CAP bounds them): two adopter reads
+        // and the verdict per row.
+        const needs = new Set<string>();
+        await Promise.all(eligible.map(async (c) => {
+            const group = groupOf(c);
+            const r = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
+            if (group !== 'declined' || !r || normEmail(r.requesterEmail) !== normEmail(viewer)) {
+                if (needsViewer({ group, newAdopter: { id: '', teamOwned: false }, existingAdopter: { id: '', teamOwned: false }, actionByKeep: { new: null, existing: null }, request: r ? { direction: 'received', keepId: r.primaryId } : null })) needs.add(c.candidateId);
+                return;
+            }
+            try {
+                const [a, b] = await Promise.all([c.adopter1Id, c.adopter2Id].map(id => db.select({
+                    id: adopters.id, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt,
+                }).from(adopters).where(eq(adopters.id, id)).get()));
+                if (!a || !b || a.deletedAt || b.deletedAt) return; // merged elsewhere: no row to act on
+                const verdict = isAdmin || c.rebuilt ? undefined : await loadPairVerdict(db, c.adopter1Id, c.adopter2Id, [viewer, ...teamKeys]);
+                const { newOne, oldOne, choices } = rowChoices(c, a, b, verdict);
+                if (needsViewer({
+                    group, request: { direction: 'sent', keepId: r.primaryId }, actionByKeep: choices.actionByKeep,
+                    newAdopter: { id: newOne.id, teamOwned: false }, existingAdopter: { id: oldOne.id, teamOwned: false },
+                })) needs.add(c.candidateId);
+            } catch (e) {
+                // Counted, as the row would offer its buttons anyway (the click re-decides).
+                logger.warn('getPendingDuplicatesForUser: needsViewer check failed, counting it', {
+                    actorEmail: viewer, candidateId: c.candidateId, error: e instanceof Error ? e.message : String(e),
+                });
+                needs.add(c.candidateId);
+            }
+        }));
+        const needsViewerCount = needs.size;
+        if (onlyNeedsViewer) {
+            for (let i = eligible.length - 1; i >= 0; i--) if (!needs.has(eligible[i].candidateId)) eligible.splice(i, 1);
+        }
+
         const total = eligible.length;
         const focusIndex = focusPair ? eligible.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
         if (focusIndex >= 0) page = Math.floor(focusIndex / pageSize) + 1;
         const focusCandidateId = focusIndex >= 0 ? eligible[focusIndex].candidateId : undefined;
         const start = Math.max(0, (page - 1) * pageSize);
         const pageCandidates = eligible.slice(start, start + pageSize);
-        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page };
+        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page, needsViewer: needsViewerCount };
 
         // Fan out only over the ids on THIS page: at most 2 × pageSize.
         const ids = new Set<string>();
@@ -1353,24 +1427,8 @@ export async function getPendingDuplicatesForUser(
             if (!a || !b) continue;
             if (a.deletedAt || b.deletedAt) continue; // merged elsewhere meanwhile
 
-            // Newer record is the "new" side; older is the merge primary.
-            const oldOne = keepByAge({ row: a, createdAt: a.createdAt?.getTime() ?? 0 }, { row: b, createdAt: b.createdAt?.getTime() ?? 0 }).row;
-            const newOne = oldOne === a ? b : a;
+            const { newOne, oldOne, choices, matchTypes, source } = rowChoices(c, a, b, verdictOnPage.get(c.candidateId));
             const request = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
-            const matchTypes = JSON.parse(c.matchTypes || '[]') as string[];
-            const source = matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected';
-            // Same inputs, same order as mergePendingDedupPair's decision.
-            const dedupSide = (r: PairRow): DedupSide => ({
-                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
-                teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
-            });
-            // The switch's choices, by the same function the click runs
-            // (pairChoices): admin bypass (D24), ownerless (D42), no asking
-            // again after a decline (D43), nothing on a rebuilt pair.
-            const verdict = verdictOnPage.get(c.candidateId);
-            const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
-                isAdmin, declinedByViewer: verdict?.declinedForTeam ?? false, adminRuledSeparate: verdict?.adminRuledSeparate ?? false, rebuilt: !!c.rebuilt,
-            });
             // Each side first as masked on its own; then each again with what the
             // viewer sees in full on the other, so a shared value shows on both.
             const [newOwn, oldOwn] = await Promise.all([side(newOne), side(oldOne)]);
@@ -1432,7 +1490,7 @@ export async function getPendingDuplicatesForUser(
             }
         }
 
-        return { pairs, total, lowHidden, page, focusCandidateId };
+        return { pairs, total, lowHidden, page, focusCandidateId, needsViewer: needsViewerCount };
     } catch (error) {
         logger.warn('getPendingDuplicatesForUser failed', {
             actorEmail, error: error instanceof Error ? error.message : String(error),

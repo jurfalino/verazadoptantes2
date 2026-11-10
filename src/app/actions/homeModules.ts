@@ -44,9 +44,20 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
     // now, with the «Pendientes de revisar» header's own number, so neither
     // waits for the other.
     const members = getOrgMemberEmails();
+    // Only the rows whose next move is the viewer's (needsViewer, Jon
+    // 2026-11-09), and the first of them, which the amber row names.
     const pendingReview = (async () => {
         const t0 = Date.now();
-        try { return (await getPendingDuplicatesForUser(1, 1, false)).total; } finally { timings.pendingReview = Date.now() - t0; }
+        try {
+            const { needsViewer, pairs } = await getPendingDuplicatesForUser(1, 1, false, undefined, 'needs_viewer');
+            const p = pairs[0];
+            const first = p && p.group !== 'sent' ? {
+                group: p.group,
+                names: [p.newAdopter.name, p.existingAdopter.name] as [string, string],
+                by: p.request?.counterpartName ?? null,
+            } : null;
+            return { count: needsViewer, first };
+        } finally { timings.pendingReview = Date.now() - t0; }
     })();
 
     const [adopters, animals, posts] = await Promise.all([
