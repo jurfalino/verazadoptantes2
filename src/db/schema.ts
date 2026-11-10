@@ -983,6 +983,33 @@ export const contractInvitations = sqliteTable("contract_invitations", {
     animalIdx: index("idx_contract_inv_animal").on(table.animalId),
 }));
 
+// ── Evaluar solicitudes (2026-11) ───────────────────────────────
+// One row per (form, animal) application. The adopter is
+// form_submissions.linked_adopter_id through submissionId — no adopter_id here.
+// Values of state / origin / closeReason: APPLICATION_* in src/domain/constants.ts.
+// Hand-written migration: drizzle/0106_applications.sql.
+export const applications = sqliteTable("applications", {
+    id: text("id").primaryKey(),
+    submissionId: text("submission_id").notNull(),
+    animalId: text("animal_id"),
+    origin: text("origin").notNull().default("form"),
+    askedAnimalId: text("asked_animal_id"),
+    state: text("state").notNull().default("open"),
+    closeReason: text("close_reason"),
+    declineRecordId: text("decline_record_id"),
+    proposedApplicationId: text("proposed_application_id"),
+    replacedByApplicationId: text("replaced_by_application_id"),
+    offerDoneAt: integer("offer_done_at"),
+    closedAt: integer("closed_at"),
+    closedBy: text("closed_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    animalStateIdx: index("idx_applications_animal_state").on(table.animalId, table.state),
+    submissionIdx: index("idx_applications_submission").on(table.submissionId),
+    onePerFormIdx: uniqueIndex("idx_applications_one_per_form").on(table.submissionId).where(sql`origin <> 'proposed'`),
+    oneProposalIdx: uniqueIndex("idx_applications_one_proposal").on(table.submissionId, table.animalId).where(sql`origin = 'proposed'`),
+}));
+
 // ── Custom Adoption Docs (2026-09) ──────────────────────────────
 // Per-owner (user or org) customization of the public form's steps and the
 // contract's editable sections. See
