@@ -150,6 +150,16 @@ Changed:
 - **Only app forms are applications.** Adoption requests that arrive through the API (e.g. Catpuccino) are not.
 - **The `adoption_request` record each form writes stays as it is**; outcomes do not edit it.
 
+## Answers (Jon, 2026-11-10, multiple choice)
+
+- **Q1 → recommended.** «Contrato enviado» only while the link is live; replaced or expired → por evaluar again («Su contrato se reemplazó el {date}» / «Su contrato venció el {date}»). «No avanzar» allowed on a live contract; it voids the link.
+- **Q2 → recommended.** Fostered animals take applications and the contract works for them: signing ends the foster and opens the adoption (three contract routes change).
+- **Q3 → recommended.** After «Sí, es la misma persona»: one application per person per animal; the newer form replaces the older («Reemplazada por un formulario más nuevo»); a general application ends on its own when the same person has one for an animal («También pidió a Luna»).
+- **Q4 → recommended.** After an invitation signature: the animal's home row reads «Luna fue adoptada · avisá a 2 candidatos» until sent or «Ahora no». After an open-link signature: the others close with «Luna fue adoptada», no offer.
+- **Q7 → no reopening** when a returned animal is available again.
+- **Q8 → the draft:** «Hola {nombre}, gracias por tu interés en {animal}. Ya encontró familia. Si querés, te avisamos cuando haya otro animal que se ajuste a lo que buscás.»
+- **Q5 (where general applications live)** and **Q6 (duplicates)**: Jon asked back; see below.
+
 ## Open questions for Jon (2026-11-10, after the builder check)
 
 - **Q1. Contract sent, then sent to someone else.** Sending a contract to Pedro kills Ana's link (one live link per animal). Recommendation: an application counts as «Contrato enviado» only while its link is live; when it is replaced or expires (30 days), it is por evaluar again, with the line «Su contrato se reemplazó el 10 nov» / «Su contrato venció el 9 dic». And «No avanzar» is allowed on someone with a live contract; it voids their link.
