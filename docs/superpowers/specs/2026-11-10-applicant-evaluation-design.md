@@ -141,7 +141,7 @@ Changed:
 
 ## Production
 
-- `ENABLE_CLEAN_HOMEPAGE` is on in production, so the home cards (and these rows) do not show there. Production rescuers see the work on the destination pages and the animal page. Turning the flag off stays Jon's call.
+- Corrected 2026-11-10: `ENABLE_CLEAN_HOMEPAGE` is **off** in production (queried), so the home cards and these rows do show there. `ENABLE_ANIMALS_FOR_ADOPTION` is on in production and staging.
 
 ## Coordination
 
