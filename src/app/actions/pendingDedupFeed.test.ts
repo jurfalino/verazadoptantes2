@@ -192,6 +192,20 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine', { keepId: 's-old' }))).toEqual({ success: true, outcome: 'merged' });
     });
 
+    it("a pair whose side is the team's applicant to evaluate is not a second to-do; after «No avanzar» it counts again (Q6)", async () => {
+        const before = await feed(STRANGER);
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES ('f-new', ?, 'Ana', NULL, 's-new', 1)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id, origin, state) VALUES ('app-f-new', 'f-new', NULL, 'form', 'open')`).run();
+        const during = await feed(STRANGER);
+        expect(during.needsViewer).toBe(before.needsViewer - 1);
+        expect(pairOf(during.pairs, 'cand-newer-mine').needsViewer).toBe(false);
+        expect(pairOf(during.pairs, 'cand-anon').needsViewer).toBe(true);
+        sqlite.prepare(`UPDATE applications SET state = 'declined' WHERE id = 'app-f-new'`).run(); // «No avanzar»
+        const after = await feed(STRANGER);
+        expect(after.needsViewer).toBe(before.needsViewer);
+        expect(pairOf(after.pairs, 'cand-newer-mine').needsViewer).toBe(true);
+    });
+
     it('a request you sent waits on the other side: it goes after everything that waits on you (UX review 2026-11-10)', async () => {
         await mergePendingDedupPair('cand-older-mine'); // score 80, below cand-newer-mine (90) and cand-anon (85)
         const { pairs } = await feed(STRANGER);

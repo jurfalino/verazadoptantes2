@@ -82,3 +82,16 @@ export function needsViewer(pair: RowPair): boolean {
             return combineTheirsSide(pair) !== null;
     }
 }
+
+/**
+ * A plain possible duplicate whose person is one of the team's applicants still
+ * to evaluate is not a second to-do (Q6): the evaluation panel already asks
+ * about that person, so the row waits under «No necesitan nada tuyo». A request
+ * (received, sent, declined) is always its own move.
+ */
+export function deferredToEvaluation(
+    pair: { group: RowPair['group']; adopter1Id: string; adopter2Id: string },
+    toEvaluate: ReadonlySet<string>,
+): boolean {
+    return pair.group === 'pair' && (toEvaluate.has(pair.adopter1Id) || toEvaluate.has(pair.adopter2Id));
+}

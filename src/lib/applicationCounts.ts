@@ -1,0 +1,111 @@
+/**
+ * Counts of applications — «N por evaluar» / «N candidatos» on the home rows and
+ * the Mis animales tab. Each is ONE grouped query (the live-contract check is a
+ * LEFT JOIN, never a per-application read) and equals what the animal page's
+ * list shows: same scope (applicantScope), same to-do rule (`isToDo`: open, on
+ * a profile, no live link).
+ *
+ * Not a `'use server'` module: callers authorize and pass the team in.
+ */
+
+import { and, count, eq, isNotNull, isNull, or, gt } from 'drizzle-orm';
+import { applications, formSubmissions, contractInvitations } from '@/db/schema';
+import { APPLICATION_STATES, APPLICATION_CLOSE_REASONS } from '@/domain/constants';
+import { generalScopeWhere, teamApplicationsWhere } from '@/lib/applicantScope';
+import { healMissingApplications } from '@/lib/applicationWrites';
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- the D1/better-sqlite db union is untyped here, as in the callers */
+type Db = any;
+
+/** The invitation join: a LIVE link (unused, unexpired; expires_at NULL counts as live — `isLiveInvitation`) of this animal + person. */
+const liveLink = (nowSec: number) => and(
+    eq(contractInvitations.animalId, applications.animalId),
+    eq(contractInvitations.adopterId, formSubmissions.linkedAdopterId),
+    isNull(contractInvitations.usedAt),
+    or(isNull(contractInvitations.expiresAt), gt(contractInvitations.expiresAt, nowSec)),
+);
+
+/** Open and on a profile — `isToDo` before the link check (a query that left-joins `liveLink` adds «no match»). */
+const openOnProfile = (scope: unknown) => and(
+    scope as never,
+    eq(applications.state, APPLICATION_STATES.OPEN),
+    isNotNull(formSubmissions.linkedAdopterId),
+);
+const noLiveLink = isNull(contractInvitations.token);
+
+/** Open applications on a profile with NO live link, per animal (the animals whose owner's team is `ownerTeam`). */
+export async function countToEvaluateByAnimal(db: Db, ownerTeam: readonly string[], nowSec: number): Promise<Map<string, number>> {
+    const scope = teamApplicationsWhere(ownerTeam, 'animals');
+    if (!scope) return new Map();
+    await healMissingApplications(db, ownerTeam);
+    const rows = await db.select({ animalId: applications.animalId, n: count() })
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .leftJoin(contractInvitations, liveLink(nowSec))
+        .where(and(openOnProfile(scope), noLiveLink))
+        .groupBy(applications.animalId)
+        .all() as Array<{ animalId: string; n: number }>;
+    return new Map(rows.map(r => [r.animalId, r.n]));
+}
+
+/** Open applications (to evaluate AND contract sent) per animal — «N candidatos». */
+export async function countOpenByAnimal(db: Db, ownerTeam: readonly string[]): Promise<Map<string, number>> {
+    const scope = teamApplicationsWhere(ownerTeam, 'animals');
+    if (!scope) return new Map();
+    await healMissingApplications(db, ownerTeam);
+    const rows = await db.select({ animalId: applications.animalId, n: count() })
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .where(and(scope, eq(applications.state, APPLICATION_STATES.OPEN)))
+        .groupBy(applications.animalId)
+        .all() as Array<{ animalId: string; n: number }>;
+    return new Map(rows.map(r => [r.animalId, r.n]));
+}
+
+/** The team's general applications still to evaluate (`isToDo` rows only). */
+export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string[]): Promise<number> {
+    const scope = generalScopeWhere(viewerTeam);
+    if (!scope) return 0;
+    await healMissingApplications(db, viewerTeam);
+    const row = await db.select({ n: count() })
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        // General applications carry no animal, so no link can be live: no invitation join.
+        .where(openOnProfile(scope))
+        .get() as { n: number } | undefined;
+    return row?.n ?? 0;
+}
+
+/** Linked adopter ids of the team's applications still to evaluate (animal + general). */
+export async function toEvaluateAdopterIds(db: Db, team: readonly string[], nowSec: number): Promise<Set<string>> {
+    const scope = teamApplicationsWhere(team, 'any');
+    if (!scope) return new Set();
+    await healMissingApplications(db, team);
+    const rows = await db.select({ adopterId: formSubmissions.linkedAdopterId })
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .leftJoin(contractInvitations, liveLink(nowSec))
+        .where(and(openOnProfile(scope), noLiveLink))
+        .groupBy(formSubmissions.linkedAdopterId)
+        .all() as Array<{ adopterId: string | null }>;
+    return new Set(rows.flatMap(r => (r.adopterId ? [r.adopterId] : [])));
+}
+
+/** Animals with candidates closed by another adoption whose offer is not done: animalId → candidates. */
+export async function offerCountsByAnimal(db: Db, ownerTeam: readonly string[]): Promise<Map<string, number>> {
+    const scope = teamApplicationsWhere(ownerTeam, 'animals');
+    if (!scope) return new Map();
+    const rows = await db.select({ animalId: applications.animalId, n: count() })
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .where(and(
+            scope,
+            eq(applications.state, APPLICATION_STATES.CLOSED),
+            eq(applications.closeReason, APPLICATION_CLOSE_REASONS.ADOPTED_OTHER),
+            isNull(applications.offerDoneAt),
+            isNotNull(formSubmissions.linkedAdopterId),
+        ))
+        .groupBy(applications.animalId)
+        .all() as Array<{ animalId: string; n: number }>;
+    return new Map(rows.map(r => [r.animalId, r.n]));
+}

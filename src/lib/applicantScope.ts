@@ -19,7 +19,7 @@
  * is unit-tested by compiling the SQL (applicantScope.test.ts).
  */
 
-import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { applications, formSubmissions } from '@/db/schema';
 import { APPLICATION_STATES } from '@/domain/constants';
 
@@ -80,6 +80,21 @@ export function generalScopeWhere(teamEmails: ReadonlyArray<string | null | unde
     const inTeam = linkOwnerInTeam(scope);
     if (!inTeam) return null;
     return and(isNull(applications.animalId), inTeam, notReplaced) ?? null;
+}
+
+/**
+ * Every application of ANY animal filed through a form link of `teamEmails`
+ * (`animalScope: 'animals'`), or of any application at all (`'any'`): the
+ * team-wide variants the grouped counts use — `applicantScopeWhere` per animal
+ * without the per-animal fan-out. Same join requirement, fail-closed rule and
+ * «replaced» exclusion.
+ */
+export function teamApplicationsWhere(teamEmails: ReadonlyArray<string | null | undefined>, animalScope: 'animals' | 'any'): SQL | null {
+    const scope = normalizeTeamScope(teamEmails);
+    if (scope.length === 0) return null;
+    const inTeam = linkOwnerInTeam(scope);
+    if (!inTeam) return null;
+    return and(animalScope === 'animals' ? isNotNull(applications.animalId) : undefined, inTeam, notReplaced) ?? null;
 }
 
 /**

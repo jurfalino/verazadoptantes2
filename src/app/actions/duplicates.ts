@@ -5,7 +5,8 @@ import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, MERGED_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
-import { needsViewer } from '@/domain/pendingRowRules';
+import { deferredToEvaluation, needsViewer } from '@/domain/pendingRowRules';
+import { toEvaluateAdopterIds } from '@/lib/applicationCounts';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
@@ -1036,6 +1037,14 @@ export async function getPendingDuplicatesForUser(
                 .where(and(byTeam(adopters.addedBy), isNull(adopters.deletedAt))).all() as Array<{ id: string }>)();
         ownRowsP.catch(() => { /* awaited below — the outer catch logs it */ });
         const flagsP = loadOpenDuplicateFlags();
+        // The team's applicants still to evaluate: a plain possible duplicate on one of them is not a second
+        // to-do (Q6). A failed read counts every row, as before.
+        const toEvaluateP: Promise<Set<string>> = toEvaluateAdopterIds(db, teamList, Math.floor(Date.now() / 1000)).catch((e) => {
+            logger.warn('getPendingDuplicatesForUser: to-evaluate applicants read failed, counting every pair', {
+                actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
+            });
+            return new Set<string>();
+        });
 
         /** Open duplicate flags the viewer may see (see the block that reads them below); [] if the read fails. */
         type FlagRow = { id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null };
@@ -1332,8 +1341,10 @@ export async function getPendingDuplicatesForUser(
         // are a handful (DECLINED_REQUESTS_CAP bounds them): two adopter reads
         // and the verdict per row.
         const needs = new Set<string>();
+        const toEvaluate = await toEvaluateP;
         await Promise.all(eligible.map(async (c) => {
             const group = groupOf(c);
+            if (deferredToEvaluation({ group, adopter1Id: c.adopter1Id, adopter2Id: c.adopter2Id }, toEvaluate)) return;
             const r = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
             if (group !== 'declined' || !r || normEmail(r.requesterEmail) !== normEmail(viewer)) {
                 if (needsViewer({ group, newAdopter: { id: '', teamOwned: false }, existingAdopter: { id: '', teamOwned: false }, actionByKeep: { new: null, existing: null }, request: r ? { direction: 'received', keepId: r.primaryId } : null })) needs.add(c.candidateId);
