@@ -436,6 +436,34 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // so a stranger can store nothing but those strings; writes only the caller's own
 // user_profiles.adopter_list_pins (user row looked up by the SESSION email; no row → refused);
 // a "view as" session is read-only (warn + errorId). Returns the stored pins only.
+// 2026-11-10 evaluating applicants (Task 8, src/app/actions/applications.ts): seven new exports,
+// computed 181 + 7 = 188. MEASURED (npm run build): still 181 — Next records an action only once a
+// client component imports it, and nothing does yet (Tasks 9 and 10 wire them, and raise this
+// number to what their build measures). What a stranger can do with arguments they choose — every one
+// reads the viewer from the session (signed out → `unauthorized`, the list → []), takes ids that must
+// be strings of ≤64 chars (else `invalid`), and goes through loadAuthorizedApplication /
+// loadAuthorizedAnimal (_applications.ts): an animal's application only for the animal's owner, an
+// org-mate of the owner or an admin, and only when its form link is in the owner's team (a forged
+// `?animal=` row is nobody's); a general one only for whoever may open its form
+// (canAccessFormSubmission); a «replaced» row never. Anyone else gets `not_found` and nothing written:
+//   getGeneralApplications()   takes nothing; lists the general applications of the caller's own team.
+//   getApplicationDuplicates(applicationId)  reads only; the open pairs of that form's own profile, masked
+//                              for the caller as /form-results masks them (loadFormMatchCards).
+//   declineApplication(applicationId, {text, rating, reason})  rating an integer 1–5, text ≤500 and reason
+//                              ≤2000 chars, trimmed, non-blank (else `invalid`); only an OPEN application
+//                              on a live profile. Writes one observation with a pre-seeded id (a retry
+//                              is the same record) through saveRecordFor, voids only that animal +
+//                              person's live link, and closes only that application (compare-and-swap).
+//   getProposalAnimals(applicationId)  reads only; the caller's own team's available/fostered animals
+//                              whose owner's team holds the form link.
+//   proposeAnimal(applicationId, animalId)  only an open GENERAL application; the animal must pass the
+//                              same animal gate (else `not_found`), have the form link in its owner's
+//                              team (else `not_allowed`) and take contracts (else `animal_adopted`).
+//                              Inserts one application (unique per form + animal) and closes the general
+//                              one by compare-and-swap; a loser removes only the row it made.
+//   getAdoptionOffer(animalId) reads only; first name + the contacts typed on the form of that animal's
+//                              closed candidates — the animal gate first.
+//   markOfferDone(animalId)    animal gate; sets offer_done_at on exactly those rows, one UPDATE per id.
 const EXPECTED_ACTIONS = 181;
 
 let manifest;
