@@ -41,7 +41,7 @@ type Group = PendingDedupPair['group'];
 
 const ROW_META: Record<Group, { groupKey: string; groupFallback: string; icon: React.ReactNode; dot: string }> = {
     received: {
-        groupKey: 'myAdopters.pending_d_group_received', groupFallback: 'Necesitan tu respuesta',
+        groupKey: 'myAdopters.pending_d_group_received', groupFallback: 'Te piden unir',
         icon: <Inbox className="w-5 h-5" aria-hidden="true" />,
         dot: 'bg-[var(--status-warning-bg)] text-[var(--status-warning-text)] border-[var(--status-warning-border)]',
     },
@@ -51,7 +51,7 @@ const ROW_META: Record<Group, { groupKey: string; groupFallback: string; icon: R
         dot: `bg-transparent ${T_MUTED} border-[var(--border-default)]`,
     },
     declined: {
-        groupKey: 'myAdopters.pending_d_group_declined', groupFallback: 'Rechazados',
+        groupKey: 'myAdopters.pending_d_group_declined', groupFallback: 'No aceptaron tu pedido',
         icon: <XCircle className="w-5 h-5" aria-hidden="true" />,
         dot: 'bg-[var(--status-error-bg)] text-[var(--status-error-text)] border-[var(--status-error-border)]',
     },

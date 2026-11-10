@@ -1834,9 +1834,11 @@ export const en = {
         pending_dedup_request_declined: 'Request declined',
         pending_dedup_request_failed: 'The action could not be completed.',
         // Pendientes de revisar, layout D (spec 2026-10-25-pendientes-d)
-        pending_d_group_received: 'Need your answer',
+        pending_d_group_received: 'Asking you to merge',
         pending_d_group_sent: 'Sent',
-        pending_d_group_declined: 'Declined',
+        pending_d_group_declined: 'Your request was declined',
+        pending_d_group_declined_done: 'You declined',
+        pending_d_others: 'Nothing needed from you',
         pending_d_group_pair: 'Possible duplicates',
         pending_d_group_merged: 'Just joined',
         pending_d_line_received: '{name} asks you to join · {when}',

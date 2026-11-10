@@ -1839,9 +1839,11 @@ export const pt = {
         pending_dedup_request_declined: 'Pedido recusado',
         pending_dedup_request_failed: 'Não foi possível concluir a ação.',
         // Pendientes de revisar, layout D (spec 2026-10-25-pendientes-d)
-        pending_d_group_received: 'Precisam da sua resposta',
+        pending_d_group_received: 'Pedem para unir',
         pending_d_group_sent: 'Enviados',
-        pending_d_group_declined: 'Recusados',
+        pending_d_group_declined: 'Não aceitaram seu pedido',
+        pending_d_group_declined_done: 'Você recusou',
+        pending_d_others: 'Nada depende de você',
         pending_d_group_pair: 'Possíveis duplicados',
         pending_d_group_merged: 'Recém-unidos',
         pending_d_line_received: '{name} pede para unir · {when}',

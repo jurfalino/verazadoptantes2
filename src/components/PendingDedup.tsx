@@ -3,8 +3,10 @@
 /**
  * «Pendientes de revisar» on /my-adopters (layout D, spec
  * docs/superpowers/specs/2026-10-25-pendientes-d-design.md D21–D35, D40, D43):
- * one card of inbox rows, grouped Necesitan tu respuesta → Enviados →
- * Rechazados → Posibles duplicados. The first row that needs the viewer's
+ * one card of inbox rows. What waits on the viewer first, paged — «Te piden
+ * unir» → «No aceptaron tu pedido» → «Posibles duplicados» — then, on every
+ * page, «No necesitan nada tuyo»: «Enviados», «Los rechazaste» (UX review +
+ * Jon, 2026-11-10; sections.ts SECTION_ORDER). The first row that needs the viewer's
  * answer opens on load; the section opens itself on #pendientes or when such a
  * row exists.
  *
@@ -513,8 +515,12 @@ export default function PendingDedup({ home }: {
 
     if (home) {
         const pair = pairs?.[0] ?? null;
+        // The title repeats the home row that was tapped (Jon 2026-11-10, point 8): one name per item.
+        const who = pair?.request?.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario');
         const heading = !pair ? (t('myAdopters.pending_dedup_title') || 'Pendientes de revisar')
-            : pair.group === 'pair' ? t('samePerson.question') : groupLabel(pair.group, t);
+            : pair.group === 'received' ? fill(t('homeModules.pending_asks'), { name: who })
+                : pair.group === 'declined' ? fill(t('homeModules.pending_declined'), { name: who })
+                    : t('samePerson.question');
         return (
             <>
                 <Modal size="lg" testId="home-pending-panel" onClose={home.onClose} busy={!!busyCandidateId}
@@ -594,9 +600,9 @@ export default function PendingDedup({ home }: {
                 <>
                     {/* Rows are the list's direct <div> children; group headers are <h3>s between them. */}
                     <div id="pending-dedup-list" className="rounded-2xl bg-white border border-[var(--border-default)] shadow-sm overflow-hidden">
-                        {pendientesSections(pairs, merged).flatMap(section => {
+                        {(() => { let othersShown = false; return pendientesSections(pairs, merged).flatMap(section => {
                             // Combined on this visit (D52): their own section at the end, never under
-                            // «Necesitan tu respuesta» — nothing is left to answer (audit C7).
+                            // «Te piden unir» — nothing is left to answer (audit C7).
                             if (section.kind === 'merged') return [
                                 <h3 key="h-merged" data-testid="dedup-merged-heading"
                                     className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${T_MUTED}`}>
@@ -605,10 +611,21 @@ export default function PendingDedup({ home }: {
                                 ...section.items.map(info => <MergedRow key={info.candidateId} info={info} t={t} />),
                             ];
                             const { group, pairs: list } = section;
+                            // The first section that doesn't wait on the viewer opens «No necesitan nada tuyo».
+                            const othersStart = (group === 'sent' || group === 'declined_done') && !othersShown;
+                            if (othersStart) othersShown = true;
+                            const waits = group === 'received' || group === 'declined';
                             return [
-                                <h3 key={`h-${group}`}
-                                    className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${group === 'received' ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
-                                    {groupLabel(group === 'declined_done' ? 'declined' : group, t)} · {list.length}
+                                ...(othersStart ? [
+                                    <p key="h-others" data-testid="dedup-others-heading"
+                                        className={`px-4 pt-4 pb-1 text-[12px] font-semibold border-t-2 border-[var(--border-default)] first:border-t-0 ${T_MUTED}`}>
+                                        {t('myAdopters.pending_d_others')}
+                                    </p>,
+                                ] : []),
+                                // No count: the page shows a slice, so «· 8» contradicted «65 esperan tu respuesta».
+                                <h3 key={`h-${group}`} data-testid={`dedup-group-${group}`}
+                                    className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${waits ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
+                                    {group === 'declined_done' ? t('myAdopters.pending_d_group_declined_done') : groupLabel(group, t)}
                                 </h3>,
                                 ...list.map(pair => (
                                     <PairRow
@@ -630,7 +647,7 @@ export default function PendingDedup({ home }: {
                                     />
                                 )),
                             ];
-                        })}
+                        }); })()}
                     </div>
 
                     {pageCount > 1 && (

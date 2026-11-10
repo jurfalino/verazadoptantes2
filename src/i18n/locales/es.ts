@@ -1840,9 +1840,11 @@ export const es = {
         pending_dedup_request_declined: 'Pedido rechazado',
         pending_dedup_request_failed: 'No se pudo completar la acción.',
         // Pendientes de revisar, layout D (spec 2026-10-25-pendientes-d)
-        pending_d_group_received: 'Necesitan tu respuesta',
+        pending_d_group_received: 'Te piden unir',
         pending_d_group_sent: 'Enviados',
-        pending_d_group_declined: 'Rechazados',
+        pending_d_group_declined: 'No aceptaron tu pedido',
+        pending_d_group_declined_done: 'Los rechazaste',
+        pending_d_others: 'No necesitan nada tuyo',
         pending_d_group_pair: 'Posibles duplicados',
         pending_d_group_merged: 'Recién unidos',
         pending_d_line_received: '{name} te pide unir · {when}',

@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.51] - 2026-11-10
+
+### Changed — senior UX + EM review of 2.58.41–50 (Jon)
+- **«Pendientes de revisar»: what waits on you first.** Groups: «Te piden unir» → «No aceptaron tu pedido» →
+  «Posibles duplicados», paged; then, on every page, «No necesitan nada tuyo»: «Enviados», «Los rechazaste».
+  No per-group counts (they were the page's, not the total). In the adopter list, the amber border and
+  «Posible duplicado» pill only on pairs that wait on you.
+- **Home panel title repeats the row you tapped** («María te pide unir», «¿Es la misma persona?») and says
+  «quedan N» instead of «1 de N».
+- «¿Cuál se conserva?» names each profile when both would read «El tuyo».
+- Filters: both «Quitar filtros» clear the search too; a pin you chose always shows (even at 0); rating
+  filters use the pill's words («Sin calificación», «★ 2 · Riesgoso»).
+- Bundled check-up reminder titled «Controles para hacer» (no count that goes stale).
+- 44px tap targets for WhatsApp / «Registrar» and the filter pill's ✕; «Pendientes de revisar» keeps its place
+  while loading (no jump).
+
+### Fixed
+- Mis adoptantes stays responsive on big accounts (~4,700 people): the list work is memoized, not redone per
+  keystroke.
+- A failed «Pendientes de revisar» load shows an error with its id instead of looking empty.
+- Bell clearing and the reminder worker skip malformed stored data instead of failing; a merge also clears
+  notices about the absorbed profile's other pairs.
+
 ## [2.58.50] - 2026-11-10
 
 ### Changed — the bell agrees with the home screen (Jon)
