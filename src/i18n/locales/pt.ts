@@ -1786,6 +1786,8 @@ export const pt = {
         created_by_unknown_hint: 'Sem criador identificado',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pendentes de revisão',
+        pending_d_needs_one: '1 espera sua resposta',
+        pending_d_needs_many: '{n} esperam sua resposta',
         pending_dedup_matched_on: 'Coincide em',
         pending_dedup_request_access: 'Pedir acesso a quem cadastrou',
         pending_dedup_subtitle: 'Encontramos perfis que podem ser a mesma pessoa. Decida se quer uni-los.',

@@ -1781,6 +1781,8 @@ export const en = {
         created_by_unknown_hint: 'No identified creator',
         // v2.14.10-20: pending-dedup section on /my-adopters
         pending_dedup_title: 'Pending review',
+        pending_d_needs_one: '1 waiting for your answer',
+        pending_d_needs_many: '{n} waiting for your answer',
         pending_dedup_matched_on: 'Matches on',
         pending_dedup_request_access: 'Ask the person who added it for access',
         pending_dedup_subtitle: 'We found profiles that might be the same person. Choose whether to join them.',

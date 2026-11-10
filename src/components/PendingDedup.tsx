@@ -557,10 +557,15 @@ export default function PendingDedup({ home }: { home?: { onChanged: () => void;
                     viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 5l6 5-6 5" />
                 </svg>
-                <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2 group-hover:text-stone-900">
+                <h2 className="text-lg font-semibold text-stone-800 flex flex-wrap items-center gap-x-2 gap-y-1 group-hover:text-stone-900">
                     {t('myAdopters.pending_dedup_title') || 'Pendientes de revisar'}
-                    {/* What waits on the viewer (needsViewer) — the home card's number. Sent requests are listed, not counted. */}
-                    {needs > 0 && <span data-testid="pending-dedup-needs" className="text-sm font-semibold px-2 py-0.5 rounded-full bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]">{needs}</span>}
+                    {/* «· N esperan tu respuesta» (Jon 2026-11-09): what waits on the viewer (needsViewer) — the
+                        home card's number. Sent requests are listed, not counted. */}
+                    {needs > 0 && (
+                        <span data-testid="pending-dedup-needs" className="text-sm font-semibold text-[var(--status-warning-text)]">
+                            · {fill(t(needs === 1 ? 'myAdopters.pending_d_needs_one' : 'myAdopters.pending_d_needs_many'), { n: String(needs) })}
+                        </span>
+                    )}
                 </h2>
             </button>
             <p className="text-sm text-stone-500 mt-1 mb-3 ml-6">

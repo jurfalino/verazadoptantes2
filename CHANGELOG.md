@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.43] - 2026-11-09
+
+### Changed — «Pendientes de revisar» says what the number is
+- The section header in Mis adoptantes reads «Pendientes de revisar · 65 esperan tu respuesta» (was a bare
+  number): the same number as the home card, counting only what waits on you.
+
 ## [2.58.42] - 2026-11-09
 
 ### Added — act on what's pending without leaving the home
