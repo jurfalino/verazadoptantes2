@@ -41,7 +41,7 @@ The single placement write point, `updateRecord`, closes the other candidates wh
 ## Review Focus
 
 1. **A retried «No avanzar»** (double tap, a network retry after a timeout) must leave exactly one observation and one `declined` row. The observation id is pre-seeded from the application id. Test in Task 8: `declineApplication twice → one adopter_events row, state declined once`.
-2. **Count parity across invitation edge cases.** The home line, the tab count and the panel's por-evaluar list must agree when an application has a live link, a link retired by a newer send, an expired link, a link with `expires_at NULL`, a forged outsider row, or a cross-org teammate's link. Test in Task 7: `countToEvaluateByAnimal equals loadApplicantsForAnimal().filter(isToEvaluate) on the edge fixture`.
+2. **Count parity across invitation edge cases.** The home line, the tab count and the panel's por-evaluar list must agree when an application has a live link, a link retired by a newer send, an expired link, a link with `expires_at NULL`, a forged outsider row, or a cross-org teammate's link. Test in Task 7: `countToEvaluateByAnimal equals loadApplicantsForAnimal().filter(isToDo) on the edge fixture`.
 3. **A fostered animal adopted by someone else between the signer opening the link and pressing «Firmar».** The signature must answer 409 and must never end the other person's adoption. Today the non-CAS `updateRecord` would close whatever placement is active. Test in Task 5: `contract signature on a fostered animal loses to a concurrent adoption`.
 4. **Undo of a merge that deduped applications** puts every `replaced` / `also_applied` row back to `open`. Test in Task 6: `unmergeAdopters restores the application states the merge changed`.
 5. **«N respuestas sin observaciones» is off by the rows «Todas las respuestas» skips**: free-text `{ open: '' }`, `existingPets` with all zeros, a household-people form. Test in Task 1: `summarizeAnswers counts exactly the rows FormAnswersPanel renders`. Also a component test in Task 9 that counts `data-testid="answer-row"` in the rendered panel.
@@ -116,6 +116,8 @@ The single placement write point, `updateRecord`, closes the other candidates wh
     | { kind: 'adopted' } | { kind: 'proposed' } | { kind: 'replaced' } | { kind: 'also_applied' };
   export function applicationStatus(app: ApplicationFacts, invitations: readonly InvitationLike[], nowSec: number): ApplicationStatus;
   export function isToEvaluate(s: ApplicationStatus): boolean;
+  /** What every count counts: to evaluate AND on a profile. A form whose profile auto-create failed is listed (with «Ver formulario») but is no to-do until linked: it can't be declined or proposed. */
+  export function isToDo(a: { status: ApplicationStatus; adopterId: string | null }): boolean;
   export function panelOrder<T extends { status: ApplicationStatus; appliedAt: number | null }>(items: readonly T[]): T[];
   export function nextToEvaluateIndex(statuses: readonly ApplicationStatus[], from: number): number; // -1 = none left
   export type AdoptionVia = 'invitation' | 'in_app' | 'open_link';
@@ -197,6 +199,11 @@ it('submissionApplication: adopted animal → general «adopted_animal»; foster
 });
 it('lifeStageOf: <1y puppy, ≥8y senior, else young; null birth → null', () => { /* … */ });
 it('rankProposalAnimals: matching species+life stage first (both = dog|cat; other = neither; none/null = any), then by name', () => { /* … */ });
+it('isToDo: to evaluate AND on a profile — an orphan form (adopterId null) is listed but not a to-do', () => {
+  expect(isToDo({ status: { kind: 'to_evaluate', note: null }, adopterId: 'p' })).toBe(true);
+  expect(isToDo({ status: { kind: 'to_evaluate', note: null }, adopterId: null })).toBe(false);
+  expect(isToDo({ status: { kind: 'contract_sent', sentAt: NOW }, adopterId: 'p' })).toBe(false);
+});
 it('takesContract: false only for an active adoption', () => {
   expect(takesContract({ adopterId: 'p', recordType: 'adoption' })).toBe(false);
   expect(takesContract({ adopterId: 'p', recordType: 'foster' })).toBe(true);
@@ -603,12 +610,21 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `takesContract` (Task 1); `updateRecord(…, { cas: true, adoptionVia })` (Task 4).
-- Produces: the three routes refuse only when `!takesContract(animal)`. Submit calls `updateRecord(db, {...}, animal, 'contract', { cas: true, adoptionVia: invitation ? 'invitation' : 'open_link' })`. When `lost`, it deletes the stored contract (as the conflict branch does today) and answers `409 { code: 'already_placed', errorId }`.
+- Produces:
+  - `createContractInvitation` and by-token refuse only when `!takesContract(animal)`.
+  - Submit applies `takesContract` **only on the token path** (`invitation` set). The tokenless open link (`/contract/{animalId}`) keeps today's `animal.adopterId` refusal. The open link is a non-goal (decision 6), and holders of it must not be able to end a foster.
+  - Submit calls `updateRecord(db, {...}, animal, 'contract', { cas: true, adoptionVia: invitation ? 'invitation' : 'open_link' })`.
+    - The data passes `deliveredToHome: null, verifiedAddress: null, identityVerified: null, onBehalfOf: null, sourceUrl: null` explicitly. In CAS mode a new placement starts from `pickPlacementFields(existing)` (`_recordWrite.ts:319,381`), which for a fostered animal is the FOSTER home's placement.
+  - When `lost`, it deletes the stored contract (as the conflict branch does today) and answers `409 { code: 'already_placed', errorId }`.
 
 - [ ] **Step 1: Write the failing tests** (migratedDb, `updateRecord` with the submit route's exact arguments and the view row as `existing`):
 
 ```ts
 it('signing for a fostered animal ends the foster and opens the adoption — one active placement', async () => { … });
+it('the new adoption placement inherits nothing from the foster home: verified_address, delivered_to_home, identity_verified, on_behalf_of, source_url are NULL', async () => {
+  // foster placement seeded with verified_address 'Casa tránsito 1', delivered_to_home 1, identity_verified 1, on_behalf_of 'X'
+});
+it('the tokenless open link still refuses a fostered animal (409 already_placed); only a token signs it', async () => { /* the guard as a pure predicate: signRefused({ invitation: null, animal }) */ });
 it('contract signature on a fostered animal loses to a concurrent adoption: lost=true and the other adoption stays active', async () => {
   // existing = view row read while fostered; then (simulated race) end foster + open adoption for 'b';
   // updateRecord(…, { cas: true, adoptionVia: 'invitation' }) → { lost: true }; active placement still b's adoption.
@@ -623,7 +639,7 @@ Expected: FAIL. «Animal already adopted» comes back for the fostered animal.
 
 - [ ] **Step 3: Implement**
 
-Swap the three `animal.adopterId` guards for `!takesContract(animal)`. Keep their existing status codes and `code` values. In submit, branch on `{ lost }` as well as on `isActivePlacementConflict` (keep both). Update the route comments that say "it was 'available' with no placement".
+Swap the guards in `contract.ts` and by-token for `!takesContract(animal)`. In submit the guard becomes `invitation ? !takesContract(animal) : !!animal.adopterId`. Keep the existing status codes and `code` values. In submit, branch on `{ lost }` as well as on `isActivePlacementConflict` (keep both). Update the route comments that say "it was 'available' with no placement".
 
 - [ ] **Step 4: Run the tests and confirm they pass**
 
@@ -706,11 +722,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `applicantScopeWhere`, `generalScopeWhere` (Task 3); `isLiveInvitation` semantics (Task 1).
 - Produces:
   ```ts
-  /** Open applications with NO live link (usedAt NULL AND (expiresAt NULL OR > now)), per animal, for animals whose owner's team is `ownerTeam`. ONE grouped query. */
+  /** Open applications on a profile (linked_adopter_id NOT NULL — isToDo) with NO live link (usedAt NULL AND (expiresAt NULL OR > now)), per animal, for animals whose owner's team is `ownerTeam`. ONE grouped query. */
   export async function countToEvaluateByAnimal(db, ownerTeam: readonly string[], nowSec: number): Promise<Map<string, number>>;
   /** Open applications (to evaluate + contract sent) per animal — «N candidatos». ONE grouped query. */
   export async function countOpenByAnimal(db, ownerTeam: readonly string[]): Promise<Map<string, number>>;
-  export async function countGeneralToEvaluate(db, viewerTeam: readonly string[]): Promise<number>;
+  export async function countGeneralToEvaluate(db, viewerTeam: readonly string[]): Promise<number>; // isToDo rows only
   /** Linked adopter ids of the team's applications still to evaluate (animal + general). */
   export async function toEvaluateAdopterIds(db, team: readonly string[], nowSec: number): Promise<Set<string>>;
   /** Animals with closed adopted_other applications whose offer is not done: animalId → candidates. */
@@ -724,11 +740,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ```ts
 // applicationCounts.test.ts — one fixture: Luna (owner O, team O+M) with apps via O's link (no link), via M's link (live link),
-// via M's link (retired link), via O's link (expired link), via O's link (expires_at NULL link), via an outsider's link (no link);
+// via M's link (retired link), via O's link (expired link), via O's link (expires_at NULL link), via an outsider's link (no link), an orphan form (no profile);
 // a cross-org animal whose applicant came through the owner's other group.
-it('countToEvaluateByAnimal equals loadApplicantsForAnimal().filter(isToEvaluate) on the edge fixture', async () => {
+it('countToEvaluateByAnimal equals loadApplicantsForAnimal().filter(isToDo) on the edge fixture', async () => {
   for (const animal of ['luna', 'brisa']) expect((await countToEvaluateByAnimal(db, teamOf(animal), NOW)).get(animal) ?? 0)
-    .toBe((await loadApplicantsForAnimal(db, { id: animal, adopterId: null }, teamOf(animal), OWNER)).filter(a => isToEvaluate(a.status)).length);
+    .toBe((await loadApplicantsForAnimal(db, { id: animal, adopterId: null }, teamOf(animal), OWNER)).filter(isToDo).length);
 });
 it('binds no arrays and issues one query per call', async () => { /* spy on db.select */ });
 it('toEvaluateAdopterIds excludes an applicant with a live link', async () => { … });
@@ -789,7 +805,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   export async function getAdoptionOffer(animalId: string): Promise<{ ok: true; animalName: string | null; animalSex: string | null; candidates: Array<{ applicationId: string; firstName: string; phone: string | null; email: string | null }> } | Fail>;
   export async function markOfferDone(animalId: string): Promise<{ ok: true; count: number } | Fail>;
   ```
-  `src/lib/formMatchCards.ts`: `export type FormMatchCardData = { match: { id: string; name: string; matchTypes: string[]; score?: number; candidateId: string | null; canAnswer: boolean }; profile: FormResultMatchCardProps['profile'] }` and `export async function loadFormMatchCards(db, viewer: string, matches: FormMatchCardData['match'][], ctx: { submissionId: string; typed: Array<string | null | undefined> }): Promise<FormMatchCardData[]>`.
+  `src/lib/formMatchCards.ts`: `export type FormMatchCardData = { match: { id: string; name: string; matchTypes: string[]; score?: number; candidateId: string | null; canAnswer: boolean }; profile: FormResultMatchCardProps['profile'] & { addedByName: string | null } }` (`addedByName` = the other profile's creator, resolved like Pendientes' `pending_dedup_created_by`; null for anonymous) and `export async function loadFormMatchCards(db, viewer: string, matches: FormMatchCardData['match'][], ctx: { submissionId: string; typed: Array<string | null | undefined> }): Promise<FormMatchCardData[]>`.
 - Authorization (`loadAuthorizedApplication(db, applicationId, viewer)` → `{ app, submission, animal } | null`):
   - An animal application needs: the animal exists and isn't deleted, `isOwnerOrgMateOrAdmin(viewer, animal.addedBy)`, and the form link owner is in `getTeamEmails(animal.addedBy)`.
   - A general application needs `canAccessFormSubmission(db, submission, viewer)`.
@@ -881,7 +897,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `src/components/ApplicantDetailPanel.tsx`, `src/components/AnimalApplicants.tsx`, `src/components/FormResultMatchCard.tsx` (optional `onLinked?: () => void`; when set, call it instead of `router.push`)
 - Create: `src/components/evaluation/ApplicationStatusLine.tsx`, `ApplicationAnswersSummary.tsx`, `ApplicationDuplicate.tsx`, `DeclineApplicationDialog.tsx`, `ProposeAnimalSheet.tsx`
-- Modify: `scripts/check-action-surface.mjs` (`EXPECTED_ACTIONS = 185`, measured)
+- Modify: `scripts/check-action-surface.mjs` (`EXPECTED_ACTIONS` = the measured number: 185, or 186 if `getApplicantsForAnimal` — today imported only by the server page `my-animals/[id]/page.tsx` — becomes a door once client `AnimalApplicants` imports it)
 - Test: `src/components/evaluation/evaluation.test.tsx`, `src/components/ApplicantDetailPanel.test.tsx`
 
 **Interfaces:**
@@ -932,7 +948,7 @@ Expected: FAIL. Module not found / the old footer.
   1. identity block (unchanged), with `askedAnimal` line under it
   2. `ApplicationStatusLine`
   3. Perfil del adoptante (unchanged)
-  4. `ApplicationDuplicate`: lazy `getApplicationDuplicates(applicationId)` per shown applicant; renders one `FormResultMatchCard` per card with `onLinked={() => onOutcome?.()}`; renders nothing while loading or when there are no cards; a failure shows `evaluation.action_failed` with its errorId
+  4. `ApplicationDuplicate`: lazy `getApplicationDuplicates(applicationId)` per shown applicant; renders one `FormResultMatchCard` per card with `onLinked={() => onOutcome?.()}`, preceded by a line «Cargado por {name}» (existing key `myAdopters.pending_dedup_created_by`, or `pending_dedup_created_by_anonymous` when `addedByName` is null) — the spec's other-profile header; renders nothing while loading or when there are no cards; a failure shows `evaluation.action_failed` with its errorId
   5. Respuestas: «Prefiere» first for general; `ApplicationAnswersSummary`, where «Ver todas» opens the existing `<details>` «Todas las respuestas» by setting its `open` state; selfie, photos, map, «Ver formulario completo» unchanged
   6. footer
 - «Contrato enviado» keeps today's share block after sending.
@@ -957,7 +973,7 @@ Expected: PASS; warnings ≤ 125.
 - [ ] **Step 5: Build and measure the surface**
 
 Run: `npm run build && node scripts/check-action-surface.mjs`
-Expected: 185 once `EXPECTED_ACTIONS = 185`: +declineApplication, +proposeAnimal, +getProposalAnimals, +getApplicationDuplicates.
+Expected: the measured total, set in `EXPECTED_ACTIONS`: 185 (+declineApplication, +proposeAnimal, +getProposalAnimals, +getApplicationDuplicates), or 186 if `getApplicantsForAnimal` is newly recorded. In that case add its what-a-stranger-can-do line too: session required; gated by `isOwnerOrgMateOrAdmin` on the animal's owner; fails closed to `[]`.
 
 - [ ] **Step 6: Commit**
 
@@ -977,7 +993,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `src/types/homeModules.ts`, `src/lib/homeModulesData.ts` (`loadHomeAnimals`), `src/components/home/HomeModules.tsx`, `src/components/home/HomeModules.test.tsx`
 - Create: `src/components/home/HomeApplicantsPanel.tsx`, `src/components/evaluation/AdoptionOfferSheet.tsx`
 - Modify: `src/components/AdoptionFormWizard.tsx`, `src/components/AdoptionFormEditV2.tsx` (open the sheet after a save that returned `closedApplications`)
-- Modify: `scripts/check-action-surface.mjs` (`EXPECTED_ACTIONS = 188`, measured)
+- Modify: `scripts/check-action-surface.mjs` (`EXPECTED_ACTIONS` = the measured number: 188, or 189 with `getApplicantsForAnimal`)
 - Test: the above, plus `tests/home-modules.user.spec.ts` (add cases)
 
 **Interfaces:**
@@ -1075,7 +1091,7 @@ Expected: PASS.
 - [ ] **Step 5: Build and measure the surface**
 
 Run: `npm run build && node scripts/check-action-surface.mjs`
-Expected: 188 once `EXPECTED_ACTIONS = 188`: +getGeneralApplications, +getAdoptionOffer, +markOfferDone.
+Expected: the measured total: Task 9's + 3 (+getGeneralApplications, +getAdoptionOffer, +markOfferDone) = 188, or 189.
 
 - [ ] **Step 6: Commit**
 
@@ -1188,7 +1204,7 @@ Expected: PASS.
 - [ ] **Step 3: Full verification**
 
 Run: `PATH=/opt/homebrew/opt/node@20/bin:$PATH npx vitest run && npx tsc --noEmit && npm run lint && npm run build && node scripts/check-action-surface.mjs && npx playwright test`
-Expected: all green; lint warnings ≤ 125; surface 188.
+Expected: all green; lint warnings ≤ 125; surface = the number Task 10 set (188 or 189).
 
 - [ ] **Step 4: Commit**
 
