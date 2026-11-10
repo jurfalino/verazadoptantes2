@@ -63,6 +63,14 @@ describe('sortRows', () => {
         const f = [row({ id: 'old-form', createdAt: 900, formCount: 1, latestFormAt: 10 }), row({ id: 'new-form', createdAt: 1, formCount: 1, latestFormAt: 50 })];
         expect(ids(sortRows(f, 'new', sel('src:form')))).toEqual(['new-form', 'old-form']);
     });
+    it('nameless profiles stay last both ways; «Por formulario» alone reverses by form date', () => {
+        const n = [row({ id: 'none', name: '' }), row({ id: 'b', name: 'Bea' }), row({ id: 'a', name: 'Ana' })];
+        expect(ids(sortRows(n, 'name', sel()))).toEqual(['a', 'b', 'none']);
+        expect(ids(sortRows(n, 'name_desc', sel()))).toEqual(['b', 'a', 'none']);
+        const f = [row({ id: 'x', createdAt: 1, formCount: 1, latestFormAt: 50 }), row({ id: 'y', createdAt: 900, formCount: 1, latestFormAt: 10 })];
+        expect(ids(sortRows(f, 'old', sel('src:form')))).toEqual(['y', 'x']);
+    });
+
     it('ISO strings and Dates sort like numbers (the API sends strings)', () => {
         const d = [row({ id: 's', createdAt: '2026-01-01T00:00:00Z' }), row({ id: 'n', createdAt: new Date('2026-06-01T00:00:00Z') })];
         expect(ids(sortRows(d, 'new', sel()))).toEqual(['n', 's']);

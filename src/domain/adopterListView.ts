@@ -110,20 +110,28 @@ const secondsOf = (v: ListRow['createdAt']): number => {
 
 /**
  * The list in the chosen order. Ties keep the incoming order (stable sort), and
- * people with no rating always go last when sorting by rating. With «Por
- * formulario» on and the default order, the newest FORM comes first — what
- * that tab always did.
+ * people with no rating (and, by name, nameless profiles) always go last.
+ * With «Por formulario» alone, the dates are the forms' — newest form first by
+ * default, what that tab always did; reversed, oldest form first.
  */
 export function sortRows<R extends ListRow>(rows: readonly R[], sort: SortKey, selected: ReadonlySet<FilterKey>): R[] {
+    // A–Z and Z–A both keep nameless profiles («Sin nombre») at the end, not first.
+    const nameless = (r: R) => !(r.name ?? '').trim();
     const byName = (a: R, b: R) => (a.name ?? '').localeCompare(b.name ?? '', 'es', { sensitivity: 'base' });
+    const byNameKeepNamelessLast = (dir: 1 | -1) => (a: R, b: R) =>
+        nameless(a) !== nameless(b) ? (nameless(a) ? 1 : -1) : dir * byName(a, b);
+    // «Por formulario» alone: the date columns read the newest FORM (what that tab always did), both ways.
+    const formsOnly = selected.has('src:form') && selected.size === 1;
     const rated = (r: R) => (ratingLevel(r.avgRating) === null ? null : Number(r.avgRating));
     const cmp: Record<SortKey, (a: R, b: R) => number> = {
-        new: selected.has('src:form') && selected.size === 1
+        new: formsOnly
             ? (a, b) => (b.latestFormAt ?? 0) - (a.latestFormAt ?? 0)
             : (a, b) => secondsOf(b.createdAt) - secondsOf(a.createdAt),
-        old: (a, b) => secondsOf(a.createdAt) - secondsOf(b.createdAt),
-        name: byName,
-        name_desc: (a, b) => byName(b, a),
+        old: formsOnly
+            ? (a, b) => (a.latestFormAt ?? 0) - (b.latestFormAt ?? 0)
+            : (a, b) => secondsOf(a.createdAt) - secondsOf(b.createdAt),
+        name: byNameKeepNamelessLast(1),
+        name_desc: byNameKeepNamelessLast(-1),
         worst: (a, b) => (rated(a) ?? Infinity) - (rated(b) ?? Infinity),
         best: (a, b) => {
             const x = rated(a), y = rated(b);

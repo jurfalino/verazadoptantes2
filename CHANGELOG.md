@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.47] - 2026-11-10
+
+### Fixed (review of 2.58.46, before it deployed)
+- Typing in «Buscar por nombre», ticking a filter or sorting no longer asks the server for the page each time:
+  the address updates in place. On a tab older than a deploy, the first letter typed used to reload the page.
+- A pin saved right after a filter change can't be dropped anymore; quick pin/unpin sequences show what was
+  really saved, and a failed save returns to the last saved pins.
+- Name order keeps nameless profiles at the end; with «Por formulario» alone, «Procedencia» reverses by form date.
+- Screen readers: the sort buttons say how the list is sorted; a locked pin (4 already) can be focused and says why.
+
 ## [2.58.46] - 2026-11-10
 
 ### Added — Mis adoptantes: sort, filter, pin, search

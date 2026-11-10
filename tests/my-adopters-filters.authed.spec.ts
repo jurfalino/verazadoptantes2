@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
+import { rows } from './db';
 
 /**
  * Mis adoptantes — sort, filter, pin, clear (Jon 2026-11-10, option E;
@@ -8,6 +9,10 @@ import { dismissCountryBanner } from './helpers';
  * pins other specs click («Por formulario», «Desde un post»).
  * Selectors are data-testids: Chromium renders English.
  */
+
+const ADMIN_USER_ID = 'test-admin-id';
+/** The admin's stored pins, straight from the DB (the screen shows the defaults until its read returns). */
+const storedPins = (): string => String(rows(`SELECT adopter_list_pins AS p FROM user_profiles WHERE user_id = '${ADMIN_USER_ID}'`)[0]?.p ?? '');
 
 const numberOf = async (text: Promise<string>) => Number((await text).match(/\d+/)?.[0] ?? NaN);
 
@@ -23,7 +28,7 @@ test('Mis adoptantes: headers sort, the panel filters, a pinned filter stays aft
     // Sort by name with the header: A–Z, in the URL.
     await page.getByTestId('sort-name').click();
     await expect(page).toHaveURL(/orden=nombre/);
-    const names = await page.locator('[data-testid="my-adopters-row"]:visible a[href^="/adopter/"]').evaluateAll(
+    const names = await page.locator('[data-testid="my-adopters-row"]:visible [data-testid="my-adopters-name"]').evaluateAll(
         (links) => links.slice(0, 6).map(a => (a.textContent ?? '').trim()));
     expect(names.length).toBeGreaterThan(1);
     expect([...names].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))).toEqual(names);
@@ -36,6 +41,8 @@ test('Mis adoptantes: headers sort, the panel filters, a pinned filter stays aft
     const pin = panel.getByTestId('filter-pin-toggle-rating-none');
     if ((await pin.getAttribute('aria-pressed')) !== 'true') await pin.click();
     await expect(pin).toHaveAttribute('aria-pressed', 'true');
+    // Stored before anything reloads (the DB, not the screen: the screen shows the defaults until its read returns).
+    await expect.poll(storedPins, { timeout: 30_000 }).toContain('rating:none');
     await panel.getByTestId('adopter-filters-done').click();
     await expect(panel).toHaveCount(0);
 
@@ -64,9 +71,6 @@ test('Mis adoptantes: headers sort, the panel filters, a pinned filter stays aft
     await unpin.click();
     await expect(unpin).toHaveAttribute('aria-pressed', 'false');
     await page.getByTestId('adopter-filters-panel').getByTestId('adopter-filters-done').click();
-    // Saved, not just shown: after a reload the pin is gone.
-    await page.reload();
-    await dismissCountryBanner(page);
-    await expect(page.getByTestId('adopter-list-count')).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId('filter-pin-rating-none')).toHaveCount(0);
+    // Saved, not just shown: the stored value no longer has it.
+    await expect.poll(storedPins, { timeout: 30_000 }).not.toContain('rating:none');
 });

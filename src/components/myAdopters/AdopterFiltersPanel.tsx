@@ -55,10 +55,11 @@ export default function AdopterFiltersPanel({ view, onView, pins, onPin, counts,
                                     <span className="flex items-center gap-1.5 min-w-0 text-sm text-stone-900">{filterIcon(k)}<span className="truncate">{filterLabel(k, t)}</span></span>
                                     <span className="ml-auto text-xs text-stone-400 tabular-nums">{counts[k]}</span>
                                 </label>
-                                <button type="button" onClick={() => !locked && onPin(k)} disabled={locked}
+                                {/* Locked stays focusable (aria-disabled, not disabled), so keyboard and screen-reader users hear why. */}
+                                <button type="button" onClick={() => !locked && onPin(k)} aria-disabled={locked || undefined}
                                     aria-pressed={pinned} aria-label={`${pinLabel}: ${filterLabel(k, t)}`} title={pinLabel}
                                     data-testid={`filter-pin-toggle-${k.replace(':', '-')}`}
-                                    className={`w-11 h-11 shrink-0 grid place-items-center rounded-lg transition-colors ${pinned ? 'text-teal-700' : 'text-stone-400 hover:text-teal-700'} disabled:text-stone-300 disabled:cursor-not-allowed`}>
+                                    className={`w-11 h-11 shrink-0 grid place-items-center rounded-lg transition-colors ${pinned ? 'text-teal-700' : locked ? 'text-stone-300 cursor-not-allowed' : 'text-stone-400 hover:text-teal-700'}`}>
                                     {pinned ? <Pin className="w-4 h-4 fill-current" aria-hidden="true" /> : locked ? <PinOff className="w-4 h-4" aria-hidden="true" /> : <Pin className="w-4 h-4" aria-hidden="true" />}
                                 </button>
                             </div>

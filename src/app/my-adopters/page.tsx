@@ -4,7 +4,7 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, FileText, Search } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -262,34 +262,52 @@ export default function MyAdoptersPage() {
     // Read once from the URL (not useSearchParams: that would force a
     // Suspense boundary onto this whole client page).
     useEffect(() => { setViewState(viewFromSearch(window.location.search)); }, []);
+    // The URL follows the view WITHOUT a router navigation: router.replace was a server round-trip per
+    // keystroke — on a tab older than the deploy, a full reload mid-typing (deploy skew), and server
+    // actions queued behind it (a pin save) could be dropped. Next 15 syncs its router with replaceState.
     const setView = (next: ListView) => {
         setViewState(next);
-        router.replace(`/my-adopters${searchFromView(next)}`, { scroll: false });
+        window.history.replaceState(window.history.state, '', `/my-adopters${searchFromView(next)}`);
     };
+    // Filtering thousands of rows per keystroke: the typing stays immediate, the list follows.
+    const deferredQ = useDeferredValue(view.q);
     const [filtersOpen, setFiltersOpen] = useState(false);
     // The person's pinned filters (their own preference); the defaults until read, and if the read fails.
     const [pins, setPins] = useState<FilterKey[]>([...DEFAULT_PINS]);
+    /** Bumped on every pin toggle: only the newest save's answer may change the screen, and the first read
+     *  never overwrites a toggle made before it returned. */
+    const pinSeq = useRef(0);
+    /** The stored pins — what a failed save goes back to (never a stale snapshot from an older toggle). */
+    const savedPins = useRef<FilterKey[]>([...DEFAULT_PINS]);
     useEffect(() => {
         let active = true;
         getAdopterListPins()
-            .then(p => { if (active && p) setPins(p); })
+            .then(p => {
+                if (!active || !p) return;
+                savedPins.current = p;
+                if (pinSeq.current === 0) setPins(p);
+            })
             .catch(e => { resolveErrorId(e, 'MyAdopters.pins'); });
         return () => { active = false; };
     }, []);
     const togglePin = (k: FilterKey) => {
-        const before = pins;
         const next = pins.includes(k) ? pins.filter(p => p !== k) : pins.length < PIN_MAX ? [...pins, k] : pins;
         if (next === pins) return;
+        const seq = ++pinSeq.current;
         setPins(next);
+        const failed = (errorId: string | undefined) => {
+            if (seq === pinSeq.current) setPins(savedPins.current);
+            toast.error(t('errors.generic') || 'Error', t('myAdopters.pin_save_failed'), errorId);
+        };
         void saveAdopterListPins(next)
             .then(res => {
-                if (res.success) return;
-                setPins(before);
-                toast.error(t('errors.generic') || 'Error', t('myAdopters.pin_save_failed'), res.errorId);
+                if (!res.success) return failed(res.errorId);
+                savedPins.current = res.pins ?? next;
+                if (seq === pinSeq.current) setPins(savedPins.current);
             })
             .catch(e => {
-                setPins(before);
-                if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('myAdopters.pin_save_failed'), resolveErrorId(e, 'MyAdopters.pins'));
+                if (handledAsStale(e)) { if (seq === pinSeq.current) setPins(savedPins.current); return; }
+                failed(resolveErrorId(e, 'MyAdopters.pins'));
             });
     };
     const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}?from=adopters`);
@@ -358,7 +376,7 @@ export default function MyAdoptersPage() {
     const rows = adopters.map(a => ({ a, r: listRow(a) }));
     const counts = Object.fromEntries(FILTER_KEYS.map(k => [k, rows.filter(x => holds(k, x.r)).length])) as Record<FilterKey, number>;
     const visible = sortRows(
-        rows.filter(x => matches(view.selected, x.r) && nameMatches(view.q, x.a.name)).map(x => ({ ...x.r, adopter: x.a })),
+        rows.filter(x => matches(view.selected, x.r) && nameMatches(deferredQ, x.a.name)).map(x => ({ ...x.r, adopter: x.a })),
         view.sort, view.selected,
     ).map(x => x.adopter);
     const onlyFilter = view.selected.size === 1 && !view.q.trim() ? [...view.selected][0] : null;
@@ -370,9 +388,11 @@ export default function MyAdoptersPage() {
     const sortHeader = (label: string, first: SortKey, second: SortKey, firstDir: Dir) => {
         const dir = dirOf(first, second, firstDir);
         const Arrow = dir === 'ascending' ? ArrowUp : dir === 'descending' ? ArrowDown : ArrowUpDown;
+        const current = view.sort === first ? first : view.sort === second ? second : null;
         return (
             <button type="button" onClick={() => setView({ ...view, sort: view.sort === first ? second : first })}
-                data-testid={`sort-${first}`}
+                data-testid={`sort-${first}`} data-sort={dir}
+                aria-label={current ? `${label}: ${t(`myAdopters.sort_${current}`)}` : `${label}: ${t('myAdopters.sort_label')}`}
                 className={`inline-flex items-center gap-1 min-h-[32px] uppercase tracking-wide ${dir !== 'none' ? 'text-teal-700' : 'hover:text-stone-700'}`}>
                 {label}<Arrow className="w-3.5 h-3.5" strokeWidth={2.5} aria-hidden="true" />
             </button>
@@ -461,12 +481,12 @@ export default function MyAdoptersPage() {
                                 and relative timestamps. Name widens 3→4 cols to
                                 fit the breathing room the previous layout owed it.
                                 Rating cell keeps the v2.19.6 flag-badge stack. */}
-                            <div role="row" className="grid grid-cols-12 gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                                <div role="columnheader" aria-sort={dirOf('name', 'name_desc', 'ascending')} className="col-span-4">{sortHeader(t('dashboard.table_adopter_name'), 'name', 'name_desc', 'ascending')}</div>
-                                <div role="columnheader" aria-sort={dirOf('worst', 'best', 'ascending')} className="col-span-2 flex justify-center">{sortHeader(t('dashboard.table_rating') || 'Calificación', 'worst', 'best', 'ascending')}</div>
-                                <div role="columnheader" className="col-span-2 flex items-center">{t('dashboard.table_activity') || 'Actividad'}</div>
+                            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                                <div className="col-span-4">{sortHeader(t('dashboard.table_adopter_name'), 'name', 'name_desc', 'ascending')}</div>
+                                <div className="col-span-2 flex justify-center">{sortHeader(t('dashboard.table_rating') || 'Calificación', 'worst', 'best', 'ascending')}</div>
+                                <div className="col-span-2 flex items-center">{t('dashboard.table_activity') || 'Actividad'}</div>
                                 {/* Procedencia carries the dates: newest first (the default), then oldest. */}
-                                <div role="columnheader" aria-sort={dirOf('new', 'old', 'descending')} className="col-span-4">{sortHeader(t('dashboard.table_provenance') || 'Procedencia', 'new', 'old', 'descending')}</div>
+                                <div className="col-span-4">{sortHeader(t('dashboard.table_provenance') || 'Procedencia', 'new', 'old', 'descending')}</div>
                             </div>
 
                             {/* Table Rows */}
@@ -498,7 +518,7 @@ export default function MyAdoptersPage() {
                                             </div>
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
                                                         <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
                                                     </Link>
                                                     {/* One decision, one pill: when the person's form is waiting
@@ -608,7 +628,7 @@ export default function MyAdoptersPage() {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
                                                     <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
                                                 </Link>
 
