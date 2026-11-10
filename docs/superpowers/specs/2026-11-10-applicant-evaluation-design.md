@@ -69,7 +69,7 @@ From the decision page:
 - Tapping opens `ApplicantDetailPanel` over the home (like `HomeDuePanel` opens «Para hacer ahora»), with the animal's candidates **por evaluar first**, then the rest, so the rescuer can still compare against someone who already has a contract.
 - After an outcome the card reloads (the same `onChanged` pattern as `HomeDuePanel`); the panel moves to the next candidate por evaluar, or closes when none is left.
 
-### Home — Mis adoptantes
+### Home — Mis adoptantes (superseded by Q5 → B: general applications are a «Sin animal elegido» row in Mis animales)
 
 - One row per general application por evaluar, using the existing pending-row look (amber icon, name, amber line): «Completó tu formulario · hace 3 días» or, decision 5, «Pidió a {animal} (ya adoptada) · {when}».
 - These rows come **before** «¿Es la misma persona?» rows (someone is waiting for an answer).
@@ -158,18 +158,12 @@ Changed:
 - **Q4 → recommended.** After an invitation signature: the animal's home row reads «Luna fue adoptada · avisá a 2 candidatos» until sent or «Ahora no». After an open-link signature: the others close with «Luna fue adoptada», no offer.
 - **Q7 → no reopening** when a returned animal is available again.
 - **Q8 → the draft:** «Hola {nombre}, gracias por tu interés en {animal}. Ya encontró familia. Si querés, te avisamos cuando haya otro animal que se ajuste a lo que buscás.»
-- **Q5 (where general applications live)** and **Q6 (duplicates)**: Jon asked back; see below.
+- **Q5 → B (asked back with pros/cons, then chose):** general applications live in **Mis animales** as one row «Sin animal elegido · N solicitudes», opening the same panel (paging through them, general footer) and listed in the same tab «Con solicitudes por evaluar». This REPLACES the per-person rows in Mis adoptantes described in decision 1 and «Home — Mis adoptantes» below; decision 5's «Pidió a Luna (ya adoptada)» becomes that applicant's line inside the panel/tab. Mis adoptantes gets no new section.
+- **Q6 → settled (Jon: «you already asked me this»).** The other profile's owners see the possible match in their «Pendientes de revisar» (unchanged) and can answer it for everyone. For the evaluating team it is inside the evaluation and not counted twice; it counts again if the evaluation ends unanswered.
 
-## Open questions for Jon (2026-11-10, after the builder check)
+## Open questions for Jon
 
-- **Q1. Contract sent, then sent to someone else.** Sending a contract to Pedro kills Ana's link (one live link per animal). Recommendation: an application counts as «Contrato enviado» only while its link is live; when it is replaced or expires (30 days), it is por evaluar again, with the line «Su contrato se reemplazó el 10 nov» / «Su contrato venció el 9 dic». And «No avanzar» is allowed on someone with a live contract; it voids their link.
-- **Q2. Fostered animals.** Recommendation: they keep taking applications, and the contract works for them (signing ends the foster and opens the adoption). This changes three contract routes. Alternative: leave fostered animals out of this work; their applications then end only with «No avanzar».
-- **Q3. The same person applying twice.** Until «¿Es la misma persona?» is answered they are two profiles (the panel shows the duplicate). After «Sí», recommendation: one application per person per animal: the newer form replaces the older one (the older ends «Reemplazada por un formulario más nuevo»), and a general application ends on its own when the same person has one for an animal («Propuesta para Luna» is not used; the line reads «También pidió a Luna»).
-- **Q4. The offer to tell the others when the adoption came from a signature** (the rescuer was not there). Recommendation: after an invitation signature, the animal's home row reads «Luna fue adoptada · avisá a 2 candidatos» until they send or tap «Ahora no». After an open-link signature, the others close with the neutral line «Luna fue adoptada» and no offer (the signer may be one of them under a new profile), until the open-link work.
-- **Q5. Where general applications live in Mis adoptantes** (the page the home rows open): a «Solicitudes por evaluar» section above «Pendientes de revisar» (recommended), or a filter in «Filtros».
-- **Q6. Confirm the duplicate double-count rule** («Duplicates, both sides»).
-- **Q7. A returned animal.** If Luna comes back available, the closed candidates do not reopen (recommended); their history keeps «Cerrada», and they can apply again.
-- **Q8. The message text** for decision 4.
+None left (2026-11-10).
 
 ## Left to the builder
 
