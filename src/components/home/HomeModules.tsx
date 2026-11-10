@@ -15,7 +15,6 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import dynamic from 'next/dynamic';
 import { useLanguage } from '@/context/LanguageContext';
 import { timeAgo } from '@/lib/timeAgo';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -23,9 +22,10 @@ import { GroupChip } from '@/components/GroupChip';
 import { keepNumberWithUnit, keepCountsTogether } from '@/lib/keepNumberWithUnit';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
-// The panels load when first opened: the home stays light for everyone who never taps an amber row.
-const HomeDuePanel = dynamic(() => import('@/components/home/HomeDuePanel'), { ssr: false });
-const PendingDedup = dynamic(() => import('@/components/PendingDedup'), { ssr: false });
+// Plain imports, never next/dynamic: on the Cloudflare build (next-on-pages) a dynamic chunk in this edge
+// page crashed the homepage («async__chunk_… is not defined», v2.58.43 CI). Both render only once opened.
+import HomeDuePanel from '@/components/home/HomeDuePanel';
+import PendingDedup from '@/components/PendingDedup';
 import { getHomeModules } from '@/app/actions/homeModules';
 import { orderHomeModules, homeAdopterRowCount, HOME_CARD_SLOTS, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
 import { HOME_POSTS_WINDOW_DAYS } from '@/config/constants';

@@ -62,8 +62,8 @@ test.describe.serial('homepage modules', () => {
 
     test.afterAll(() => {
         execD1Batch([
-            // The check-in the last test registers from the home.
-            `DELETE FROM adoptions WHERE adopter_id = '${DUE_ADOPTER}'`,
+            // The check-in the last test registers from the home (adoptions is a view; follow-ups live here).
+            `DELETE FROM adopter_events WHERE adopter_id = '${DUE_ADOPTER}'`,
             `DELETE FROM placements WHERE id = 'test-hm-fixture-pl-${stamp}'`,
             `DELETE FROM animals WHERE id = '${DUE_ANIMAL}'`,
             `DELETE FROM adopter_events WHERE id = 'test-hm-fixture-ev-${stamp}'`,

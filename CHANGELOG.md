@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.44] - 2026-11-09
+
+### Fixed
+- 2.58.42–2.58.43 never deployed: the homepage crashed on the Cloudflare build (the home panels were loaded
+  with next/dynamic, which next-on-pages can't resolve in the edge homepage). They're plain imports now.
+
 ## [2.58.43] - 2026-11-09
 
 ### Changed — «Pendientes de revisar» says what the number is

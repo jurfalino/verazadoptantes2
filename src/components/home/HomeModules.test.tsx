@@ -16,6 +16,7 @@ import type { HomeAdoptersData, HomeAnimalsData } from '@/types/homeModules';
 vi.mock('@/app/actions/homeModules', () => ({ getHomeModules: vi.fn() }));
 vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t: (k: string) => k, locale: 'es' }) }));
 vi.mock('./HomeDuePanel', () => ({ default: () => null }));
+vi.mock('@/components/PendingDedup', () => ({ default: () => null }));
 
 import { AdoptersCard, AnimalsCard } from './HomeModules';
 

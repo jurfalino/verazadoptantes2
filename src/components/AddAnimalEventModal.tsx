@@ -31,7 +31,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { compressImage } from '@/lib/imageCompress';
 import { StarRating } from '@/components/StarRating';
 import { addAnimalEvent } from '@/app/actions/animalTimeline';
-import { saveAdoption } from '@/app/actions';
+import { saveAdoption, saveImage } from '@/app/actions';
 import { ANIMAL_EVENT_TYPES, type AnimalEventType } from '@/domain/constants';
 import type { FollowupSubtype } from '@/domain/followups';
 
@@ -136,7 +136,6 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
             // is NOT NULL, so an animal with no current holder uses the same
             // '__available__' sentinel the create form already writes.
             if (photos.length > 0 && recordId) {
-                const { saveImage } = await import('@/app/actions');
                 const owner = activePlacement?.adopterId || '__available__';
                 for (const data of photos) {
                     await saveImage(owner, data, animal.name ? `${typeLabel(type)} — ${animal.name}` : typeLabel(type), recordId, 'image', false, 'event')
