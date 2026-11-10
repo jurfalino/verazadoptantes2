@@ -1538,6 +1538,9 @@ export async function hidePendingPair(key: string): Promise<{ success: boolean; 
             .values({ viewerEmail: normEmail(actorEmail), pairKey: normalized, createdAt: new Date() })
             .onConflictDoNothing();
         logger.info('hidePendingPair: hidden', { actorEmail, pairKey: normalized });
+        // Their «rechazó unir» notice about it is done too (only theirs: hiding is personal).
+        const { clearPairNotices } = await import('@/lib/pairNotices');
+        await clearPairNotices(db, ids[0], ids[1], { types: ['merge_request_resolved'], userId: actorEmail, ctx: { op: 'hidePendingPair' } });
         return { success: true };
     } catch (e) {
         const errorId = logger.error('hidePendingPair failed', e, { actorEmail });
@@ -1622,6 +1625,8 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
         }).where(eq(duplicateCandidates.id, candidateId));
 
         logger.info('Duplicate candidate dismissed by user', { candidateId, user: actorEmail });
+        const { clearPairNotices, PAIR_NOTICE_TYPES } = await import('@/lib/pairNotices');
+        await clearPairNotices(db, ids.a, ids.b, { types: PAIR_NOTICE_TYPES, ctx: { op: 'dismissDuplicateCandidate', candidateId, actorEmail } });
         return { success: true };
     } catch (error) {
         logger.warn('dismissDuplicateCandidate failed', {

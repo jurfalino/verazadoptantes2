@@ -13,6 +13,7 @@
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions, piiAccessGrants } from '@/db/schema';
 import { eq, or, and, gt, ne, sql, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
+import { clearPairNotices, PAIR_NOTICE_TYPES } from '@/lib/pairNotices';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
@@ -441,6 +442,8 @@ export async function mergeAdopters(
             actor: actorEmail,
             mergeDetails,
         });
+        // Settled: the pair's «¿Es la misma persona?» notices stop reading as unread, for everyone.
+        await clearPairNotices(db, primaryId, secondaryId, { types: PAIR_NOTICE_TYPES, ctx: { op: 'mergeAdopters', actor: actorEmail } });
 
         return {
             success: true,

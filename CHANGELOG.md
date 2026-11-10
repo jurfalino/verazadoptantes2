@@ -2,6 +2,17 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.50] - 2026-11-10
+
+### Changed — the bell agrees with the home screen (Jon)
+- **Answer once, cleared everywhere:** answering «¿Es la misma persona?» (merge, «No, es otra persona»,
+  accept / decline / cancel a request, hide a declined one) marks that pair's bell notices as read — for
+  everyone who got one. Registering a check-up does the same for its reminder once everything it lists is
+  done (from the home panel, the animal's page, by anyone on the team). Notices are never deleted.
+- **Check-up reminders are bundled:** one bell notice per person per day — «3 controles para hacer: Sol,
+  poti y 1 más», opening Mis animales › Con controles pendientes — instead of one per check-up. A single
+  check-up keeps its own notice. The e-mail digest was already bundled.
+
 ## [2.58.49] - 2026-11-10
 
 ### Fixed

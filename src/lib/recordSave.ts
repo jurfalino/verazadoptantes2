@@ -179,6 +179,14 @@ export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: {
             // (ENABLE_PENDING_SEARCHES). Best-effort inside the helper.
             if (data.adopterId) await closePendingSearchesForAdopter(db, changedBy, data.adopterId);
 
+            // A check-up registered: its reminders in the bell stop reading as unread once all
+            // they list is done — for the whole team (src/lib/followupNotices.ts).
+            const slot = data as { followupKey?: string | null; animalId?: string | null }; // PASS_THROUGH fields
+            if (slot.followupKey && slot.animalId) {
+                const { clearDoneFollowupNotices } = await import('@/lib/followupNotices');
+                await clearDoneFollowupNotices(db, slot.animalId, { op: 'saveAdoption.create', adoptionId: id, changedBy });
+            }
+
             // The owner's team hears what was added (one notice with the photos
             // that follow; src/lib/profileAdditionNotices.ts). Only a record that
             // lands ON the profile — an «available» animal is not on it.

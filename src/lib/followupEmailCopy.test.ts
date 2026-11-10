@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-    buildFollowupEmail, dedupKey, notificationTitle, slotLabel, EMAIL_DIGEST_MAX_ITEMS,
+    buildFollowupEmail, bellNotice, dedupKey, notificationTitle, slotLabel, EMAIL_DIGEST_MAX_ITEMS,
 } from '../../workers/followup-cron/src/copy';
 
 const item = (name: string, n = 1) => ({
@@ -70,5 +70,18 @@ describe('buildFollowupEmail — one adaptive template', () => {
         expect(mail.html).not.toContain('<img src=x>');
         expect(mail.html).toContain('&lt;img src=x&gt;');
         expect(mail.html).toContain('a &amp; b');
+    });
+});
+
+describe('bellNotice — one bell notice per person per run (Jon 2026-11-10)', () => {
+    const item = (animalName: string | null, animalId: string) => ({ animalName, animalId, body: `Control de los 6 meses con Ana. Tocá para verlo en la ficha del animal.` });
+    it('one check-up: today\'s per-animal notice, to the animal\'s «Para hacer ahora»', () => {
+        expect(bellNotice([item('Sol', 'sol')])).toEqual({ title: 'Seguimiento pendiente: Sol', body: item('Sol', 'sol').body, url: '/my-animals/sol#next-action' });
+    });
+    it('several: «N controles para hacer», names (no repeats), to the list of due animals', () => {
+        expect(bellNotice([item('Sol', 'sol'), item('Sol', 'sol'), item('poti', 'poti')]))
+            .toEqual({ title: '3 controles para hacer', body: 'Sol y poti. Tocá para verlos en Mis animales.', url: '/my-animals?view=pendientes' });
+        expect(bellNotice([item('Sol', 's'), item('poti', 'p'), item('puma', 'u'), item(null, 'x')]).body)
+            .toBe('Sol, poti y 2 más. Tocá para verlos en Mis animales.');
     });
 });

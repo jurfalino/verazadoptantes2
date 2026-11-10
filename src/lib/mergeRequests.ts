@@ -28,6 +28,7 @@ import { and, asc, eq, ne, or } from 'drizzle-orm';
 import { adopterFlags, adopters, duplicateCandidates, mergeRequests } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { clearPairNotices, PAIR_NOTICE_TYPES } from '@/lib/pairNotices';
 import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
 import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
@@ -327,6 +328,8 @@ export async function answerMergeRequest(
     }
 
     logger.info('answerMergeRequest: answered', { ...ctx, status: answer.nextStatus, swap: !!answer.swap });
+    // Answered (or cancelled): the «te pide unir» notices about this pair are done, for the whole team.
+    await clearPairNotices(db, req.primaryId, req.secondaryId, { types: ['merge_request'], ctx: { ...ctx, op: 'answerMergeRequest' } });
     if (answer.nextStatus !== 'cancelled') {
         // The answer stands even if telling people about it fails.
         try {
@@ -399,6 +402,7 @@ export async function recordSeparatePairs(
                         .set({ status: 'dismissed', resolvedBy: actor, resolvedAt: new Date() })
                         .where(eq(duplicateCandidates.id, existing.id));
                 }
+                await clearPairNotices(db, newId, other, { types: PAIR_NOTICE_TYPES, ctx: { ...ctx, op: 'recordSeparatePairs', actor } });
                 continue;
             }
             // Sorted, as the Scan's skip set and the save-time matcher look pairs up (adopter1Id < adopter2Id).
@@ -408,6 +412,7 @@ export async function recordSeparatePairs(
                 matchTypes: '[]', score: 0, confidence: 'low', status: 'dismissed',
                 resolvedBy: actor, resolvedAt: new Date(),
             });
+            await clearPairNotices(db, newId, other, { types: PAIR_NOTICE_TYPES, ctx: { ...ctx, op: 'recordSeparatePairs', actor } });
         } catch (e) {
             failed.push(other);
             errorId = logger.error('recordSeparatePairs: «no es la misma persona» not recorded', e, { ...ctx, actor, newId, otherId: other });
@@ -455,7 +460,9 @@ export async function keepSeparate(
     } catch (e) {
         // The answer stands; the pair just keeps showing until dismissed by hand.
         logger.error('keepSeparate: pair not marked kept-separate', e, { ...ctx, actor, primaryId: a, secondaryId: b });
+        return;
     }
+    await clearPairNotices(db, a, b, { types: PAIR_NOTICE_TYPES, ctx: { ...ctx, op: 'keepSeparate', actor } });
 }
 
 /**

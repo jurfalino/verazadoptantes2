@@ -588,6 +588,11 @@ export async function addAnimalEvent(input: {
             await db.update(animals).set({ neutered: 1, updatedAt: new Date() }).where(eq(animals.id, parsed.data.animalId));
         }
         logAudit({ userEmail, action: 'animal_event_added', target: parsed.data.animalId, details: { eventType: parsed.data.eventType } });
+        // A health check-up registered: its reminders in the bell clear once all they list is done (whole team).
+        if (parsed.data.followupKey) {
+            const { clearDoneFollowupNotices } = await import('@/lib/followupNotices');
+            await clearDoneFollowupNotices(db, parsed.data.animalId, { op: 'addAnimalEvent', userEmail });
+        }
         revalidatePath(`/my-animals/${parsed.data.animalId}`);
         return { success: true, id };
     } catch (error) {
