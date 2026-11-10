@@ -9,7 +9,7 @@
  * three resolve it for the INVITING rescuer (`contract_invitations.created_by`).
  */
 
-import { animals, formSubmissions } from '@/db/schema';
+import { animals, applications, formSubmissions } from '@/db/schema';
 import { and, eq, or } from 'drizzle-orm';
 import { applicantScopeWhere } from '@/lib/applicantScope';
 import type { getDb } from '@/lib/db';
@@ -32,10 +32,10 @@ export interface InvitationAccess extends InvitationAccessDecision {
  * Resolve whether `rescuerEmail` may invite `adopter` to sign for `animalId`.
  *
  * "Applicant" uses the applicants panel's own predicate (getApplicantsForAnimal,
- * src/lib/applicantScope.ts): a form submission for `animalId` that came
- * through a form link of anyone in the ANIMAL OWNER's team (2026-09-30: the
- * team sees its applicants), linked to the adopter — `linked_adopter_id`
- * (which «Es la misma persona» re-points to the chosen profile) or
+ * src/lib/applicantScope.ts): an application for `animalId` — filed or
+ * proposed — whose form came through a form link of anyone in the ANIMAL
+ * OWNER's team (2026-09-30: the team sees its applicants), linked to the
+ * adopter — `linked_adopter_id` (which «Es la misma persona» re-points to the chosen profile) or
  * `auto_adopter_id`. A forged `/form?u=<stranger>&animal=<ours>` row is
  * outside that team and never counts. Throws on a DB error; callers fail closed.
  */
@@ -52,7 +52,8 @@ export async function resolveInvitationAccess(
         // No scope (unknown or deleted animal, empty team) → not an applicant: fail closed.
         scope
             ? db.select({ email: formSubmissions.email, phone: formSubmissions.phone })
-                .from(formSubmissions)
+                .from(applications)
+                .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
                 .where(and(
                     scope,
                     or(eq(formSubmissions.linkedAdopterId, adopter.id), eq(formSubmissions.autoAdopterId, adopter.id)),

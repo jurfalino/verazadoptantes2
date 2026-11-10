@@ -32,6 +32,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '
 const NO_FLAGS = { inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false, tooManyAdoptions: null, tooManyRequests: null };
 
 const applicant = (o: Partial<ApplicantSummary> = {}): ApplicantSummary => ({
+    applicationId: 'app-s1', origin: 'form', status: { kind: 'to_evaluate', note: null }, askedAnimal: null,
     submissionId: 's1', adopterId: 'juan', adopterName: 'Juan Pérez', adopterRating: null, appliedAt: null,
     hasInvite: false, isSigned: false, flags: NO_FLAGS, alertsChecked: true, housemateAlert: { lowRating: null, hasAlerts: false },
     adoptionCount: 3, requestCount: 0, intent: null, species: null, lifeStage: null,

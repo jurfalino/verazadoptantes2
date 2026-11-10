@@ -65,6 +65,9 @@ beforeEach(() => {
     const sub = sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES (?, ?, ?, 'luna', ?, 1700000000)`);
     sub.run('s-juan', OWNER, 'Juan Pérez', 'juan');
     sub.run('s-ana', OWNER, 'Ana', 'ana');
+    const app = sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id) VALUES (?, ?, 'luna')`);
+    app.run('app-s-juan', 's-juan');
+    app.run('app-s-ana', 's-ana');
 });
 
 const load = () => loadApplicantsForAnimal(state.db, { id: 'luna', adopterId: null }, [OWNER], OWNER);

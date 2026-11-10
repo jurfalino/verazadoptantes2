@@ -23,6 +23,8 @@ import { getDb } from './_db';
 import { auth } from '@/auth';
 import type { AdopterFlags } from '@/types/adopter';
 import type { HousemateAlertSummary } from '@/domain/households';
+import type { ApplicationOrigin } from '@/domain/constants';
+import type { ApplicationStatus } from '@/domain/applications';
 
 export interface ApplicantSubmissionPayload {
     email: string | null;
@@ -46,14 +48,20 @@ export interface ApplicantAdopterContext {
 }
 
 export interface ApplicantSummary {
+    /** The application (one per form and animal) — what the panel evaluates. */
+    applicationId: string;
+    origin: ApplicationOrigin;
+    status: ApplicationStatus;
+    /** The adopted animal a form asked for (origin adopted_animal); named only when it is the viewer's team's own. */
+    askedAnimal: { id: string; name: string; sex: string | null } | null;
     submissionId: string;
     adopterId: string | null;
     adopterName: string;
     adopterRating: number | null;
     appliedAt: number | null; // unix seconds
-    /** True when this applicant already has a contract issued for this animal. */
+    /** True when this applicant has a LIVE contract link for this animal (status contract_sent). */
     hasInvite: boolean;
-    /** True when this applicant has already signed the contract for this animal. */
+    /** True when this application is the adopted one (status adopted). */
     isSigned: boolean;
     // ── v34 enrichment ──────────────────────────────────────────────
     /** Same shape /my-adopters uses, so <FlagBadges> renders directly. Null for orphan submissions.

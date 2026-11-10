@@ -5,7 +5,7 @@
  *
  * 2026-09-30 (product decision): applicants are a TEAM resource, like the
  * animal itself. A `form_submissions` row belongs to animal A when
- *   selected_animal_id = A
+ *   applications.animal_id = A
  *   AND the form link that produced it (`user_id`) belongs to the team of
  *       A's OWNER — `getTeamEmails(animal.addedBy)`: owner + org-mates.
  *
@@ -19,8 +19,8 @@
  * is unit-tested by compiling the SQL (applicantScope.test.ts).
  */
 
-import { and, eq, or, sql, type SQL } from 'drizzle-orm';
-import { formSubmissions } from '@/db/schema';
+import { and, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { applications, formSubmissions } from '@/db/schema';
 
 /** Lower-case, trim, dedupe, drop blanks. `getTeamEmails` already lower-cases;
  *  `form_submissions.user_id` is the raw `users.email`, so both sides are
@@ -41,14 +41,18 @@ export function isInTeamScope(formLinkOwner: string | null | undefined, scope: r
     return !!e && scope.includes(e);
 }
 
+/** An OR of one bound `lower(user_id) = ?` per email — never `IN (array)` (D1 binds it as one value). */
+function linkOwnerInTeam(scope: readonly string[]): SQL | undefined {
+    return or(...scope.map(e => sql`lower(${formSubmissions.userId}) = ${e}`));
+}
+
 /**
- * The WHERE clause for "applicants of `animalId` within `teamEmails`".
+ * The WHERE clause for "applications of `animalId` within `teamEmails`".
+ * Callers MUST `innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))`.
  *
- * An OR of one bound `lower(user_id) = ?` per email — never `IN (array)`,
- * which D1 binds as a single value. Returns `null` (caller must not query)
- * for an empty team or animal id: drizzle's `or()` of nothing is `undefined`
- * and `and(x, undefined)` silently drops it, which would list every row for
- * the animal, forged ones included.
+ * Returns `null` (caller must not query) for an empty team or animal id:
+ * drizzle's `or()` of nothing is `undefined` and `and(x, undefined)` silently
+ * drops it, which would list every row for the animal, forged ones included.
  */
 export function applicantScopeWhere(
     animalId: string,
@@ -56,9 +60,21 @@ export function applicantScopeWhere(
 ): SQL | null {
     const scope = normalizeTeamScope(teamEmails);
     if (!animalId || scope.length === 0) return null;
-    const linkOwnerInTeam = or(...scope.map(e => sql`lower(${formSubmissions.userId}) = ${e}`));
-    if (!linkOwnerInTeam) return null;
-    return and(eq(formSubmissions.selectedAnimalId, animalId), linkOwnerInTeam) ?? null;
+    const inTeam = linkOwnerInTeam(scope);
+    if (!inTeam) return null;
+    return and(eq(applications.animalId, animalId), inTeam) ?? null;
+}
+
+/**
+ * General applications (no animal) filed through a form link of the viewer's
+ * team. Same join requirement and fail-closed rule as `applicantScopeWhere`.
+ */
+export function generalScopeWhere(teamEmails: ReadonlyArray<string | null | undefined>): SQL | null {
+    const scope = normalizeTeamScope(teamEmails);
+    if (scope.length === 0) return null;
+    const inTeam = linkOwnerInTeam(scope);
+    if (!inTeam) return null;
+    return and(isNull(applications.animalId), inTeam) ?? null;
 }
 
 /**

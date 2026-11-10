@@ -405,6 +405,13 @@ INSERT OR REPLACE INTO form_submissions (id, user_id, name, email, phone, status
 ('test-sub-fixture-apl-outsider', 'e2e-outsider@example.com', 'Postulante Forasterafixture', 'apl-outsider@example.com', '555-0373', 'pending', 'test-animal-fixture-apl', NULL, strftime('%s','now','-1 days')),
 ('test-sub-fixture-apl-link', 'gatitosolivos@gmail.com', 'Postulante Vinculofixture', 'apl-link@example.com', '555-0374', 'pending', NULL, NULL, strftime('%s','now','-1 days'));
 
+-- Each form above is an application (seed loads after the 0106 backfill, so none were backfilled).
+INSERT OR REPLACE INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES
+('app-test-sub-fixture-apl-owner', 'test-sub-fixture-apl-owner', 'test-animal-fixture-apl', 'form', 'open', strftime('%s','now','-3 days')),
+('app-test-sub-fixture-apl-mate', 'test-sub-fixture-apl-mate', 'test-animal-fixture-apl', 'form', 'open', strftime('%s','now','-2 days')),
+('app-test-sub-fixture-apl-outsider', 'test-sub-fixture-apl-outsider', 'test-animal-fixture-apl', 'form', 'open', strftime('%s','now','-1 days')),
+('app-test-sub-fixture-apl-link', 'test-sub-fixture-apl-link', NULL, 'form', 'open', strftime('%s','now','-1 days'));
+
 -- The form-link owner's notifications carry the duplicate-match data (the
 -- teammate copy does not). read = 1 so they never light the admin's bell.
 INSERT OR REPLACE INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, metadata, created_at) VALUES
@@ -449,6 +456,10 @@ INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered
 INSERT OR REPLACE INTO form_submissions (id, user_id, name, email, phone, status, selected_animal_id, created_at) VALUES
 ('test-sub-fixture-xorg-mate', 'e2e-xorg-mate@example.com', 'Postulante Crucefixture', 'xorg-mate@example.com', '555-0381', 'pending', 'test-animal-fixture-xorg', strftime('%s','now','-2 days')),
 ('test-sub-fixture-xorg-outsider', 'e2e-outsider@example.com', 'Postulante Ajenafixture', 'xorg-outsider@example.com', '555-0382', 'pending', 'test-animal-fixture-xorg', strftime('%s','now','-1 days'));
+
+INSERT OR REPLACE INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES
+('app-test-sub-fixture-xorg-mate', 'test-sub-fixture-xorg-mate', 'test-animal-fixture-xorg', 'form', 'open', strftime('%s','now','-2 days')),
+('app-test-sub-fixture-xorg-outsider', 'test-sub-fixture-xorg-outsider', 'test-animal-fixture-xorg', 'form', 'open', strftime('%s','now','-1 days'));
 
 -- The form-link owner's notifications, as the submit route writes them: the
 -- page renders «Completado por» / the identity rows from their submittedData.

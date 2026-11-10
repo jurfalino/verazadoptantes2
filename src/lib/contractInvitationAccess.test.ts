@@ -21,11 +21,11 @@ vi.mock('@/lib/orgMembership', () => ({ isOrgMate: orgMateMock, isOwnerOrOrgMate
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 
 import { resolveInvitationAccess } from './contractInvitationAccess';
-import { animals, appConfig, formSubmissions, piiAccessGrants } from '@/db/schema';
+import { animals, appConfig, applications, piiAccessGrants } from '@/db/schema';
 
 type Grant = { scope: string; entryRef: string | null; revokedAt: null };
 
-/** Gating + public-profiles flags read `flag`; form_submissions → `submissions`; pii_access_grants → `grants`. */
+/** Gating + public-profiles flags read `flag`; applications ⨝ form_submissions → `submissions`; pii_access_grants → `grants`. */
 function fakeDb(
     flag: string,
     submissions: Array<{ email: string | null; phone: string | null }>,
@@ -36,17 +36,18 @@ function fakeDb(
     return {
         flag,
         select: () => ({
-            from: (table: unknown) => ({
-                where: () => {
+            from: (table: unknown) => {
+                const where = () => {
                     const rows = table === piiAccessGrants ? grants : [];
                     return {
                         get: async () => (table === appConfig ? { value: flag } : table === animals ? (animal ?? undefined) : undefined),
-                        all: async () => (table === formSubmissions ? submissions : []),
+                        all: async () => (table === applications ? submissions : []),
                         limit: async () => [],
                         then: (res: (v: unknown[]) => unknown) => Promise.resolve(rows).then(res),
                     };
-                },
-            }),
+                };
+                return { where, innerJoin: () => ({ where }) };
+            },
         }),
     };
 }
@@ -81,6 +82,13 @@ describe('resolveInvitationAccess', () => {
         expect((await run(fakeDb('true', applied, [], null))).allowed).toBe(false);
         // Sanity: the same applicant with a live animal in the team IS allowed.
         expect((await run(fakeDb('true', applied))).allowed).toBe(true);
+    });
+
+    it('a person proposed for the animal counts as an applicant', async () => {
+        // A proposed application is an `applications` row like any other: the join returns it.
+        const a = await run(fakeDb('true', [{ email: 'propuesta@example.com', phone: null }]));
+        expect(a).toMatchObject({ allowed: true, via: 'applicant' });
+        expect(a.submitted).toEqual(['propuesta@example.com']);
     });
 
     it('foreign adopter who never applied for this animal: refused', async () => {

@@ -208,20 +208,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // Its owner — the teammate fan-out names the animal only when that
         // owner is in the form-link owner's team (forged ?animal= rows).
         let selectedAnimalOwner: string | null = null;
+        // What the application records: undefined = lookup failed, null = no such animal.
+        let selectedAnimalRow: { recordType: string | null; adopterId: string | null } | null | undefined;
         if (selectedAnimalId) {
             try {
                 const { adoptions } = await import('@/db/schema');
-                const animal = await db.select({ animalName: adoptions.animalName, addedBy: adoptions.addedBy })
+                const animal = await db.select({ animalName: adoptions.animalName, addedBy: adoptions.addedBy, recordType: adoptions.recordType, adopterId: adoptions.adopterId })
                     .from(adoptions)
                     .where(eq(adoptions.id, selectedAnimalId))
                     .get();
                 if (animal?.animalName) selectedAnimalName = animal.animalName;
                 selectedAnimalOwner = animal?.addedBy ?? null;
+                selectedAnimalRow = animal ? { recordType: animal.recordType, adopterId: animal.adopterId } : null;
             } catch (e) {
                 logger.warn('Form submit: animal lookup failed — generic notification copy', {
                     submissionId, selectedAnimalId, error: e instanceof Error ? e.message : String(e),
                 });
             }
+        }
+
+        // The form is an application (one per form). Its own try: a failure is
+        // logged and the saved form stays.
+        try {
+            const { createApplicationForSubmission } = await import('@/lib/applicationWrites');
+            await createApplicationForSubmission(db, { submissionId, selectedAnimalId, animal: selectedAnimalRow, createdAt: new Date() });
+        } catch (e) {
+            logger.error('form submit: application not created', e, { submissionId, selectedAnimalId });
         }
 
         // v2.14.10-18: auto-create an adopter row + run duplicate detection

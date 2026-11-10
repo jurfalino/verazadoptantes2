@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
-import { normalizeTeamScope, applicantScopeWhere, isInTeamScope, teammateVisibleAnimal } from './applicantScope';
+import { normalizeTeamScope, applicantScopeWhere, generalScopeWhere, isInTeamScope, teammateVisibleAnimal } from './applicantScope';
 
 /**
  * Which applicants belong to an animal (2026-09-30, product decision): a
@@ -55,7 +55,7 @@ describe('applicantScopeWhere', () => {
     it('targets the animal AND one case-insensitive user_id match per team email', () => {
         const q = compile('animal-1', ['Owner@Example.com', 'mate@example.com'])!;
         expect(q).not.toBeNull();
-        expect(q.sql).toContain('"form_submissions"."selected_animal_id" = ?');
+        expect(q.sql).toContain('"applications"."animal_id" = ?');
         const userMatches = q.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g) ?? [];
         expect(userMatches).toHaveLength(2);
         expect(q.sql).toContain(' or ');
@@ -80,6 +80,21 @@ describe('applicantScopeWhere', () => {
 
     it('fails CLOSED for a blank animal id', () => {
         expect(applicantScopeWhere('', ['owner@example.com'])).toBeNull();
+    });
+});
+
+describe('generalScopeWhere', () => {
+    it('matches animal-less applications and one user_id match per team email', () => {
+        const q = dialect.sqlToQuery(generalScopeWhere(['Owner@Example.com', 'mate@example.com'])!);
+        expect(q.sql).toContain('"applications"."animal_id" is null');
+        expect(q.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g)).toHaveLength(2);
+        expect(q.params).toEqual(['owner@example.com', 'mate@example.com']);
+        expect(q.sql).not.toMatch(/\bin\s*\(/i);
+    });
+
+    it('fails CLOSED for an empty team', () => {
+        expect(generalScopeWhere([])).toBeNull();
+        expect(generalScopeWhere([null, ' '])).toBeNull();
     });
 });
 
