@@ -17,7 +17,7 @@ const tFor = (dict: Record<string, unknown>) => (path: string): string => {
 const t = tFor(es as unknown as Record<string, unknown>);
 
 vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t, locale: 'es' }) }));
-vi.mock('@/context/TimezoneContext', () => ({ useDateFormat: () => ({ formatShortDate: (s: number) => (s === SENT_AT ? '9 nov' : s === REPLACED_AT ? '8 nov' : s === DECLINED_AT ? '10 nov' : '') }) }));
+vi.mock('@/context/TimezoneContext', () => ({ useTimezone: () => 'America/Argentina/Buenos_Aires', useDateFormat: () => ({ formatShortDate: (s: number) => (s === SENT_AT ? '9 nov' : s === REPLACED_AT ? '8 nov' : s === DECLINED_AT ? '10 nov' : '') }) }));
 vi.mock('@/components/ui/Toast', () => ({ useShowToast: () => ({ error: vi.fn() }) }));
 vi.mock('@/app/actions/contract', () => ({ createContractInvitation: vi.fn() }));
 vi.mock('@/lib/clientErrorReporter', () => ({ resolveErrorId: vi.fn(() => 'err12345'), reportClientError: vi.fn() }));
@@ -27,6 +27,7 @@ vi.mock('@/components/LocationMap', () => ({ default: () => null }));
 vi.mock('@/components/FormAnswersPanel', async (orig) => ({ ...(await orig<typeof import('@/components/FormAnswersPanel')>()), default: () => null }));
 vi.mock('@/components/FormPhotos', () => ({ default: () => null }));
 vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn() }));
+vi.mock('@/app/actions/applicants', () => ({ getApplicantsForAnimal: vi.fn(async () => []) }));
 vi.mock('@/app/actions/formSubmission', () => ({ linkFormToExistingAdopter: vi.fn() }));
 vi.mock('@/app/actions/duplicates', () => ({ dismissDuplicateCandidate: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -38,6 +39,7 @@ const REPLACED_AT = 1_762_600_000;
 const DECLINED_AT = 1_762_800_000;
 
 const { default: ApplicantDetailPanel, indexAfterOutcome } = await import('./ApplicantDetailPanel');
+const { ApplicantRowAction } = await import('./AnimalApplicants');
 
 const text = (html: string) => html.replace(/<wbr\s*\/?>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const NO_FLAGS = { inaccurate: false, duplicate: false, systemDuplicate: false, verified_identity: false, verified_address: false, tooManyAdoptions: null, tooManyRequests: null };
@@ -203,5 +205,32 @@ describe('ApplicantDetailPanel — the evaluation (outcome, footer, answers)', (
         expect(indexAfterOutcome([te, dec], 0)).toBe(0);
         expect(indexAfterOutcome([dec, dec], 0)).toBe(-1);
         expect(indexAfterOutcome([], 0)).toBe(-1);
+    });
+});
+
+describe('AnimalApplicants rows — a decided application offers no contract', () => {
+    const row = (o: Partial<ApplicantSummary>) => renderToStaticMarkup(
+        <ApplicantRowAction applicant={applicant(o)} animal={LUNA} busy={false} onSend={() => {}} />,
+    );
+
+    it('to evaluate / contract sent: «Enviar contrato» / «Reenviar»', () => {
+        expect(text(row({}))).toContain(es.myAnimals.applicants_send_contract);
+        expect(text(row({ status: { kind: 'contract_sent', sentAt: SENT_AT }, hasInvite: true }))).toContain(es.myAnimals.applicants_resend);
+    });
+
+    it('declined / closed: the outcome, muted — never «Enviar contrato» (it would re-issue a link «No avanzar» just voided)', () => {
+        for (const [o, line] of [
+            [{ status: { kind: 'declined', at: DECLINED_AT } }, 'No avanzó · 10 nov'],
+            [{ status: { kind: 'closed', reason: 'adopted_other' } }, 'Cerrada: Luna fue adoptada por otra persona'],
+        ] as Array<[Partial<ApplicantSummary>, string]>) {
+            const html = row(o);
+            expect(text(html)).toContain(line);
+            expect(text(html)).not.toContain(es.myAnimals.applicants_send_contract);
+            expect(html).not.toContain('<button');
+        }
+    });
+
+    it('adopted: «Firmado», as before', () => {
+        expect(text(row({ status: { kind: 'adopted' }, isSigned: true }))).toContain(es.myAnimals.applicants_signed);
     });
 });

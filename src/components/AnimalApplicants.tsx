@@ -33,7 +33,8 @@ import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import { formatShortDate } from '@/lib/dates';
-import { useTimezone } from '@/context/TimezoneContext';
+import { useDateFormat, useTimezone } from '@/context/TimezoneContext';
+import { statusLineText } from '@/components/evaluation/ApplicationStatusLine';
 import { RatingBadge } from '@/components/RatingBadge';
 export type ApplicantRow = ApplicantSummary;
 
@@ -191,6 +192,53 @@ function MiniShareModal({
     );
 }
 
+/**
+ * The row's own action: «Enviar contrato» / «Reenviar» only while the application is still being
+ * decided (to evaluate, or a live contract). An outcome reads as its status line instead — a
+ * declined or closed candidate must not get a fresh link («No avanzar» just voided theirs).
+ */
+export function ApplicantRowAction({ applicant: a, animal, busy, onSend }: {
+    applicant: ApplicantRow;
+    animal: { id: string; name: string; sex: string | null };
+    busy: boolean;
+    onSend: () => void;
+}) {
+    const { t } = useLanguage();
+    const { formatShortDate } = useDateFormat();
+    if (a.isSigned) {
+        return <span className="text-[11px] px-2 py-1 rounded-lg bg-teal-100 text-teal-800 font-semibold">✓ {t('myAnimals.applicants_signed') || 'Firmado'}</span>;
+    }
+    if (a.status.kind !== 'to_evaluate' && a.status.kind !== 'contract_sent') {
+        const line = statusLineText(a.status, { animal, outcomeAnimal: a.outcomeAnimal }, t, formatShortDate);
+        return line ? <span className="block max-w-[10rem] text-right text-[11px] text-stone-500 [overflow-wrap:anywhere]" data-testid="applicant-row-outcome">{line}</span> : null;
+    }
+    if (!a.adopterId) {
+        return (
+            <Link
+                href={`/form-results/${a.submissionId}?from=animal:${encodeURIComponent(animal.id)}`}
+                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 transition-colors inline-block"
+                title={t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.'}
+            >
+                {t('myAnimals.applicants_view_form') || 'Ver formulario'}
+            </Link>
+        );
+    }
+    return (
+        <button
+            type="button"
+            onClick={onSend}
+            disabled={busy}
+            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
+        >
+            {busy
+                ? (t('common.processing') || '...')
+                : a.hasInvite
+                    ? (t('myAnimals.applicants_resend') || 'Reenviar')
+                    : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
+        </button>
+    );
+}
+
 export default function AnimalApplicants({
     animalId,
     animalName,
@@ -303,30 +351,12 @@ export default function AnimalApplicants({
                                         )}
                                     </div>
                                     <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-                                        {a.isSigned ? (
-                                            <span className="text-[11px] px-2 py-1 rounded-lg bg-teal-100 text-teal-800 font-semibold">✓ {t('myAnimals.applicants_signed') || 'Firmado'}</span>
-                                        ) : !a.adopterId ? (
-                                            <Link
-                                                href={`/form-results/${a.submissionId}?from=animal:${encodeURIComponent(animalId)}`}
-                                                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 transition-colors inline-block"
-                                                title={t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.'}
-                                            >
-                                                {t('myAnimals.applicants_view_form') || 'Ver formulario'}
-                                            </Link>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleSend(a)}
-                                                disabled={busySubmissionId === a.submissionId}
-                                                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
-                                            >
-                                                {busySubmissionId === a.submissionId
-                                                    ? (t('common.processing') || '...')
-                                                    : a.hasInvite
-                                                        ? (t('myAnimals.applicants_resend') || 'Reenviar')
-                                                        : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
-                                            </button>
-                                        )}
+                                        <ApplicantRowAction
+                                            applicant={a}
+                                            animal={{ id: animalId, name: animalName, sex: animalSex }}
+                                            busy={busySubmissionId === a.submissionId}
+                                            onSend={() => handleSend(a)}
+                                        />
                                     </div>
                                 </li>
                             );
