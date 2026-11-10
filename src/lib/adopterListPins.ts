@@ -12,12 +12,16 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 const emailMatches = (email: string) => sql`lower(${users.email}) = ${email.toLowerCase().trim()}`;
 
-/** The pins, or the defaults when none were saved (no profile row, NULL, or unreadable JSON). */
+/**
+ * The pins, or the defaults when none were saved (no profile row, NULL, or unreadable JSON).
+ * An email can have more than one user row (seen in the e2e seed): read the profile that holds pins.
+ */
 export async function getAdopterListPinsForEmail(db: Db, email: string): Promise<FilterKey[]> {
     const [row] = await db.select({ pins: userProfiles.adopterListPins })
         .from(users)
-        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .innerJoin(userProfiles, eq(userProfiles.userId, users.id))
         .where(emailMatches(email))
+        .orderBy(sql`${userProfiles.adopterListPins} IS NULL`)
         .limit(1);
     if (!row?.pins) return sanitizePins(null);
     let parsed: unknown = null;
@@ -25,12 +29,16 @@ export async function getAdopterListPinsForEmail(db: Db, email: string): Promise
     return sanitizePins(parsed);
 }
 
-/** Store the pins (already sanitized). Throws when the user row does not exist. */
+/**
+ * Store the pins (already sanitized) on the caller's existing profile row(s). Never INSERTs: a
+ * profile row is created when the person accepts the terms, and creating one here (for the wrong
+ * one of two user rows with the same email) left a terms-less profile that blocked every page with
+ * the terms prompt (v2.58.48 CI). Throws when there's no profile row to update.
+ */
 export async function setAdopterListPinsForEmail(db: Db, email: string, pins: FilterKey[]): Promise<void> {
-    const [row] = await db.select({ id: users.id }).from(users).where(emailMatches(email)).limit(1);
-    if (!row) throw new Error('No user row for the email');
-    const value = JSON.stringify(pins);
-    await db.insert(userProfiles)
-        .values({ userId: row.id, adopterListPins: value })
-        .onConflictDoUpdate({ target: userProfiles.userId, set: { adopterListPins: value } });
+    const updated = await db.update(userProfiles)
+        .set({ adopterListPins: JSON.stringify(pins) })
+        .where(sql`${userProfiles.userId} IN (SELECT ${users.id} FROM ${users} WHERE lower(${users.email}) = ${email.toLowerCase().trim()})`)
+        .returning({ userId: userProfiles.userId });
+    if (updated.length === 0) throw new Error('No profile row for the email');
 }

@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.49] - 2026-11-10
+
+### Fixed
+- Saving pinned filters could create a second, terms-less profile record for an account with two sign-in
+  records under the same email (seen in the test database). The save now only updates the existing profile.
+  2.58.46–2.58.48 never deployed.
+
 ## [2.58.48] - 2026-11-10
 
 ### Changed
