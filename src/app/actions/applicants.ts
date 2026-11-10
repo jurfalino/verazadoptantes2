@@ -54,6 +54,8 @@ export interface ApplicantSummary {
     status: ApplicationStatus;
     /** The adopted animal a form asked for (origin adopted_animal); named only when it is the viewer's team's own. */
     askedAnimal: { id: string; name: string; sex: string | null } | null;
+    /** The animal a general application led to — «Propuesta para …» (proposed) / «También pidió a …» (also_applied); named only when it is the viewer's team's own. */
+    outcomeAnimal: { id: string; name: string; sex: string | null } | null;
     submissionId: string;
     adopterId: string | null;
     adopterName: string;

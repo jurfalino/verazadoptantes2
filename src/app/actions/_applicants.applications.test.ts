@@ -42,9 +42,9 @@ function form(id: string, userId: string, adopter: string | null, selectedAnimal
     sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
         .run(id, userId, id, selectedAnimal, adopter, createdAt);
 }
-function app(id: string, submission: string, animal: string | null, o: { origin?: string; state?: string; closeReason?: string | null; closedAt?: number | null; asked?: string | null } = {}) {
-    sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id, origin, state, close_reason, closed_at, asked_animal_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(id, submission, animal, o.origin ?? 'form', o.state ?? 'open', o.closeReason ?? null, o.closedAt ?? null, o.asked ?? null);
+function app(id: string, submission: string, animal: string | null, o: { origin?: string; state?: string; closeReason?: string | null; closedAt?: number | null; asked?: string | null; proposed?: string | null; replacedBy?: string | null } = {}) {
+    sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id, origin, state, close_reason, closed_at, asked_animal_id, proposed_application_id, replaced_by_application_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, submission, animal, o.origin ?? 'form', o.state ?? 'open', o.closeReason ?? null, o.closedAt ?? null, o.asked ?? null, o.proposed ?? null, o.replacedBy ?? null);
 }
 function invite(token: string, adopter: string, createdAt: number, expiresAt: number | null, usedAt: number | null = null) {
     sqlite.prepare(`INSERT INTO contract_invitations (token, animal_id, adopter_id, created_by, created_at, expires_at, used_at) VALUES (?, 'luna', ?, ?, ?, ?, ?)`)
@@ -128,5 +128,26 @@ describe('applicants are applications', () => {
         expect(list.find(a => a.applicationId === 'app-own')!.askedAnimal).toEqual({ id: 'adopted-own', name: 'Mora', sex: 'hembra' });
         expect(list.find(a => a.applicationId === 'app-forged')!.askedAnimal).toBeNull();
         expect(list.find(a => a.applicationId === 'app-gen')!.askedAnimal).toBeNull();
+    });
+
+    it('«Propuesta para …» / «También pidió a …»: the general application names the animal it led to — only the team\'s own animal', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name, sex, added_by, created_at, updated_at) VALUES ('mora', 'Mora', 'hembra', ?, 1000, 1000), ('ajena', 'Ajena', 'macho', ?, 1000, 1000)`)
+            .run(OWNER, OUTSIDER);
+        form('s-prop', OWNER, 'ana', null, NOW - 3 * DAY);
+        app('app-to-mora', 's-prop', 'mora', { origin: 'proposed' });
+        app('app-prop', 's-prop', null, { state: 'proposed', proposed: 'app-to-mora', closedAt: NOW - DAY });
+        form('s-also', OWNER, 'beto', null, NOW - 2 * DAY);
+        form('s-beto-luna', OWNER, 'beto', 'luna', NOW - DAY); app('app-beto-luna', 's-beto-luna', 'luna');
+        app('app-also', 's-also', null, { state: 'also_applied', replacedBy: 'app-beto-luna' });
+        form('s-ajena', OWNER, 'cami', null, NOW - 2 * DAY);
+        form('s-cami-ajena', OUTSIDER, 'cami', 'ajena', NOW - DAY); app('app-cami-ajena', 's-cami-ajena', 'ajena');
+        app('app-also-ajena', 's-ajena', null, { state: 'also_applied', replacedBy: 'app-cami-ajena' });
+        form('s-gen', OWNER, 'ana', null, NOW - DAY); app('app-gen', 's-gen', null);
+        const list = await loadGeneralApplications(state.db, [OWNER, MATE], OWNER);
+        const by = (id: string) => list.find(a => a.applicationId === id)!;
+        expect(by('app-prop').outcomeAnimal).toEqual({ id: 'mora', name: 'Mora', sex: 'hembra' });
+        expect(by('app-also').outcomeAnimal).toEqual({ id: 'luna', name: 'Luna', sex: null });
+        expect(by('app-also-ajena').outcomeAnimal).toBeNull();
+        expect(by('app-gen').outcomeAnimal).toBeNull();
     });
 });

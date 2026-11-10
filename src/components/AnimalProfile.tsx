@@ -344,7 +344,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             {/* applicants — only while the animal still needs a home */}
             {seeking && applicants.length > 0 && (
                 <div className="mt-4 bg-white rounded-2xl border border-stone-200 shadow-sm p-3" id="applicants">
-                    <AnimalApplicants animalId={animal.id} animalName={animal.name || 'Animal'} applicants={applicants} />
+                    <AnimalApplicants animalId={animal.id} animalName={animal.name || 'Animal'} animalSex={animal.sex ?? null} applicants={applicants} />
                 </div>
             )}
 

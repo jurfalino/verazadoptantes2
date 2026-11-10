@@ -11,13 +11,14 @@
  * computed URL instead of building one from a contract base + animalId.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Home, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { createContractInvitation } from '@/app/actions/contract';
+import { getApplicantsForAnimal } from '@/app/actions/applicants';
 import { zarazTrack } from '@/lib/zaraz';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
@@ -193,13 +194,19 @@ function MiniShareModal({
 export default function AnimalApplicants({
     animalId,
     animalName,
-    applicants,
+    animalSex = null,
+    applicants: initialApplicants,
 }: {
     animalId: string;
     animalName: string;
+    /** For the sex-agreeing lines of the panel («Cerrada: Luna fue adoptada…»). */
+    animalSex?: string | null;
     applicants: ApplicantRow[];
 }) {
     const { t, locale } = useLanguage();
+    // Re-read after an outcome in the panel, so the list under it is not stale.
+    const [applicants, setApplicants] = useState(initialApplicants);
+    useEffect(() => { setApplicants(initialApplicants); }, [initialApplicants]);
     const timeZone = useTimezone();
     const toast = useShowToast();
     const [expanded, setExpanded] = useState(false);
@@ -339,9 +346,15 @@ export default function AnimalApplicants({
                 <ApplicantDetailPanel
                     applicants={applicants}
                     initialIndex={panelIndex}
-                    animalId={animalId}
-                    animalName={animalName}
+                    animal={{ id: animalId, name: animalName, sex: animalSex }}
                     onClose={() => setPanelIndex(null)}
+                    onOutcome={async () => {
+                        // getApplicantsForAnimal fails closed to [] (logged server-side): keep the list, close the panel.
+                        const fresh = await getApplicantsForAnimal(animalId);
+                        if (fresh.length === 0) return null;
+                        setApplicants(fresh);
+                        return fresh;
+                    }}
                 />
             )}
         </>

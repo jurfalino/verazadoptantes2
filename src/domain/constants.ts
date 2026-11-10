@@ -96,6 +96,10 @@ export type ApplicationOrigin = typeof APPLICATION_ORIGINS[keyof typeof APPLICAT
 export const APPLICATION_CLOSE_REASONS = { ADOPTED_OTHER: 'adopted_other', ADOPTED_OPEN_LINK: 'adopted_open_link' } as const;
 export type ApplicationCloseReason = typeof APPLICATION_CLOSE_REASONS[keyof typeof APPLICATION_CLOSE_REASONS];
 
+/** «No avanzar»: the editable first line and the required reason (spec: neither may be blank). The dialog caps its fields at these; the action refuses longer. */
+export const DECLINE_TEXT_MAX = 500;
+export const DECLINE_REASON_MAX = 2000;
+
 /** Days a contract link stays valid. Moved from contract.ts (a sync export from a 'use server' file fails the build). */
 export const INVITATION_TTL_DAYS = 30;
 

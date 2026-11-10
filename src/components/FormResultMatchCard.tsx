@@ -53,6 +53,8 @@ export interface FormResultMatchCardProps {
     canAnswer?: boolean;
     /** Called once the pair is no longer open, so the page drops the card. */
     onDismiss?: () => void;
+    /** After «Sí, es la misma persona»: called instead of opening the profile (the applicant panel stays and re-reads). */
+    onLinked?: () => void;
 }
 
 export default function FormResultMatchCard({
@@ -68,6 +70,7 @@ export default function FormResultMatchCard({
     candidateId = null,
     canAnswer = false,
     onDismiss,
+    onLinked,
 }: FormResultMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
@@ -112,7 +115,13 @@ export default function FormResultMatchCard({
             if (result.success) {
                 trackSamePersonAnswer('form_results', 'same', canAnswer);
                 toast.success(L('link_success').replace('{name}', result.adopterName ?? profile.name));
-                router.push(`/adopter/${profile.id}`);
+                if (onLinked) {
+                    setLinking(false);
+                    setConfirmOpen(false);
+                    onLinked();
+                } else {
+                    router.push(`/adopter/${profile.id}`);
+                }
                 return;
             }
             // Refusals (already linked elsewhere, match gone) are expected

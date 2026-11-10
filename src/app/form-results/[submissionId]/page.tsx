@@ -221,8 +221,8 @@ export default async function FormResultsPage({ params, searchParams }: { params
                     })
                 : Promise.resolve(null),
         ]);
-        // `addedByName` is the panel's «Cargado por»; this page does not show it.
-        matchedProfiles = cards.map(({ profile: { addedByName: _addedByName, ...profile } }) => profile);
+        // `addedByName` / `isMine` are the panel's «Cargado por» / «Tuyo»; this page does not show them.
+        matchedProfiles = cards.map(({ profile: { addedByName: _addedByName, isMine: _isMine, ...profile } }) => profile);
 
         // A form linked to a profile that was later merged away (before merges
         // carried form links along, v2.56.129) has no live profile to name —

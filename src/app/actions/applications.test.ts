@@ -310,9 +310,23 @@ describe('getApplicationDuplicates (a possible duplicate inside the evaluation)'
         // «Cargado por …»: the other profile's creator by name; null for an anonymous one.
         expect(carla.addedByName).toBe('Sofía Rescate');
         expect(cards[1].profile.addedByName).toBeNull();
+        // Another rescuer's (or nobody's) profile is not «Tuyo».
+        expect(carla.isMine).toBe(false);
+        expect(cards[1].profile.isMine).toBe(false);
         // Masking inputs never leave the server.
         expect(carla).not.toHaveProperty('addedBy');
         expect(carla).not.toHaveProperty('isPublic');
+    });
+
+    it('the viewer\'s own other profile is «Tuyo» (isMine), still with their name for «Cargado por»', async () => {
+        sqlite.prepare(`INSERT INTO user (id, name, email) VALUES ('u-owner', 'Olga Dueña', ?)`).run(OWNER.toUpperCase());
+        adopter(sqlite, 'propia', 'Ana Propia', OWNER.toUpperCase());
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at)
+            VALUES ('dc-3', 'ana', 'propia', '["phone","name_full"]', '{}', 90, 'high', 'pending', 1)`).run();
+        const res = await getApplicationDuplicates('app-s-luna');
+        const cards = (res as { cards: Array<{ match: { id: string }; profile: { isMine: boolean } }> }).cards;
+        expect(cards.find(c => c.match.id === 'propia')!.profile.isMine).toBe(true);
+        expect(cards.find(c => c.match.id === 'carla')!.profile.isMine).toBe(false);
     });
 
     it('a form already linked to an existing profile has no cards to answer', async () => {

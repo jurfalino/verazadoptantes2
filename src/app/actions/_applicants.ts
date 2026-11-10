@@ -17,7 +17,7 @@ import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
 import { NO_PERIOD_ALERTS, periodAlerts } from '@/domain/periodAlerts';
 import { NO_HOUSEMATE_ALERT } from '@/domain/households';
-import { APPLICATION_ORIGINS, RECORD_TYPES, type ApplicationState, type ApplicationCloseReason } from '@/domain/constants';
+import { APPLICATION_ORIGINS, APPLICATION_STATES, RECORD_TYPES, type ApplicationState, type ApplicationCloseReason } from '@/domain/constants';
 import { applicationStatus, panelOrder, type InvitationLike } from '@/domain/applications';
 import { healMissingApplications } from '@/lib/applicationWrites';
 import { applicantScopeWhere, generalScopeWhere, teammateVisibleAnimal } from '@/lib/applicantScope';
@@ -158,6 +158,7 @@ export async function listApplicantIdsForAnimal(
 
 type ApplicationRow = {
     applicationId: string; origin: string; askedAnimalId: string | null; animalId: string | null;
+    proposedApplicationId: string | null; replacedByApplicationId: string | null;
     state: string; closeReason: string | null; closedAt: number | null;
     id: string; name: string;
     email: string | null; phone: string | null; address: string | null;
@@ -176,6 +177,8 @@ async function selectApplicationRows(db: Db, where: unknown): Promise<Applicatio
         origin: applications.origin,
         askedAnimalId: applications.askedAnimalId,
         animalId: applications.animalId,
+        proposedApplicationId: applications.proposedApplicationId,
+        replacedByApplicationId: applications.replacedByApplicationId,
         state: applications.state,
         closeReason: applications.closeReason,
         closedAt: applications.closedAt,
@@ -251,7 +254,7 @@ export async function loadGeneralApplications(
  */
 async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCtx): Promise<ApplicantSummary[]> {
     if (rows.length === 0) return [];
-    const { adopters, adoptions, contractInvitations, adopterFlags } = await import('@/db/schema');
+    const { adopters, adoptions, applications, contractInvitations, adopterFlags } = await import('@/db/schema');
     const { eq, and } = await import('drizzle-orm');
     const { animalId, viewerEmail } = ctx;
     const nowSec = Math.floor(Date.now() / 1000);
@@ -343,19 +346,40 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
             invitations, nowSec,
         );
 
-        // «Pidió a …»: only an animal of the viewer's team is named.
-        let askedAnimal: ApplicantSummary['askedAnimal'] = null;
-        if (row.origin === APPLICATION_ORIGINS.ADOPTED_ANIMAL && row.askedAnimalId) {
+        // «Pidió a …» / «Propuesta para …» / «También pidió a …»: only an animal of the viewer's team is named.
+        const teamAnimal = async (animalId: string, what: string): Promise<ApplicantSummary['askedAnimal']> => {
             try {
                 const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy })
                     .from(adoptions)
-                    .where(eq(adoptions.id, row.askedAnimalId))
+                    .where(eq(adoptions.id, animalId))
                     .get() as { id: string; name: string | null; sex: string | null; owner: string | null } | undefined;
                 const visible = a ? teammateVisibleAnimal({ id: a.id, name: a.name, owner: a.owner }, ctx.teamEmails) : null;
-                if (a && visible) askedAnimal = { id: visible.id, name: visible.name, sex: a.sex };
+                return a && visible ? { id: visible.id, name: visible.name, sex: a.sex } : null;
             } catch (e) {
-                logger.warn(`${ctx.op}: asked-animal lookup fallback`, {
-                    applicationId: row.applicationId, askedAnimalId: row.askedAnimalId, error: e instanceof Error ? e.message : String(e),
+                logger.warn(`${ctx.op}: ${what} lookup fallback`, {
+                    applicationId: row.applicationId, animalId, error: e instanceof Error ? e.message : String(e),
+                });
+                return null;
+            }
+        };
+        const askedAnimal = row.origin === APPLICATION_ORIGINS.ADOPTED_ANIMAL && row.askedAnimalId
+            ? await teamAnimal(row.askedAnimalId, 'asked-animal')
+            : null;
+        // The application a general one led to: the proposal, or the same person's application for an animal.
+        const ledTo = row.state === APPLICATION_STATES.PROPOSED ? row.proposedApplicationId
+            : row.state === APPLICATION_STATES.ALSO_APPLIED ? row.replacedByApplicationId
+                : null;
+        let outcomeAnimal: ApplicantSummary['outcomeAnimal'] = null;
+        if (ledTo) {
+            try {
+                const target = await db.select({ animalId: applications.animalId })
+                    .from(applications)
+                    .where(eq(applications.id, ledTo))
+                    .get() as { animalId: string | null } | undefined;
+                if (target?.animalId) outcomeAnimal = await teamAnimal(target.animalId, 'outcome-animal');
+            } catch (e) {
+                logger.warn(`${ctx.op}: outcome-animal lookup fallback`, {
+                    applicationId: row.applicationId, ledTo, error: e instanceof Error ? e.message : String(e),
                 });
             }
         }
@@ -365,6 +389,7 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
             origin: row.origin as ApplicantSummary['origin'],
             status,
             askedAnimal,
+            outcomeAnimal,
             submissionId: row.id,
             adopterId: row.linkedAdopterId,
             adopterName,

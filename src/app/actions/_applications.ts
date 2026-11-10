@@ -13,7 +13,7 @@
  */
 import { and, eq, isNotNull, isNull, ne, or, gt, sql } from 'drizzle-orm';
 import { adopterImages, adopters, adoptions, animals, applications, contractInvitations, formSubmissions, placements } from '@/db/schema';
-import { APPLICATION_CLOSE_REASONS, APPLICATION_ORIGINS, APPLICATION_STATES, RECORD_TYPES } from '@/domain/constants';
+import { APPLICATION_CLOSE_REASONS, APPLICATION_ORIGINS, APPLICATION_STATES, DECLINE_REASON_MAX, DECLINE_TEXT_MAX, RECORD_TYPES } from '@/domain/constants';
 import { rankProposalAnimals } from '@/domain/applications';
 import { takesContract } from '@/domain/placements';
 import { applicantScopeWhere, isInTeamScope, normalizeTeamScope } from '@/lib/applicantScope';
@@ -30,9 +30,7 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 /** Ids the browser sends: a non-empty string the length of any id we mint (the record validator's cap). */
 export const MAX_ID_LENGTH = 64;
-/** «No avanzar»: the editable first line and the required reason (spec: neither may be blank). */
-export const DECLINE_TEXT_MAX = 500;
-export const DECLINE_REASON_MAX = 2000;
+export { DECLINE_TEXT_MAX, DECLINE_REASON_MAX };
 /** The pre-seeded observation id of a decline: a retry writes the SAME record. */
 export const declineRecordId = (applicationId: string) => `decline-${applicationId}`;
 

@@ -464,7 +464,19 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //   getAdoptionOffer(animalId) reads only; first name + the contacts typed on the form of that animal's
 //                              closed candidates — the animal gate first.
 //   markOfferDone(animalId)    animal gate; sets offer_done_at on exactly those rows, one UPDATE per id.
-const EXPECTED_ACTIONS = 181;
+// 188 = 181 + 7. 2026-11-10 the applicant panel (Task 9) imports declineApplication, proposeAnimal,
+// getProposalAnimals and getApplicationDuplicates from a client component. MEASURED (npm run build):
+// Next then records EVERY export of src/app/actions/applications.ts, not only the four imported —
+// the seven above, with their what-a-stranger-can-do lines (the three not yet imported by any client,
+// getGeneralApplications, getAdoptionOffer and markOfferDone, are on the wire from now on too).
+// getApplicantsForAnimal (src/app/actions/applicants.ts), now also imported by the client
+// AnimalApplicants to re-read after an outcome, adds nothing: the server page my-animals/[id]
+// already imported it, so it was in the 181 (manifest layer "rsc"). What a stranger can do with it:
+//   getApplicantsForAnimal(animalId)  session required (signed out → []); the animal must exist and
+//                              the caller must pass isOwnerOrgMateOrAdmin on the animal's OWNER
+//                              (else []); lists only applications whose form link is in the owner's
+//                              team (applicantScopeWhere). Every failure fails closed to [] (logged).
+const EXPECTED_ACTIONS = 188;
 
 let manifest;
 try {

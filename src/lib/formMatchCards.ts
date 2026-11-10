@@ -17,6 +17,7 @@ import { countsFor } from '@/lib/profileSummary';
 import { isMinor } from '@/domain/households';
 import { realOwner } from '@/domain/dedupPair';
 import { emailHandle } from '@/lib/userDisplay';
+import { normEmail } from '@/lib/orgMembership';
 import type { FormResultMatchCardProps } from '@/components/FormResultMatchCard';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -24,8 +25,11 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export type FormMatch = { id: string; name: string; matchTypes: string[]; score?: number; candidateId: string | null; canAnswer: boolean };
 export type FormMatchCardData = {
     match: FormMatch;
-    /** `addedByName`: who loaded the other profile («Cargado por …»), by name, else their email handle; null when anonymous. */
-    profile: FormResultMatchCardProps['profile'] & { addedByName: string | null };
+    /**
+     * `addedByName`: who loaded the other profile («Cargado por …»), by name, else their email handle; null when anonymous.
+     * `isMine`: the viewer loaded it themselves — the panel says «Tuyo», as «Pendientes de revisar» does.
+     */
+    profile: FormResultMatchCardProps['profile'] & { addedByName: string | null; isMine: boolean };
 };
 
 type Row = {
@@ -112,6 +116,7 @@ export async function loadFormMatchCards(
                 profileImageUrl: imageByAdopter.get(r.id) ?? null,
                 ...(isMinor(r) ? { isMinor: true } : {}),
                 addedByName: creator ? (names.get(creator) || emailHandle(creator)) : null,
+                isMine: !!creator && normEmail(creator) === normEmail(viewer),
             };
         })
         .sort((a, b) => {
