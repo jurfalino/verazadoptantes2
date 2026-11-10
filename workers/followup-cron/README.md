@@ -54,3 +54,11 @@ silently skipped, bell only) and `EMAIL_FROM` (default
 show the brand rather than a bare address; requires the domain verified in
 Resend).
 `APP_BASE_URL` in wrangler `[vars]` builds the email's deep link per env.
+
+## Rollback warning (v2.58.50+)
+
+Since v2.58.50 the bell is **bundled**: one notice per recipient per run, with each check-up's dedup key
+inside `metadata.items[]`. A Worker older than v2.58.50 only dedups on the top-level `$.dedupKey`, so
+**rolling the Worker back after bundles exist re-notifies (and re-emails) every bundled check-up once**.
+A Pages rollback does not touch the Worker (it deploys on its own from `followup-worker.yml`). If the
+Worker must go back, first run it with `NOTIF_ENABLED_follow_up_due = 'false'`, or keep the new dedup query.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { orderHomeModules, homeListLimit, homeAnimalRows, isPostRecord, postsCardLive } from './homeModules';
+import { orderHomeModules, HOME_CARD_SLOTS, homeAnimalRows, homePendingRows, isPostRecord, postsCardLive } from './homeModules';
 
 describe('orderHomeModules', () => {
     it('a brand-new account gets no cards, only «Para empezar» with every step', () => {
@@ -25,26 +25,35 @@ describe('orderHomeModules', () => {
     });
 });
 
-describe('homeListLimit', () => {
-    it('3 rows, 2 under amber rows', () => {
-        expect(homeListLimit(false)).toBe(3);
-        expect(homeListLimit(true)).toBe(2);
-    });
+describe('HOME_CARD_SLOTS', () => {
+    it('4 slots per card', () => expect(HOME_CARD_SLOTS).toBe(4));
 });
 
-describe('homeAnimalRows', () => {
+describe('homeAnimalRows — 4 slots; the «N más» amber row takes one', () => {
     const a = (id: string) => ({ id });
     const ids = (r: { due: { id: string }[]; recent: { id: string }[]; moreDue: number }) =>
         ({ due: r.due.map(x => x.id), recent: r.recent.map(x => x.id), moreDue: r.moreDue });
 
-    it('nothing due: the 3 most recently updated', () => {
-        expect(ids(homeAnimalRows([], [a('r1'), a('r2'), a('r3'), a('r4')])))
-            .toEqual({ due: [], recent: ['r1', 'r2', 'r3'], moreDue: 0 });
+    it('nothing due: the 4 most recently updated', () => {
+        expect(ids(homeAnimalRows([], [a('r1'), a('r2'), a('r3'), a('r4'), a('r5')])))
+            .toEqual({ due: [], recent: ['r1', 'r2', 'r3', 'r4'], moreDue: 0 });
     });
 
-    it('one due: it first, then the 2 most recently updated, never the due one twice', () => {
-        expect(ids(homeAnimalRows([a('luna')], [a('luna'), a('r1'), a('r2'), a('r3')])))
-            .toEqual({ due: ['luna'], recent: ['r1', 'r2'], moreDue: 0 });
+    it('one due: it first, then the 3 most recently updated, never the due one twice', () => {
+        expect(ids(homeAnimalRows([a('luna')], [a('luna'), a('r1'), a('r2'), a('r3'), a('r4')])))
+            .toEqual({ due: ['luna'], recent: ['r1', 'r2', 'r3'], moreDue: 0 });
+    });
+
+    it('exactly 4 due: all 4 listed, no «más» row', () => {
+        const due = Array.from({ length: 4 }, (_, i) => a(`d${i}`));
+        expect(ids(homeAnimalRows(due, [a('r1')])))
+            .toEqual({ due: ['d0', 'd1', 'd2', 'd3'], recent: [], moreDue: 0 });
+    });
+
+    it('five due: the 3 most overdue + «2 animales más» (the amber row takes the 4th slot)', () => {
+        const due = Array.from({ length: 5 }, (_, i) => a(`d${i}`));
+        expect(ids(homeAnimalRows(due, [a('r1')])))
+            .toEqual({ due: ['d0', 'd1', 'd2'], recent: [], moreDue: 2 });
     });
 
     it('ten due: the 3 most overdue + «7 animales más»', () => {
@@ -57,6 +66,15 @@ describe('homeAnimalRows', () => {
         expect(ids(homeAnimalRows([], [a('r1'), a('r1'), a('r2')])))
             .toEqual({ due: [], recent: ['r1', 'r2'], moreDue: 0 });
     });
+});
+
+describe('homePendingRows — like the due animals: one row each, «N más» takes the 4th slot', () => {
+    const p = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
+    it('none', () => expect(homePendingRows([], 0)).toEqual({ shown: [], more: 0 }));
+    it('1 of 1: listed, nothing more', () => expect(homePendingRows(p(1), 1)).toEqual({ shown: ['p0'], more: 0 }));
+    it('exactly 4: all 4, no «más» row', () => expect(homePendingRows(p(4), 4)).toEqual({ shown: p(4), more: 0 }));
+    it('65 waiting (4 fetched): 3 rows + «62 más»', () => expect(homePendingRows(p(4), 65)).toEqual({ shown: p(3), more: 62 }));
+    it('a row the feed could not build still counts in «más»', () => expect(homePendingRows(p(1), 2)).toEqual({ shown: ['p0'], more: 1 }));
 });
 
 describe('isPostRecord', () => {

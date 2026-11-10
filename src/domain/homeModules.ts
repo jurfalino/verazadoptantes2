@@ -42,26 +42,41 @@ export function orderHomeModules(states: Record<HomeModuleKey, HomeModuleState>)
     return { cards, steps, firstSteps: cards.length === 0 ? 'start' : 'more' };
 }
 
-/** A list shows at most 3 rows, 2 when amber rows sit above it. */
-export function homeListLimit(hasTodoRows: boolean): number {
-    return hasTodoRows ? 2 : 3;
-}
+/**
+ * Mis adoptantes and Mis animales are built from the same parts so that, side
+ * by side on desktop, they come out the same height (Jon 2026-11-09, option 1):
+ * every card has HOME_CARD_SLOTS slots of one row each, and an amber row or
+ * the «Importar desde tus contactos» link takes a slot like a row does.
+ */
+export const HOME_CARD_SLOTS = 4;
 
-/** The homepage animals card lists at most this many animals. */
-export const HOME_ANIMAL_ROWS = 3;
+/**
+ * Mis adoptantes' pending rows, the same way Mis animales lists its due
+ * animals (Jon 2026-11-09, option b): every row waiting on the viewer is its
+ * own row, up to the slots; with more than fit, one fewer is listed and the
+ * «N más esperan tu respuesta» amber row takes the last slot. `more` counts
+ * every pending row not listed (also any the feed couldn't build).
+ */
+export function homePendingRows<T>(pending: readonly T[], total: number, slots: number = HOME_CARD_SLOTS): { shown: T[]; more: number } {
+    const limit = total > slots ? slots - 1 : slots;
+    const shown = pending.slice(0, Math.min(limit, total));
+    return { shown, more: Math.max(0, total - shown.length) };
+}
 
 /**
  * The homepage animals card's rows: the animals that need you first (a
  * check-up due, most overdue first), then the most recently updated ones to
  * fill the card. `moreDue` = due animals that didn't fit — the «N animales
- * más con controles pendientes» link. `due` and `recent` arrive already
- * ordered; an animal never appears twice.
+ * más con controles pendientes» amber row, which takes a slot: with more due
+ * animals than slots, one fewer animal is listed. `due` and `recent` arrive
+ * already ordered; an animal never appears twice.
  */
 export function homeAnimalRows<D extends { id: string }, R extends { id: string }>(
     due: readonly D[],
     recent: readonly R[],
-    limit: number = HOME_ANIMAL_ROWS,
+    slots: number = HOME_CARD_SLOTS,
 ): { due: D[]; recent: R[]; moreDue: number } {
+    const limit = due.length > slots ? slots - 1 : slots;
     const dueShown = due.slice(0, limit);
     const taken = new Set(dueShown.map(a => a.id));
     const recentShown: R[] = [];

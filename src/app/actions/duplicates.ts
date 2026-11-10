@@ -5,12 +5,12 @@ import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, MERGED_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
+import { needsViewer } from '@/domain/pendingRowRules';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import type { Visibility } from '@/lib/piiAccess';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
-import { canViewerAccessContractResult, CONTRACT_RESULT_TYPE } from '@/lib/contractResultAccess';
 import { emailHandle } from '@/lib/userDisplay';
 import { normalizeText, extractPhones, extractEmails, extractSocials, normalizeSocialHandle, detectSocialPlatformFromValue } from '@/lib/tokenizer';
 import { normalizeConfidence, confidenceBand, fuzzyNameScore, storedScoreToPercent, PRACTICAL_MAX_DUPLICATE } from '@/lib/scoring';
@@ -32,8 +32,9 @@ import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, typ
  * removing the auto-created orphan adopter. Self-service merge for the rescuer who
  * received the contract-result notification.
  *
- * Auth: the notification recipient, their team or an admin (T1 — the team acts
- * as one; src/lib/contractResultAccess.ts). Cross-creator merge is allowed
+ * Auth: opened by a notice id — the notification recipient, their team or an
+ * admin (T1 — the team acts as one); by a signed-contract id (H1) — the
+ * animal's rescue or an admin (src/lib/contractResultAccess.ts). Cross-creator merge is allowed
  * (the matched profile may be owned by a different rescuer); the original creator
  * is notified so they can review.
  *
@@ -44,7 +45,8 @@ import { HOUSEHOLD_NOT_CONVERTED, isMinor as minorNow, raisesHousemateAlert, typ
  * matched profile's original creator (skipped when actor is the creator or admin).
  */
 export async function attachContractToExistingAdopter(
-    notificationId: string,
+    /** H1: a notice id (old pages and links) OR a signed-contract id — resolved here. */
+    resultId: string,
     matchAdopterId: string,
 ): Promise<{ success: boolean; error?: string; errorId?: string; primaryName?: string; matchedProfileUrl?: string }> {
     let actorEmail = 'unknown';
@@ -58,26 +60,24 @@ export async function attachContractToExistingAdopter(
         const db = await getDb();
         if (!db) return { success: false, error: 'Database not available' };
 
-        const { notifications } = await import('@/db/schema');
-
-        // Fetch notification and validate ownership + shape
-        const notification = await db.select().from(notifications).where(eq(notifications.id, notificationId)).get();
-        if (!notification) return { success: false, error: 'Notification not found' };
-        // The recipient, their team or an admin — the same rule the page applies (src/lib/contractResultAccess.ts).
-        // Strict lookups: a D1 failure throws into the catch below (errorId), never reads as "stranger".
-        // Before the type check, so a stranger learns nothing about someone else's notification.
-        const { isOrgMateStrict } = await import('@/lib/orgMembership');
-        const { isAdminAsyncStrict } = await import('@/config/admins');
-        if (!(await canViewerAccessContractResult(actorEmail, notification, { isOrgMate: isOrgMateStrict, isAdmin: isAdminAsyncStrict }))) {
-            logger.info('attachContractToExistingAdopter: denied', { notificationId, matchAdopterId, actorEmail });
+        // The same lookup and rule the page applies (src/lib/contractResult.ts):
+        // a notice → its recipient, their team or an admin; a signed contract →
+        // the animal's rescue or an admin. Strict lookups: a D1 failure throws
+        // into the catch below (errorId), never reads as "stranger". A stranger
+        // learns nothing about someone else's notification.
+        const { loadContractResult } = await import('@/lib/contractResult');
+        const found = await loadContractResult(db, resultId, actorEmail);
+        if (found.status === 'not_found') return { success: false, error: 'Notification not found' };
+        if (found.status === 'denied') {
+            logger.info('attachContractToExistingAdopter: denied', { resultId, matchAdopterId, actorEmail });
             return { success: false, error: 'Not authorized for this notification' };
         }
-        if (notification.type !== CONTRACT_RESULT_TYPE) return { success: false, error: 'Notification is not a contract result' };
+        if (found.status === 'not_contract') return { success: false, error: 'Notification is not a contract result' };
+        const view = found.view;
 
-        const metadata = notification.metadata ? JSON.parse(notification.metadata) : {};
-        const orphanAdopterId: string | undefined = metadata.adopterId;
-        const animalId: string | undefined = metadata.animalId;
-        const animalName: string | undefined = metadata.animalName;
+        const orphanAdopterId: string | undefined = view.adopterId ?? undefined;
+        const animalId: string | undefined = view.animalId ?? undefined;
+        const animalName: string | undefined = view.animalName || undefined;
         if (!orphanAdopterId) return { success: false, error: 'Notification missing orphan adopter id' };
 
         // The target must be an OPEN PAIR of the contract's new profile (spec
@@ -87,7 +87,7 @@ export async function attachContractToExistingAdopter(
         try {
             openPairIds = new Set((await loadOpenPairs(db, orphanAdopterId, actorEmail, { limit: 20 })).map(p => p.otherAdopterId));
         } catch (e) {
-            const errorId = logger.error('attachContractToExistingAdopter: open pairs unreadable', e, { notificationId, matchAdopterId, orphanAdopterId, actorEmail });
+            const errorId = logger.error('attachContractToExistingAdopter: open pairs unreadable', e, { resultId, matchAdopterId, orphanAdopterId, actorEmail });
             return { success: false, error: 'Could not check the matches', errorId };
         }
         if (!openPairIds.has(matchAdopterId)) {
@@ -106,7 +106,7 @@ export async function attachContractToExistingAdopter(
         // the rescuer asks them from the «Pendientes» row.
         if (await refuseDisputedMerge(db, { keepId: matchAdopterId, absorbedId: orphanAdopterId, actor: actorEmail })) {
             const errorId = generateErrorId();
-            logger.warn('attachContractToExistingAdopter: refused, the admins decide this pair', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, errorId });
+            logger.warn('attachContractToExistingAdopter: refused, the admins decide this pair', { resultId, matchAdopterId, orphanAdopterId, actor: actorEmail, errorId });
             return { success: false, error: 'pair_disputed', errorId };
         }
 
@@ -115,7 +115,7 @@ export async function attachContractToExistingAdopter(
         if (!mergeResult.success) {
             // A merge rule's refusal (minor survivor; household data not converted yet) is expected: warn with an id.
             const errorId = generateErrorId();
-            logger.warn('attachContractToExistingAdopter: merge refused or failed', { notificationId, matchAdopterId, orphanAdopterId, actor: actorEmail, reason: mergeResult.error, errorId });
+            logger.warn('attachContractToExistingAdopter: merge refused or failed', { resultId, matchAdopterId, orphanAdopterId, actor: actorEmail, reason: mergeResult.error, errorId });
             return { success: false, error: mergeResult.error, errorId };
         }
 
@@ -128,7 +128,8 @@ export async function attachContractToExistingAdopter(
                 action: 'contract_link_to_existing',
                 target: matchAdopterId,
                 details: JSON.stringify({
-                    notificationId,
+                    notificationId: view.notificationId,
+                    signedContractId: view.signedContractId,
                     mergedOrphanId: orphanAdopterId,
                     animalId,
                     animalName,
@@ -138,7 +139,7 @@ export async function attachContractToExistingAdopter(
             });
         } catch (e) {
             logger.warn('attachContractToExistingAdopter: audit log insert failed (non-blocking)', {
-                notificationId,
+                resultId,
                 matchAdopterId,
                 actor: actorEmail,
                 error: e instanceof Error ? e.message : String(e),
@@ -157,7 +158,7 @@ export async function attachContractToExistingAdopter(
         } catch (e) {
             // Analytics insert failure is non-blocking — the merge itself succeeded.
             logger.warn('attachContractToExistingAdopter: contract_merged analytics insert failed (non-blocking)', {
-                notificationId,
+                resultId,
                 matchAdopterId,
                 actor: actorEmail,
                 error: e instanceof Error ? e.message : String(e),
@@ -185,7 +186,7 @@ export async function attachContractToExistingAdopter(
                     // Another rescuer's bell: the actor by name, never by email.
                     metadata: {
                         attachedByName: actorName,
-                        sourceNotificationId: notificationId,
+                        sourceNotificationId: view.notificationId,
                         animalId,
                         animalName,
                         auditId: mergeResult.auditId ?? null,
@@ -194,7 +195,7 @@ export async function attachContractToExistingAdopter(
             }
         } catch (e) {
             logger.warn('attachContractToExistingAdopter: creator notification failed (non-blocking)', {
-                notificationId,
+                resultId,
                 matchAdopterId,
                 actor: actorEmail,
                 error: e instanceof Error ? e.message : String(e),
@@ -208,7 +209,7 @@ export async function attachContractToExistingAdopter(
         };
     } catch (error) {
         const errorId = logger.error('attachContractToExistingAdopter failed', error, {
-            notificationId,
+            resultId,
             matchAdopterId,
             actor: actorEmail,
         });
@@ -518,7 +519,11 @@ function entriesAsShown(side: PendingDedupSide): Array<{ type: string; value: st
 }
 
 /** Order of the groups on the list (D21). */
-const GROUP_ORDER: ReadonlyArray<PendingDedupPair['group']> = ['received', 'sent', 'declined', 'pair'];
+/** Rows that don't wait on the viewer, shown under every page (sent / declined by them): at most this many. */
+const MAX_OTHERS_SHOWN = 20;
+/** Rows that wait on the viewer first (needsViewer: received, their declined request, possible duplicates), then the rest. */
+const RANK_WAITING: Readonly<Record<PendingDedupPair['group'], number>> = { received: 0, declined: 1, pair: 2, sent: 3 };
+const RANK_OTHERS: Readonly<Record<PendingDedupPair['group'], number>> = { received: 4, declined: 5, pair: 6, sent: 4 };
 
 /** Tolerant parse of `duplicate_candidates.match_values`. Null (per-save path)
  *  or malformed JSON both degrade to "no values", never to a thrown render. */
@@ -576,6 +581,8 @@ export interface PendingDedupPair {
      * (a possible duplicate with no request).
      */
     group: 'received' | 'sent' | 'declined' | 'pair';
+    /** The next move is the viewer's (needsViewer) — listed first; the rest go under «No necesitan nada tuyo». */
+    needsViewer: boolean;
     /**
      * The closed row's «Coinciden: … · Distinto: …» (D22), from matchBreakdown
      * on what this viewer may see (new side = the rescuer's data, existing side
@@ -965,8 +972,20 @@ export async function getPendingDuplicatesForUser(
     includeLow = false,
     /** pairKey of a pair to show (the profile banner's «Revisar»): the page holding it is returned instead of `page`. */
     focusPair?: string,
-): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string }> {
-    const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0 };
+    /**
+     * 'needs_viewer': only the rows whose next move is the viewer's
+     * (domain/pendingRowRules needsViewer) — the homepage's amber row and its
+     * panel. 'all' (default): every row, as /my-adopters lists them.
+     */
+    scope: 'all' | 'needs_viewer' = 'all',
+): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string;
+    /** Rows whose next move is the viewer's (needsViewer), whatever `scope`: the number on the home card and the section header. */
+    needsViewer: number;
+    /** Set when the feed failed: the list is empty because of an error, not because nothing is pending. */
+    errorId?: string }> {
+    const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0, needsViewer: 0 };
+    // From the browser: anything but the one known value is the full list.
+    const onlyNeedsViewer = scope === 'needs_viewer';
     // Re-review M-h: both come from the browser, and the fan-out below is bounded by the page size — so
     // the server bounds it (1–MAX_PENDING_PAGE_SIZE; anything unreadable is the default page).
     pageSize = Math.min(MAX_PENDING_PAGE_SIZE, Math.max(1, Math.floor(Number(pageSize)) || 10));
@@ -1012,6 +1031,29 @@ export async function getPendingDuplicatesForUser(
         // long list of hidden declines costs no subrequests.
         const isHidden = (key: string) => hidden.has(key) && requests.get(key)?.status !== 'pending';
         for (const key of [...requests.keys()]) if (isHidden(key)) requests.delete(key);
+
+        /**
+         * One row's sides and choices — the page's rows and the needsViewer
+         * count both run this. Newer record is the "new" side; older is the
+         * merge primary. The switch's choices by the same function the click
+         * runs (pairChoices): admin bypass (D24), ownerless (D42), no asking
+         * again after a decline (D43), nothing on a rebuilt pair.
+         */
+        const rowChoices = <R extends { id: string; addedBy: string | null; createdAt: Date | null }>(c: FeedCandidate, a: R, b: R, verdict: PairVerdict | undefined) => {
+            const oldOne = keepByAge({ row: a, createdAt: a.createdAt?.getTime() ?? 0 }, { row: b, createdAt: b.createdAt?.getTime() ?? 0 }).row;
+            const newOne = oldOne === a ? b : a;
+            const matchTypes = JSON.parse(c.matchTypes || '[]') as string[];
+            const source: 'flagged' | 'detected' = matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected';
+            // Same inputs, same order as mergePendingDedupPair's decision.
+            const dedupSide = (r: R): DedupSide => ({
+                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
+                teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
+            });
+            const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
+                isAdmin, declinedByViewer: verdict?.declinedForTeam ?? false, adminRuledSeparate: verdict?.adminRuledSeparate ?? false, rebuilt: !!c.rebuilt,
+            });
+            return { oldOne, newOne, choices, matchTypes, source };
+        };
 
         const candidates = await db.select({
             candidateId: duplicateCandidates.id,
@@ -1117,6 +1159,11 @@ export async function getPendingDuplicatesForUser(
                 sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
                     AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
                 sql`(${eitherSideTeamOwned} OR ${requestOnPair})`,
+                // Both profiles still there: a flag whose other side was merged away (merges re-point
+                // adopter_id, not target_adopter_id) has no row to show — the page skips it — so it
+                // must not be counted either, or «1 de N» and the panel point at nothing.
+                sql`EXISTS (SELECT 1 FROM adopters l1 WHERE l1.id = ${adopterFlags.adopterId} AND l1.deleted_at IS NULL)`,
+                sql`EXISTS (SELECT 1 FROM adopters l2 WHERE l2.id = ${adopterFlags.targetAdopterId} AND l2.deleted_at IS NULL)`,
             )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
@@ -1246,24 +1293,72 @@ export async function getPendingDuplicatesForUser(
             if (r.status === 'declined') return 'declined';
             return normEmail(r.requesterEmail) === normEmail(viewer) ? 'sent' : 'received';
         };
+
+        // «The next move is the viewer's» (needsViewer, Jon 2026-11-09). Every
+        // group decides from the request alone except a declined request the
+        // viewer filed: whether «Unir conservando el de …» / «Pedir revisión»
+        // is still offered depends on the pair's choices — the same
+        // pairChoices the page's rows run, so the count and the buttons agree.
+        // Production has no merge requests yet; a viewer's own declined ones
+        // are a handful (DECLINED_REQUESTS_CAP bounds them): two adopter reads
+        // and the verdict per row.
+        const needs = new Set<string>();
+        await Promise.all(eligible.map(async (c) => {
+            const group = groupOf(c);
+            const r = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
+            if (group !== 'declined' || !r || normEmail(r.requesterEmail) !== normEmail(viewer)) {
+                if (needsViewer({ group, newAdopter: { id: '', teamOwned: false }, existingAdopter: { id: '', teamOwned: false }, actionByKeep: { new: null, existing: null }, request: r ? { direction: 'received', keepId: r.primaryId } : null })) needs.add(c.candidateId);
+                return;
+            }
+            try {
+                const [a, b] = await Promise.all([c.adopter1Id, c.adopter2Id].map(id => db.select({
+                    id: adopters.id, addedBy: adopters.addedBy, createdAt: adopters.createdAt, deletedAt: adopters.deletedAt,
+                }).from(adopters).where(eq(adopters.id, id)).get()));
+                if (!a || !b || a.deletedAt || b.deletedAt) return; // merged elsewhere: no row to act on
+                const verdict = isAdmin || c.rebuilt ? undefined : await loadPairVerdict(db, c.adopter1Id, c.adopter2Id, [viewer, ...teamKeys]);
+                const { newOne, oldOne, choices } = rowChoices(c, a, b, verdict);
+                if (needsViewer({
+                    group, request: { direction: 'sent', keepId: r.primaryId }, actionByKeep: choices.actionByKeep,
+                    newAdopter: { id: newOne.id, teamOwned: false }, existingAdopter: { id: oldOne.id, teamOwned: false },
+                })) needs.add(c.candidateId);
+            } catch (e) {
+                // Counted, as the row would offer its buttons anyway (the click re-decides).
+                logger.warn('getPendingDuplicatesForUser: needsViewer check failed, counting it', {
+                    actorEmail: viewer, candidateId: c.candidateId, error: e instanceof Error ? e.message : String(e),
+                });
+                needs.add(c.candidateId);
+            }
+        }));
+        const needsViewerCount = needs.size;
+        // By what waits on the viewer first (D21's groups within each part).
         const requestTime = (c: FeedCandidate) => requests.get(pairKey(c.adopter1Id, c.adopter2Id))?.createdAt?.getTime() ?? 0;
         eligible.sort((x, y) => {
             const gx = groupOf(x), gy = groupOf(y);
-            return (GROUP_ORDER.indexOf(gx) - GROUP_ORDER.indexOf(gy))
+            const rank = (c: FeedCandidate, g: PendingDedupPair['group']) => (needs.has(c.candidateId) ? RANK_WAITING : RANK_OTHERS)[g];
+            return (rank(x, gx) - rank(y, gy))
                 || (gx === 'pair'
                     ? (storedScoreToPercent(y.score) - storedScoreToPercent(x.score))
                         || ((y.detectedAt?.getTime() ?? 0) - (x.detectedAt?.getTime() ?? 0))
                     : requestTime(y) - requestTime(x))
                 || (x.candidateId < y.candidateId ? -1 : x.candidateId > y.candidateId ? 1 : 0);
         });
+        if (onlyNeedsViewer) {
+            for (let i = eligible.length - 1; i >= 0; i--) if (!needs.has(eligible[i].candidateId)) eligible.splice(i, 1);
+        }
 
-        const total = eligible.length;
-        const focusIndex = focusPair ? eligible.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
+        // Pages hold what waits on the viewer; what doesn't (a request they sent, one they declined —
+        // a handful, capped) follows on EVERY page, so it's never buried 7 pages in (UX review
+        // 2026-11-10). `total` = the paged rows, so the pager and «N esperan tu respuesta» agree.
+        const waiting = eligible.filter(c => needs.has(c.candidateId));
+        const others = onlyNeedsViewer ? [] : eligible.filter(c => !needs.has(c.candidateId)).slice(0, MAX_OTHERS_SHOWN);
+        const total = waiting.length;
+        const focusIndex = focusPair ? waiting.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
         if (focusIndex >= 0) page = Math.floor(focusIndex / pageSize) + 1;
-        const focusCandidateId = focusIndex >= 0 ? eligible[focusIndex].candidateId : undefined;
+        const focusOther = focusPair && focusIndex < 0 ? others.find(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : undefined;
+        const focusCandidateId = focusIndex >= 0 ? waiting[focusIndex].candidateId : focusOther?.candidateId;
         const start = Math.max(0, (page - 1) * pageSize);
-        const pageCandidates = eligible.slice(start, start + pageSize);
-        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page };
+        const pageCandidates = [...waiting.slice(start, start + pageSize), ...others];
+        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page, needsViewer: needsViewerCount };
 
         // Fan out only over the ids on THIS page: at most 2 × pageSize.
         const ids = new Set<string>();
@@ -1353,24 +1448,8 @@ export async function getPendingDuplicatesForUser(
             if (!a || !b) continue;
             if (a.deletedAt || b.deletedAt) continue; // merged elsewhere meanwhile
 
-            // Newer record is the "new" side; older is the merge primary.
-            const oldOne = keepByAge({ row: a, createdAt: a.createdAt?.getTime() ?? 0 }, { row: b, createdAt: b.createdAt?.getTime() ?? 0 }).row;
-            const newOne = oldOne === a ? b : a;
+            const { newOne, oldOne, choices, matchTypes, source } = rowChoices(c, a, b, verdictOnPage.get(c.candidateId));
             const request = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
-            const matchTypes = JSON.parse(c.matchTypes || '[]') as string[];
-            const source = matchTypes.includes('flagged_by_user') ? 'flagged' : 'detected';
-            // Same inputs, same order as mergePendingDedupPair's decision.
-            const dedupSide = (r: PairRow): DedupSide => ({
-                id: r.id, addedBy: r.addedBy, createdAt: r.createdAt ? r.createdAt.getTime() : null, deleted: false,
-                teamOwned: !!r.addedBy && teamKeys.has(normEmail(r.addedBy)),
-            });
-            // The switch's choices, by the same function the click runs
-            // (pairChoices): admin bypass (D24), ownerless (D42), no asking
-            // again after a decline (D43), nothing on a rebuilt pair.
-            const verdict = verdictOnPage.get(c.candidateId);
-            const choices = pairChoices(viewer, dedupSide(a), dedupSide(b), source === 'flagged' ? 'flag' : 'detected', {
-                isAdmin, declinedByViewer: verdict?.declinedForTeam ?? false, adminRuledSeparate: verdict?.adminRuledSeparate ?? false, rebuilt: !!c.rebuilt,
-            });
             // Each side first as masked on its own; then each again with what the
             // viewer sees in full on the other, so a shared value shows on both.
             const [newOwn, oldOwn] = await Promise.all([side(newOne), side(oldOne)]);
@@ -1395,6 +1474,7 @@ export async function getPendingDuplicatesForUser(
                 confidencePercent: isAdmin ? storedScoreToPercent(c.score) : null,
                 adminScore: isAdmin && source === 'detected' && !c.rebuilt ? storedScoreToPercent(c.score) : null,
                 group: groupOf(c),
+                needsViewer: needs.has(c.candidateId),
                 summary: { same, diff, flagged: source === 'flagged' },
                 // With no survivor allowed (a pair the viewer only answers) it reads 'merge'.
                 mergeAction: choices.actionByKeep[choices.defaultKeep] ?? 'merge',
@@ -1432,12 +1512,10 @@ export async function getPendingDuplicatesForUser(
             }
         }
 
-        return { pairs, total, lowHidden, page, focusCandidateId };
+        return { pairs, total, lowHidden, page, focusCandidateId, needsViewer: needsViewerCount };
     } catch (error) {
-        logger.warn('getPendingDuplicatesForUser failed', {
-            actorEmail, error: error instanceof Error ? error.message : String(error),
-        });
-        return EMPTY;
+        const errorId = logger.error('getPendingDuplicatesForUser failed', error, { actorEmail, scope });
+        return { ...EMPTY, errorId };
     }
 }
 
@@ -1475,6 +1553,9 @@ export async function hidePendingPair(key: string): Promise<{ success: boolean; 
             .values({ viewerEmail: normEmail(actorEmail), pairKey: normalized, createdAt: new Date() })
             .onConflictDoNothing();
         logger.info('hidePendingPair: hidden', { actorEmail, pairKey: normalized });
+        // Their «rechazó unir» notice about it is done too (only theirs: hiding is personal).
+        const { clearPairNotices } = await import('@/lib/pairNotices');
+        await clearPairNotices(db, ids[0], ids[1], { types: ['merge_request_resolved'], userId: actorEmail, ctx: { op: 'hidePendingPair' } });
         return { success: true };
     } catch (e) {
         const errorId = logger.error('hidePendingPair failed', e, { actorEmail });
@@ -1559,6 +1640,8 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
         }).where(eq(duplicateCandidates.id, candidateId));
 
         logger.info('Duplicate candidate dismissed by user', { candidateId, user: actorEmail });
+        const { clearPairNotices, PAIR_NOTICE_TYPES } = await import('@/lib/pairNotices');
+        await clearPairNotices(db, ids.a, ids.b, { types: PAIR_NOTICE_TYPES, ctx: { op: 'dismissDuplicateCandidate', candidateId, actorEmail } });
         return { success: true };
     } catch (error) {
         logger.warn('dismissDuplicateCandidate failed', {

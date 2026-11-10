@@ -46,7 +46,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { mergePendingDedupPair } from '@/app/actions/duplicates';
 import { getMergeDisputeOption, raiseMergeDispute, resolveMergeDispute } from '@/app/actions/mergeDisputes';
-import { listMergeDisputesForAdmin } from '@/lib/mergeDisputes';
+import { listMergeDisputesForAdmin, mergeDisputeForProfile } from '@/lib/mergeDisputes';
 import { unmergeAdopters } from '@/lib/adopterMerge';
 
 type Row = Record<string, unknown>;
@@ -55,6 +55,10 @@ const unmergeSpy = vi.mocked(unmergeAdopters);
 const disputes = () => sqlite.prepare('SELECT * FROM merge_disputes').all();
 const deleted = (id: string) => sqlite.prepare('SELECT deleted_at FROM adopters WHERE id = ?').get(id)!.deleted_at !== null;
 const candidate = (id: string) => sqlite.prepare('SELECT status FROM duplicate_candidates WHERE id = ?').get(id)!.status;
+const keptRows = (id: string) => sqlite.prepare(`SELECT changes, changed_by, kind FROM adopter_history WHERE adopter_id = ? AND changes LIKE '%merge_dispute_kept%'`).all(id);
+const historyOf = (id: string) => sqlite.prepare(`SELECT id, changes, changed_at AS changedAt FROM adopter_history WHERE adopter_id = ? ORDER BY changed_at DESC`).all(id) as Array<{ id: string; changes: string; changedAt: number }>;
+const mergedRowId = (id: string) => historyOf(id).find(h => h.changes.includes('profiles_merged'))!.id;
+const mergeAuditId = () => sqlite.prepare(`SELECT id FROM audit_log WHERE action = 'adopter_merge' ORDER BY created_at DESC`).get()!.id as string;
 const liveGrantsOn = (id: string) => sqlite.prepare(`SELECT grantee_email AS email FROM pii_access_grants WHERE adopter_id = ? AND revoked_at IS NULL ORDER BY grantee_email`).all(id).map(r => r.email);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the drizzle handle under test
 const db = () => state.db as any;
@@ -214,6 +218,7 @@ describe('resolveMergeDispute (D50)', () => {
         expect(notify.create[0]).toMatchObject({ title: 'Un administrador separó dos perfiles' });
         expect(await listMergeDisputesForAdmin(db())).toEqual([]);
         expect(await getMergeDisputeOption(auditId)).toEqual({ canRaise: false, status: 'undone' });
+        expect(keptRows('mine-old')).toEqual([]);
     });
 
     it('«Mantener»: the join stands, the dispute is closed, both told; nobody can reopen it', async () => {
@@ -225,6 +230,11 @@ describe('resolveMergeDispute (D50)', () => {
         expect(notify.create[0]).toMatchObject({ type: 'merge_dispute_resolved', title: 'Un administrador mantuvo una unión' });
         expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'already_decided' });
         expect(await as(MATE, () => raiseMergeDispute(auditId))).toMatchObject({ success: false, error: 'already_decided' });
+        // H2: the outcome is on the kept profile's history too, not only in a notice.
+        expect(keptRows('mine-old')).toEqual([expect.objectContaining({ changed_by: ADMIN, kind: 'edit' })]);
+        expect(JSON.parse(String(keptRows('mine-old')[0].changes))).toEqual({
+            merge_dispute_kept: { otherId: 'theirs-new', otherName: 'Carla Gomez', disputeId, auditId },
+        });
         expect(disputes()).toHaveLength(1);
         expect(await getMergeDisputeOption(auditId)).toEqual({ canRaise: false, status: 'kept' });
     });
@@ -271,6 +281,7 @@ describe('resolveMergeDispute (D50)', () => {
         expect(disputes()[0]).toMatchObject({ status: 'closed', resolved_by: ADMIN });
         expect(notify.create).toEqual([]);
         expect(await raiseMergeDispute(auditId)).toMatchObject({ success: false, error: 'already_undone' });
+        expect(keptRows('mine-old')).toEqual([]);
     });
 
     it('superseded: the kept profile was merged away since — closed as moot, no «mantuvo / separó»', async () => {
@@ -293,5 +304,67 @@ describe('resolveMergeDispute (D50)', () => {
         expect(await as(STRANGER, () => mergePendingDedupPair('cand-rescan', { keepId: 'theirs-new' }))).toMatchObject({ success: false, error: 'request_pending' });
         expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'adopter_merge'`).get()!.n).toBe(merges);
         expect(deleted('mine-old') || deleted('theirs-new')).toBe(false);
+    });
+});
+
+describe('«Son dos personas distintas» from the profile history (H2)', () => {
+    /** The merge, then every notice gone: the history row must stand on its own. */
+    async function mergeWithoutNotices(): Promise<void> {
+        await ownerMergesIntoMine();
+        notify.create.length = 0;
+        sqlite.prepare('DELETE FROM notifications').run();
+        expect(sqlite.prepare('SELECT COUNT(*) AS n FROM notifications').get()!.n).toBe(0);
+    }
+    const forViewer = (viewer: string, id = 'mine-old') => mergeDisputeForProfile(db(), id, historyOf(id), viewer);
+
+    it('notice deleted: the kept profile\'s owner still finds the merge on its «Perfiles unidos» row and raises the dispute from there', async () => {
+        await mergeWithoutNotices();
+        const row = JSON.parse(historyOf('mine-old').find(h => h.changes.includes('profiles_merged'))!.changes);
+        expect(row.profiles_merged.auditId).toBe(mergeAuditId());
+        const found = await forViewer(STRANGER);
+        expect(found).toEqual({ historyId: mergedRowId('mine-old'), auditId: mergeAuditId(), state: 'can_raise' });
+        expect(await as(STRANGER, () => raiseMergeDispute(found!.auditId))).toEqual({ success: true });
+        expect(disputes()).toEqual([expect.objectContaining({ audit_id: mergeAuditId(), raised_by: STRANGER, status: 'open' })]);
+        // After the tap (or on the next visit): «Un administrador está revisando esta unión.»
+        expect(await forViewer(STRANGER)).toEqual({ historyId: mergedRowId('mine-old'), auditId: mergeAuditId(), state: 'open' });
+    });
+
+    it('a row written before the audit id was stored: found through audit_log (target + secondaryId)', async () => {
+        await mergeWithoutNotices();
+        sqlite.prepare(`UPDATE adopter_history SET changes = json_remove(changes, '$.profiles_merged.auditId') WHERE adopter_id = 'mine-old'`).run();
+        // One unreadable audit row must not hide the button.
+        sqlite.prepare(`INSERT INTO audit_log (id, user_id, user_email, action, target, details, created_at) VALUES ('bad', 'x', 'x', 'adopter_merge', 'mine-old', '{broken', 1)`).run();
+        expect(JSON.parse(historyOf('mine-old').find(h => h.changes.includes('profiles_merged'))!.changes).profiles_merged.auditId).toBeUndefined();
+        expect(await forViewer(STRANGER)).toEqual({ historyId: mergedRowId('mine-old'), auditId: mergeAuditId(), state: 'can_raise' });
+    });
+
+    it('the absorbed profile\'s teammate may dispute; the rescuer who merged, an admin and a stranger see nothing', async () => {
+        await mergeWithoutNotices();
+        expect(await forViewer(MATE)).toMatchObject({ state: 'can_raise' });
+        expect(await forViewer(OWNER)).toBeNull();
+        expect(await forViewer(ADMIN)).toBeNull();
+        expect(await forViewer('nobody@example.com')).toBeNull();
+    });
+
+    it('after «Mantener»: no button, and the history says the admin kept it', async () => {
+        await mergeWithoutNotices();
+        expect(await raiseMergeDispute(mergeAuditId())).toEqual({ success: true });
+        expect(await as(ADMIN, () => resolveMergeDispute(disputes()[0].id as string, 'keep'))).toEqual({ success: true, status: 'kept' });
+        expect(await forViewer(STRANGER)).toBeNull();
+        expect(keptRows('mine-old')).toHaveLength(1);
+    });
+
+    it('an undone merge offers nothing, even when a dispute on it was closed as moot', async () => {
+        await mergeWithoutNotices();
+        expect(await raiseMergeDispute(mergeAuditId())).toEqual({ success: true });
+        expect((await unmergeAdopters(mergeAuditId(), ADMIN)).success).toBe(true);
+        expect(await as(ADMIN, () => resolveMergeDispute(disputes()[0].id as string, 'keep'))).toEqual({ success: true, status: 'closed' });
+        // The unmerge's own history line went missing: the audit row still says undone.
+        sqlite.prepare(`DELETE FROM adopter_history WHERE changes LIKE '%profiles_unmerged%'`).run();
+        expect(await forViewer(STRANGER)).toBeNull();
+    });
+
+    it('a profile with no merge in its history: nothing, no query needed', async () => {
+        expect(await forViewer(STRANGER)).toBeNull();
     });
 });

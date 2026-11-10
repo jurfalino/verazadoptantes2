@@ -53,10 +53,32 @@ describe('pendingDuplicatesByAdopter — the /my-adopters card', () => {
     const ownerOf = new Map<string, string | null>([['a', 'North@X.org']]);
     it('a teammate: on their list', async () => {
         const m = await pendingDuplicatesByAdopter(db as never, pairs, ownerOf, 'mate@x.org');
-        expect(m.get('a')).toEqual([{ otherAdopterId: 'b', otherAdopterName: 'Rosa Díaz', onViewerList: true }]);
+        expect(m.get('a')).toEqual([{ otherAdopterId: 'b', otherAdopterName: 'Rosa Díaz', onViewerList: true, waitsOnViewer: true }]);
     });
     it('a stranger: not', async () => {
         const m = await pendingDuplicatesByAdopter(db as never, pairs, ownerOf, 'stranger@x.org');
         expect(m.get('a')?.[0].onViewerList).toBe(false);
+    });
+
+    // UX review 2026-11-10: the row marker shows only what waits on the viewer (needsViewer's rule).
+    const request = (requester: string, owner: string, status: string) =>
+        sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, requester_email, owner_email, status) VALUES ('r1', 'a', 'b', ?, ?, ?)`).run(requester, owner, status);
+    const waits = async (viewer: string) => (await pendingDuplicatesByAdopter(db as never, pairs, ownerOf, viewer)).get('a')?.[0].waitsOnViewer;
+
+    it('a request I sent, still open: waits on the other side — no marker for me', async () => {
+        request('mate@x.org', 'east@x.org', 'pending');
+        expect(await waits('mate@x.org')).toBe(false);
+    });
+    it('a request asking my team: waits on me', async () => {
+        request('east@x.org', 'north@x.org', 'pending');
+        expect(await waits('mate@x.org')).toBe(true);
+    });
+    it('a request my team declined: I already answered — no marker; the requester still has a decision', async () => {
+        request('east@x.org', 'north@x.org', 'declined');
+        expect(await waits('mate@x.org')).toBe(false);
+        expect(await waits('east@x.org')).toBe(true);
+    });
+    it('no request: a possible duplicate waits on me', async () => {
+        expect(await waits('mate@x.org')).toBe(true);
     });
 });

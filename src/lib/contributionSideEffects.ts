@@ -9,7 +9,8 @@
  *
  * - `insertContributionGrant`: an entry-scope pii_access_grant on the value the
  *   contributor typed, so they see it unmasked even under PII gating.
- * - `notifyApprovers`: the owner + editors hear about it (never the actor).
+ * - `notifyApprovers`: the owner + editors hear about it (never the actor; the
+ *   actor's teammates only by their «… y mi equipo» choice).
  * - `fileContributionAccessRequest`: the auto access request filed on the
  *   contributor's behalf (justification 'auto:contribution').
  *
@@ -26,6 +27,7 @@ import { fileAccessRequestFor } from '@/lib/piiAccessRequest';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
 import { createNotification, resolveDisplayName } from '@/app/actions/notifications';
 import { getAdopterApprovers } from '@/app/actions/piiAccess';
+import { keepChangeRecipients } from '@/lib/teamChangeAudience';
 import type { NotificationType } from '@/domain/constants';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -111,7 +113,9 @@ export function entryRefsOnProfile(titular: Array<Pick<ContactEntry, 'type' | 'v
 }
 
 /**
- * Notify the profile's owner + editors that `actor` contributed. `build` gets
+ * Notify the profile's owner + editors that `actor` contributed — never the
+ * actor, and a teammate of the actor only if they chose «Otros rescatistas y mi
+ * equipo» (keepChangeRecipients, src/lib/teamChangeAudience.ts). `build` gets
  * the actor's display name and returns the template; `metadata` always carries
  * `adopterId` and `contributor`. `op` names the caller in the log line.
  */
@@ -126,16 +130,15 @@ export async function notifyApprovers(opts: {
     const { op, adopterId, actor } = opts;
     const { owner, editors } = await getAdopterApprovers(adopterId);
     // loadApprovers returns them lowercased; the actor may not be.
-    const recipients = new Set<string>([...(owner ? [owner] : []), ...editors]);
-    recipients.delete(actor.trim().toLowerCase());
-    if (recipients.size === 0) {
-        // Own record, an import with no real owner, or the only approver acted.
+    const recipients = await keepChangeRecipients([...(owner ? [owner] : []), ...editors], actor, { op, adopterId });
+    if (recipients.length === 0) {
+        // Own record, an import with no real owner, the only approver acted, or only teammates who chose «Otros rescatistas».
         logger.info(`${op}: approvers notified`, { adopterId, actor, recipients: 0 });
         return;
     }
     const actorName = await resolveDisplayName(actor);
     const content = notificationContent(opts.build(actorName));
-    await Promise.all([...recipients].map(email => createNotification({
+    await Promise.all(recipients.map(email => createNotification({
         userId: email,
         type: opts.type,
         ...content,
@@ -143,7 +146,7 @@ export async function notifyApprovers(opts: {
         icon: '+',
         metadata: { adopterId, contributor: actor, ...(opts.metadata ?? {}) },
     })));
-    logger.info(`${op}: approvers notified`, { adopterId, actor, recipients: recipients.size });
+    logger.info(`${op}: approvers notified`, { adopterId, actor, recipients: recipients.length });
 }
 
 /**

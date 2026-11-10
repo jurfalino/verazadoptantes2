@@ -9,6 +9,7 @@ import { getDb, getUser } from './_db';
 import { processImageForStorage } from '@/lib/r2';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { historyKindFor } from '@/lib/profilePrivilege';
+import { notifyProfileAddition } from '@/lib/profileAdditionNotices';
 
 /**
  * v2.26.2: changing an adopter's PROFILE PHOTO (setting an existing image as the
@@ -156,6 +157,21 @@ export async function saveImage(
                 isProfilePicture: !!isProfilePicture,
             },
         });
+
+        // The owner's team hears about a photo added to the profile — merged
+        // into one notice with the record and the other photos of the same
+        // save. Not told: an animal's own picture (scope 'animal', stored under
+        // its holder or «__available__»), an animal event's photo (its record
+        // is not on the profile), and a form's selfie (forms have their own
+        // notices). Never fails the upload.
+        // An animal's picture always names its animal (adoptionId, gated by
+        // assertCanPinToAnimal above); 'animal' with nothing named is just a profile photo.
+        if (!(scope === 'animal' && adoptionId) && !selfie) {
+            await notifyProfileAddition(db, {
+                adopterId, actor: addedBy, op: 'saveImage', recordId: adoptionId || null,
+                add: mediaType === 'video' ? { videos: 1 } : { photos: 1 },
+            });
+        }
 
         return { success: true, id };
     } catch (error) {

@@ -31,7 +31,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { compressImage } from '@/lib/imageCompress';
 import { StarRating } from '@/components/StarRating';
 import { addAnimalEvent } from '@/app/actions/animalTimeline';
-import { saveAdoption } from '@/app/actions';
+import { saveAdoption, saveImage } from '@/app/actions';
 import { ANIMAL_EVENT_TYPES, type AnimalEventType } from '@/domain/constants';
 import type { FollowupSubtype } from '@/domain/followups';
 
@@ -44,11 +44,13 @@ function parseLocalNoon(s: string): Date {
     return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
 }
 
-export default function AddAnimalEventModal({ animal, activePlacement, open, onClose, initialType, initialFollowupKey, initialSubtype }: {
+export default function AddAnimalEventModal({ animal, activePlacement, open, onClose, onSaved, initialType, initialFollowupKey, initialSubtype }: {
     animal: { id: string; name: string | null };
     activePlacement: { id: string; recordType: string; adopterId: string } | null;
     open: boolean;
     onClose: () => void;
+    /** After a successful save, besides router.refresh(): the homepage's panel reloads its own data (it isn't server-rendered). */
+    onSaved?: () => void;
     /** Preselect the type (e.g. from a projected health slot). */
     initialType?: string;
     /** The projected-slot key this event satisfies. */
@@ -134,7 +136,6 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
             // is NOT NULL, so an animal with no current holder uses the same
             // '__available__' sentinel the create form already writes.
             if (photos.length > 0 && recordId) {
-                const { saveImage } = await import('@/app/actions');
                 const owner = activePlacement?.adopterId || '__available__';
                 for (const data of photos) {
                     await saveImage(owner, data, animal.name ? `${typeLabel(type)} — ${animal.name}` : typeLabel(type), recordId, 'image', false, 'event')
@@ -148,6 +149,7 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
 
             toast.success(t('animalProfile.event_saved') || 'Evento guardado', animal.name || '');
             onClose();
+            onSaved?.();
             router.refresh();
         } catch (error) {
             toast.error(t('errors.generic') || 'Error', t('animalProfile.event_save_failed') || 'No se pudo guardar el evento.', resolveErrorId(error, 'AddAnimalEventModal'));

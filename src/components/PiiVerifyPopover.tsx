@@ -8,6 +8,7 @@ import { verifyKnownInfo } from '@/app/actions/piiAccess';
 import { useOneTimeNotice } from '@/hooks/useOneTimeNotice';
 import { useDateFormat } from '@/context/TimezoneContext';
 import type { ContactEntryType } from '@/lib/contactEntries';
+import PiiAccessHistoryNote, { type PiiAccessHistory } from '@/components/PiiAccessHistoryNote';
 
 /** Footer state for the request-access secondary action. */
 export type PiiPopoverRequestState =
@@ -32,6 +33,8 @@ interface Props {
      *  via the parent's wrapper. Owner shouldn't be able to grant access
      *  to themselves or file a request to themselves while previewing. */
     previewMode?: boolean;
+    /** H3: the turn-down note / «te quitaron el acceso» — null while a request is pending. */
+    accessHistory?: PiiAccessHistory | null;
 }
 
 /**
@@ -49,6 +52,7 @@ export default function PiiVerifyPopover({
     requestState,
     onRequestAccess,
     previewMode = false,
+    accessHistory = null,
 }: Props) {
     const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
@@ -227,7 +231,8 @@ export default function PiiVerifyPopover({
                     {/* Footer — request-access state. Verify is independent of
                         the cooldown, so the input above is ALWAYS available;
                         only the secondary request CTA reflects the cooldown. */}
-                    <div className="pt-1">
+                    <div className="pt-1 space-y-1">
+                        {requestState.kind !== 'pending' && <PiiAccessHistoryNote history={accessHistory} />}
                         {requestState.kind === 'pending' ? (
                             <p className="text-sm font-medium text-teal-700">{t('adopter.pii_request_pending')}</p>
                         ) : requestState.kind === 'cooldown' ? (

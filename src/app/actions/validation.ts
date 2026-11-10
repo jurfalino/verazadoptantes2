@@ -213,12 +213,14 @@ export const createAdopterApiSchema = z.object({
     // in the same write (Jon, 2026-10-22). Sanitized by deserializeHouseholdMembers.
     householdMembers: z.string().max(50_000).optional().nullable(),
     flags: z.array(z.string().max(200)).max(20).optional(),
+    // Bounds on the request only: the route stores at most MAX_IMAGES_PER_SAVE, each up to
+    // MAX_STORED_IMAGE_DATA_URL, and counts the rest as not saved — never refusing the profile.
     images: z.array(z.object({
-        data: z.string().max(10_000_000), // ~7.5MB base64
+        data: z.string().max(15_000_000),
         mimeType: z.string().max(100),
         originalUrl: z.string().max(2_000).optional(),
         thumbnail: z.string().max(10_000_000).optional(),
-    })).max(20).optional(),
+    })).max(40).optional(),
     adoption: z.object({
         // v2.19.66: these arrive `null` from the AI extraction (e.g. species
         // undetermined → animalSpecies: null; gemini.ts:111). Bare `.optional()`

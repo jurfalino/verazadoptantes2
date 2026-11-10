@@ -1,7 +1,8 @@
 'use client';
 export const runtime = 'edge';
 
-import { contractHref } from '@/lib/contractLink';
+import { contractHref, contractResultsHref } from '@/lib/contractLink';
+import SignedContractLinks from '@/components/SignedContractLinks';
 import { useLanguage } from '@/context/LanguageContext';
 import { actorLabel } from '@/lib/userDisplay';
 import { AdopterName } from '@/components/AdopterName';
@@ -31,6 +32,8 @@ interface Adoption {
     recordType: string | null;
     comments: string | null;
     hasContract?: number | null;
+    /** H1: the signature's id — opens «Datos y posibles duplicados». */
+    signedContractId?: string | null;
     images: AdoptionImage[];
     addedBy?: string | null;
     /** Rescuer's display name for `addedBy` (email handle when they have none). */
@@ -247,19 +250,7 @@ export default function MyAdoptionsPage() {
                                                         <span className="text-stone-500 italic text-sm">{t('dashboard.no_adopter') || '—'}</span>
                                                     )}
                                                     {contractUrl && (
-                                                        <a
-                                                            href={contractUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-2 rounded-lg bg-teal-50 px-2.5 py-2 text-xs font-medium text-teal-700 hover:bg-teal-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 min-h-[44px] md:min-h-0 md:py-1.5 transition-colors"
-                                                            title={t('dashboard.view_signed_contract') || 'View signed contract'}
-                                                        >
-                                                            <span aria-hidden className="shrink-0">
-                                                                <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                            </span>
-                                                            <span>{t('dashboard.view_contract') || 'View contract'}</span>
-                                                            <svg className="w-3.5 h-3.5 shrink-0 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                        </a>
+                                                        <SignedContractLinks pdfHref={contractUrl} resultsHref={contractResultsHref(adoption.signedContractId, { animal: adoption.id })} />
                                                     )}
                                                 </div>
                                             </td>
@@ -342,17 +333,7 @@ export default function MyAdoptionsPage() {
                                         {/* Row 2: Contract button (full width on narrow mobile) + Date */}
                                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                             {contractUrl && (
-                                                <a
-                                                    href={contractUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-50 px-3 py-2.5 text-xs font-medium text-teal-700 hover:bg-teal-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 min-h-[44px] transition-colors w-full sm:w-auto"
-                                                    title={t('dashboard.view_signed_contract') || 'View signed contract'}
-                                                >
-                                                    <svg className="w-4 h-4 shrink-0 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                    <span>{t('dashboard.view_contract') || 'View contract'}</span>
-                                                    <svg className="w-3.5 h-3.5 shrink-0 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                </a>
+                                                <SignedContractLinks pdfHref={contractUrl} resultsHref={contractResultsHref(adoption.signedContractId, { animal: adoption.id })} />
                                             )}
                                             <div className="text-xs text-stone-500 shrink-0">
                                                 📅 {adoption.date ? formatShortDate(adoption.date) : t('dashboard.na')}

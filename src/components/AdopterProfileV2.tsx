@@ -17,7 +17,8 @@ import AdoptionFormWizard from '@/components/AdoptionFormWizard';
 import AdoptionFormEditV2 from '@/components/AdoptionFormEditV2';
 import VisitIntentCard from '@/components/VisitIntentCard';
 import { DeletionCollaboratorList } from '@/components/household/HouseholdDialogs';
-import MergeDisputePrompt from '@/components/MergeDisputePrompt';
+import MergeDisputePrompt, { MergeDisputeHistoryAction } from '@/components/MergeDisputePrompt';
+import type { ProfileMergeDispute } from '@/lib/mergeDisputes';
 import { ContinuedProfileBanner } from '@/components/ContinuedProfileBanner';
 import { useLanguage } from '@/context/LanguageContext';
 import { saveImage, checkAdopterDeletable, deleteOwnAdopter, requestAdopterDeletion } from '@/app/actions';
@@ -39,7 +40,12 @@ import RenameUndoPrompt, { RenameUndoButton } from '@/components/RenameUndo';
 import { Modal, ModalActions, ModalText } from '@/components/ui/Modal';
 import { ProfilePromptBanner } from '@/components/ProfilePromptBanner';
 import { PendingDupBar } from '@/components/PendingDupBar';
+import { InaccuracyReportsBanner } from '@/components/InaccuracyReportsBanner';
+import type { PendingInaccuracyReport } from '@/lib/inaccuracyReports';
 import { AlertTriangle } from 'lucide-react';
+
+/** A stable default, so the banner's prop never changes identity between renders. */
+const EMPTY_INACCURACY_REPORTS: PendingInaccuracyReport[] = [];
 
 interface AdopterProfileV2Props {
     id: string;
@@ -83,6 +89,8 @@ interface AdopterProfileV2Props {
     piiContext?: AdopterPiiContext | null;
     /** Show the "removal requested" banner (already gated to owner + admin/mod by the page). */
     showDeletionRequested?: boolean;
+    /** H4: open «Reportar inexactitud» reports — only for the notice's audience (gated by the page); [] for everyone else. */
+    inaccuracyReports?: PendingInaccuracyReport[];
     /** ENABLE_PINNED_VISIT_INTENT — pin the visit-intent card to the bottom of the screen. */
     pinnedVisitIntent?: boolean;
     /** ENABLE_ORIGIN_LABELS: tag where the profile and each activity came from. */
@@ -99,9 +107,11 @@ interface AdopterProfileV2Props {
     identity?: ProfileIdentityView | null;
     /** The rename this viewer may undo from the history (owner team / admin / moderator), or null. */
     renameUndoId?: string | null;
+    /** H2: «Son dos personas distintas» on the newest live merge's history row, when this viewer may dispute it. */
+    mergeDispute?: ProfileMergeDispute | null;
 }
 
-export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null }: AdopterProfileV2Props) {
+export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, images, allImages, flags, currentUser, availableAnimals, stats, avgRating, isAdmin = false, canViewAudit = false, isOrgMateOfOwner = false, isModeratorOrAdmin = false, attribution = null, adoptionConfig, duplicateCandidates = [], formPrefill = null, userNameMap = {}, piiContext = null, showDeletionRequested = false, inaccuracyReports = EMPTY_INACCURACY_REPORTS, pinnedVisitIntent = false, interviewEnabled = false, originLabels = false, mergedFrom = null, households = EMPTY_PROFILE_HOUSEHOLDS, householdsEnabled = false, identity = null, renameUndoId = null, mergeDispute = null }: AdopterProfileV2Props) {
     const { formatDateTime, formatShortDate } = useDateFormat();
     const { t } = useLanguage();
     const searchParams = useSearchParams();
@@ -227,6 +237,17 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
         && !requestSubmitted
         && !effectivePiiContext.requestState.pending
         && !effectivePiiContext.requestState.cooldownUntil;
+
+    // H3: the viewer's own access history (turn-down note, «te quitaron el
+    // acceso») — hidden once they ask again (server pending or just submitted).
+    const piiAccessHistory = effectivePiiContext && !requestSubmitted && !effectivePiiContext.requestState.pending
+        ? {
+            denied: !!effectivePiiContext.requestState.denied,
+            note: effectivePiiContext.requestState.lastResolutionNote,
+            accessRevokedAt: effectivePiiContext.requestState.accessRevokedAt ?? null,
+            revokedByAdmin: !!effectivePiiContext.requestState.revokedByAdmin,
+        }
+        : null;
 
     // VisitIntentCard is the canonical (and only) entry point for recording
     // activity on a profile (v2.14.8). After the wizard closes, the card
@@ -459,6 +480,13 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                     </div>
                 )}
 
+                {/* H4: «Reportaron información incorrecta (n)» + «Ya lo corregí», with the removal banner. */}
+                {!isNew && adopter && inaccuracyReports.length > 0 && !previewAsStranger && (
+                    <div className="mb-4">
+                        <InaccuracyReportsBanner adopterId={adopter.id} reports={inaccuracyReports} />
+                    </div>
+                )}
+
                 <AdopterForm
                     interviewEnabled={interviewEnabled}
                     origin={originLabels ? profileOrigin(adopter?.source, apiToolFromHistory((history ?? []) as Array<{ changedBy?: string | null; changes?: string | null }>)) : null}
@@ -611,6 +639,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             // Merges (2026-10-19): the survivor's history says it absorbed a profile, and an undo says so too.
                                             else if (parsed.profiles_merged) { eventType = 'profiles_merged'; changes = parsed.profiles_merged; }
                                             else if (parsed.profiles_unmerged) { eventType = 'profiles_unmerged'; changes = parsed.profiles_unmerged; }
+                                            // An admin kept a disputed merge (H2): the outcome is here, not only in a notice.
+                                            else if (parsed.merge_dispute_kept) { eventType = 'merge_dispute_kept'; changes = parsed.merge_dispute_kept; }
                                             // «No convive» (D48): written on both profiles. A plain member removal shares the host-side key.
                                             else if (parsed.household_member_removed?.reason === 'not_living_together') { eventType = 'hh_not_living_host'; changes = parsed.household_member_removed; }
                                             else if (parsed.household_not_living_together) { eventType = 'hh_not_living_linked'; changes = parsed.household_not_living_together; }
@@ -650,6 +680,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'api_contract' && <span className="bg-teal-100 text-teal-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_api_contract')}</span>}
                                                         {eventType === 'profiles_merged' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_merged')}</span>}
                                                         {eventType === 'profiles_unmerged' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_profiles_unmerged')}</span>}
+                                                        {eventType === 'merge_dispute_kept' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_merge_dispute_kept')}</span>}
                                                         {(eventType === 'hh_not_living_host' || eventType === 'hh_not_living_linked') && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_not_living')}</span>}
                                                         {eventType === 'hh_removed_by_host' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
                                                         {eventType === 'hh_member_removed_mistake' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_removed_by_host')}</span>}
@@ -722,6 +753,14 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                     {t('audit.desc_profiles_merged')
                                                                         .replace('{name}', changes.fromName || t('adopter.nameless'))
                                                                         .replace('{who}', changes.fromAddedBy ? actorLabel(changes.fromAddedBy, userNameMap?.[changes.fromAddedBy], t) : t('common.anonymous'))}
+                                                                    {mergeDispute && h.id === mergeDispute.historyId && !previewAsStranger && (
+                                                                        <MergeDisputeHistoryAction auditId={mergeDispute.auditId} initial={mergeDispute.state} />
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            {eventType === 'merge_dispute_kept' && (
+                                                                <div className="text-teal-800 break-words" data-testid="history-merge-dispute-kept">
+                                                                    {changes.otherName ? t('audit.desc_merge_dispute_kept').replace('{name}', changes.otherName) : t('audit.desc_merge_dispute_kept_plain')}
                                                                 </div>
                                                             )}
                                                             {eventType === 'profiles_unmerged' && (
@@ -973,7 +1012,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         orgName={attribution?.orgName ?? null}
                         accessGrants={effectivePiiContext?.accessGrants ?? { allContact: [], orgMates: [], searchMatch: [] }}
                         requestPending={requestSubmitted || !!effectivePiiContext?.requestState.pending}
-                        requestCooldown={!!effectivePiiContext?.requestState.cooldownUntil}
+                        requestCooldownUntil={effectivePiiContext?.requestState.cooldownUntil ?? null}
+                        accessHistory={piiAccessHistory}
                         canRequest={piiOptInEligible}
                         onVerify={effectivePiiContext?.masked ? () => setVerifyPopoverOpen('open') : undefined}
                         onRequestAccess={
@@ -1008,6 +1048,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                         onClose={() => setVerifyPopoverOpen(null)}
                         adopterId={id}
                         entryType={verifyPopoverOpen && verifyPopoverOpen !== 'open' ? verifyPopoverOpen : undefined}
+                        accessHistory={piiAccessHistory}
                         requestState={
                             (requestSubmitted || effectivePiiContext.requestState.pending)
                                 ? { kind: 'pending' }

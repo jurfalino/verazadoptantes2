@@ -20,7 +20,7 @@ import { ChevronDown, Copy, Inbox, Mail, Send, XCircle } from 'lucide-react';
 import { OpenProfileLink } from '@/components/OpenProfileLink';
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 import MatchCompare, { AdminScore, entriesAsShown } from '@/components/MatchCompare';
-import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { summaryLine } from './summaryLine';
 import { MinorTag } from '@/components/MinorTag';
 import { HousemateAlert } from '@/components/HousemateAlert';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -41,7 +41,7 @@ type Group = PendingDedupPair['group'];
 
 const ROW_META: Record<Group, { groupKey: string; groupFallback: string; icon: React.ReactNode; dot: string }> = {
     received: {
-        groupKey: 'myAdopters.pending_d_group_received', groupFallback: 'Necesitan tu respuesta',
+        groupKey: 'myAdopters.pending_d_group_received', groupFallback: 'Te piden unir',
         icon: <Inbox className="w-5 h-5" aria-hidden="true" />,
         dot: 'bg-[var(--status-warning-bg)] text-[var(--status-warning-text)] border-[var(--status-warning-border)]',
     },
@@ -51,7 +51,7 @@ const ROW_META: Record<Group, { groupKey: string; groupFallback: string; icon: R
         dot: `bg-transparent ${T_MUTED} border-[var(--border-default)]`,
     },
     declined: {
-        groupKey: 'myAdopters.pending_d_group_declined', groupFallback: 'Rechazados',
+        groupKey: 'myAdopters.pending_d_group_declined', groupFallback: 'No aceptaron tu pedido',
         icon: <XCircle className="w-5 h-5" aria-hidden="true" />,
         dot: 'bg-[var(--status-error-bg)] text-[var(--status-error-text)] border-[var(--status-error-border)]',
     },
@@ -62,7 +62,7 @@ const ROW_META: Record<Group, { groupKey: string; groupFallback: string; icon: R
     },
 };
 
-export const GROUP_ORDER: Group[] = ['received', 'sent', 'declined', 'pair'];
+// The order of the sections: SECTION_ORDER in ./sections (what waits on the viewer first).
 
 export function groupLabel(group: Group, t: T): string {
     return t(ROW_META[group].groupKey) || ROW_META[group].groupFallback;
@@ -116,15 +116,6 @@ function stateLine(pair: PendingDedupPair, t: T, age: (epochS: number) => string
 }
 
 /** «Coinciden: nombre, teléfono · Distintos: email», or «Marcado manualmente» (D22). */
-function summaryLine(pair: PendingDedupPair, t: T): string {
-    const field = (f: string) => (t(`matchCompare.field_${f}`) || f).toLocaleLowerCase();
-    const parts: string[] = [];
-    if (pair.summary.flagged) parts.push(matchTypeLabel('flagged_by_user', t) || 'Marcado manualmente');
-    if (pair.summary.same.length) parts.push(`${t('matchCompare.count_same') || 'Coinciden'}: ${pair.summary.same.map(field).join(', ')}`);
-    if (pair.summary.diff.length) parts.push(`${t('matchCompare.count_diff') || 'Distintos'}: ${pair.summary.diff.map(field).join(', ')}`);
-    return parts.join(' · ');
-}
-
 /** What the open row will do, in one line (D23). */
 function explanation(pair: PendingDedupPair, keep: KeepSide, isAdmin: boolean, t: T): string | null {
     const r = pair.request;
@@ -223,9 +214,14 @@ function KeepSwitch({ pair, keep, onKeep, t, formatShortDate }: {
     t: T;
     formatShortDate: (v: number) => string;
 }) {
-    const label = (s: PendingDedupSide) => s.isMine ? (t('myAdopters.pending_d_keep_mine') || 'El tuyo')
+    const ownerLabel = (s: PendingDedupSide) => s.isMine ? (t('myAdopters.pending_d_keep_mine') || 'El tuyo')
         : s.createdByName ? fill(t('myAdopters.pending_d_keep_of') || 'El de {name}', { name: s.createdByName })
             : (t('myAdopters.pending_d_keep_anonymous') || 'El anónimo');
+    // Both «El tuyo» (or both «El de María»): the owner can't tell them apart — the profile's name can
+    // (UX review 2026-11-10). Same name too: the owner words plus the date underneath still differ.
+    const sameOwner = ownerLabel(pair.newAdopter) === ownerLabel(pair.existingAdopter);
+    const sameName = pair.newAdopter.name.trim() === pair.existingAdopter.name.trim();
+    const label = (s: PendingDedupSide) => (sameOwner && !sameName ? s.name : ownerLabel(s));
     const question = t('myAdopters.pending_d_keep_question') || '¿Cuál se conserva?';
     return (
         <div className="mb-3">
@@ -257,7 +253,8 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
     open: boolean;
     /** The pair a profile's «Revisar» linked to: outlined so it's found at a glance. */
     highlight?: boolean;
-    onToggle: () => void;
+    /** Absent: the row is always open, with no toggle (the homepage's panel shows one row at a time). */
+    onToggle?: () => void;
     /** «¿Cuál se conserva?» for a possible duplicate (the feed's default until changed). */
     keep: KeepSide;
     onKeep: (s: KeepSide) => void;
@@ -298,29 +295,40 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
         </Button>
     );
 
+    // The closed row's face (icon, names, state, summary): a toggle in the list, a plain heading in the homepage's panel.
+    const face = (
+        <>
+            <span className={`w-10 h-10 shrink-0 rounded-full border flex items-center justify-center ${meta.dot}`}>{meta.icon}</span>
+            <span className="flex-1 min-w-0">
+                {/* Open, the names sit in the comparison blocks (D23). */}
+                {!open && <span className={`block text-[15px] font-bold truncate ${T_PRIMARY}`}>{names}</span>}
+                <span data-testid={r ? 'dedup-request-status' : undefined}
+                    className={`block text-[13px] ${group === 'received' ? 'font-bold text-[var(--status-warning-text)]' : group === 'declined' ? 'text-[var(--status-error-text)]' : T_MUTED}`}>
+                    {stateLine(pair, t, age)}
+                </span>
+                {!open && summary && <span className={`block text-[12px] mt-0.5 ${T_MUTED}`}>{summary}</span>}
+            </span>
+            {group === 'received' && !open && (
+                <span className="hidden sm:inline text-[12px] font-bold px-2 py-1 rounded-full bg-teal-700 text-white">
+                    {t('myAdopters.pending_d_respond') || 'Responder'}
+                </span>
+            )}
+        </>
+    );
+    const faceClass = 'flex-1 min-w-0 min-h-[64px] flex items-center gap-3 pl-4 pr-2 py-3 text-left';
+
     return (
         <div data-testid="dedup-row" data-group={group} data-candidate-id={pair.candidateId} data-highlight={highlight || undefined}
             className={`border-t border-[var(--border-default)] first:border-t-0 ${open ? 'bg-[var(--accent-subtle-bg)]' : ''} ${highlight ? 'ring-2 ring-inset ring-[var(--status-warning-border)]' : ''}`}>
             <div className="flex items-center">
-                <button type="button" aria-expanded={open} onClick={onToggle}
-                    className="flex-1 min-w-0 min-h-[64px] flex items-center gap-3 pl-4 pr-2 py-3 text-left">
-                    <span className={`w-10 h-10 shrink-0 rounded-full border flex items-center justify-center ${meta.dot}`}>{meta.icon}</span>
-                    <span className="flex-1 min-w-0">
-                        {/* Open, the names sit in the comparison blocks (D23). */}
-                        {!open && <span className={`block text-[15px] font-bold truncate ${T_PRIMARY}`}>{names}</span>}
-                        <span data-testid={r ? 'dedup-request-status' : undefined}
-                            className={`block text-[13px] ${group === 'received' ? 'font-bold text-[var(--status-warning-text)]' : group === 'declined' ? 'text-[var(--status-error-text)]' : T_MUTED}`}>
-                            {stateLine(pair, t, age)}
-                        </span>
-                        {!open && summary && <span className={`block text-[12px] mt-0.5 ${T_MUTED}`}>{summary}</span>}
-                    </span>
-                    {group === 'received' && !open && (
-                        <span className="hidden sm:inline text-[12px] font-bold px-2 py-1 rounded-full bg-teal-700 text-white">
-                            {t('myAdopters.pending_d_respond') || 'Responder'}
-                        </span>
-                    )}
-                    <ChevronDown className={`w-5 h-5 shrink-0 ${T_MUTED} transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
-                </button>
+                {onToggle ? (
+                    <button type="button" aria-expanded={open} onClick={onToggle} className={faceClass}>
+                        {face}
+                        <ChevronDown className={`w-5 h-5 shrink-0 ${T_MUTED} transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+                    </button>
+                ) : (
+                    <div className={faceClass}>{face}</div>
+                )}
                 {/* Admins only (D22): the same gauge as inside the card. Outside the
                     toggle — a button can't hold a button. */}
                 {showScore && (

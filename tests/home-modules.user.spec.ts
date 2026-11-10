@@ -20,6 +20,11 @@ const POST_NAME = `Posteado Home ${stamp}`;
 const DUE_ADOPTER = `test-hm-fixture-home-${stamp}`;
 const DUE_ANIMAL = `test-hm-fixture-an-${stamp}`;
 const DUE_ANIMAL_NAME = `Controlin ${stamp}`;
+// A possible duplicate of the user's own: the newest and strongest, so it's the first the amber row names.
+const PAIR_A = `test-hm-fixture-pa-${stamp}`;
+const PAIR_B = `test-hm-fixture-pb-${stamp}`;
+const PAIR_CAND = `test-hm-fixture-cand-${stamp}`;
+const PAIR_NAME = `Parejita Home ${stamp}`;
 
 const numberIn = async (loc: Locator): Promise<number> => Number(((await loc.textContent()) ?? '').match(/\d+/)?.[0] ?? NaN);
 
@@ -49,15 +54,22 @@ test.describe.serial('homepage modules', () => {
             `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${DUE_ADOPTER}', 'Hogar Home ${stamp}', '', '5', '${USER}', strftime('%s','now','-40 days'), strftime('%s','now','-40 days'))`,
             `INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('${DUE_ANIMAL}', '${DUE_ANIMAL_NAME}', 'dog', '${USER}', strftime('%s','now','-60 days'), strftime('%s','now','-60 days'))`,
             `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('test-hm-fixture-pl-${stamp}', '${DUE_ANIMAL}', '${DUE_ADOPTER}', 'adoption', strftime('%s','now','-40 days'), '${USER}')`,
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${PAIR_A}', '${PAIR_NAME}', '', '5', '${USER}', strftime('%s','now','-2 days'), strftime('%s','now','-2 days'))`,
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${PAIR_B}', '${PAIR_NAME} G.', '', '5', '${USER}', strftime('%s','now'), strftime('%s','now'))`,
+            `INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES ('${PAIR_CAND}', '${PAIR_B}', '${PAIR_A}', '["name_word"]', '{}', 100, 'high', 'pending', strftime('%s','now','+1 day'))`,
         ]);
     });
 
     test.afterAll(() => {
         execD1Batch([
+            // The check-in the last test registers from the home (adoptions is a view; follow-ups live here).
+            `DELETE FROM adopter_events WHERE adopter_id = '${DUE_ADOPTER}'`,
             `DELETE FROM placements WHERE id = 'test-hm-fixture-pl-${stamp}'`,
             `DELETE FROM animals WHERE id = '${DUE_ANIMAL}'`,
             `DELETE FROM adopter_events WHERE id = 'test-hm-fixture-ev-${stamp}'`,
-            `DELETE FROM adopters WHERE id IN ('${POST_ADOPTER}', '${DUE_ADOPTER}')`,
+            `DELETE FROM duplicate_candidates WHERE id = '${PAIR_CAND}'`,
+            `DELETE FROM adopter_flags WHERE adopter_id IN ('${PAIR_A}', '${PAIR_B}') OR target_adopter_id IN ('${PAIR_A}', '${PAIR_B}')`,
+            `DELETE FROM adopters WHERE id IN ('${POST_ADOPTER}', '${DUE_ADOPTER}', '${PAIR_A}', '${PAIR_B}')`,
             `UPDATE user_profiles SET home_prefs = NULL WHERE user_id = (SELECT id FROM user WHERE email = '${USER}')`,
         ]);
     });
@@ -80,7 +92,8 @@ test.describe.serial('homepage modules', () => {
         }
         await page.goto('/');
         await dismissCountryBanner(page);
-        await expect(page.getByTestId('home-adopters-pending')).toBeVisible({ timeout: 60_000 });
+        // One row per pending item now (option b): any of them.
+        await expect(page.getByTestId('home-adopters-pending').first()).toBeVisible({ timeout: 60_000 });
         await expect(page.getByTestId('home-adopters-forms')).toHaveCount(0);
     });
 
@@ -120,12 +133,12 @@ test.describe.serial('homepage modules', () => {
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
     });
 
-    test('Mis animales: at most 3 animals, each once; «Ver los N animales» is the «Todos» count', async ({ page }) => {
+    test('Mis animales: at most 4 animals (one per slot), each once; «Ver los N animales» is the «Todos» count', async ({ page }) => {
         test.setTimeout(240_000);
         await openHome(page);
         const card = page.getByTestId('home-animals');
         const rows = card.locator('[data-testid="home-animals-due"], [data-testid="home-animal-row"]');
-        expect(await rows.count()).toBeLessThanOrEqual(3);
+        expect(await rows.count()).toBeLessThanOrEqual(4);
         // The overdue animal is listed as due, never again as «recently updated».
         await expect(card.getByTestId('home-animal-row').filter({ hasText: DUE_ANIMAL_NAME })).toHaveCount(0);
         await expect.poll(async () => {
@@ -142,6 +155,57 @@ test.describe.serial('homepage modules', () => {
             await expect(page.getByText(DUE_ANIMAL_NAME).first()).toBeVisible({ timeout: 60_000 });
             return onCard === await numberIn(tab);
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
+    });
+
+    test('Mis adoptantes: a pending pair is its own row; answering it over the home shows the next one', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        // One row per item waiting on the user (option b) — the fixture is the newest, strongest pair.
+        const row = page.getByTestId('home-adopters-pending').filter({ hasText: PAIR_NAME });
+        await expect(row).toHaveCount(1, { timeout: 60_000 });
+        await row.click();
+
+        // Over the home: that pair, open, with «No, es otra persona».
+        const panel = page.getByTestId('home-pending-panel');
+        await expect(panel).toBeVisible({ timeout: 60_000 });
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        const open = panel.getByTestId('dedup-row');
+        await expect(open).toContainText(PAIR_NAME, { timeout: 60_000 });
+        await expect(panel.getByTestId('home-pending-panel-all')).toHaveAttribute('href', '/my-adopters#pendientes');
+        await open.getByTestId('dedup-keep-separate').click();
+
+        // Still on the home: the panel moves to the next pair (or closes when none is left); the card drops this row.
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        await expect(panel.getByTestId('dedup-row').filter({ hasText: PAIR_NAME })).toHaveCount(0, { timeout: 60_000 });
+        if (await panel.isVisible()) await panel.getByTestId('home-pending-panel-close').click();
+        await expect(row).toHaveCount(0, { timeout: 60_000 });
+    });
+
+    // Last: it resolves the fixture's check-in, which the tests above count on.
+    test('Mis animales: an overdue animal opens «Para hacer ahora» over the home, and registering there clears it', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        const row = page.getByTestId('home-animals').getByTestId('home-animals-due').filter({ hasText: DUE_ANIMAL_NAME });
+        await row.click();
+
+        // Over the home, not the animal page: the same block, with «Registrar», and the way to the page.
+        const panel = page.getByTestId('home-due-panel');
+        await expect(panel).toBeVisible({ timeout: 60_000 });
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        await expect(panel.getByTestId('due-banner')).toBeVisible({ timeout: 60_000 });
+        await expect(panel.getByTestId('home-due-panel-page')).toHaveAttribute('href', `/my-animals/${DUE_ANIMAL}`);
+
+        await panel.locator('[data-testid^="register-"]').first().click();
+        await expect(page.getByTestId('animal-event-type')).toHaveValue('follow_up');
+        await page.getByRole('button', { name: '4 stars' }).click();
+        await page.getByTestId('animal-event-save').click();
+
+        // Still on the home; once nothing is due the panel closes and the card drops the animal.
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        await expect.poll(async () => {
+            if (await panel.isVisible()) await panel.getByTestId('home-due-panel-close').click();
+            return row.count();
+        }, { timeout: 60_000, intervals: [2_000] }).toBe(0);
     });
 
 });

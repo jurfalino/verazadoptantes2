@@ -13,6 +13,7 @@
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions, piiAccessGrants } from '@/db/schema';
 import { eq, or, and, gt, ne, sql, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
+import { clearPairNotices, clearProfilePairNotices, PAIR_NOTICE_TYPES } from '@/lib/pairNotices';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
@@ -408,7 +409,8 @@ export async function mergeAdopters(
             id: crypto.randomUUID(),
             adopterId: primaryId,
             changedBy: actorEmail,
-            changes: JSON.stringify({ profiles_merged: { fromId: secondaryId, fromName: secondary.name, fromAddedBy: secondary.addedBy ?? null } }),
+            // auditId: the history row's «Son dos personas distintas» disputes this merge (H2).
+            changes: JSON.stringify({ profiles_merged: { fromId: secondaryId, fromName: secondary.name, fromAddedBy: secondary.addedBy ?? null, auditId } }),
             changedAt: new Date(),
             kind: mergeKind,
         }).catch((e: unknown) => {
@@ -440,6 +442,10 @@ export async function mergeAdopters(
             actor: actorEmail,
             mergeDetails,
         });
+        // Settled: the pair's «¿Es la misma persona?» notices stop reading as unread, for everyone.
+        await clearPairNotices(db, primaryId, secondaryId, { types: PAIR_NOTICE_TYPES, ctx: { op: 'mergeAdopters', actor: actorEmail } });
+        // The absorbed profile is gone: its other pairs' notices point at nothing either.
+        await clearProfilePairNotices(db, secondaryId, { op: 'mergeAdopters', actor: actorEmail });
 
         return {
             success: true,

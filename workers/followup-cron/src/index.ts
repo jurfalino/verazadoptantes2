@@ -21,7 +21,7 @@ import {
     FOLLOWUPS_EPOCH,
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
 } from '../../../src/domain/followups';
-import { dedupKey, notificationTitle, notificationBody, buildFollowupEmail, type FollowupEmailItem } from './copy';
+import { dedupKey, notificationBody, bellNotice, buildFollowupEmail, type FollowupEmailItem, type BellItem } from './copy';
 import { log, type AxiomEnv } from './log';
 
 interface Env extends AxiomEnv {
@@ -96,7 +96,7 @@ async function purgeApiLog(env: Env, ctx: ExecutionContext): Promise<void> {
 
 export default {
     async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-        const summary = { scanned: 0, due: 0, notified: 0, deduped: 0, emailed: 0, emailedItems: 0, emailFailed: 0, skippedOwners: 0, errors: 0 };
+        const summary = { scanned: 0, due: 0, notified: 0, bells: 0, deduped: 0, emailed: 0, emailedItems: 0, emailFailed: 0, skippedOwners: 0, errors: 0 };
         await purgeApiLog(env, ctx);
         try {
             // ── gates: mirror createNotification's kill switch + the feature flag ──
@@ -178,6 +178,11 @@ export default {
             // queued ONLY for slots that actually inserted a notification, so
             // the digest inherits the same once-ever dedup.
             const emailQueue = new Map<string, FollowupEmailItem[]>();
+            // v2.58.50 (Jon): the BELL is bundled too — one notice per recipient per run listing
+            // every newly due check-up (metadata.items keeps each slot's dedupKey, so the
+            // once-ever dedup still holds per slot). The app clears it once all are registered.
+            type Pending = BellItem & { dedupKey: string; placementId: string; followupKey: string; windowEndsAt: number };
+            const bellQueue = new Map<string, Pending[]>();
 
             const now = new Date();
             for (let i = 0; i < rows.length; i += CHUNK) {
@@ -226,25 +231,25 @@ export default {
                             for (const recipient of recipients) {
                                 const key = dedupKey(p.id, s.key, recipient);
                                 // Dedup layer 2: one notification per (placement, slot, recipient), ever.
+                                // Per-slot notices (before the bundle) carry it at the top level; bundles in items[].
                                 const existing = await env.DB.prepare(
                                     `SELECT 1 AS x FROM notifications
                                      WHERE type = 'follow_up_due' AND user_id = ?
-                                       AND json_extract(metadata, '$.dedupKey') = ? LIMIT 1`
-                                ).bind(recipient, key).first();
+                                       AND (json_extract(CASE WHEN json_valid(metadata) THEN metadata END, '$.dedupKey') = ?
+                                            OR EXISTS (SELECT 1 FROM json_each(json_extract(CASE WHEN json_valid(metadata) THEN metadata END, '$.items')) j
+                                                       WHERE json_extract(j.value, '$.dedupKey') = ?))
+                                     LIMIT 1`
+                                ).bind(recipient, key, key).first();
                                 if (existing) { summary.deduped++; continue; }
 
-                                await env.DB.prepare(
-                                    `INSERT INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, metadata, created_at, expires_at)
-                                     VALUES (?, ?, 'follow_up_due', ?, ?, ?, '🔔', 0, 0, ?, strftime('%s','now'), ?)`
-                                ).bind(
-                                    crypto.randomUUID(),
-                                    recipient,
-                                    notificationTitle(p.name),
-                                    notificationBody(s, p.adopter_name, p.record_type === 'foster'),
-                                    `/my-animals/${p.animal_id}#next-action`,
-                                    JSON.stringify({ dedupKey: key, placementId: p.id, animalId: p.animal_id, followupKey: s.key }),
-                                    Math.floor(s.windowEndsAt.getTime() / 1000),
-                                ).run();
+                                const bell = bellQueue.get(recipient) || [];
+                                bell.push({
+                                    animalName: p.name, animalId: p.animal_id,
+                                    body: notificationBody(s, p.adopter_name, p.record_type === 'foster'),
+                                    dedupKey: key, placementId: p.id, followupKey: s.key,
+                                    windowEndsAt: Math.floor(s.windowEndsAt.getTime() / 1000),
+                                });
+                                bellQueue.set(recipient, bell);
                                 summary.notified++;
 
                                 // v2.55.19/21: opt-in email — the RECIPIENT's own setting
@@ -268,6 +273,32 @@ export default {
                     }
                 }));
             }
+            // ── one bell notice per recipient (bundled), written before any email goes out ──
+            for (const [recipient, items] of bellQueue) {
+                if (items.length === 0) continue;
+                try {
+                    const notice = bellNotice(items);
+                    await env.DB.prepare(
+                        `INSERT INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, metadata, created_at, expires_at)
+                         VALUES (?, ?, 'follow_up_due', ?, ?, ?, '🔔', 0, 0, ?, strftime('%s','now'), ?)`
+                    ).bind(
+                        crypto.randomUUID(),
+                        recipient,
+                        notice.title,
+                        notice.body,
+                        notice.url,
+                        JSON.stringify({ items: items.map(i => ({ dedupKey: i.dedupKey, placementId: i.placementId, animalId: i.animalId, followupKey: i.followupKey })) }),
+                        Math.max(...items.map(i => i.windowEndsAt)),
+                    ).run();
+                    summary.bells++;
+                } catch (e) {
+                    summary.errors++;
+                    // Not written: tomorrow's run finds these slots un-notified and tries again.
+                    emailQueue.delete(recipient);
+                    log(env, 'warn', { warn: 'bell bundle not written', items: items.length, error: String(e) }, ctx);
+                }
+            }
+
             // ── one digest email per recipient (same template, N items) ──
             for (const [recipient, queueItems] of emailQueue) {
                 if (queueItems.length === 0) continue;

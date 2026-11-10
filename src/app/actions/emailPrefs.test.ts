@@ -5,8 +5,16 @@ import { session, getUser, OWNER } from '@/test-utils/actionMocks';
 const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
 vi.mock('./_db', () => ({ getDb: async () => state.db, getUser }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
+const { fromFails } = vi.hoisted(() => ({ fromFails: { on: false } }));
+vi.mock('@/lib/teamChangeAudience', async (orig) => {
+    const real = await orig<typeof import('@/lib/teamChangeAudience')>();
+    return { ...real, getProfileChangesFromForEmail: async (...a: Parameters<typeof real.getProfileChangesFromForEmail>) => {
+        if (fromFails.on) throw new Error('no such column: profile_changes_from');
+        return real.getProfileChangesFromForEmail(...a);
+    } };
+});
 
-import { getEmailPrefs, saveEmailPref } from './settings';
+import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom } from './settings';
 
 type Sqlite = { prepare: (s: string) => { get: (...a: unknown[]) => Record<string, unknown> | undefined; run: (...a: unknown[]) => unknown } };
 let sqlite: Sqlite;
@@ -22,12 +30,19 @@ beforeEach(() => {
     state.db = m.db;
     sqlite = m.sqlite as unknown as Sqlite;
     session.user = OWNER;
+    fromFails.on = false;
     sqlite.prepare(`INSERT INTO user (id, email) VALUES ('u1', ?)`).run(OWNER);
 });
 
 describe('email prefs actions', () => {
     it('no profile row: empty prefs, no api key', async () => {
-        expect(await getEmailPrefs()).toEqual({ prefs: {}, hasApiKey: false });
+        expect(await getEmailPrefs()).toEqual({ prefs: {}, hasApiKey: false, profileChangesFrom: 'outside' });
+    });
+
+    it('the choice unreadable: the email switches still show, the choice reads as the default (review M6)', async () => {
+        await saveEmailPref('forms', false);
+        fromFails.on = true;
+        expect(await getEmailPrefs()).toEqual({ prefs: { forms: false }, hasApiKey: false, profileChangesFrom: 'outside' });
     });
 
     it('signed out: null', async () => {
@@ -72,5 +87,41 @@ describe('email prefs actions', () => {
         const r = await saveEmailPref('forms', false);
         expect(r.success).toBe(false);
         expect(r.errorId).toBeTruthy();
+    });
+});
+
+const storedFrom = () =>
+    (sqlite.prepare(`SELECT profile_changes_from AS f FROM user_profiles WHERE user_id = 'u1'`).get() as { f: string | null } | undefined)?.f;
+
+describe('«Avisame de cambios hechos por:» (saveProfileChangesFrom)', () => {
+    it("saves «… y mi equipo» and back; getEmailPrefs returns it; the email switches are untouched", async () => {
+        await saveEmailPref('forms', false);
+        expect(await saveProfileChangesFrom('team')).toEqual({ success: true });
+        expect(storedFrom()).toBe('team');
+        expect(await getEmailPrefs()).toMatchObject({ profileChangesFrom: 'team', prefs: { forms: false } });
+        expect(await saveProfileChangesFrom('outside')).toEqual({ success: true });
+        expect((await getEmailPrefs())?.profileChangesFrom).toBe('outside');
+    });
+
+    it('works while the «Cambios en tus perfiles» email switch is off (the choice is the bell too)', async () => {
+        await saveEmailPref('profile_changes', false);
+        expect(await saveProfileChangesFrom('team')).toEqual({ success: true });
+        expect(await getEmailPrefs()).toMatchObject({ profileChangesFrom: 'team', prefs: { profile_changes: false } });
+    });
+
+    it('refuses anything but outside|team, with an errorId; nothing stored', async () => {
+        for (const bad of ['everyone', '', null, 1, { from: 'team' }]) {
+            const r = await saveProfileChangesFrom(bad as never);
+            expect(r.success).toBe(false);
+            expect(r.errorId).toBeTruthy();
+        }
+        expect(storedFrom()).toBeUndefined();
+    });
+
+    it('signed out or no user row: refused with an errorId', async () => {
+        session.user = null;
+        expect(await saveProfileChangesFrom('team')).toMatchObject({ success: false, errorId: expect.any(String) });
+        session.user = 'ghost@example.com';
+        expect(await saveProfileChangesFrom('team')).toMatchObject({ success: false, errorId: expect.any(String) });
     });
 });

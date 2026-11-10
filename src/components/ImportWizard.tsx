@@ -1229,6 +1229,8 @@ export default function ImportWizard() {
                 fd.append('adopterId', adopterId);
                 fd.append('caption', 'Imported video');
                 fd.append('mediaType', 'video');
+                // An import tells the profile's team nothing (src/app/api/upload-media).
+                fd.append('origin', 'import');
                 if (vid.thumbnail) fd.append('thumbnail', vid.thumbnail);
                 const upRes = await fetch('/api/upload-media', { method: 'POST', body: fd });
                 if (!upRes.ok) {
@@ -1520,6 +1522,8 @@ export default function ImportWizard() {
                 fd.append('adopterId', adopterId);
                 fd.append('caption', 'Imported video');
                 fd.append('mediaType', 'video');
+                // An import tells the profile's team nothing (src/app/api/upload-media).
+                fd.append('origin', 'import');
                 if (vid.thumbnail) fd.append('thumbnail', vid.thumbnail);
                 const upRes = await fetch('/api/upload-media', { method: 'POST', body: fd });
                 if (!upRes.ok) {

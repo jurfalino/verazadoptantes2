@@ -1,0 +1,134 @@
+/**
+ * The write paths that tell the owner's team what was added to a profile
+ * (profile_content_added): saveAdoption (create; an edit that places a record
+ * on the profile or gives it a delivery address) and saveImage. The import's
+ * door (saveRecordFor with notifyOwnerTeam: false) tells nobody. Real SQL on
+ * the real schema.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { migratedDb } from '@/test-utils/migratedDb';
+import { session, getUser, isAdmin, OWNER, MATE, STRANGER } from '@/test-utils/actionMocks';
+import * as mocks from '@/test-utils/actionMocks';
+
+const { state, emails } = vi.hoisted(() => ({ state: { db: null as unknown }, emails: [] as unknown[] }));
+vi.mock('./_db', () => ({ getDb: async () => state.db, getUser, checkIsAdminAsync: isAdmin }));
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
+vi.mock('@/config/admins', () => ({ isAdminAsync: isAdmin, isModeratorOrAdminAsync: isAdmin }));
+vi.mock('@/lib/orgMembership', () => ({ isOrgMate: mocks.isOrgMate, isOwnerOrOrgMate: mocks.isOwnerOrOrgMate, getOrgMemberEmailsFor: mocks.getOrgMemberEmailsFor }));
+vi.mock('@/lib/adopterTokenize', () => ({ tokenizeAdopter: vi.fn(async () => undefined) }));
+vi.mock('@/lib/pendingSearchLog', () => ({ closePendingSearchesForAdopter: vi.fn(async () => undefined) }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
+vi.mock('@/lib/r2', () => ({ processImageForStorage: vi.fn(async (url: string) => url), uploadToR2: vi.fn(async (key: string) => `https://r2.example/${key}`) }));
+vi.mock('@/lib/contractStorage', () => ({ readSelfie: vi.fn(async () => ({ body: new Uint8Array([0xff, 0xd8, 0xff]), httpMetadata: { contentType: 'image/jpeg' } })) }));
+vi.mock('./_applicants', () => ({ canAccessFormSubmission: vi.fn(async () => true) }));
+vi.mock('@/config/features', () => ({ getFeatureFlag: async () => true }));
+vi.mock('@/lib/notificationEmail', () => ({ sendNotificationEmail: vi.fn(async (n: unknown) => { emails.push(n); return 'sent'; }) }));
+
+import { saveAdoption } from './adoptions';
+import { saveImage } from './images';
+import { saveRecordFor } from '@/lib/recordSave';
+
+type Row = Record<string, unknown>;
+let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; all: (...a: unknown[]) => Row[]; run: (...a: unknown[]) => unknown } };
+
+const notices = () => sqlite.prepare(`SELECT user_id, body FROM notifications WHERE type = 'profile_content_added' ORDER BY user_id`).all().map(n => [n.user_id, n.body]);
+const MAIPU = 'Av. Maipú 1200, Vicente López';
+const PHOTO = 'data:image/jpeg;base64,AAAA';
+
+async function as<T>(user: string, fn: () => Promise<T>): Promise<T> {
+    const before = session.user;
+    session.user = user;
+    try { return await fn(); } finally { session.user = before; }
+}
+
+beforeEach(() => {
+    const m = migratedDb();
+    state.db = m.db;
+    sqlite = m.sqlite as unknown as typeof sqlite;
+    emails.length = 0;
+    session.user = OWNER;
+    sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('ad1', 'Marta Paez', '5', ?, 1, 1)`).run(OWNER);
+    sqlite.prepare(`INSERT INTO user (id, email, name) VALUES ('u-ana', ?, 'Ana')`).run(STRANGER);
+});
+
+describe('saveAdoption tells the owner\'s team what an outsider added', () => {
+    it('a record with a rating, its delivery address and 3 photos: ONE notice to each of the owner team', async () => {
+        const res = await as(STRANGER, () => saveAdoption({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Luna', species: 'cat', rating: 4, deliveredToHome: 1, verifiedAddress: MAIPU } as never));
+        await as(STRANGER, () => Promise.all([1, 2, 3].map(() => saveImage('ad1', PHOTO, 'Photo for Luna', res.id, 'image', false, 'placement'))));
+        expect(notices()).toEqual([
+            [MATE, 'Ana agregó un registro (Adopción, 4★), 3 fotos y una dirección de entrega a Marta Paez.'],
+            [OWNER, 'Ana agregó un registro (Adopción, 4★), 3 fotos y una dirección de entrega a Marta Paez.'],
+        ]);
+        // The address itself never reaches a notice.
+        expect(JSON.stringify(sqlite.prepare(`SELECT * FROM notifications`).all())).not.toContain('Maipú');
+        expect(emails).toHaveLength(2);
+    });
+
+    it('photos alone (the gallery): one notice', async () => {
+        await as(STRANGER, async () => { await saveImage('ad1', PHOTO, 'Uploaded Image'); await saveImage('ad1', PHOTO, 'Uploaded Image'); });
+        expect(notices()).toEqual([[MATE, 'Ana agregó 2 fotos a Marta Paez.'], [OWNER, 'Ana agregó 2 fotos a Marta Paez.']]);
+    });
+
+    it('a teammate\'s add with the default «Otros rescatistas»: nobody; the owner\'s own add: nobody', async () => {
+        await as(MATE, () => saveAdoption({ adopterId: 'ad1', recordType: 'observation', rating: 2 } as never));
+        await as(MATE, () => saveImage('ad1', PHOTO, 'Uploaded Image'));
+        await as(OWNER, () => saveAdoption({ adopterId: 'ad1', recordType: 'observation' } as never));
+        expect(notices()).toEqual([]);
+    });
+
+    it('the import\'s door (quietForTeam) by the owner team tells nobody; the record still lands', async () => {
+        await as(MATE, () => saveRecordFor({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Luna', rating: 5 } as never, undefined, { notifyOwnerTeam: true, quietForTeam: true }));
+        expect(notices()).toEqual([]);
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM placements WHERE adopter_id = 'ad1'`).get()!.n).toBe(1);
+    });
+
+    it('the import\'s door used by someone outside the team still tells the team (review I1)', async () => {
+        await as(STRANGER, () => saveRecordFor({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Luna', rating: 1 } as never, undefined, { notifyOwnerTeam: true, quietForTeam: true }));
+        expect(notices()).toEqual([[MATE, 'Ana agregó un registro (Adopción, 1★) a Marta Paez.'], [OWNER, 'Ana agregó un registro (Adopción, 1★) a Marta Paez.']]);
+    });
+
+    it('«scope animal» with no animal named is a plain profile photo: told (review I1)', async () => {
+        await as(STRANGER, () => saveImage('ad1', PHOTO, undefined, undefined, 'image', false, 'animal'));
+        expect(notices()).toEqual([[MATE, 'Ana agregó una foto a Marta Paez.'], [OWNER, 'Ana agregó una foto a Marta Paez.']]);
+    });
+
+    it('a record not on any profile (an available animal) tells nobody', async () => {
+        await as(STRANGER, () => saveAdoption({ recordType: 'available', animalName: 'Luna', species: 'cat' } as never));
+        expect(notices()).toEqual([]);
+    });
+
+    it('edit: delivering an outsider\'s own adoption home later tells the team about the address — once, not on a re-save', async () => {
+        const res = await as(STRANGER, () => saveAdoption({ adopterId: 'ad1', recordType: 'adoption', animalName: 'Luna', species: 'cat' } as never));
+        sqlite.prepare(`DELETE FROM notifications`).run();
+        await as(STRANGER, () => saveAdoption({ id: res.id, deliveredToHome: 1, verifiedAddress: MAIPU } as never, { loaded: { deliveredToHome: 0, verifiedAddress: null } }));
+        expect(notices()).toEqual([[MATE, 'Ana agregó una dirección de entrega a Marta Paez.'], [OWNER, 'Ana agregó una dirección de entrega a Marta Paez.']]);
+        sqlite.prepare(`DELETE FROM notifications`).run();
+        await as(STRANGER, () => saveAdoption({ id: res.id, comments: 'Todo bien' } as never, { loaded: { comments: null } }));
+        expect(notices()).toEqual([]);
+    });
+
+    it('edit: placing one\'s available animal with the profile is adding a record to it', async () => {
+        const res = await as(STRANGER, () => saveAdoption({ recordType: 'available', animalName: 'Luna', species: 'cat' } as never));
+        await as(STRANGER, () => saveAdoption({ id: res.id, adopterId: 'ad1', recordType: 'adoption', rating: 3 } as never, { loaded: { adopterId: null, recordType: 'available' } }));
+        expect(notices()).toEqual([[MATE, 'Ana agregó un registro (Adopción, 3★) a Marta Paez.'], [OWNER, 'Ana agregó un registro (Adopción, 3★) a Marta Paez.']]);
+    });
+
+    it('an animal\'s own picture tells nobody — even stored under the holder\'s profile, with its placement there', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name, species, added_by, created_at, updated_at) VALUES ('an1', 'Nina', 'cat', ?, 1, 1)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('an1-plc', 'an1', 'ad1', 'adoption', 1, ?)`).run(STRANGER);
+        await as(STRANGER, () => saveImage('ad1', PHOTO, undefined, 'an1', 'image', false, 'animal'));
+        await as(STRANGER, () => saveImage('__available__', PHOTO, 'Photo', undefined, 'image', false, 'animal'));
+        expect(notices()).toEqual([]);
+        // The same animal's placement photo IS on the profile.
+        await as(STRANGER, () => saveImage('ad1', PHOTO, 'Photo for Nina', 'an1', 'image', false, 'placement'));
+        expect(notices()).toHaveLength(2);
+    });
+
+    it('a form\'s selfie copied onto the profile tells nobody (forms have their own notices)', async () => {
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selfie_key, linked_adopter_id) VALUES ('fs1', ?, 'Marta Paez', 'selfies/fs1.jpg', 'ad1')`).run(OWNER);
+        await as(STRANGER, () => saveImage('ad1', '/api/files/selfie/fs1', 'Selfie'));
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM adopter_images WHERE adopter_id = 'ad1'`).get()!.n).toBe(1);
+        expect(notices()).toEqual([]);
+    });
+});

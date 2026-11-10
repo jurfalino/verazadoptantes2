@@ -323,7 +323,11 @@ export async function recordSignature(db: Db, row: {
     via: 'token' | 'open';
     /** animal.addedBy — whose version this may legitimately be. */
     ownerEmail: string | null;
-}): Promise<void> {
+    /** H1: what the adopter typed, the matches found and the placement opened — the contract result's home. */
+    submitted?: Record<string, string> | null;
+    matchCount?: number | null;
+    placementId?: string | null;
+}): Promise<string> {
     const now = nowSeconds();
     let contentHash: string | null = null;
 
@@ -359,8 +363,9 @@ export async function recordSignature(db: Db, row: {
         }
     }
 
+    const id = crypto.randomUUID();
     await db.insert(signedContracts).values({
-        id: crypto.randomUUID(),
+        id,
         animalId: row.animalId,
         adopterId: row.adopterId,
         contractVersionId: row.contractVersionId,
@@ -370,5 +375,9 @@ export async function recordSignature(db: Db, row: {
         fileKey: row.fileKey,
         via: row.via,
         signedAt: now,
+        submittedJson: row.submitted ? JSON.stringify(row.submitted) : null,
+        matchCount: row.matchCount ?? null,
+        placementId: row.placementId ?? null,
     });
+    return id;
 }

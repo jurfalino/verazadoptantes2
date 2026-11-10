@@ -3,8 +3,10 @@
 /**
  * «Pendientes de revisar» on /my-adopters (layout D, spec
  * docs/superpowers/specs/2026-10-25-pendientes-d-design.md D21–D35, D40, D43):
- * one card of inbox rows, grouped Necesitan tu respuesta → Enviados →
- * Rechazados → Posibles duplicados. The first row that needs the viewer's
+ * one card of inbox rows. What waits on the viewer first, paged — «Te piden
+ * unir» → «No aceptaron tu pedido» → «Posibles duplicados» — then, on every
+ * page, «No necesitan nada tuyo»: «Enviados», «Los rechazaste» (UX review +
+ * Jon, 2026-11-10; sections.ts SECTION_ORDER). The first row that needs the viewer's
  * answer opens on load; the section opens itself on #pendientes or when such a
  * row exists.
  *
@@ -41,12 +43,15 @@ import {
     type PendingDedupSide,
 } from '@/app/actions/duplicates';
 import RequestPiiAccessModal from '@/components/RequestPiiAccessModal';
-import PairRow, { GROUP_ORDER, groupLabel, type RowAction } from '@/components/pendientes/PairRow';
+import PairRow, { groupLabel, type RowAction } from '@/components/pendientes/PairRow';
 import ConfirmCombine, { type ConfirmMode } from '@/components/pendientes/ConfirmCombine';
 import IdentityChoice from '@/components/pendientes/IdentityChoice';
 import WriteMessage from '@/components/pendientes/WriteMessage';
 import MergedRow, { keptSentence, mergedInfo, type MergedInfo } from '@/components/pendientes/MergedRow';
 import { pendientesSections } from '@/components/pendientes/sections';
+import { Modal } from '@/components/ui/Modal';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 
@@ -72,7 +77,18 @@ const STALE_REFUSALS: Record<string, { key: string; fallback: string }> = {
     identity_not_applicable: { key: 'myAdopters.pending_d_err_identity_not_applicable', fallback: 'Estos perfiles cambiaron. Actualizamos la lista.' },
 };
 
-export default function PendingDedup() {
+/**
+ * `home`: the homepage's panel (Jon 2026-11-09, option A) — over the home, one
+ * row at a time, already open: only the rows whose next move is the viewer's
+ * (needsViewer), the first of them. Every action, dialog and refusal is this
+ * component's own, so the home and /my-adopters can never answer differently.
+ * After each answer the next row loads (and the card reloads); with none left
+ * the panel closes.
+ */
+export default function PendingDedup({ home }: {
+    /** `focusPair`: the row the home card's row was (pairKey), shown first; then the first left. */
+    home?: { onChanged: () => void; onClose: () => void; focusPair?: string };
+} = {}) {
     const { t, locale } = useLanguage();
     const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
@@ -81,6 +97,8 @@ export default function PendingDedup() {
     const isAdmin = !!(session?.user as { isAdmin?: boolean } | undefined)?.isAdmin;
     const [pairs, setPairs] = useState<PendingDedupPair[] | null>(null);
     const [total, setTotal] = useState(0);
+    /** Rows whose next move is the viewer's (needsViewer): the header's number, the same as the home card's. */
+    const [needs, setNeeds] = useState(0);
     const [page, setPage] = useState(1);
     // Collapsed by default: production carries hundreds of pending pairs, and a
     // wall of them above the actual adopter list buries the page. It opens
@@ -112,13 +130,41 @@ export default function PendingDedup() {
     const loadedByFocus = useRef<number | null>(null);
 
     const load = useCallback(async () => {
+        if (home) {
+            try {
+                const reload = autoOpened.current;
+                const data = await getPendingDuplicatesForUser(1, 1, false, reload ? undefined : home.focusPair, 'needs_viewer');
+                if (data.errorId) {
+                    // Failed, not empty: say so (with the id) instead of closing as if nothing were left.
+                    toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, data.errorId);
+                    home.onClose();
+                    return;
+                }
+                autoOpened.current = true;
+                setPairs(data.pairs);
+                setTotal(data.total);
+                setNeeds(data.needsViewer);
+                setOpenId(data.pairs[0]?.candidateId ?? null);
+                if (reload) home.onChanged();
+                // Nothing left, or nothing it can show (answered elsewhere meanwhile, a side merged
+                // away): close, and the card shows what's true — never a placeholder that never fills.
+                if (data.pairs.length === 0) { if (!reload) home.onChanged(); home.onClose(); }
+            } catch (e) {
+                if (handledAsStale(e)) { home.onClose(); return; }
+                toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
+                home.onClose();
+            }
+            return;
+        }
         if (loadedByFocus.current === page) { loadedByFocus.current = null; return; }
         try {
             const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
             const data = await getPendingDuplicatesForUser(page, PAGE_SIZE, false, focusPair);
+            if (data.errorId) toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, data.errorId);
             if (data.page && data.page !== page) { loadedByFocus.current = data.page; setPage(data.page); }
             setPairs(data.pairs);
             setTotal(data.total);
+            setNeeds(data.needsViewer);
             // A reload after an action keeps the row the viewer is working on
             // open while it's still listed (a request just filed moves it to «Enviados»).
             setOpenId(id => (id && data.pairs.some(p => p.candidateId === id) ? id : null));
@@ -144,7 +190,7 @@ export default function PendingDedup() {
             setPairs([]);
             setTotal(0);
         }
-    }, [t, toast, page]);
+    }, [t, toast, page, home]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -179,15 +225,22 @@ export default function PendingDedup() {
 
     const dropRow = (pair: PendingDedupPair) => {
         setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []);
-        setTotal(n => Math.max(0, n - 1));
+        // `total` pages what waits on the viewer: only those rows move it.
+        if (pair.needsViewer) setTotal(n => Math.max(0, n - 1));
+        if (pair.needsViewer) setNeeds(n => Math.max(0, n - 1));
+        if (home) void load(); // the next one
     };
 
     /** D52: the row turns into its confirmation, and the toast offers the kept profile. */
     const markMerged = (pair: PendingDedupPair, kept: KeepSide, title: string) => {
         const info = mergedInfo(pair, sideOf(pair, kept), t);
         setMerged(prev => [...prev.filter(m => m.candidateId !== pair.candidateId), info]);
-        setTotal(n => Math.max(0, n - 1));
+        // `total` pages what waits on the viewer: only those rows move it.
+        if (pair.needsViewer) setTotal(n => Math.max(0, n - 1));
+        if (pair.needsViewer) setNeeds(n => Math.max(0, n - 1));
         setOpenId(id => (id === pair.candidateId ? null : id));
+        // The panel shows pairs[0]: take the merged pair off it, so its buttons can't fire again while the next one loads.
+        if (home) { setPairs(prev => prev?.filter(p => p.candidateId !== pair.candidateId) || []); void load(); }
         toast.success(title, keptSentence(info, t), { label: t('adopter.dup_action_view') || 'Ver perfil', href: `/adopter/${encodeURIComponent(info.keptId)}` });
     };
 
@@ -412,11 +465,109 @@ export default function PendingDedup() {
         };
     };
 
-    if (pairs === null) return null; // not loaded yet
-    // A pair just combined keeps the section on screen (D52), even the last one.
-    if (total === 0 && merged.length === 0) return null;
-
     const confirmShown = confirm ? confirmView(confirm) : null;
+    const dialogs = (
+        <>
+                {identityAsk && (
+                    <IdentityChoice
+                        nameA={identityAsk.pair.newAdopter.name}
+                        nameB={identityAsk.pair.existingAdopter.name}
+                        busy={busyCandidateId === identityAsk.pair.candidateId}
+                        onSame={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'same')}
+                        onHousehold={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'household')}
+                        onCancel={() => setIdentityAsk(null)}
+                        t={t}
+                    />
+                )}
+                {confirm && confirmShown && (
+                    <ConfirmCombine
+                        {...confirmShown}
+                        busy={busyCandidateId === confirm.pair.candidateId}
+                        onConfirm={() => runConfirmed(confirm)}
+                        onCancel={() => setConfirm(null)}
+                        t={t}
+                        formatShortDate={formatShortDate}
+                    />
+                )}
+                {writeTo?.request && (
+                    <WriteMessage
+                        toName={writeTo.request.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario')}
+                        aboutName={writeTo.existingAdopter.name}
+                        busy={busyCandidateId === writeTo.candidateId}
+                        onSend={text => send(writeTo, text)}
+                        onCancel={() => setWriteTo(null)}
+                        t={t}
+                    />
+                )}
+
+                {/* Reuses the existing owner-approval flow rather than a mailto: the
+                    owner gets a real request in PiiAccessRequestPanel and can grant
+                    it there. */}
+                <RequestPiiAccessModal
+                    open={!!accessTarget}
+                    adopterId={accessTarget?.id || ''}
+                    adopterName={accessTarget?.name || ''}
+                    onClose={() => setAccessTarget(null)}
+                    onRequested={() => { setAccessTarget(null); load(); }}
+                />
+        </>
+    );
+
+    if (home) {
+        const pair = pairs?.[0] ?? null;
+        // The title repeats the home row that was tapped (Jon 2026-11-10, point 8): one name per item.
+        const who = pair?.request?.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario');
+        const heading = !pair ? (t('myAdopters.pending_dedup_title') || 'Pendientes de revisar')
+            : pair.group === 'received' ? fill(t('homeModules.pending_asks'), { name: who })
+                : pair.group === 'declined' ? fill(t('homeModules.pending_declined'), { name: who })
+                    : t('samePerson.question');
+        return (
+            <>
+                <Modal size="lg" testId="home-pending-panel" onClose={home.onClose} busy={!!busyCandidateId}
+                    title={<>{heading}{needs > 0 && <span className={`font-semibold ${T_MUTED}`}> · {fill(t('homeModules.pending_position'), { n: String(needs) })}</span>}</>}>
+                    {pair ? (
+                        <div className="-mx-6 border-y border-[var(--border-default)]">
+                            <PairRow
+                                pair={pair}
+                                open
+                                keep={keepOf(pair)}
+                                onKeep={k => setKeepChoice(prev => ({ ...prev, [pair.candidateId]: k }))}
+                                busy={busyCandidateId === pair.candidateId}
+                                locked={!!busyCandidateId}
+                                isAdmin={isAdmin}
+                                t={t}
+                                formatShortDate={formatShortDate}
+                                age={requestAge}
+                                onAction={onAction}
+                                onRequestAccess={setAccessTarget}
+                            />
+                        </div>
+                    ) : (
+                        <div aria-hidden="true" data-testid="home-pending-panel-loading" className="h-40 rounded-2xl bg-stone-100 animate-pulse" />
+                    )}
+                    <Link href={`/my-adopters#${SECTION_ID}`} data-testid="home-pending-panel-all"
+                        className="flex items-center justify-between gap-2 min-h-11 text-sm font-semibold text-teal-700 hover:underline underline-offset-4">
+                        <span>{fill(t('homeModules.pending_see_all'), { n: String(needs) })}</span>
+                        <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    </Link>
+                </Modal>
+                {dialogs}
+            </>
+        );
+    }
+
+    // Not loaded yet: hold the header's place (it used to pop in seconds after the list and push it
+    // down ~90px under a finger). If nothing turns out to be pending, the placeholder goes.
+    if (pairs === null) return (
+        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse">
+            <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
+            <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
+        </section>
+    );
+    // A pair just combined keeps the section on screen (D52), even the last one.
+    // `total` counts what waits on the viewer; the section stays while anything is listed (a sent request too).
+    if (total === 0 && pairs.length === 0 && merged.length === 0) return null;
+
 
     return (
         <section id={SECTION_ID} ref={sectionRef} className="mb-8 scroll-mt-20">
@@ -431,9 +582,15 @@ export default function PendingDedup() {
                     viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 5l6 5-6 5" />
                 </svg>
-                <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2 group-hover:text-stone-900">
+                <h2 className="text-lg font-semibold text-stone-800 flex flex-wrap items-center gap-x-2 gap-y-1 group-hover:text-stone-900">
                     {t('myAdopters.pending_dedup_title') || 'Pendientes de revisar'}
-                    <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]">{total}</span>
+                    {/* «· N esperan tu respuesta» (Jon 2026-11-09): what waits on the viewer (needsViewer) — the
+                        home card's number. Sent requests are listed, not counted. */}
+                    {needs > 0 && (
+                        <span data-testid="pending-dedup-needs" className="text-sm font-semibold text-[var(--status-warning-text)]">
+                            · {fill(t(needs === 1 ? 'myAdopters.pending_d_needs_one' : 'myAdopters.pending_d_needs_many'), { n: String(needs) })}
+                        </span>
+                    )}
                 </h2>
             </button>
             <p className="text-sm text-stone-500 mt-1 mb-3 ml-6">
@@ -443,9 +600,9 @@ export default function PendingDedup() {
                 <>
                     {/* Rows are the list's direct <div> children; group headers are <h3>s between them. */}
                     <div id="pending-dedup-list" className="rounded-2xl bg-white border border-[var(--border-default)] shadow-sm overflow-hidden">
-                        {pendientesSections(pairs, merged, GROUP_ORDER).flatMap(section => {
+                        {(() => { let othersShown = false; return pendientesSections(pairs, merged).flatMap(section => {
                             // Combined on this visit (D52): their own section at the end, never under
-                            // «Necesitan tu respuesta» — nothing is left to answer (audit C7).
+                            // «Te piden unir» — nothing is left to answer (audit C7).
                             if (section.kind === 'merged') return [
                                 <h3 key="h-merged" data-testid="dedup-merged-heading"
                                     className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${T_MUTED}`}>
@@ -454,10 +611,21 @@ export default function PendingDedup() {
                                 ...section.items.map(info => <MergedRow key={info.candidateId} info={info} t={t} />),
                             ];
                             const { group, pairs: list } = section;
+                            // The first section that doesn't wait on the viewer opens «No necesitan nada tuyo».
+                            const othersStart = (group === 'sent' || group === 'declined_done') && !othersShown;
+                            if (othersStart) othersShown = true;
+                            const waits = group === 'received' || group === 'declined';
                             return [
-                                <h3 key={`h-${group}`}
-                                    className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${group === 'received' ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
-                                    {groupLabel(group, t)} · {list.length}
+                                ...(othersStart ? [
+                                    <p key="h-others" data-testid="dedup-others-heading"
+                                        className={`px-4 pt-4 pb-1 text-[12px] font-semibold border-t-2 border-[var(--border-default)] first:border-t-0 ${T_MUTED}`}>
+                                        {t('myAdopters.pending_d_others')}
+                                    </p>,
+                                ] : []),
+                                // No count: the page shows a slice, so «· 8» contradicted «65 esperan tu respuesta».
+                                <h3 key={`h-${group}`} data-testid={`dedup-group-${group}`}
+                                    className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${waits ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
+                                    {group === 'declined_done' ? t('myAdopters.pending_d_group_declined_done') : groupLabel(group, t)}
                                 </h3>,
                                 ...list.map(pair => (
                                     <PairRow
@@ -479,7 +647,7 @@ export default function PendingDedup() {
                                     />
                                 )),
                             ];
-                        })}
+                        }); })()}
                     </div>
 
                     {pageCount > 1 && (
@@ -508,48 +676,7 @@ export default function PendingDedup() {
                 </>
             )}
 
-            {identityAsk && (
-                <IdentityChoice
-                    nameA={identityAsk.pair.newAdopter.name}
-                    nameB={identityAsk.pair.existingAdopter.name}
-                    busy={busyCandidateId === identityAsk.pair.candidateId}
-                    onSame={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'same')}
-                    onHousehold={() => afterIdentity(identityAsk.pair, identityAsk.keep, 'household')}
-                    onCancel={() => setIdentityAsk(null)}
-                    t={t}
-                />
-            )}
-            {confirm && confirmShown && (
-                <ConfirmCombine
-                    {...confirmShown}
-                    busy={busyCandidateId === confirm.pair.candidateId}
-                    onConfirm={() => runConfirmed(confirm)}
-                    onCancel={() => setConfirm(null)}
-                    t={t}
-                    formatShortDate={formatShortDate}
-                />
-            )}
-            {writeTo?.request && (
-                <WriteMessage
-                    toName={writeTo.request.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario')}
-                    aboutName={writeTo.existingAdopter.name}
-                    busy={busyCandidateId === writeTo.candidateId}
-                    onSend={text => send(writeTo, text)}
-                    onCancel={() => setWriteTo(null)}
-                    t={t}
-                />
-            )}
-
-            {/* Reuses the existing owner-approval flow rather than a mailto: the
-                owner gets a real request in PiiAccessRequestPanel and can grant
-                it there. */}
-            <RequestPiiAccessModal
-                open={!!accessTarget}
-                adopterId={accessTarget?.id || ''}
-                adopterName={accessTarget?.name || ''}
-                onClose={() => setAccessTarget(null)}
-                onRequested={() => { setAccessTarget(null); load(); }}
-            />
+            {dialogs}
         </section>
     );
 }

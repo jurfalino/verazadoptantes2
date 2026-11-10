@@ -1,5 +1,5 @@
 /**
- * Route-level loading skeleton for /contract-results/[notificationId].
+ * Route-level loading skeleton for /contract-results/[id].
  *
  * Edge SSR page with a sequential DB waterfall (auth → db → notification →
  * mark-read → matched profiles) and no prior loading boundary, so navigation

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { contractHref } from './contractLink';
+import { contractHref, contractResultsHref } from './contractLink';
 
 describe('contractHref', () => {
     it('a privately stored contract opens through the checked route', () => {
@@ -19,5 +19,17 @@ describe('contractHref', () => {
         expect(contractHref('a1', null, null)).toBeNull();
         expect(contractHref('a1', 0, 'una nota')).toBeNull();
         expect(contractHref('a1', 0, '{}')).toBeNull();
+    });
+});
+
+describe('contractResultsHref (H1)', () => {
+    it('opens the result kept with the signature, naming where it was opened from', () => {
+        expect(contractResultsHref('sc-1', { adopter: 'ad-1' })).toBe('/contract-results/sc-1?from=adopter%3Aad-1');
+        expect(contractResultsHref('sc-1', { animal: 'an-1' })).toBe('/contract-results/sc-1?from=animal%3Aan-1');
+    });
+
+    it('no signed_contracts row (an older contract): no link, only the PDF', () => {
+        expect(contractResultsHref(null, { adopter: 'ad-1' })).toBeNull();
+        expect(contractResultsHref(undefined, { animal: 'an-1' })).toBeNull();
     });
 });

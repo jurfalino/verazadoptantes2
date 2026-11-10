@@ -456,21 +456,31 @@ import { apiKeys } from '@/db/schema';
 import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
 import { getEmailPrefsForEmail, getLocaleForEmail, setEmailPrefForEmail, setLocaleForEmail } from '@/lib/emailPrefs';
 import { READ_ONLY_ERROR_NAME } from '@/lib/readOnlyGuard';
+import { PROFILE_CHANGES_FROM, type ProfileChangesFrom } from '@/domain/teamChangeAudience';
+import { getProfileChangesFromForEmail, setProfileChangesFromForEmail } from '@/lib/teamChangeAudience';
 
-/** The viewer's email switches + whether they hold a live API key (null = no session). */
-export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean } | null> {
+/**
+ * The viewer's email switches, whether they hold a live API key, and their
+ * «Avisame de cambios hechos por:» choice (null = no session).
+ */
+export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean; profileChangesFrom: ProfileChangesFrom } | null> {
     let userEmail: string | undefined;
     try {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
 
         const db = await getDb();
-        const [prefs, keys] = await Promise.all([
+        const [prefs, keys, profileChangesFrom] = await Promise.all([
             getEmailPrefsForEmail(db, userEmail),
             db.select({ id: apiKeys.id }).from(apiKeys)
                 .where(and(eq(apiKeys.ownerEmail, userEmail), isNull(apiKeys.revokedAt))).limit(1),
+            // Its own fallback: an unreadable choice must not hide every email switch (review M6).
+            getProfileChangesFromForEmail(db, userEmail).catch((e): ProfileChangesFrom => {
+                logger.warn('getEmailPrefs: profile_changes_from unreadable, shown as the default', { userEmail, error: e instanceof Error ? e.message : String(e) });
+                return 'outside';
+            }),
         ]);
-        return { prefs, hasApiKey: keys.length > 0 };
+        return { prefs, hasApiKey: keys.length > 0, profileChangesFrom };
     } catch (error) {
         logger.error('getEmailPrefs failed', error, { userEmail });
         return null;
@@ -499,6 +509,35 @@ export async function saveEmailPref(category: EmailCategory, enabled: boolean): 
 }
 
 /**
+ * «Avisame de cambios hechos por:» under «Cambios en tus perfiles» (Jon
+ * 2026-11-08): 'outside' = «Otros rescatistas» (default), 'team' = «Otros
+ * rescatistas y mi equipo». Governs the bell AND email for those notices
+ * (src/lib/teamChangeAudience.ts), whatever that row's email switch says.
+ * Writes only the caller's own user_profiles row; anything else is refused.
+ */
+export async function saveProfileChangesFrom(from: ProfileChangesFrom): Promise<{ success: boolean; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        if (typeof from !== 'string' || !PROFILE_CHANGES_FROM.includes(from)) {
+            throw new Error(`Invalid profileChangesFrom: ${String(from).slice(0, 40)}`);
+        }
+        await setProfileChangesFromForEmail(await getDb(), userEmail, from);
+        logAudit({ userEmail, action: 'profile_changes_from_saved', details: { from } });
+        return { success: true };
+    } catch (error) {
+        if (error instanceof Error && error.name === READ_ONLY_ERROR_NAME) {
+            const errorId = generateErrorId();
+            logger.warn('saveProfileChangesFrom: read-only ("view as") session, not saved', { userEmail, from: String(from).slice(0, 40), errorId });
+            return { success: false, errorId };
+        }
+        const errorId = logger.error('saveProfileChangesFrom failed', error, { userEmail, from: String(from).slice(0, 40) });
+        return { success: false, errorId };
+    }
+}
+
+/**
  * Remember the language the viewer picked, so emails to them go out in it.
  * Unchanged → no write (the app pushes it on sign-in). A "view as" session is
  * read-only by design: that refusal is expected, so it logs at warn.
@@ -519,6 +558,56 @@ export async function saveMyLocale(locale: 'es' | 'en' | 'pt'): Promise<{ succes
             return { success: false, errorId };
         }
         const errorId = logger.error('saveMyLocale failed', error, { userEmail, locale: String(locale) });
+        return { success: false, errorId };
+    }
+}
+
+import { sanitizePins, type FilterKey } from '@/domain/adopterListView';
+import { getAdopterListPinsForEmail, setAdopterListPinsForEmail } from '@/lib/adopterListPins';
+
+/**
+ * Mis adoptantes: the filters the caller pinned onto the main screen (the
+ * defaults when none). Null when signed out or the read failed (logged) —
+ * the page then shows the defaults.
+ */
+export async function getAdopterListPins(): Promise<FilterKey[] | null> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') return null;
+        const db = await getDb();
+        if (!db) return null;
+        return await getAdopterListPinsForEmail(db, userEmail);
+    } catch (error) {
+        logger.warn('getAdopterListPins failed, defaults shown', { userEmail, error: error instanceof Error ? error.message : String(error) });
+        return null;
+    }
+}
+
+/**
+ * Save the caller's pins. Anything not a list is refused; unknown keys,
+ * repeats and anything past PIN_MAX are dropped (sanitizePins) before the
+ * write. Writes only the caller's own user_profiles row. A "view as" session
+ * is read-only by design (warn + errorId).
+ */
+export async function saveAdopterListPins(pins: unknown): Promise<{ success: boolean; pins?: FilterKey[]; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        if (!Array.isArray(pins)) throw new Error('Invalid pins: not a list');
+        const clean = sanitizePins(pins);
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        await setAdopterListPinsForEmail(db, userEmail, clean);
+        return { success: true, pins: clean };
+    } catch (error) {
+        if (error instanceof Error && error.name === READ_ONLY_ERROR_NAME) {
+            const errorId = generateErrorId();
+            logger.warn('saveAdopterListPins: read-only ("view as") session, not saved', { userEmail, errorId });
+            return { success: false, errorId };
+        }
+        const errorId = logger.error('saveAdopterListPins failed', error, { userEmail });
         return { success: false, errorId };
     }
 }

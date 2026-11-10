@@ -330,12 +330,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         logger.info('Contract adoption submitted', { animalId, adopterId, hasContract: !!contractKey });
 
+        // H1: what the adopter typed — kept with the signature (the contract
+        // result's home) and, as before, in the notice.
+        const submittedData = { name: fullName, phone, email, dni, address, socialNetworks };
+
+        // The placement this signing opened, so the result names it (H1). Best-effort.
+        let placementId: string | null = null;
+        try {
+            const { placements } = await import('@/db/schema');
+            const { and: andOp, eq: eqOp, isNull: isNullOp } = await import('drizzle-orm');
+            placementId = (await db.select({ id: placements.id }).from(placements)
+                .where(andOp(eqOp(placements.animalId, animalId), isNullOp(placements.endedAt))).get())?.id ?? null;
+        } catch (e) {
+            logger.warn('Contract submit: placement id unreadable, signature stored without it', { animalId, adopterId, error: e instanceof Error ? e.message : String(e) });
+        }
+
         // Record exactly which contract text was signed (spec §1.4). Never fails
         // the signature: the adopter has signed and the PDF is stored. NOT
         // flag-gated — records standard signatures too (spec D10).
+        let signedContractId: string | null = null;
         try {
             const { recordSignature } = await import('@/lib/adoptionDocsRepo');
-            await recordSignature(db, {
+            signedContractId = await recordSignature(db, {
                 animalId, adopterId,
                 contractVersionId: contractVersionId || null,
                 // Always stored: a custom contract still carries standard text
@@ -347,6 +363,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 // Only a version owned by this animal's rescuer (or one of
                 // their groups) gets its hash recorded / is stamped as signed.
                 ownerEmail: animal.addedBy ?? null,
+                submitted: submittedData,
+                matchCount: matches.length,
+                placementId,
             });
         } catch (e) {
             logger.error('Contract submit: signed_contracts insert failed', e, { animalId, adopterId, contractVersionId });
@@ -374,6 +393,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         icon: '⚠️',
                         metadata: {
                             notificationId,
+                            // H1: the result's durable home; the notice is only a shortcut to it.
+                            signedContractId,
                             animalId,
                             animalName,
                             adopterId,
@@ -386,7 +407,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                                 // The search score, shown to admins only (Jon, 2026-10-25).
                                 score: m.relevancePercent,
                             })),
-                            submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
+                            submittedData,
                         },
                     });
                 } else {
@@ -400,12 +421,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         url: `/adopter/${adopterId}`,
                         icon: '✅',
                         metadata: {
+                            signedContractId,
                             animalId,
                             animalName,
                             adopterId,
                             adopterName: fullName,
                             matchCount: 0,
-                            submittedData: { name: fullName, phone, email, dni, address, socialNetworks },
+                            submittedData,
                         },
                     });
                 }

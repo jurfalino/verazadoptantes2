@@ -60,6 +60,7 @@ import { deleteAdoption } from './adoptions';
 import { deleteImage } from './images';
 import { mergeAdopters } from '@/lib/adopterMerge';
 import { voidApiRecord } from '@/lib/api/records';
+import { chooseProfileChangesFrom } from '@/test-utils/profileChangesFrom';
 
 type Row = Record<string, unknown>;
 let sqlite: { prepare: (s: string) => { get: (...a: unknown[]) => Row | undefined; run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Row[] } };
@@ -248,5 +249,32 @@ describe('approver emails compare case-insensitively', () => {
             build: (actorName) => ({ key: 'household_contribution', params: { actorName, what: 'member' } }),
         });
         expect(createNotification).not.toHaveBeenCalled();
+    });
+});
+
+/** «Avisame de cambios hechos por:» (Jon 2026-11-08): the contribution notice goes through the one rule. */
+describe('notifyApprovers — a teammate\'s change reaches only the teammates who chose «… y mi equipo»', () => {
+    const contribute = (actor: string) => notifyApprovers({
+        op: 'test', adopterId: 'p1', actor, type: 'contact_entry_added',
+        build: (actorName) => ({ key: 'contact_entry_added', params: { actorName, entryType: 'phone' } }),
+    });
+    const told = () => vi.mocked(createNotification).mock.calls.map(c => (c[0] as { userId: string }).userId);
+    beforeEach(() => { vi.mocked(createNotification).mockClear(); });
+
+    it("MATE adds a contact to OWNER's profile: OWNER («Otros rescatistas», the default) is not told", async () => {
+        await contribute(MATE);
+        expect(told()).toEqual([]);
+    });
+
+    it('…and is told after choosing «Otros rescatistas y mi equipo»', async () => {
+        chooseProfileChangesFrom(sqlite, OWNER, 'team');
+        await contribute(MATE);
+        expect(told()).toEqual([OWNER]);
+    });
+
+    it('a stranger\'s contribution reaches the owner whatever they chose', async () => {
+        chooseProfileChangesFrom(sqlite, OWNER, 'outside');
+        await contribute(STRANGER);
+        expect(told()).toEqual([OWNER]);
     });
 });

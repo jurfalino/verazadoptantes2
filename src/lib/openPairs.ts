@@ -1,5 +1,5 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
-import { adopters, duplicateCandidates, pendingPairHidden } from '@/db/schema';
+import { adopters, duplicateCandidates, mergeRequests, pendingPairHidden } from '@/db/schema';
 import { pairKey } from '@/domain/dedupPair';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { logger } from '@/lib/logger';
@@ -148,6 +148,13 @@ export interface PendingDuplicateRef {
     otherAdopterName: string;
     /** On the viewer's «Pendientes» list (their team loaded a side, they didn't hide it) — the bar offers «Revisar». */
     onViewerList: boolean;
+    /**
+     * The next move is the viewer's (UX review 2026-11-10, Jon OK): false for a merge request the
+     * viewer filed that waits on the other side, and for one the viewer (or their team) declined —
+     * those rows get no amber border / «Posible duplicado» pill. The same rule as needsViewer
+     * (domain/pendingRowRules); a declined request the viewer filed counts as waiting on them.
+     */
+    waitsOnViewer: boolean;
 }
 
 /**
@@ -175,6 +182,27 @@ export async function pendingDuplicatesByAdopter(
         for (const r of rows) people.set(r.id, { name: r.name, addedBy: r.addedBy });
     }
     const [hidden, team] = await Promise.all([loadHiddenPairKeys(db, viewer), viewerTeam(viewer)]);
+    // Open/declined requests the viewer is party to (filed it, or it asked their team), by pair.
+    const requestOf = new Map<string, { mine: boolean; status: string }>();
+    try {
+        const party = or(
+            sql`lower(${mergeRequests.requesterEmail}) = ${normEmail(viewer)}`,
+            ...[...team].map(e => sql`lower(${mergeRequests.ownerEmail}) = ${e}`),
+        )!;
+        const reqs = await db.select({ p: mergeRequests.primaryId, s: mergeRequests.secondaryId, requester: mergeRequests.requesterEmail, status: mergeRequests.status })
+            .from(mergeRequests)
+            .where(and(or(eq(mergeRequests.status, 'pending'), eq(mergeRequests.status, 'declined'))!, party))
+            .all() as Array<{ p: string; s: string; requester: string; status: string }>;
+        for (const r of reqs) requestOf.set(pairKey(r.p, r.s), { mine: normEmail(r.requester) === normEmail(viewer), status: r.status });
+    } catch (e) {
+        // Unreadable: every open pair keeps its marker (as before), logged.
+        logger.warn('pendingDuplicatesByAdopter: requests unreadable, every pair marked', { viewer, error: e instanceof Error ? e.message : String(e) });
+    }
+    const waitsOnViewer = (a: string, b: string): boolean => {
+        const r = requestOf.get(pairKey(a, b));
+        if (!r) return true;
+        return r.status === 'pending' ? !r.mine : r.mine; // sent → no; declined by you → no
+    };
     const when = (d: Date | number | null) => (d instanceof Date ? d.getTime() : Number(d ?? 0));
     // The profile bar's order (loadOpenPairs): strongest first, then newest — so the
     // card and the profile name the same person and «Revisar» opens the same pair.
@@ -190,6 +218,7 @@ export async function pendingDuplicatesByAdopter(
                 otherAdopterId: other,
                 otherAdopterName: o.name,
                 onViewerList: mayAnswerPair(team, ownerOf.get(self), o.addedBy) && !hidden.has(pairKey(self, other)),
+                waitsOnViewer: waitsOnViewer(self, other),
             });
             out.set(self, list);
         }

@@ -60,6 +60,7 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     profile_renamed: { actorName: 'Jonathan U', fromName: 'Pedro Paez', toName: 'P. Paez' },
     profile_rename_undone: { actorName: 'Ana', restoredName: 'Pedro Paez', revertedName: 'P. Paez' },
     profile_age_changed: { actorName: 'Ana', personName: 'Lucas Paez', age: '12', minor: '1' },
+    profile_content_added: { actorName: 'Ana', adopterName: 'Marta Paez', records: 'adoption:4', photos: '3', address: '1' },
 };
 
 const LOCALES: NotificationLocale[] = ['es', 'en', 'pt'];
@@ -278,5 +279,31 @@ describe('profile identity notices (households as profiles, Task 3)', () => {
         expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', minor: '1' } }, 'es')!.body)
             .toBe('Ana indicó que Lucas es menor de edad.');
         expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas' } }, 'pt')!.body).toBe('Ana removeu a idade de Lucas.');
+    });
+    it('profile_content_added: one notice says everything one save added (Jon, 2026-11-08)', () => {
+        const r = (params: Record<string, string>, l: NotificationLocale = 'es') => renderNotification({ key: 'profile_content_added', params: { actorName: 'Ana', ...params } }, l);
+        expect(r({ adopterName: 'Marta Paez', records: 'adoption:4', photos: '3' }))
+            .toEqual({ title: 'Nuevo registro: Marta Paez', body: 'Ana agregó un registro (Adopción, 4★) y 3 fotos a Marta Paez.' });
+        expect(r({ adopterName: 'Marta Paez', records: 'adoption:4', photos: '3', address: '1' })!.body)
+            .toBe('Ana agregó un registro (Adopción, 4★), 3 fotos y una dirección de entrega a Marta Paez.');
+        expect(r({ adopterName: 'Marta Paez', photos: '1' }))
+            .toEqual({ title: 'Nueva foto: Marta Paez', body: 'Ana agregó una foto a Marta Paez.' });
+        expect(r({ adopterName: 'Marta Paez', records: 'adoption:4,follow_up' }))
+            .toEqual({ title: 'Nuevos registros: Marta Paez', body: 'Ana agregó 2 registros (Adopción, 4★; Seguimiento) a Marta Paez.' });
+        expect(r({ address: '1' }))
+            .toEqual({ title: 'Nueva dirección de entrega', body: 'Ana agregó una dirección de entrega al adoptante.' });
+        expect(r({ adopterName: 'Marta Paez', videos: '2' }))
+            .toEqual({ title: 'Nuevos videos: Marta Paez', body: 'Ana agregó 2 videos a Marta Paez.' });
+        expect(r({ adopterName: 'Marta Paez', records: 'returned_pet', photos: '2', videos: '1' })!.body)
+            .toBe('Ana agregó un registro (Devolución), 2 fotos y un video a Marta Paez.');
+        // An unknown code is not shown raw; nothing added renders nothing (the stored text shows).
+        expect(r({ adopterName: 'Marta Paez', records: 'zzz' })!.body).toBe('Ana agregó un registro a Marta Paez.');
+        expect(r({ adopterName: 'Marta Paez' })).toBeNull();
+        expect(r({ adopterName: 'Marta Paez', records: 'adoption:4', photos: '3' }, 'en'))
+            .toEqual({ title: 'New record: Marta Paez', body: 'Ana added a record (Adoption, 4★) and 3 photos to Marta Paez.' });
+        expect(r({ adopterName: 'Marta Paez', records: 'adoption:4', photos: '3' }, 'pt'))
+            .toEqual({ title: 'Novo registro: Marta Paez', body: 'Ana adicionou um registro (Adoção, 4★) e 3 fotos a Marta Paez.' });
+        expect(r({ photos: '1' }, 'en')!.body).toBe('Ana added a photo to the adopter.');
+        expect(r({ address: '1' }, 'pt')!.body).toBe('Ana adicionou um endereço de entrega ao adotante.');
     });
 });

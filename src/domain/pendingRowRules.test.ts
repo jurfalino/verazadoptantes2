@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { combineTheirsSide, movesToOtherList, type RowPair } from './pendingRowRules';
+import { combineTheirsSide, movesToOtherList, needsViewer, type RowPair } from './pendingRowRules';
 
 const pair = (over: Partial<RowPair> & { mineNew?: boolean; mineExisting?: boolean } = {}): RowPair => ({
     group: 'pair',
@@ -43,5 +43,28 @@ describe('combineTheirsSide (D43)', () => {
     });
     it('only on declined rows', () => {
         expect(combineTheirsSide(pair({ request: { direction: 'sent', keepId: 'e' } }))).toBeNull();
+    });
+});
+
+describe('needsViewer — the next move is the viewer\'s (Jon 2026-11-09)', () => {
+    it('a possible duplicate, and a request asking the viewer or their team: yes', () => {
+        expect(needsViewer(pair())).toBe(true);
+        expect(needsViewer(pair({ group: 'received', request: { direction: 'received', keepId: 'e' } }))).toBe(true);
+    });
+
+    it('a request the viewer sent, waiting on the other side: no («Cancelar» / «Escribir» are cleanup)', () => {
+        expect(needsViewer(pair({ group: 'sent', request: { direction: 'sent', keepId: 'n' } }))).toBe(false);
+    });
+
+    it('declined by the viewer (or their team): no — already decided; «Aceptar ahora» stays on the row', () => {
+        expect(needsViewer(pair({ group: 'declined', request: { direction: 'received', keepId: 'e' } }))).toBe(false);
+    });
+
+    it('declined, seen by the requester: yes while «Unir conservando el de …» / «Pedir revisión» is offered', () => {
+        expect(needsViewer(pair({ group: 'declined', request: { direction: 'sent', keepId: 'n' }, actionByKeep: { new: 'merge', existing: 'dispute' } }))).toBe(true);
+    });
+
+    it('declined, seen by the requester with only «Quitar de la lista» left (e.g. a pair rebuilt from the request): no', () => {
+        expect(needsViewer(pair({ group: 'declined', request: { direction: 'sent', keepId: 'n' }, actionByKeep: { new: null, existing: null } }))).toBe(false);
     });
 });

@@ -2,6 +2,181 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.52] - 2026-11-10
+
+### Fixed
+- Test helper escapes every regular-expression character (CodeQL high alert on the release PR; test code only,
+  no user-facing change).
+
+## [2.58.51] - 2026-11-10
+
+### Changed — senior UX + EM review of 2.58.41–50 (Jon)
+- **«Pendientes de revisar»: what waits on you first.** Groups: «Te piden unir» → «No aceptaron tu pedido» →
+  «Posibles duplicados», paged; then, on every page, «No necesitan nada tuyo»: «Enviados», «Los rechazaste».
+  No per-group counts (they were the page's, not the total). In the adopter list, the amber border and
+  «Posible duplicado» pill only on pairs that wait on you.
+- **Home panel title repeats the row you tapped** («María te pide unir», «¿Es la misma persona?») and says
+  «quedan N» instead of «1 de N».
+- «¿Cuál se conserva?» names each profile when both would read «El tuyo».
+- Filters: both «Quitar filtros» clear the search too; a pin you chose always shows (even at 0); rating
+  filters use the pill's words («Sin calificación», «★ 2 · Riesgoso»).
+- Bundled check-up reminder titled «Controles para hacer» (no count that goes stale).
+- 44px tap targets for WhatsApp / «Registrar» and the filter pill's ✕; «Pendientes de revisar» keeps its place
+  while loading (no jump).
+
+### Fixed
+- Mis adoptantes stays responsive on big accounts (~4,700 people): the list work is memoized, not redone per
+  keystroke.
+- A failed «Pendientes de revisar» load shows an error with its id instead of looking empty.
+- Bell clearing and the reminder worker skip malformed stored data instead of failing; a merge also clears
+  notices about the absorbed profile's other pairs.
+
+## [2.58.50] - 2026-11-10
+
+### Changed — the bell agrees with the home screen (Jon)
+- **Answer once, cleared everywhere:** answering «¿Es la misma persona?» (merge, «No, es otra persona»,
+  accept / decline / cancel a request, hide a declined one) marks that pair's bell notices as read — for
+  everyone who got one. Registering a check-up does the same for its reminder once everything it lists is
+  done (from the home panel, the animal's page, by anyone on the team). Notices are never deleted.
+- **Check-up reminders are bundled:** one bell notice per person per day — «3 controles para hacer: Sol,
+  poti y 1 más», opening Mis animales › Con controles pendientes — instead of one per check-up. A single
+  check-up keeps its own notice. The e-mail digest was already bundled.
+
+## [2.58.49] - 2026-11-10
+
+### Fixed
+- Saving pinned filters could create a second, terms-less profile record for an account with two sign-in
+  records under the same email (seen in the test database). The save now only updates the existing profile.
+  2.58.46–2.58.48 never deployed.
+
+## [2.58.48] - 2026-11-10
+
+### Changed
+- «Filtros › Procedencia» covers every way a profile arrives: por formulario, desde un post, importado,
+  **por API** (e.g. Catpuccino's intake) and **por contrato** (new), and cargado a mano (Jon).
+
+## [2.58.47] - 2026-11-10
+
+### Fixed (review of 2.58.46, before it deployed)
+- Typing in «Buscar por nombre», ticking a filter or sorting no longer asks the server for the page each time:
+  the address updates in place. On a tab older than a deploy, the first letter typed used to reload the page.
+- A pin saved right after a filter change can't be dropped anymore; quick pin/unpin sequences show what was
+  really saved, and a failed save returns to the last saved pins.
+- Name order keeps nameless profiles at the end; with «Por formulario» alone, «Procedencia» reverses by form date.
+- Screen readers: the sort buttons say how the list is sorted; a locked pin (4 already) can be focused and says why.
+
+## [2.58.46] - 2026-11-10
+
+### Added — Mis adoptantes: sort, filter, pin, search
+- **Sort by the column headers** (computer): «Nombre» (A–Z, tap again Z–A), «Calificación» (worst first, then
+  best first; unrated always last), «Procedencia» (newest first — the default — then oldest). On a phone, an
+  «Ordenar» menu with the same options.
+- **«Filtros» panel** with every filter in one place: Procedencia (por formulario, desde un post, importado,
+  cargado a mano), Calificación (1★ Peligroso … 5★ Excelente, Sin calificar — several at once) and Alertas
+  (conviviente con alerta). Choices in the same group widen the list; different groups narrow it.
+- **Pin up to 4 filters** onto the main screen as quick buttons (pin icon in the panel). «Por formulario» and
+  «Desde un post» — the old tabs — come pinned. Pins are per person and follow you across devices.
+- **«Buscar por nombre»**, a **«Quitar filtros»** button while anything is applied, and **«Mostrando X de Y
+  adoptantes»**. The whole view lives in the URL (the homepage's «?filtro=posts» links still work).
+- Replaces the «Todos / Por formulario / Desde un post» tabs.
+
+## [2.58.45] - 2026-11-09
+
+### Changed — Mis adoptantes lists what waits on you like Mis animales lists its due animals
+- Every item waiting on you is its own row (Jon 2026-11-09, option b): the two names, and an amber line under
+  them — «¿Es la misma persona? · Coinciden: teléfono, email», «María te pide unir» or «María no aceptó unir».
+  Up to 4; with more, 3 rows + «N más esperan tu respuesta» (to Mis adoptantes › Pendientes). Free slots show
+  your newest people, as before. Replaces the single «¿Es la misma persona? · 1 de N» row.
+- Tapping a row opens that item over the home; after answering, the panel shows the next one and the card
+  updates behind it. Close it with × whenever.
+
+## [2.58.44] - 2026-11-09
+
+### Fixed
+- 2.58.42–2.58.43 never deployed: the homepage crashed on the Cloudflare build (the home panels were loaded
+  with next/dynamic, which next-on-pages can't resolve in the edge homepage). They're plain imports now.
+
+## [2.58.43] - 2026-11-09
+
+### Changed — «Pendientes de revisar» says what the number is
+- The section header in Mis adoptantes reads «Pendientes de revisar · 65 esperan tu respuesta» (was a bare
+  number): the same number as the home card, counting only what waits on you.
+
+## [2.58.42] - 2026-11-09
+
+### Added — act on what's pending without leaving the home
+- **Mis animales:** tapping an animal with a check-up due opens its «Para hacer ahora» over the home — the same
+  block as the animal's page: WhatsApp and «Registrar» for every due check-up. After saving, the card updates
+  and the panel shows what's still due (or closes). «Ver la ficha de …» is still there. The row looks as before.
+- **Mis adoptantes:** the amber row names the first item waiting on you — «¿Es la misma persona? · 1 de N»
+  (or «María te pide unir · 1 de N») over the two names — and opens it over the home, already open, with the
+  same comparison and buttons as Mis adoptantes. After answering, the next one appears there.
+
+### Changed — the «pendientes» number counts only what waits on you
+- Counted (yours and your team's): possible duplicates, requests asking you or your team to merge, and
+  your requests someone declined while «Unir conservando el de …» / «Pedir revisión a un administrador» is
+  still offered (the amber row reads «María no aceptó unir»). Not counted: requests you sent that wait on the
+  other person, requests you (or your team) declined — you already decided; «Aceptar ahora» stays on the row —
+  and declined ones where only «Quitar de la lista» / «Escribirle» is left. All of them are still listed in
+  Mis adoptantes › Pendientes de revisar. The section's header shows the same number as the home card.
+
+### Fixed
+- «Pedir acceso a quien lo cargó» uses the shared dialog shell: it opens above any dialog it's called from.
+
+## [2.58.41] - 2026-11-09
+
+### Changed — home cards Mis adoptantes / Mis animales are the same height
+- **Same build, same height (desktop):** both cards now have 4 slots. An amber row («N pendientes de
+  revisar», «N animales más con controles pendientes») or the «Importar desde tus contactos» link takes a
+  slot; people or animals fill the rest. Side by side they come out the same height, with no empty space.
+  Every row is one line of name + one line underneath; long names and lines end in «…» (full text on hover).
+- **Up to 4 rows instead of 3** on every screen size: Mis animales lists up to 4 animals (3 + «N más» when
+  more than 4 are due); Mis adoptantes lists 4 people, or 3 beside an amber row / the import link.
+- **When the two can't match** (e.g. a small account with 2 adopters), the shorter card is no longer
+  stretched into an empty gap: the next card («También podés») moves up under it.
+- **Loading placeholder** now shows two cards in the real cards' shape (header, 4 rows, «Ver los…») instead
+  of one wide blank block, so the page no longer changes shape or jumps ~200px when the cards arrive.
+
+## [2.58.40] - 2026-11-09
+
+### Changed — home cards polish
+- **Mis animales summary breaks only after «·»:** «5 disponibles ·» / «278 adoptados», never «278» /
+  «adoptados» (desktop cards are two-up and narrow).
+- **Import link reads «Importar desde tus contactos»** (was «o importá…», which followed the old bottom button).
+
+## [2.58.39] - 2026-11-09
+
+### Changed — «+ Agregar» next to the title of the home cards
+- **Mis adoptantes and Mis animales** (home, when the clean homepage is off) now show a «+ Agregar» button
+  beside the card title, in every state. Before, the create button sat at the bottom and disappeared
+  whenever the card had something pending. The bottom button is gone, so each card has one create action.
+- **Same words on the list pages:** «+ Agregar adoptante» and «+ Agregar animal» (were «+ Agregar
+  Adoptante» / «+ Agregar Animal»); the add-animal page's title and save button follow.
+
+## [2.58.38] - 2026-11-09
+
+### Added — «Avisame de cambios hechos por:» (who your profile-change notices come from)
+- **New choice in /settings under «Cambios en tus perfiles»:** «Otros rescatistas» (default) or «Otros
+  rescatistas y mi equipo». It covers the bell and email together. With the default, a teammate's change
+  to your profiles sends no notice (it stays in the profile's history). Your own changes never notify you.
+- **The owner's team hears what someone else added to a profile:** one notice per save, e.g. «Ana agregó
+  un registro (Adopción, 4★), 3 fotos y una dirección de entrega a Marta Paez.» A second save by the same
+  person within 10 minutes joins the same notice. Imports by the owner's own team stay silent; imports by
+  anyone else notify.
+- **Transfers notify only the new owner.**
+
+### Fixed — notice content now lives on the profile (H1–H4)
+- **H1.** A signed contract's record opens «Contrato firmado (PDF)» and «Datos y posibles duplicados», even
+  with the notice deleted (migration 0103).
+- **H2.** The newest «Perfiles unidos» history row offers «Son dos personas distintas»; an admin keeping the
+  merge writes «Unión revisada» to the history.
+- **H3.** A turned-down requester sees «Tu solicitud no fue aprobada» with the note; after a revoke,
+  «El responsable quitó tu acceso el …», or «Un administrador quitó tu acceso el …» when an admin did it.
+- **H4.** The owner's team sees open «Reportar inexactitud» reports on the profile and closes them with
+  «Ya lo corregí».
+- **Creating a profile with more than 20 images, or one too big,** saves the profile and says which images
+  weren't saved.
+
 ## [2.58.37] - 2026-11-08
 
 ### Fixed — follow-ups found while updating the help pages (F1–F10)

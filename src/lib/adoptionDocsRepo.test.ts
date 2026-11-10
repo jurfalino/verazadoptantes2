@@ -48,6 +48,13 @@ describe('recordSignature', () => {
         expect(inserts[0]).toMatchObject({ contractVersionId: null, standardVersion: '582a1a83', contentHash: null });
     });
 
+    it('H1: stores what was typed, the match count and the placement, and returns the row id', async () => {
+        const { db, inserts } = fakeDb({});
+        const id = await recordSignature(db, { ...base, contractVersionId: null, ownerEmail: 'r@example.com', submitted: { name: 'Juan Pérez', phone: '11' }, matchCount: 2, placementId: 'p1' });
+        expect(inserts[0]).toMatchObject({ id, submittedJson: JSON.stringify({ name: 'Juan Pérez', phone: '11' }), matchCount: 2, placementId: 'p1' });
+        expect(typeof id).toBe('string');
+    });
+
     it('version owned by the animal owner (user): hash recorded, first_signed_at stamped', async () => {
         const { db, inserts, updates } = fakeDb({ version: { id: 'v1', ownerType: 'user', ownerId: 'r@example.com', contentHash: 'h1' } });
         await recordSignature(db, { ...base, contractVersionId: 'v1', ownerEmail: 'R@Example.com' });

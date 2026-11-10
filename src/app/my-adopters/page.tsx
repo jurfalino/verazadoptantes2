@@ -4,8 +4,8 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { FileText, Search, Share2 } from 'lucide-react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown, FileText, Search } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
@@ -15,6 +15,14 @@ import { useShowToast } from '@/components/ui/Toast';
 import { timeAgo, timeAgoSeconds } from '@/lib/timeAgo';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
+import AdopterListToolbar from '@/components/myAdopters/AdopterListToolbar';
+import AdopterFiltersPanel from '@/components/myAdopters/AdopterFiltersPanel';
+import { getAdopterListPins, saveAdopterListPins } from '@/app/actions/settings';
+import { handledAsStale } from '@/lib/errorMessage';
+import {
+    DEFAULT_PINS, DEFAULT_SORT, FILTER_KEYS, PIN_MAX, holds, matches, nameMatches, searchFromView, sortRows, viewFromSearch,
+    type FilterKey, type ListRow, type ListView, type SortKey,
+} from '@/domain/adopterListView';
 import { PendingDupBar, type PendingDupBarPair } from '@/components/PendingDupBar';
 import { GroupChip } from '@/components/GroupChip';
 import { pairKey } from '@/domain/dedupPair';
@@ -77,11 +85,12 @@ interface Adopter {
 }
 
 /**
- * `?filtro=formularios` / `posts` — kept in the URL so Back,
- * shared links and the homepage cards («Ver las N personas») open the list already filtered, with the same count.
+ * Filters, sorting and the name search (Jon 2026-11-10, option E): every
+ * filter in the «Filtros» panel, up to 4 pinned onto the screen, sortable
+ * column headers on a computer. All of it in the URL (`?filtro=posts` — the
+ * homepage cards' links — still opens «Desde un post»). Rules:
+ * src/domain/adopterListView.ts.
  */
-const FILTERS = { forms: 'formularios', posts: 'posts' } as const;
-type Filter = 'all' | keyof typeof FILTERS;
 
 /**
  * The person's newest form as a provenance event: "Formulario para Luna ·
@@ -244,24 +253,75 @@ function ProvenanceLine({
     );
 }
 
+// What the list rules read from a row («Por formulario» = everyone who filled a form, also people
+// whose form joined a profile they already had — which the Origen pill would miss).
+const listRow = (a: Adopter): ListRow => ({
+    name: a.name, createdAt: a.createdAt, avgRating: a.avgRating, source: a.source, formCount: a.formCount,
+    fromPost: a.fromPost, housemateChip: hasHousemateChip(a.housemateAlert), latestFormAt: a.latestForm?.submittedAt ?? null,
+});
+
+// The amber border and the «Posible duplicado» pill mark only pairs that wait on the viewer
+// (not a request they sent, nor one they declined) — the same rule as «N esperan tu respuesta».
+const waitingDups = (a: Adopter) => (a.pendingDuplicates ?? []).filter(p => p.waitsOnViewer !== false);
+
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
     const router = useRouter();
     const toast = useShowToast();
-    const [filter, setFilterState] = useState<Filter>('all');
+    const [view, setViewState] = useState<ListView>({ selected: new Set(), sort: DEFAULT_SORT, q: '' });
     // Read once from the URL (not useSearchParams: that would force a
     // Suspense boundary onto this whole client page).
-    useEffect(() => {
-        const param = new URLSearchParams(window.location.search).get('filtro');
-        const found = (Object.keys(FILTERS) as Array<keyof typeof FILTERS>).find(k => FILTERS[k] === param);
-        setFilterState(found ?? 'all');
-    }, []);
-    const setFilter = (next: Filter) => {
-        setFilterState(next);
-        router.replace(next === 'all' ? '/my-adopters' : `/my-adopters?filtro=${FILTERS[next]}`, { scroll: false });
+    useEffect(() => { setViewState(viewFromSearch(window.location.search)); }, []);
+    // The URL follows the view WITHOUT a router navigation: router.replace was a server round-trip per
+    // keystroke — on a tab older than the deploy, a full reload mid-typing (deploy skew), and server
+    // actions queued behind it (a pin save) could be dropped. Next 15 syncs its router with replaceState.
+    const setView = (next: ListView) => {
+        setViewState(next);
+        window.history.replaceState(window.history.state, '', `/my-adopters${searchFromView(next)}`);
     };
-    const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}?from=adopters`);
+    // Filtering thousands of rows per keystroke: the typing stays immediate, the list follows.
+    const deferredQ = useDeferredValue(view.q);
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    // The person's pinned filters (their own preference); the defaults until read, and if the read fails.
+    const [pins, setPins] = useState<FilterKey[]>([...DEFAULT_PINS]);
+    /** Bumped on every pin toggle: only the newest save's answer may change the screen, and the first read
+     *  never overwrites a toggle made before it returned. */
+    const pinSeq = useRef(0);
+    /** The stored pins — what a failed save goes back to (never a stale snapshot from an older toggle). */
+    const savedPins = useRef<FilterKey[]>([...DEFAULT_PINS]);
+    useEffect(() => {
+        let active = true;
+        getAdopterListPins()
+            .then(p => {
+                if (!active || !p) return;
+                savedPins.current = p;
+                if (pinSeq.current === 0) setPins(p);
+            })
+            .catch(e => { resolveErrorId(e, 'MyAdopters.pins'); });
+        return () => { active = false; };
+    }, []);
+    const togglePin = (k: FilterKey) => {
+        const next = pins.includes(k) ? pins.filter(p => p !== k) : pins.length < PIN_MAX ? [...pins, k] : pins;
+        if (next === pins) return;
+        const seq = ++pinSeq.current;
+        setPins(next);
+        const failed = (errorId: string | undefined) => {
+            if (seq === pinSeq.current) setPins(savedPins.current);
+            toast.error(t('errors.generic') || 'Error', t('myAdopters.pin_save_failed'), errorId);
+        };
+        void saveAdopterListPins(next)
+            .then(res => {
+                if (!res.success) return failed(res.errorId);
+                savedPins.current = res.pins ?? next;
+                if (seq === pinSeq.current) setPins(savedPins.current);
+            })
+            .catch(e => {
+                if (handledAsStale(e)) { if (seq === pinSeq.current) setPins(savedPins.current); return; }
+                failed(resolveErrorId(e, 'MyAdopters.pins'));
+            });
+    };
+    const openForm = useCallback((submissionId: string) => router.push(`/form-results/${submissionId}?from=adopters`), [router]);
     const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
     const [loading, setLoading] = useState(true);
@@ -310,137 +370,19 @@ export default function MyAdoptersPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
-                <div className="text-stone-500">{t('common.loading')}</div>
-            </div>
-        );
-    }
-
-    // "Por formulario": everyone who filled a form — including people whose
-    // form was combined into a profile they already had, which the Origen
-    // pill (how the profile was CREATED) would miss. Newest form first.
-    const withForms = adopters
-        .filter(a => (a.formCount ?? 0) > 0)
-        .sort((a, b) => (b.latestForm?.submittedAt ?? 0) - (a.latestForm?.submittedAt ?? 0));
-    // «Desde un post»: everyone with a record from a social post, same order as «Todos».
-    const fromPosts = adopters.filter(a => a.fromPost);
-    const visible = filter === 'forms' ? withForms : filter === 'posts' ? fromPosts : adopters;
-    // Few accounts import posts; the chip shows only when it has someone (or is the open view).
-    const chips: Array<[Filter, string, number]> = [
-        ['all', t('myAdopters.filter_all') || 'Todos', adopters.length],
-        ['forms', t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
-        ...(fromPosts.length > 0 || filter === 'posts'
-            ? [['posts', t('myAdopters.filter_posts') || 'Desde un post', fromPosts.length] as [Filter, string, number]]
-            : []),
-    ];
-
-    return (
-        <div className="min-h-screen bg-stone-50 py-8 px-4">
-            <div className="max-w-6xl mx-auto">
-                {/* Header — wraps on narrow screens once the import link shows. */}
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                    <div className="flex items-center gap-3">
-                        <Link
-                            href="/"
-                            className="p-2 text-stone-500 hover:text-stone-600 hover:bg-stone-100 rounded-lg transition-colors"
-                            title={t('common.back') || 'Back'}
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                        </Link>
-                        <h1 className="text-2xl font-semibold text-stone-900">{t('dashboard.my_adopters')}</h1>
-                        <span className="text-sm text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">{adopters.length}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {sheetImportEnabled && (
-                            <Link
-                                href="/import/sheet"
-                                className="px-4 py-2 bg-stone-100 text-stone-700 font-semibold rounded-lg hover:bg-stone-200 transition-colors text-sm"
-                            >
-                                {t('dashboard.import_sheet') || 'Importar planilla'}
-                            </Link>
-                        )}
-                        <Link
-                            href="/adopter/create"
-                            className="px-4 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-600 transition-colors shadow-sm text-sm"
-                        >
-                            {t('dashboard.add_new_adopter')}
-                        </Link>
-                    </div>
-                </div>
-
-                {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section
-                    that existed before Phase 1 auto-created adopters at submit time).
-                    The section carries its own #pendientes anchor (the per-row
-                    "🔍 Posible duplicado" pill and the notifications link there). */}
-                <PendingDedup />
-
-                {adopters.length > 0 && (
-                    <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
-                        {chips.map(([key, label, count]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                data-testid={`filter-${key}`}
-                                aria-pressed={filter === key}
-                                onClick={() => setFilter(key)}
-                                className={`inline-flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors ${filter === key
-                                    ? 'bg-teal-600 text-white border-transparent'
-                                    // Not hover:bg-stone-100: hover variants have no [data-theme]
-                                    // remap and flash a white chip in Azul Noche.
-                                    : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
-                            >
-                                {key === 'forms' && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
-                                {key === 'posts' && <Share2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
-                                {label}
-                                <span data-testid={`filter-${key}-count`} className={`text-xs font-semibold px-1.5 rounded-full ${filter === key ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
-                            </button>
-                        ))}
-                    </div>
-                )}
-
-                {adopters.length === 0 ? (
-                    <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
-                        <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
-                            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                        </div>
-                        <h3 className="text-lg font-semibold text-stone-900 mb-2">{t('dashboard.no_adopters_title')}</h3>
-                        <p className="text-stone-500 mb-6 text-sm">{t('dashboard.no_adopters_desc')}</p>
-                    </div>
-                ) : visible.length === 0 ? (
-                    <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
-                        <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
-                            <FileText className="w-7 h-7" strokeWidth={1.5} aria-hidden="true" />
-                        </div>
-                        <p className="text-stone-600 mb-6 text-sm">{filter === 'posts'
-                            ? (t('myAdopters.posts_empty') || 'Todavía no hay perfiles desde un post.')
-                            : (t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.')}</p>
-                        <button type="button" onClick={() => setFilter('all')} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
-                            {t('myAdopters.forms_empty_cta') || 'Ver todos'}
-                        </button>
-                    </div>
-                ) : (
-                    <>
-                        {/* Desktop Table - Hidden on mobile */}
-                        <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200">
-                            {/* Table Header. v2.19.13: Origin / Created-by /
-                                Dates collapsed into one "Provenance" column that
-                                renders the two lifecycle events (creation + last
-                                edit) as sentence rows with the source pill inline
-                                and relative timestamps. Name widens 3→4 cols to
-                                fit the breathing room the previous layout owed it.
-                                Rating cell keeps the v2.19.6 flag-badge stack. */}
-                            <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                                <div className="col-span-4">{t('dashboard.table_adopter_name')}</div>
-                                <div className="col-span-2 text-center">{t('dashboard.table_rating') || 'Calificación'}</div>
-                                <div className="col-span-2">{t('dashboard.table_activity') || 'Actividad'}</div>
-                                <div className="col-span-4">{t('dashboard.table_provenance') || 'Procedencia'}</div>
-                            </div>
-
-                            {/* Table Rows */}
-                            <div className="divide-y divide-stone-100">
-                                {visible.map((adopter, i) => (
+    // Memoized (EM review, 2026-11-10): accounts reach ~4,700 people. Rows, counts, the filtered
+    // + sorted list and the two rendered lists are rebuilt only when the data, a filter, the order
+    // or the (deferred) search change — a keystroke's urgent render reuses all of it.
+    const rows = useMemo(() => adopters.map(a => ({ a, r: listRow(a) })), [adopters]);
+    const counts = useMemo(
+        () => Object.fromEntries(FILTER_KEYS.map(k => [k, rows.filter(x => holds(k, x.r)).length])) as Record<FilterKey, number>,
+        [rows],
+    );
+    const visible = useMemo(() => sortRows(
+        rows.filter(x => matches(view.selected, x.r) && nameMatches(deferredQ, x.a.name)).map(x => ({ ...x.r, adopter: x.a })),
+        view.sort, view.selected,
+    ).map(x => x.adopter), [rows, view.selected, view.sort, deferredQ]);
+    const desktopRows = useMemo(() => visible.map((adopter, i) => (
                                     <div
                                         key={`adopter-${adopter.id}-${i}`}
                                         data-testid="my-adopters-row"
@@ -452,7 +394,7 @@ export default function MyAdoptersPage() {
                                         // The row is NOT a link (fix round 2, item 19): its one link is the name, stretched
                                         // over the row (ROW_LINK), and the pills, the form line and the rating hint sit
                                         // beside it (ROW_CONTROL) — never an <a>/<button> inside an <a>.
-                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.pendingDuplicates?.length ? 'border-l-4 border-amber-400' : ''}`}
+                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${waitingDups(adopter).length ? 'border-l-4 border-amber-400' : ''}`}
                                     >
                                         {/* Name + Thumbnail */}
                                         <div className="col-span-4 flex items-center gap-3 min-w-0">
@@ -467,14 +409,14 @@ export default function MyAdoptersPage() {
                                             </div>
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
                                                         <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
                                                     </Link>
                                                     {/* One decision, one pill: when the person's form is waiting
                                                         on "¿es la misma persona?", that is the pair the duplicate
                                                         pill would point at — and the form path also files the
                                                         request in the right history. */}
-                                                    {!!adopter.pendingDuplicates?.length && <PendingDupPill adopterId={adopter.id} pairs={adopter.pendingDuplicates} t={t} />}
+                                                    {!!waitingDups(adopter).length && <PendingDupPill adopterId={adopter.id} pairs={waitingDups(adopter)} t={t} />}
                                                 </div>
                                                 <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
                                                 {/* Inline addedBy was moved to its own column in v2.19.6 —
@@ -550,19 +492,14 @@ export default function MyAdoptersPage() {
                                             )}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Mobile Cards - Hidden on desktop */}
-                        <div className="md:hidden space-y-3">
-                            {visible.map((adopter, i) => (
+                                )), [visible, openForm, t]);
+    const mobileRows = useMemo(() => visible.map((adopter, i) => (
                                 <div
                                     key={`adopter-${adopter.id}-${i}`}
                                     data-testid="my-adopters-row"
                                     // v2.19.13: amber left-border for pending-dup cards,
                                     // mirrors the desktop row treatment. Not a link: see the desktop row (item 19).
-                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.pendingDuplicates?.length ? 'border-l-4 border-l-amber-400' : ''}`}
+                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${waitingDups(adopter).length ? 'border-l-4 border-l-amber-400' : ''}`}
                                 >
                                     {/* Top Row: Avatar + Name + Rating */}
                                     <div className="flex items-center gap-3 mb-3">
@@ -577,7 +514,7 @@ export default function MyAdoptersPage() {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
                                                     <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
                                                 </Link>
 
@@ -646,14 +583,142 @@ export default function MyAdoptersPage() {
                                     </div>
                                     {/* The profile's own bar (spec 2026-11-05): the same component and copy,
                                         a ≥44px «Revisar» instead of a 23px pill on a phone. */}
-                                    {!!adopter.pendingDuplicates?.length && (
+                                    {!!waitingDups(adopter).length && (
                                         <div className={`mt-3 ${ROW_CONTROL}`}>
                                             {/* Positioned (ROW_CONTROL) so it paints above the name link stretched over the card. */}
-                                            <PendingDupBar adopterId={adopter.id} pairs={adopter.pendingDuplicates} testId="row-pending-dup-bar" stacked />
+                                            <PendingDupBar adopterId={adopter.id} pairs={waitingDups(adopter)} testId="row-pending-dup-bar" stacked />
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                            )), [visible, openForm, t]);
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
+                <div className="text-stone-500">{t('common.loading')}</div>
+            </div>
+        );
+    }
+
+    const onlyFilter = view.selected.size === 1 && !view.q.trim() ? [...view.selected][0] : null;
+    // A computer sorts with the column headers: one tap sorts (`first`), a second reverses (`second`).
+    // `firstDir`: which way `first` runs — A–Z and «peor primero» go up, «más nuevos» goes down.
+    type Dir = 'ascending' | 'descending';
+    const dirOf = (first: SortKey, second: SortKey, firstDir: Dir): Dir | 'none' =>
+        view.sort === first ? firstDir : view.sort === second ? (firstDir === 'ascending' ? 'descending' : 'ascending') : 'none';
+    const sortHeader = (label: string, first: SortKey, second: SortKey, firstDir: Dir) => {
+        const dir = dirOf(first, second, firstDir);
+        const Arrow = dir === 'ascending' ? ArrowUp : dir === 'descending' ? ArrowDown : ArrowUpDown;
+        const current = view.sort === first ? first : view.sort === second ? second : null;
+        return (
+            <button type="button" onClick={() => setView({ ...view, sort: view.sort === first ? second : first })}
+                data-testid={`sort-${first}`} data-sort={dir}
+                aria-label={current ? `${label}: ${t(`myAdopters.sort_${current}`)}` : `${label}: ${t('myAdopters.sort_label')}`}
+                className={`inline-flex items-center gap-1 min-h-[32px] uppercase tracking-wide ${dir !== 'none' ? 'text-teal-700' : 'hover:text-stone-700'}`}>
+                {label}<Arrow className="w-3.5 h-3.5" strokeWidth={2.5} aria-hidden="true" />
+            </button>
+        );
+    };
+
+    return (
+        <div className="min-h-screen bg-stone-50 py-8 px-4">
+            <div className="max-w-6xl mx-auto">
+                {/* Header — wraps on narrow screens once the import link shows. */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-3">
+                        <Link
+                            href="/"
+                            className="p-2 text-stone-500 hover:text-stone-600 hover:bg-stone-100 rounded-lg transition-colors"
+                            title={t('common.back') || 'Back'}
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                        </Link>
+                        <h1 className="text-2xl font-semibold text-stone-900">{t('dashboard.my_adopters')}</h1>
+                        <span className="text-sm text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">{adopters.length}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {sheetImportEnabled && (
+                            <Link
+                                href="/import/sheet"
+                                className="px-4 py-2 bg-stone-100 text-stone-700 font-semibold rounded-lg hover:bg-stone-200 transition-colors text-sm"
+                            >
+                                {t('dashboard.import_sheet') || 'Importar planilla'}
+                            </Link>
+                        )}
+                        <Link
+                            href="/adopter/create"
+                            className="px-4 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-600 transition-colors shadow-sm text-sm"
+                        >
+                            {t('dashboard.add_new_adopter')}
+                        </Link>
+                    </div>
+                </div>
+
+                {/* Pending-dedup pairs (replaces the old "Unlinked Forms" section
+                    that existed before Phase 1 auto-created adopters at submit time).
+                    The section carries its own #pendientes anchor (the per-row
+                    "🔍 Posible duplicado" pill and the notifications link there). */}
+                <PendingDedup />
+
+                {adopters.length > 0 && (
+                    <AdopterListToolbar view={view} onView={setView} pins={pins} counts={counts}
+                        total={adopters.length} shown={visible.length} onOpenPanel={() => setFiltersOpen(true)} t={t} />
+                )}
+                {filtersOpen && (
+                    <AdopterFiltersPanel view={view} onView={setView} pins={pins} onPin={togglePin} counts={counts}
+                        shown={visible.length} onClose={() => setFiltersOpen(false)} t={t} />
+                )}
+
+                {adopters.length === 0 ? (
+                    <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
+                        <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
+                            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-stone-900 mb-2">{t('dashboard.no_adopters_title')}</h3>
+                        <p className="text-stone-500 mb-6 text-sm">{t('dashboard.no_adopters_desc')}</p>
+                    </div>
+                ) : visible.length === 0 ? (
+                    <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
+                        <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
+                            <FileText className="w-7 h-7" strokeWidth={1.5} aria-hidden="true" />
+                        </div>
+                        <p className="text-stone-600 mb-6 text-sm">{onlyFilter === 'src:post'
+                            ? (t('myAdopters.posts_empty') || 'Todavía no hay perfiles desde un post.')
+                            : onlyFilter === 'src:form'
+                                ? (t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.')
+                                : t('myAdopters.no_match')}</p>
+                        <button type="button" data-testid="adopter-list-empty-clear" onClick={() => setView({ ...view, selected: new Set(), q: '' })} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
+                            {t('myAdopters.filters_clear')}
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        {/* Desktop Table - Hidden on mobile */}
+                        <div className="hidden md:block bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-200">
+                            {/* Table Header. v2.19.13: Origin / Created-by /
+                                Dates collapsed into one "Provenance" column that
+                                renders the two lifecycle events (creation + last
+                                edit) as sentence rows with the source pill inline
+                                and relative timestamps. Name widens 3→4 cols to
+                                fit the breathing room the previous layout owed it.
+                                Rating cell keeps the v2.19.6 flag-badge stack. */}
+                            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                                <div className="col-span-4">{sortHeader(t('dashboard.table_adopter_name'), 'name', 'name_desc', 'ascending')}</div>
+                                <div className="col-span-2 flex justify-center">{sortHeader(t('dashboard.table_rating') || 'Calificación', 'worst', 'best', 'ascending')}</div>
+                                <div className="col-span-2 flex items-center">{t('dashboard.table_activity') || 'Actividad'}</div>
+                                {/* Procedencia carries the dates: newest first (the default), then oldest. */}
+                                <div className="col-span-4">{sortHeader(t('dashboard.table_provenance') || 'Procedencia', 'new', 'old', 'descending')}</div>
+                            </div>
+
+                            {/* Table Rows */}
+                            <div className="divide-y divide-stone-100">
+                                {desktopRows}
+                            </div>
+                        </div>
+
+                        {/* Mobile Cards - Hidden on desktop */}
+                        <div className="md:hidden space-y-3">
+                            {mobileRows}
                         </div>
                     </>
                 )}

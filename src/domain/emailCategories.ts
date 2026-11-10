@@ -61,6 +61,7 @@ const TYPE_TO_CATEGORY: Readonly<Record<string, EmailCategory>> = {
     profile_renamed: 'profile_changes',
     profile_rename_undone: 'profile_changes',
     profile_age_changed: 'profile_changes',
+    profile_content_added: 'profile_changes',
     // Admins only (D48): no switch of its own.
     household_link_disputed: 'other',
     household_member_disputed: 'other',

@@ -14,6 +14,10 @@ import type { AdopterPiiContext } from '@/lib/piiAccess';
 import { readProfileHouseholds, EMPTY_PROFILE_HOUSEHOLDS, type ProfileHouseholds } from '@/lib/profileHouseholds';
 import { profileIdentityView, undoableRenameId, type ProfileIdentityView } from '@/domain/profileIdentity';
 import { profileReturnPath } from '@/domain/profileReturnPath';
+import { mergeRowsNewestFirst } from '@/domain/mergeHistory';
+import type { ProfileMergeDispute } from '@/lib/mergeDisputes';
+import { loadPendingInaccuracyReports, type PendingInaccuracyReport } from '@/lib/inaccuracyReports';
+import { canSeeInaccuracyReports } from '@/domain/inaccuracyReports';
 
 export default async function AdopterPage({
     params,
@@ -82,6 +86,7 @@ export default async function AdopterPage({
     let dupCandidates: any[] = [];
     let piiContext: AdopterPiiContext | null = null;
     let deletionRequested = false;
+    let pendingInaccuracyReports: PendingInaccuracyReport[] = [];
     let households: ProfileHouseholds = EMPTY_PROFILE_HOUSEHOLDS;
     // Known on the server, so the section never flashes the old free-text field first.
     let householdsEnabled = false;
@@ -106,7 +111,7 @@ export default async function AdopterPage({
         const householdsRead = householdsFlag
             .then(on => { householdsEnabled = on; return on ? readProfileHouseholds(currentUser, id, adopterRead) : EMPTY_PROFILE_HOUSEHOLDS; })
             .catch(fallback<ProfileHouseholds>('readProfileHouseholds', EMPTY_PROFILE_HOUSEHOLDS));
-        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, households] = await Promise.all([
+        [adopter, history, adoptions, images, allImages, flags, stats, avgRating, availableAnimals, dupCandidates, piiContext, deletionRequested, households, pendingInaccuracyReports] = await Promise.all([
             adopterRead,
             getHistory(id).catch(fallback<any[]>('getHistory', [])),
             getAdoptions(id).catch(fallback<any[]>('getAdoptions', [])),
@@ -121,6 +126,8 @@ export default async function AdopterPage({
             hasPendingDeletionRequest(id).catch(fallback<boolean>('hasPendingDeletionRequest', false)),
             // Every household this profile is in, each member's live summary masked for this viewer (D46).
             householdsRead,
+            // H4: the open «Reportar inexactitud» reports (one bounded read; shown only to the audience below).
+            loadPendingInaccuracyReports(id).catch(fallback<PendingInaccuracyReport[]>('loadPendingInaccuracyReports', [])),
         ]);
     } else {
         availableAnimals = await getAvailableAnimals().catch(e => {
@@ -232,9 +239,29 @@ export default async function AdopterPage({
     const renameUndoId = !isNew && adopter && (isOwnerViewer || isOrgMateOfOwner || isModeratorOrAdmin)
         ? undoableRenameId(history, adopter.name)
         : null;
+    // H2: «Son dos personas distintas» on the newest live merge's history row — reachable without the notice. Only
+    // where the history shows and has a merge; the server rules (mergeDisputeForProfile) decide who may raise it.
+    let mergeDispute: ProfileMergeDispute | null = null;
+    if (!isNew && adopter && canViewAudit && currentUser && mergeRowsNewestFirst(history).length > 0) {
+        try {
+            const { getDb } = await import('@/lib/db');
+            const { mergeDisputeForProfile } = await import('@/lib/mergeDisputes');
+            const db = await getDb();
+            if (db) mergeDispute = await mergeDisputeForProfile(db, id, history, currentUser);
+        } catch (e) {
+            logger.warn('adopter page: merge dispute option failed, history button hidden', {
+                adopterId: id, viewer: currentUser,
+                error: e instanceof Error ? e.message : String(e),
+            });
+        }
+    }
     // "Removal requested" banner: only the record owner + admins/moderators (the
     // people who act on it) see it — not unrelated viewers.
     const showDeletionRequested = deletionRequested && (isModeratorOrAdmin || (!!currentUser && adopter?.addedBy === currentUser));
+    // H4: the reports reach the client only for the notice's audience (owner, their team, admins, moderators).
+    const inaccuracyReports = !isNew && adopter && canSeeInaccuracyReports({
+        viewer: currentUser, owner: adopter.addedBy, viewerIsOrgMateOfOwner: isOrgMateOfOwner, viewerIsModeratorOrAdmin: isModeratorOrAdmin,
+    }) ? pendingInaccuracyReports : [];
 
     // Read here rather than on the client so the card is already pinned in the
     // server HTML — no jump from in-page to pinned after hydration.
@@ -286,6 +313,7 @@ export default async function AdopterPage({
             userNameMap={userNameMap}
             piiContext={piiContext}
             showDeletionRequested={showDeletionRequested}
+            inaccuracyReports={inaccuracyReports}
             pinnedVisitIntent={pinnedVisitIntent}
             originLabels={originLabels}
             mergedFrom={typeof allSearchParams.merged === 'string' && allSearchParams.merged ? allSearchParams.merged : null}
@@ -294,6 +322,7 @@ export default async function AdopterPage({
             householdsEnabled={householdsEnabled}
             identity={identity}
             renameUndoId={renameUndoId}
+            mergeDispute={mergeDispute}
         />
     );
 }

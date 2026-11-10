@@ -15,8 +15,8 @@ import { adopters, adoptions, adopterEvents, adopterImages } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
-import { homeAnimalRows } from '@/domain/homeModules';
-import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomePostsData, HomePersonRow } from '@/types/homeModules';
+import { homeAnimalRows, HOME_CARD_SLOTS } from '@/domain/homeModules';
+import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomePendingItem, HomePostsData, HomePersonRow } from '@/types/homeModules';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Drizzle D1/better-sqlite3 union getDb() returns
 type Db = any;
@@ -52,7 +52,7 @@ async function personBits(db: Db, ids: string[], log: Record<string, unknown>): 
     return out;
 }
 
-export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: string[], pendingReview: Promise<number>): Promise<HomeAdoptersData> {
+export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: string[], pendingReview: Promise<{ count: number; items: HomePendingItem[] }>): Promise<HomeAdoptersData> {
     const log = { userEmail, op: 'loadHomeAdopters' };
     const scope = adopterScope(memberEmails);
     const [{ getOrgsForEmail, pickAttributionOrg }, { resolveDisplayName }] = await Promise.all([
@@ -64,7 +64,7 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
     const rowsP = (async () => {
         const [recentRows, viewerOrgs] = await Promise.all([
             db.select({ id: adopters.id, name: adopters.name, source: adopters.source, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
-                .from(adopters).where(scope).orderBy(desc(adopters.createdAt)).limit(3).all(),
+                .from(adopters).where(scope).orderBy(desc(adopters.createdAt)).limit(HOME_CARD_SLOTS).all(),
             getOrgsForEmail(userEmail),
         ]);
         type Recent = { id: string; name: string | null; source: string | null; addedBy: string | null; createdAt: unknown };
@@ -97,7 +97,7 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
         rowsP,
         pendingReview,
     ]);
-    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending, recent };
+    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending.count, pending: pending.items, recent };
 }
 
 export async function loadHomePosts(db: Db, userEmail: string, memberEmails: string[]): Promise<HomePostsData> {

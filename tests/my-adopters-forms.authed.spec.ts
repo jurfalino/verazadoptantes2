@@ -45,7 +45,8 @@ test.describe('/my-adopters — people who filled a form', () => {
 
         // Each row is a container whose one link is the name (no link inside a link — fix round 2, item 19).
         const rows = page.locator('[data-testid="my-adopters-row"]:visible');
-        const all = await chipCount(page, /^(All|Todos)/);
+        // Everyone: the «Mostrando X de Y» line's Y (the «Todos» tab is gone — option E, 2026-11-10).
+        const all = Number((await page.getByTestId('filter-all-count').innerText()).match(/\d+/)?.[0] ?? NaN);
         const withForms = await chipCount(page, /Via form|Por formulario|Por formulário/);
         expect(withForms).toBeLessThan(all); // seed people without forms are filtered out
         await expect(rows).toHaveCount(withForms);
@@ -71,10 +72,10 @@ test.describe('/my-adopters — people who filled a form', () => {
         await expect(back).toHaveAttribute('href', '/my-adopters');
         await expect(page.getByTestId('form-status-banner')).toHaveAttribute('data-state', 'review_matches');
 
-        // Back keeps the filter (it lives in the URL), and "Todos" shows everyone again.
+        // Back keeps the filter (it lives in the URL), and «Quitar filtros» shows everyone again.
         await page.goBack();
         await expect(formsChip).toHaveAttribute('aria-pressed', 'true');
-        await page.getByRole('button', { name: /^(All|Todos)/ }).click();
+        await page.getByTestId('adopter-list-clear').click();
         await expect(page).toHaveURL(/\/my-adopters$/);
         await expect(rows).toHaveCount(all);
     });

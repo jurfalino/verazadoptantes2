@@ -10,11 +10,32 @@ export type HomePersonRow = {
     avgRating: number | null;
 };
 
+/**
+ * The first «Pendientes de revisar» row whose next move is the viewer's
+ * (needsViewer): the homepage's amber row names it (Jon 2026-11-09, option A).
+ */
+export type HomePendingItem = {
+    group: 'pair' | 'received' | 'declined';
+    /** The two profiles' names, as the row shows them. */
+    names: [string, string];
+    /** The two profiles' ids: which row the panel opens (pairKey). */
+    ids: [string, string];
+    /** «{name} te pide unir» / «{name} no aceptó unir»: the request's other side. */
+    by: string | null;
+    /** «Coinciden: … · Distintos: …», as the closed row in Mis adoptantes says it. */
+    summary: { same: string[]; diff: string[]; flagged: boolean };
+};
+
 export type HomeAdoptersData = {
     /** Same number as /my-adopters «Todos». */
     total: number;
-    /** Same number as the «Pendientes de revisar» section header — form matches included (spec 2026-11-05). */
+    /**
+     * Rows whose next move is the viewer's (needsViewer) — the same number as
+     * the «Pendientes de revisar» section header. Form matches included (spec 2026-11-05).
+     */
     pendingReview: number;
+    /** The first of them (up to HOME_CARD_SLOTS), one row each, like Mis animales' due animals (option b). */
+    pending: HomePendingItem[];
     /** Newest created first, as /my-adopters lists them. */
     recent: Array<HomePersonRow & {
         createdAt: number;
@@ -51,7 +72,7 @@ export type HomeAnimalsData = {
     total: number;
     /** «Con controles pendientes» tab count. */
     dueCount: number;
-    /** Up to 3: the animals with a check-up due (most overdue first), then the most recently updated (homeAnimalRows). */
+    /** Up to 4 (3 when the «N más» amber row takes a slot): the animals with a check-up due (most overdue first), then the most recently updated (homeAnimalRows). */
     rows: HomeAnimalRow[];
 };
 

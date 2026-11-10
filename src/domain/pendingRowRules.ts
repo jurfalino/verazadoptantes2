@@ -54,3 +54,31 @@ export function combineTheirsSide(pair: RowPair): KeepSide | null {
     const action = pair.actionByKeep[theirs];
     return action === 'merge' || action === 'dispute' ? theirs : null;
 }
+
+/**
+ * Whether the next move on a «Pendientes de revisar» row is the viewer's
+ * (Jon 2026-11-09): what the homepage's amber row counts and shows, and the
+ * number on the section's header. A cleanup button alone — «Cancelar
+ * pedido», «Escribirle», «Quitar de la lista» — doesn't make a row count.
+ *
+ * - A possible duplicate (theirs or their team's): yes — «¿Es la misma persona?».
+ * - A request asking the viewer or their team: yes — accept, decline, keep mine.
+ * - A request the viewer sent, still pending: no — it waits on the other side.
+ * - A declined request the viewer (or their team) declined: no — they already
+ *   decided; «Aceptar ahora» stays on the row for a change of mind (Jon
+ *   2026-11-09, «ya decidí»).
+ * - A declined request the viewer filed: yes while «Unir conservando el de …»
+ *   / «Pedir revisión a un administrador» is offered (combineTheirsSide); no
+ *   when only hiding or writing is left.
+ */
+export function needsViewer(pair: RowPair): boolean {
+    switch (pair.group) {
+        case 'pair':
+        case 'received':
+            return true;
+        case 'sent':
+            return false;
+        case 'declined':
+            return combineTheirsSide(pair) !== null;
+    }
+}

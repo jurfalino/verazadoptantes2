@@ -3,7 +3,9 @@
  * «should notify all people with edit access to the profile»): whoever added it,
  * every member of their organizations, and anyone else privileged on it who has
  * edited it (loadApprovers' editors) — `inaccuracy_reported`, opening the
- * profile. Once per person, never the reporter. The admins are told by the
+ * profile. Once per person, never the reporter, and a teammate of the reporter
+ * only if they chose «Otros rescatistas y mi equipo» (keepChangeRecipients,
+ * Jon 2026-11-08). The admins are told by the
  * caller (notifyAdmins, opening /admin/data-requests), skipping whoever this
  * already told. An ownerless profile (an import) tells the admins only.
  *
@@ -18,6 +20,7 @@ import { loadApprovers } from '@/lib/piiAccessRequest';
 import { realOwner } from '@/domain/dedupPair';
 import { notificationContent } from '@/domain/notificationTemplates';
 import { logger } from '@/lib/logger';
+import { keepChangeRecipients } from '@/lib/teamChangeAudience';
 
 /** What the reporter wrote, as the notice quotes it: one line, at most NOTICE_DETAILS_MAX characters. */
 export const NOTICE_DETAILS_MAX = 280;
@@ -38,8 +41,13 @@ export function inaccuracyReportRecipients(groups: ReadonlyArray<ReadonlyArray<s
     return [...seen];
 }
 
-/** Returns who was told (normalized) and the profile's name, for the admins' notice. */
-export async function notifyInaccuracyReportEditors(input: { adopterId: string; reporter: string; details?: string | null }): Promise<{ told: string[]; adopterName: string | null }> {
+/**
+ * Returns who was told (normalized), who was left out by their own «Avisame de
+ * cambios hechos por:» choice (`skipped` — the reporter's teammates who chose
+ * «Otros rescatistas»; the admins' copy skips them too, so that choice means no
+ * notice at all) and the profile's name, for the admins' notice.
+ */
+export async function notifyInaccuracyReportEditors(input: { adopterId: string; reporter: string; details?: string | null }): Promise<{ told: string[]; skipped: string[]; adopterName: string | null }> {
     const { adopterId, reporter } = input;
     const details = noticeDetails(input.details);
     const db = await getDb();
@@ -48,10 +56,12 @@ export async function notifyInaccuracyReportEditors(input: { adopterId: string; 
         .from(adopters).where(eq(adopters.id, adopterId)).get() as { name: string | null; addedBy: string | null } | undefined;
     const adopterName = row?.name?.trim() || null;
     const owner = realOwner(row?.addedBy);
-    if (!owner) return { told: [], adopterName };
+    if (!owner) return { told: [], skipped: [], adopterName };
     const [team, { editors }] = await Promise.all([getOrgMemberEmailsFor(normEmail(owner)), loadApprovers(adopterId)]);
-    const recipients = inaccuracyReportRecipients([[owner], team, editors], reporter);
-    if (recipients.length === 0) return { told: [], adopterName };
+    const everyone = inaccuracyReportRecipients([[owner], team, editors], reporter);
+    const recipients = await keepChangeRecipients(everyone, reporter, { op: 'notifyInaccuracyReportEditors', adopterId });
+    const skipped = everyone.filter(e => !recipients.includes(e));
+    if (recipients.length === 0) return { told: [], skipped, adopterName };
     const { createNotification, resolveDisplayName } = await import('@/app/actions/notifications');
     const reporterName = await resolveDisplayName(reporter);
     const content = notificationContent({
@@ -67,5 +77,5 @@ export async function notifyInaccuracyReportEditors(input: { adopterId: string; 
             logger.warn('notifyInaccuracyReportEditors: notice not sent', { adopterId, actor: reporter, error: e instanceof Error ? e.message : String(e) });
         }
     }));
-    return { told, adopterName };
+    return { told, skipped, adopterName };
 }

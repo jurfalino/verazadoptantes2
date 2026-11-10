@@ -23,6 +23,7 @@ import { contactEntriesToBlob, deserializeContactEntries, parseBlobToContactEntr
 import { historyKindForOwner, isPrivilegedOnProfile } from '@/lib/profilePrivilege';
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { actorNameOf, teamsOf } from '@/lib/householdNotices';
+import { keepChangeRecipients } from '@/lib/teamChangeAudience';
 import { currentAge, isMinor } from '@/domain/households';
 import type { NotificationType } from '@/domain/constants';
 import { realOwner } from '@/domain/dedupPair';
@@ -262,19 +263,16 @@ async function sendTo(recipients: Map<string, string>, type: NotificationType, t
 }
 
 /**
- * Is the actor on the profile's team (owner or org-mate)? Their own edits are
- * not news to the team (D54: the contribution notice keys on team, not on
- * privilege — an admin from outside the team still notifies). A failed check
- * counts as "not on the team": an extra notice, never a missed one (logged).
+ * The owner's team (owner + org-mates, never the actor) who hear about `actor`'s
+ * change, by the one rule of «Avisame de cambios hechos por:» (keepChangeRecipients,
+ * Jon 2026-11-08): anyone outside the actor's team; the actor's teammates only if
+ * they chose «Otros rescatistas y mi equipo». An admin from outside the team still
+ * notifies (D54 keys on team, not privilege).
  */
-async function actorOnTeam(actor: string, ownerEmail: string | null, ctx: Ctx): Promise<boolean> {
-    try {
-        const { isOwnerOrOrgMate } = await import('@/lib/orgMembership');
-        return await isOwnerOrOrgMate(actor, ownerEmail);
-    } catch (e) {
-        logger.warn('profileIdentity: team check failed, the owner team is told', { ...ctx, error: errMsg(e) });
-        return false;
-    }
+async function teamWhoHears(db: Db, adopterId: string, actor: string, ctx: Ctx): Promise<Map<string, string>> {
+    const team = await teamsOf(db, [adopterId], actor, new Set(), ctx);
+    const kept = new Set(await keepChangeRecipients(team.keys(), actor, ctx));
+    return new Map([...team].filter(([r]) => kept.has(r)));
 }
 
 /** Who a contract signature's write-back is credited to (src/app/api/contract/[id]/submit). */
@@ -306,13 +304,9 @@ export async function recordSignerRename(db: Db, r: { adopterId: string; ownerEm
     await notifyProfileRenamed(db, { adopterId: r.adopterId, actor: CONTRACT_SIGNER_ACTOR, ownerEmail: r.ownerEmail, from: r.from ?? '', to: r.to, historyId, viaContract: true });
 }
 
-/** The owner's team hears about a rename by someone outside it, with «Deshacer» (`metadata.undo`). */
+/** The owner's team hears about a rename (teamWhoHears), with «Deshacer» (`metadata.undo`). */
 export async function notifyProfileRenamed(db: Db, n: { adopterId: string; actor: string; ownerEmail: string | null; from: string; to: string; historyId: string | null; viaContract?: boolean }): Promise<void> {
     const ctx: Ctx = { op: 'notifyProfileRenamed', adopterId: n.adopterId, actor: n.actor };
-    if (await actorOnTeam(n.actor, n.ownerEmail, ctx)) {
-        logger.info('profileIdentity: renamed by the owner team — no notice', ctx);
-        return;
-    }
     await runAfterResponse('profileIdentity.renamed', async () => {
         try {
             // A signature names no rescuer: the signer (the new name) stands in for the actor.
@@ -329,7 +323,8 @@ export async function notifyProfileRenamed(db: Db, n: { adopterId: string; actor
                 logger.info('profileIdentity: profile_renamed sent to the admins (no owner)', ctx);
                 return;
             }
-            const recipients = await teamsOf(db, [n.adopterId], n.actor, new Set(), ctx);
+            // Filtered BEFORE the collapse: reviving (unread again) a filtered-out teammate's old notice would be a notice too.
+            const recipients = await teamWhoHears(db, n.adopterId, n.actor, ctx);
             const renamerKey = await renamerKeyOf(n.actor);
             // Final fix S5: the same person's next renames of this profile within the
             // window update this teammate's notice in place — no second notice, no second email.
@@ -412,16 +407,12 @@ export async function notifyRenameUndone(db: Db, n: { adopterId: string; actor: 
     }, ctx);
 }
 
-/** The owner's team hears about an age change by someone outside it. */
+/** The owner's team hears about an age change (teamWhoHears). */
 export async function notifyProfileAgeChanged(db: Db, n: { adopterId: string; actor: string; ownerEmail: string | null; name: string; age: number | null; minor: boolean }): Promise<void> {
     const ctx: Ctx = { op: 'notifyProfileAgeChanged', adopterId: n.adopterId, actor: n.actor };
-    if (await actorOnTeam(n.actor, n.ownerEmail, ctx)) {
-        logger.info('profileIdentity: age changed by the owner team — no notice', ctx);
-        return;
-    }
     await runAfterResponse('profileIdentity.age', async () => {
         try {
-            const [recipients, actorName] = await Promise.all([teamsOf(db, [n.adopterId], n.actor, new Set(), ctx), actorNameOf(n.actor, ctx)]);
+            const [recipients, actorName] = await Promise.all([teamWhoHears(db, n.adopterId, n.actor, ctx), actorNameOf(n.actor, ctx)]);
             await sendTo(recipients, 'profile_age_changed',
                 { key: 'profile_age_changed', params: { actorName, personName: n.name || undefined, ...(n.age !== null ? { age: String(n.age) } : {}), ...(n.minor ? { minor: '1' } : {}) } },
                 {}, '🎂', ctx);

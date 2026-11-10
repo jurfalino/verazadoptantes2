@@ -413,7 +413,30 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // returns only that group's URL. +removeOrganizationMember(orgId, memberId) — session required;
 // caller must be a member of orgId; target looked up AND deleted by id AND org_id (another
 // group's member id → member_not_found); removing yourself refused; audited, returns no member data.
-const EXPECTED_ACTIONS = 177;
+// 178 = 177 + 1. 2026-11-08 «Ya lo corregí» (H4, src/app/actions/inaccuracyReports.ts):
+// +markInaccuracyReportsFixed(adopterId, reportIds) — session required (else unauthenticated); adopterId
+// trimmed, ≤64 chars; reportIds = the banner's shown ids (strings, deduped, ≤20; none → invalid); a missing or soft-deleted profile → not_found; the audience is re-checked on
+// the server with the page's own rule (canSeeInaccuracyReports: owner, an org-mate of the owner, or
+// admin/moderator; an ownerless profile is staff-only), anyone else → not_authorized with an errorId.
+// One UPDATE per shown id, each scoped to that id AND adopter_id AND request_type='inaccuracy' AND
+// status='pending' — a report filed after the page loaded stays open; never a
+// deletion request, another profile or an already-closed report; returns only a count; audited.
+// 179 = 178 + 1. 2026-11-08 «Avisame de cambios hechos por:» (/settings, under «Cambios en tus
+// perfiles»; src/domain/teamChangeAudience.ts): +saveProfileChangesFrom(from) in
+// src/app/actions/settings.ts — session required (else refused with an errorId); `from` must be
+// exactly 'outside' or 'team' (anything else refused, nothing written); writes only the caller's
+// own user_profiles.profile_changes_from (the user row is looked up by the SESSION email; no user
+// row → refused); a "view as" session is read-only (warn + errorId); audited; returns no data.
+// getEmailPrefs (already counted) now also returns the caller's own choice. MEASURED (npm run build): 179.
+// 181 = 179 + 2. 2026-11-10 Mis adoptantes «Filtros» pins (src/domain/adopterListView.ts; Jon,
+// option E): +getAdopterListPins() and +saveAdopterListPins(pins) in src/app/actions/settings.ts.
+// get takes no arguments and returns only the caller's own pins (session email; signed out → null).
+// save: session required (else refused with an errorId); `pins` must be a list — every entry not
+// one of the known FilterKeys (13 since 2.58.48: +api, +contract) is dropped, repeats too, and at most 4 are kept (sanitizePins),
+// so a stranger can store nothing but those strings; writes only the caller's own
+// user_profiles.adopter_list_pins (user row looked up by the SESSION email; no row → refused);
+// a "view as" session is read-only (warn + errorId). Returns the stored pins only.
+const EXPECTED_ACTIONS = 181;
 
 let manifest;
 try {

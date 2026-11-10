@@ -38,6 +38,32 @@ export function notificationBody(slot: Pick<ProjectedFollowup, 'copyKey' | 'offs
         : `${label}${who}. Tocá para verlo en la ficha del animal.`;
 }
 
+/** One check-up in the daily bell bundle. */
+export interface BellItem { animalName: string | null; body: string; animalId: string }
+
+/**
+ * The bell, bundled (Jon 2026-11-10): ONE notice per person per run, however
+ * many check-ups came due — the homepage's «Mis animales» already lists each
+ * due animal, so the bell only needs to say «you have N to do» and open the list.
+ * One check-up keeps today's per-animal notice (title, body, the animal's page).
+ */
+export function bellNotice(items: BellItem[]): { title: string; body: string; url: string } {
+    if (items.length === 1) {
+        const [i] = items;
+        return { title: notificationTitle(i.animalName), body: i.body, url: `/my-animals/${i.animalId}#next-action` };
+    }
+    const names = [...new Set(items.map(i => i.animalName || 'un animal'))];
+    const shown = names.slice(0, 2);
+    const rest = names.length - shown.length;
+    const list = rest > 0 ? `${shown.join(', ')} y ${rest} más` : shown.join(' y ');
+    return {
+        // No count: the notice is marked read only when all are done, so «3» would go stale after 2.
+        title: 'Controles para hacer',
+        body: `${list}. Tocá para verlos en Mis animales.`,
+        url: '/my-animals?view=pendientes',
+    };
+}
+
 export interface FollowupEmailItem {
     animalName: string | null;
     body: string;

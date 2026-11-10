@@ -192,11 +192,10 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine', { keepId: 's-old' }))).toEqual({ success: true, outcome: 'merged' });
     });
 
-    it('pairs with an open request sort first, ahead of stronger matches', async () => {
+    it('a request you sent waits on the other side: it goes after everything that waits on you (UX review 2026-11-10)', async () => {
         await mergePendingDedupPair('cand-older-mine'); // score 80, below cand-newer-mine (90) and cand-anon (85)
-        const ids = (await feed(STRANGER)).pairs.map(p => p.candidateId);
-        expect(ids[0]).toBe('cand-older-mine');
-        expect(ids.slice(1)).toEqual(['cand-newer-mine', 'cand-anon']);
+        const { pairs } = await feed(STRANGER);
+        expect(pairs.map(p => [p.candidateId, p.needsViewer])).toEqual([['cand-newer-mine', true], ['cand-anon', true], ['cand-older-mine', false]]);
     });
 
     it('a low-confidence pair with a request is listed and not counted as hidden', async () => {
@@ -374,18 +373,36 @@ describe('getPendingDuplicatesForUser — layout D (groups, summary, admin score
         return id;
     };
 
-    it('groups and order: received → sent → declined → possible duplicates (D21)', async () => {
+    it('order: what waits on you first — received → your declined request → possible duplicates — then what you sent (UX review 2026-11-10)', async () => {
         await declinedPair();
         expect(await as(STRANGER, () => mergePendingDedupPair('cand-older-mine'))).toMatchObject({ outcome: 'requested' }); // STRANGER → OWNER
         expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toMatchObject({ outcome: 'requested' }); // OWNER → STRANGER
         const { pairs, total } = await feed(STRANGER);
-        expect(pairs.map(p => [p.candidateId, p.group])).toEqual([
-            ['cand-newer-mine', 'received'],
-            ['cand-older-mine', 'sent'],
-            ['cand-decl', 'declined'],
-            ['cand-anon', 'pair'],
+        expect(pairs.map(p => [p.candidateId, p.group, p.needsViewer])).toEqual([
+            ['cand-newer-mine', 'received', true],
+            ['cand-decl', 'declined', true],
+            ['cand-anon', 'pair', true],
+            ['cand-older-mine', 'sent', false],
         ]);
-        expect(total).toBe(4);
+        // The one who declined it: it no longer waits on them — listed after.
+        const owner = await feed(OWNER);
+        expect(owner.pairs.find(p => p.candidateId === 'cand-decl')).toMatchObject({ group: 'declined', needsViewer: false });
+        // `total` pages what waits on you (3); the sent request follows on every page.
+        expect(total).toBe(3);
+    });
+
+    it('pages hold what waits on you; a request you sent follows on every page, never buried', async () => {
+        await declinedPair();
+        expect(await as(STRANGER, () => mergePendingDedupPair('cand-older-mine'))).toMatchObject({ outcome: 'requested' });
+        const page = (n: number) => as(STRANGER, () => getPendingDuplicatesForUser(n, 1));
+        const [p1, p3] = [await page(1), await page(3)];
+        expect(p1.total).toBe(3); // decl, newer-mine, anon wait on STRANGER; the pager counts those
+        expect(p1.pairs.map(p => p.candidateId).slice(-1)).toEqual(['cand-older-mine']);
+        expect(p3.pairs.map(p => p.candidateId).slice(-1)).toEqual(['cand-older-mine']);
+        // Focusing the sent request (a profile's «Revisar») opens a page that shows it.
+        const focused = await as(STRANGER, () => getPendingDuplicatesForUser(1, 1, false, 'o-new|s-old'));
+        expect(focused.focusCandidateId).toBe('cand-older-mine');
+        expect(focused.pairs.map(p => p.candidateId)).toContain('cand-older-mine');
     });
 
     it('within the possible duplicates, the stronger match first, then detection time', async () => {
