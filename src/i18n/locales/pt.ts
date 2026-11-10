@@ -3849,6 +3849,8 @@ export const pt = {
         step_posts_desc: 'Uma denúncia do Facebook ou Instagram vira uma observação no perfil.',
         load_failed: 'Não conseguimos carregar esta seção.',
         error_code: 'Código',
+        see_animal_page: 'Ver a ficha de {name}',
+        due_panel_failed: 'Não conseguimos carregar os controles deste animal.',
     },
 };
 

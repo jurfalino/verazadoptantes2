@@ -14,7 +14,7 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { timeAgo } from '@/lib/timeAgo';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -22,6 +22,7 @@ import { GroupChip } from '@/components/GroupChip';
 import { keepNumberWithUnit, keepCountsTogether } from '@/lib/keepNumberWithUnit';
 import ContactPickerLauncher from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
+import HomeDuePanel from '@/components/home/HomeDuePanel';
 import { getHomeModules } from '@/app/actions/homeModules';
 import { orderHomeModules, homeAdopterRowCount, HOME_CARD_SLOTS, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
 import { HOME_POSTS_WINDOW_DAYS } from '@/config/constants';
@@ -126,12 +127,18 @@ function TodoRow({ children, href, testId, className = '' }: { children: ReactNo
     );
 }
 
-/** One animal: its photo (or the species placeholder), its name, one line under it — amber when a check-up is due. */
-function AnimalRow({ href, testId, name, photo, species, line, due = false }: {
-    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean;
+/**
+ * One animal: its photo (or the species placeholder), its name, one line under
+ * it — amber when a check-up is due. With `onOpen` (a check-up due) the row
+ * opens «Para hacer ahora» over the home instead of going to the animal's page
+ * (HomeDuePanel); it looks the same either way.
+ */
+function AnimalRow({ href, testId, name, photo, species, line, due = false, onOpen }: {
+    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean; onOpen?: () => void;
 }) {
-    return (
-        <Link href={href} data-testid={testId} className={`flex items-center gap-3 min-h-11 py-2 group ${SLOT_ROW}`}>
+    const rowClass = `flex items-center gap-3 min-h-11 py-2 group ${SLOT_ROW}`;
+    const body = (
+        <>
             <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
                 {photo
                     ? <img src={photo} alt="" className="w-full h-full object-cover" />
@@ -141,8 +148,11 @@ function AnimalRow({ href, testId, name, photo, species, line, due = false }: {
                 <span title={name} className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere] md:truncate">{name}</span>
                 <span title={line} className={`block text-xs [overflow-wrap:anywhere] md:truncate ${due ? 'font-semibold text-amber-700' : 'text-stone-500'}`}>{keepNumberWithUnit(line)}</span>
             </span>
-        </Link>
+        </>
     );
+    return onOpen
+        ? <button type="button" onClick={onOpen} aria-haspopup="dialog" data-testid={testId} className={`w-full text-left ${rowClass}`}>{body}</button>
+        : <Link href={href} data-testid={testId} className={rowClass}>{body}</Link>;
 }
 
 function MoreRow({ label, href, testId }: { label: string; href: string; testId: string }) {
@@ -286,7 +296,11 @@ export function AdoptersCard({ section, contacts, t, rel, className }: { section
 
 // ── Mis animales ───────────────────────────────────────────────────────────
 
-export function AnimalsCard({ section, t, className }: { section: HomeSection<HomeAnimalsData>; t: T; className?: string }) {
+export function AnimalsCard({ section, t, className, onOpenDue }: {
+    section: HomeSection<HomeAnimalsData>; t: T; className?: string;
+    /** Opens «Para hacer ahora» for an animal with a check-up due (HomeDuePanel). */
+    onOpenDue?: (a: { id: string; name: string }) => void;
+}) {
     if (!section.ok) {
         return <ModuleShell icon="paw" title={t('homeModules.animals_title')} href="/my-animals" testId="home-animals" className={className}><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
@@ -315,6 +329,7 @@ export function AnimalsCard({ section, t, className }: { section: HomeSection<Ho
                         {d.rows.map(a => a.due
                             ? <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}#next-action`} testId="home-animals-due"
                                 name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} due
+                                onOpen={onOpenDue ? () => onOpenDue({ id: a.id, name: a.name || t('homeModules.unnamed_animal') }) : undefined}
                                 line={followupBadgeLabel(t, a.due.dueFollowups, a.due.dueTop, now, { short: true })} />
                             : <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}`} testId="home-animal-row"
                                 name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} line={status(a)} />)}
@@ -411,19 +426,29 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     const { t, locale } = useLanguage();
     const [data, setData] = useState<HomeModulesData | null | undefined>(undefined);
     const [failedId, setFailedId] = useState<string | null>(null);
+    /** The animal whose «Para hacer ahora» is open over the home. */
+    const [duePanel, setDuePanel] = useState<{ id: string; name: string } | null>(null);
+    const alive = useRef(true);
 
-    useEffect(() => {
-        let active = true;
+    // First load shows the skeleton; a reload (after registering a check-up
+    // from the panel) keeps the cards on screen and swaps the data in.
+    const load = useCallback(() => {
         getHomeModules()
-            .then(d => { if (active) setData(d); })
+            .then(d => { if (alive.current) setData(d); })
             .catch((e: unknown) => {
-                if (!active) return;
+                if (!alive.current) return;
                 // An older tab: the page reloads itself; meanwhile show nothing rather than a skeleton forever.
                 if (handledAsStale(e)) { setData(null); return; }
                 setFailedId(resolveErrorId(e, 'HomeModules'));
             });
-        return () => { active = false; };
     }, []);
+
+    useEffect(() => {
+        alive.current = true;
+        load();
+        return () => { alive.current = false; };
+    }, [load]);
+    const closeDuePanel = useCallback(() => setDuePanel(null), []);
 
     // Same compact wording as /my-adopters' «Creado por … hace 4 sem».
     const rel = (ms: number) => timeAgo(new Date(ms), locale !== 'en');
@@ -489,7 +514,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
 
     const card = (k: HomeModuleKey) => {
         if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} />;
-        if (k === 'animals' && data.animals) return <AnimalsCard key={k} section={data.animals} t={t} className={spanIf(k)} />;
+        if (k === 'animals' && data.animals) return <AnimalsCard key={k} section={data.animals} t={t} className={spanIf(k)} onOpenDue={setDuePanel} />;
         if (k === 'posts' && posts) return <PostsCard key={k} section={posts} t={t} rel={rel} />;
         return null;
     };
@@ -509,8 +534,11 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     // widest content (a long group chip beside the rating) and pushed the page
     // wider than a 360px phone.
     return (
-        <div data-testid="home-modules" className={items.length > 1 ? `grid grid-cols-1 gap-4 md:grid-cols-2 ${taller ? 'md:items-start' : ''}` : 'space-y-4'}>
-            {items}
-        </div>
+        <>
+            <div data-testid="home-modules" className={items.length > 1 ? `grid grid-cols-1 gap-4 md:grid-cols-2 ${taller ? 'md:items-start' : ''}` : 'space-y-4'}>
+                {items}
+            </div>
+            {duePanel && <HomeDuePanel key={duePanel.id} animalId={duePanel.id} animalName={duePanel.name} onClose={closeDuePanel} onChanged={load} />}
+        </>
     );
 }

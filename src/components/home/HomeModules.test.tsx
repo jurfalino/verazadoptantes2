@@ -15,6 +15,7 @@ import type { HomeAdoptersData, HomeAnimalsData } from '@/types/homeModules';
 
 vi.mock('@/app/actions/homeModules', () => ({ getHomeModules: vi.fn() }));
 vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t: (k: string) => k, locale: 'es' }) }));
+vi.mock('./HomeDuePanel', () => ({ default: () => null }));
 
 import { AdoptersCard, AnimalsCard } from './HomeModules';
 
@@ -149,5 +150,39 @@ describe('Mis adoptantes / Mis animales — same 4 slots, so side by side they a
             expect(rows.length).toBe(4);
             for (const r of rows) expect(r).toContain('md:h-14');
         }
+    });
+});
+
+describe('Mis animales — an animal with a check-up due opens «Para hacer ahora» over the home (Jon 2026-11-09, option C)', () => {
+    const dueAnimal = {
+        id: 'luna', name: 'Luna', photo: null, species: 'cat', status: 'adopted', personName: 'Ana', applicants: 0,
+        due: { dueFollowups: 1, dueTop: { copyKey: 'checkin_6m', dueDate: Date.now() - 86400000 } },
+    } as HomeAnimalsData['rows'][number];
+    const data: HomeAnimalsData = { ...animals(1), rows: [dueAnimal] };
+
+    it('with the panel available, the row is a button that opens a dialog — not a link to the animal page', () => {
+        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data }} t={t} onOpenDue={() => {}} />);
+        const row = html.match(/<button[^>]*data-testid="home-animals-due"[^>]*>/)?.[0] ?? '';
+        expect(row).toContain('aria-haspopup="dialog"');
+        expect(row).toContain('md:h-14');
+        expect(html).not.toContain('#next-action');
+    });
+
+    it('the row reads the same as before: name and the amber check-up line', () => {
+        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data }} t={t} onOpenDue={() => {}} />);
+        const row = html.match(/<button[^>]*data-testid="home-animals-due"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+        expect(text(row)).toContain('Luna');
+        expect(row).toContain('text-amber-700');
+    });
+
+    it('without it, the row still goes to the animal\'s «Para hacer ahora»', () => {
+        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data }} t={t} />);
+        expect(anchor(html, 'home-animals-due')).toContain('href="/my-animals/luna#next-action"');
+    });
+
+    it('rows with nothing due stay links to the animal page', () => {
+        const calm = { ...dueAnimal, id: 'sol', name: 'Sol', due: null } as HomeAnimalsData['rows'][number];
+        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: { ...data, rows: [dueAnimal, calm] } }} t={t} onOpenDue={() => {}} />);
+        expect(anchor(html, 'home-animal-row')).toContain('href="/my-animals/sol"');
     });
 });

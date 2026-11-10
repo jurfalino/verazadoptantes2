@@ -44,11 +44,13 @@ function parseLocalNoon(s: string): Date {
     return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
 }
 
-export default function AddAnimalEventModal({ animal, activePlacement, open, onClose, initialType, initialFollowupKey, initialSubtype }: {
+export default function AddAnimalEventModal({ animal, activePlacement, open, onClose, onSaved, initialType, initialFollowupKey, initialSubtype }: {
     animal: { id: string; name: string | null };
     activePlacement: { id: string; recordType: string; adopterId: string } | null;
     open: boolean;
     onClose: () => void;
+    /** After a successful save, besides router.refresh(): the homepage's panel reloads its own data (it isn't server-rendered). */
+    onSaved?: () => void;
     /** Preselect the type (e.g. from a projected health slot). */
     initialType?: string;
     /** The projected-slot key this event satisfies. */
@@ -148,6 +150,7 @@ export default function AddAnimalEventModal({ animal, activePlacement, open, onC
 
             toast.success(t('animalProfile.event_saved') || 'Evento guardado', animal.name || '');
             onClose();
+            onSaved?.();
             router.refresh();
         } catch (error) {
             toast.error(t('errors.generic') || 'Error', t('animalProfile.event_save_failed') || 'No se pudo guardar el evento.', resolveErrorId(error, 'AddAnimalEventModal'));

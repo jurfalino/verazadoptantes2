@@ -54,6 +54,8 @@ test.describe.serial('homepage modules', () => {
 
     test.afterAll(() => {
         execD1Batch([
+            // The check-in the last test registers from the home.
+            `DELETE FROM adoptions WHERE adopter_id = '${DUE_ADOPTER}'`,
             `DELETE FROM placements WHERE id = 'test-hm-fixture-pl-${stamp}'`,
             `DELETE FROM animals WHERE id = '${DUE_ANIMAL}'`,
             `DELETE FROM adopter_events WHERE id = 'test-hm-fixture-ev-${stamp}'`,
@@ -142,6 +144,33 @@ test.describe.serial('homepage modules', () => {
             await expect(page.getByText(DUE_ANIMAL_NAME).first()).toBeVisible({ timeout: 60_000 });
             return onCard === await numberIn(tab);
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
+    });
+
+    // Last: it resolves the fixture's check-in, which the tests above count on.
+    test('Mis animales: an overdue animal opens «Para hacer ahora» over the home, and registering there clears it', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        const row = page.getByTestId('home-animals').getByTestId('home-animals-due').filter({ hasText: DUE_ANIMAL_NAME });
+        await row.click();
+
+        // Over the home, not the animal page: the same block, with «Registrar», and the way to the page.
+        const panel = page.getByTestId('home-due-panel');
+        await expect(panel).toBeVisible({ timeout: 60_000 });
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        await expect(panel.getByTestId('due-banner')).toBeVisible({ timeout: 60_000 });
+        await expect(panel.getByTestId('home-due-panel-page')).toHaveAttribute('href', `/my-animals/${DUE_ANIMAL}`);
+
+        await panel.locator('[data-testid^="register-"]').first().click();
+        await expect(page.getByTestId('animal-event-type')).toHaveValue('follow_up');
+        await page.getByRole('button', { name: '4 stars' }).click();
+        await page.getByTestId('animal-event-save').click();
+
+        // Still on the home; once nothing is due the panel closes and the card drops the animal.
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        await expect.poll(async () => {
+            if (await panel.isVisible()) await panel.getByTestId('home-due-panel-close').click();
+            return row.count();
+        }, { timeout: 60_000, intervals: [2_000] }).toBe(0);
     });
 
 });

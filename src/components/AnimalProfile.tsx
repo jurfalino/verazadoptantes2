@@ -31,12 +31,11 @@ import ShareHealthRecordModal from '@/components/ShareHealthRecordModal';
 import AnimalApplicants from '@/components/AnimalApplicants';
 import type { AnimalProfileData, ProjectedSlot } from '@/app/actions/animalTimeline';
 import type { ApplicantSummary } from '@/app/actions/applicants';
-import { interpolate } from '@/lib/interpolate';
 import { showableCount } from '@/domain/animalAccess';
 import { isSaveBusyError } from '@/domain/fieldCollab';
 import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
-import { dueWhenText } from '@/lib/dueWhenText';
+import DueNowBlock, { useDueSlotCopy } from '@/components/DueNowBlock';
 
 function placeholderFor(species: string | null): string {
     const s = (species || '').toLowerCase();
@@ -108,23 +107,8 @@ export default function AnimalProfile({ profile, applicants, userId }: {
     const dueSlots = projected.filter(s => s.status === 'due');
     const upcomingSlots = projected.filter(s => s.status === 'upcoming');
     const missedSlots = projected.filter(s => s.status === 'missed');
-    /** Days still available to log a due slot (0 = last day). The window is the
-     *  answer to "how long do I have", so show it as a countdown, not a date. */
-    const daysLeft = (s: ProjectedSlot) => Math.max(0, Math.ceil((s.windowEndsAt - Date.now()) / 86400000));
-    const windowCopy = (s: ProjectedSlot) => {
-        const n = daysLeft(s);
-        return n === 0
-            ? (t('followups.last_day') || 'último día para registrarlo')
-            : interpolate(t('followups.days_left') || 'te quedan {days} días para registrarlo', { days: n });
-    };
+    const { slotLabel, windowCopy, contactButton } = useDueSlotCopy();
 
-    const slotLabel = (s: ProjectedSlot) =>
-        (s.copyKey === 'checkin_custom' || s.copyKey === 'foster_checkin')
-            ? interpolate(t(`followups.${s.copyKey}`) || '{days}', { days: s.offsetDays ?? '' })
-            : (t(`followups.${s.copyKey}`) || s.key);
-
-    /** A slot's Registrar CTA: check-ins route to the adopter wizard (rating +
-     *  notes captured there); health slots open the event modal prefilled. */
     /** Register a due slot WITHOUT leaving the animal.
      *
      *  Check-ins used to push to the adopter's wizard because only that form
@@ -141,28 +125,6 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             subtype: s.subtype,
         });
     };
-
-    /** Telegram can't prefill text — copy the message alongside opening the chat. */
-    const onContactClick = (s: ProjectedSlot) => {
-        if (s.contact?.channel === 'telegram') {
-            navigator.clipboard?.writeText(s.contact.message).catch(() => { /* clipboard blocked: the chat still opens */ });
-            toast.success(t('followups.tg_copied_title') || 'Mensaje copiado', t('followups.tg_copied') || 'Pegalo en el chat de Telegram.');
-        }
-    };
-
-    const contactButton = (s: ProjectedSlot) => s.contact ? (
-        <a
-            href={s.contact.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => onContactClick(s)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap"
-            data-testid={`contact-${s.key}`}
-        >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" /></svg>
-            {s.contact.channel === 'telegram' ? 'Telegram' : 'WhatsApp'}
-        </a>
-    ) : null;
 
     const handleDelete = async () => {
         setBusy(true);
@@ -377,32 +339,7 @@ export default function AnimalProfile({ profile, applicants, userId }: {
 
             {/* «Para hacer ahora»: due follow-ups directly under the header — the
                 rescuer arriving from a notification must not scroll to act. */}
-            {dueSlots.length > 0 && (
-                <div className="mt-4 bg-white rounded-2xl border border-stone-200 border-l-[3px] border-l-amber-500 shadow-sm p-4" id="next-action" data-testid="due-banner">
-                    <p className="text-xs font-bold uppercase tracking-wide text-stone-500 mb-2">{t('followups.para_hacer') || 'Para hacer ahora'}</p>
-                    <div className="space-y-3">
-                        {dueSlots.map(s => (
-                            <div key={s.key} id={`followup-${activePlacement?.id}-${s.key}`} className="flex flex-wrap items-center gap-2" data-testid={`due-slot-${s.key}`}>
-                                <div className="flex-1 min-w-[180px]">
-                                    <p className="text-sm font-semibold text-stone-800">{slotLabel(s)}</p>
-                                    <p className="text-xs text-stone-500">
-                                        {dueWhenText(t, s.dueDate, Date.now(), formatShortDate)} · {windowCopy(s)}
-                                    </p>
-                                </div>
-                                {contactButton(s)}
-                                <button
-                                    type="button"
-                                    onClick={() => registerSlot(s)}
-                                    className="inline-flex px-3 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
-                                    data-testid={`register-${s.key}`}
-                                >
-                                    {t('followups.register') || 'Registrar'}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+            <DueNowBlock slots={dueSlots} placementId={activePlacement?.id} onRegister={registerSlot} anchorId="next-action" className="mt-4" />
 
             {/* applicants — only while the animal still needs a home */}
             {seeking && applicants.length > 0 && (

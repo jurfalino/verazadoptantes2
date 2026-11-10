@@ -3851,6 +3851,8 @@ export const es = {
         step_posts_desc: 'Una denuncia de Facebook o Instagram queda como observación en el perfil.',
         load_failed: 'No pudimos cargar esta sección.',
         error_code: 'Código',
+        see_animal_page: 'Ver la ficha de {name}',
+        due_panel_failed: 'No pudimos cargar los controles de este animal.',
     },
 };
 

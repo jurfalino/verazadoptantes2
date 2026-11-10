@@ -3844,5 +3844,7 @@ export const en = {
         step_posts_desc: 'A Facebook or Instagram report becomes an observation on the profile.',
         load_failed: 'We couldn\'t load this section.',
         error_code: 'Code',
+        see_animal_page: "Open {name}'s page",
+        due_panel_failed: "We couldn't load this animal's check-ups.",
     },
 };
