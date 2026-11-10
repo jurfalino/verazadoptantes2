@@ -1772,6 +1772,8 @@ export const en = {
         posts_empty: 'No profiles from a post yet.',
         filter_label: 'Filter adopters',
         filter_imported: 'Imported',
+        filter_api: 'Via API',
+        filter_contract: 'Via contract',
         filter_manual: 'Added by hand',
         filter_housemate: 'Housemate with an alert',
         filter_remove: 'Remove',

@@ -20,6 +20,8 @@ export function filterLabel(k: FilterKey, t: T): string {
         case 'src:form': return t('myAdopters.filter_forms') || 'Por formulario';
         case 'src:post': return t('myAdopters.filter_posts') || 'Desde un post';
         case 'src:imported': return t('myAdopters.filter_imported');
+        case 'src:api': return t('myAdopters.filter_api');
+        case 'src:contract': return t('myAdopters.filter_contract');
         case 'src:manual': return t('myAdopters.filter_manual');
         case 'rating:none': return t('ratings.none') || 'Sin calificar';
         case 'alert:housemate': return t('myAdopters.filter_housemate');

@@ -1778,6 +1778,8 @@ export const es = {
         posts_empty: 'Todavía no hay perfiles desde un post.',
         filter_label: 'Filtrar adoptantes',
         filter_imported: 'Importado',
+        filter_api: 'Por API',
+        filter_contract: 'Por contrato',
         filter_manual: 'Cargado a mano',
         filter_housemate: 'Conviviente con alerta',
         filter_remove: 'Quitar',

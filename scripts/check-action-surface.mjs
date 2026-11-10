@@ -432,7 +432,7 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // option E): +getAdopterListPins() and +saveAdopterListPins(pins) in src/app/actions/settings.ts.
 // get takes no arguments and returns only the caller's own pins (session email; signed out → null).
 // save: session required (else refused with an errorId); `pins` must be a list — every entry not
-// one of the 11 known FilterKeys is dropped, repeats too, and at most 4 are kept (sanitizePins),
+// one of the known FilterKeys (13 since 2.58.48: +api, +contract) is dropped, repeats too, and at most 4 are kept (sanitizePins),
 // so a stranger can store nothing but those strings; writes only the caller's own
 // user_profiles.adopter_list_pins (user row looked up by the SESSION email; no row → refused);
 // a "view as" session is read-only (warn + errorId). Returns the stored pins only.

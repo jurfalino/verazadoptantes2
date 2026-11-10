@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.48] - 2026-11-10
+
+### Changed
+- «Filtros › Procedencia» covers every way a profile arrives: por formulario, desde un post, importado,
+  **por API** (e.g. Catpuccino's intake) and **por contrato** (new), and cargado a mano (Jon).
+
 ## [2.58.47] - 2026-11-10
 
 ### Fixed (review of 2.58.46, before it deployed)

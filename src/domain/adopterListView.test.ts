@@ -34,6 +34,9 @@ describe('matches — OR within a group, AND across groups', () => {
         expect(matches(sel('rating:none'), row({ avgRating: null }))).toBe(true);
         expect(matches(sel('src:imported'), row({ source: 'imported' }))).toBe(true);
         expect(matches(sel('src:manual'), row({ source: 'imported' }))).toBe(false);
+        expect(matches(sel('src:api'), row({ source: 'api' }))).toBe(true);
+        expect(matches(sel('src:contract'), row({ source: 'contract' }))).toBe(true);
+        expect(matches(sel('src:api', 'src:contract'), row({ source: 'manual' }))).toBe(false);
         expect(matches(sel('alert:housemate'), row({ housemateChip: true }))).toBe(true);
     });
 });
@@ -87,6 +90,15 @@ describe('sanitizePins', () => {
 });
 
 describe('URL', () => {
+    it('every source has a filter: a profile of each kind is caught by exactly one «Procedencia» option (or «Por formulario»)', async () => {
+        const { FILTER_KEYS, holds } = await import('./adopterListView');
+        const src = FILTER_KEYS.filter(k => k.startsWith('src:') && k !== 'src:post');
+        for (const source of ['manual', 'imported', 'api', 'contract']) {
+            expect(src.filter(k => holds(k, row({ source }))).length).toBe(1);
+        }
+        expect(holds('src:form', row({ source: 'form', formCount: 1 }))).toBe(true);
+    });
+
     it('the old tab links still open the same view', () => {
         expect([...viewFromSearch('?filtro=posts').selected]).toEqual(['src:post']);
         expect([...viewFromSearch('?filtro=formularios').selected]).toEqual(['src:form']);

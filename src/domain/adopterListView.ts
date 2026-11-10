@@ -16,13 +16,15 @@
 export type FilterGroup = 'src' | 'rating' | 'alert';
 
 export type FilterKey =
-    | 'src:form' | 'src:post' | 'src:imported' | 'src:manual'
+    | 'src:form' | 'src:post' | 'src:imported' | 'src:api' | 'src:contract' | 'src:manual'
     | 'rating:1' | 'rating:2' | 'rating:3' | 'rating:4' | 'rating:5' | 'rating:none'
     | 'alert:housemate';
 
 /** In the panel's order: Procedencia, Calificación, Alertas. */
 export const FILTER_KEYS: readonly FilterKey[] = [
-    'src:form', 'src:post', 'src:imported', 'src:manual',
+    // Every way a profile arrives (adopters.source: manual | imported | api | contract | form — the
+    // last one is inside «Por formulario», which also counts forms joined to an existing profile).
+    'src:form', 'src:post', 'src:imported', 'src:api', 'src:contract', 'src:manual',
     'rating:1', 'rating:2', 'rating:3', 'rating:4', 'rating:5', 'rating:none',
     'alert:housemate',
 ];
@@ -72,6 +74,8 @@ export function holds(k: FilterKey, r: ListRow): boolean {
         case 'src:form': return (r.formCount ?? 0) > 0;
         case 'src:post': return !!r.fromPost;
         case 'src:imported': return r.source === 'imported';
+        case 'src:api': return r.source === 'api';
+        case 'src:contract': return r.source === 'contract';
         case 'src:manual': return (r.source ?? 'manual') === 'manual';
         case 'rating:none': return ratingLevel(r.avgRating) === null;
         case 'alert:housemate': return !!r.housemateChip;
@@ -143,12 +147,13 @@ export function sortRows<R extends ListRow>(rows: readonly R[], sort: SortKey, s
 }
 
 // ── URL ────────────────────────────────────────────────────────────────────
-// ?filtro=formularios,posts,importados,a-mano   (filtro=formularios / posts: the old tabs' links)
+// ?filtro=formularios,posts,importados,api,contrato,a-mano   (filtro=formularios / posts: the old tabs' links)
 // ?calificacion=1,2,sin   ?alerta=conviviente   ?orden=viejos|nombre|nombre-za|peor|mejor   ?q=texto
 
 const URL_VALUE: Record<FilterKey, [param: string, value: string]> = {
     'src:form': ['filtro', 'formularios'], 'src:post': ['filtro', 'posts'],
-    'src:imported': ['filtro', 'importados'], 'src:manual': ['filtro', 'a-mano'],
+    'src:imported': ['filtro', 'importados'], 'src:api': ['filtro', 'api'], 'src:contract': ['filtro', 'contrato'],
+    'src:manual': ['filtro', 'a-mano'],
     'rating:1': ['calificacion', '1'], 'rating:2': ['calificacion', '2'], 'rating:3': ['calificacion', '3'],
     'rating:4': ['calificacion', '4'], 'rating:5': ['calificacion', '5'], 'rating:none': ['calificacion', 'sin'],
     'alert:housemate': ['alerta', 'conviviente'],

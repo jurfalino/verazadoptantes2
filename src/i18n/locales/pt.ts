@@ -1777,6 +1777,8 @@ export const pt = {
         posts_empty: 'Ainda não há perfis de um post.',
         filter_label: 'Filtrar adotantes',
         filter_imported: 'Importado',
+        filter_api: 'Por API',
+        filter_contract: 'Por contrato',
         filter_manual: 'Cadastrado à mão',
         filter_housemate: 'Morador com alerta',
         filter_remove: 'Remover',
