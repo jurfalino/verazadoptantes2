@@ -9,13 +9,27 @@
  */
 
 import { and, count, eq, isNotNull, isNull, or, gt } from 'drizzle-orm';
-import { applications, formSubmissions, contractInvitations } from '@/db/schema';
+import { animals, applications, formSubmissions, contractInvitations } from '@/db/schema';
 import { APPLICATION_STATES, APPLICATION_CLOSE_REASONS } from '@/domain/constants';
 import { generalScopeWhere, teamApplicationsWhere } from '@/lib/applicantScope';
 import { healMissingApplications } from '@/lib/applicationWrites';
+import { normalizeTeamScope } from '@/lib/applicantScope';
+import { perRequest } from '@/lib/requestMemo';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the D1/better-sqlite db union is untyped here, as in the callers */
 type Db = any;
+
+/**
+ * Heals the team's missing application rows at most once per request (src/lib/requestMemo.ts): the
+ * home and /my-adopters ask several counts of the same team in one load, and each heal is a write.
+ */
+function healOnce(db: Db, team: readonly string[]): Promise<number> {
+    const key = normalizeTeamScope(team).slice().sort().join(',');
+    return perRequest(`healApplications:${key}`, () => healMissingApplications(db, team));
+}
+
+/** The animal row of an application, for the owner rule in `teamApplicationsWhere`. */
+const animalOf = eq(animals.id, applications.animalId);
 
 /** The invitation join: a LIVE link (unused, unexpired; expires_at NULL counts as live — `isLiveInvitation`) of this animal + person. */
 const liveLink = (nowSec: number) => and(
@@ -37,10 +51,11 @@ const noLiveLink = isNull(contractInvitations.token);
 export async function countToEvaluateByAnimal(db: Db, ownerTeam: readonly string[], nowSec: number): Promise<Map<string, number>> {
     const scope = teamApplicationsWhere(ownerTeam, 'animals');
     if (!scope) return new Map();
-    await healMissingApplications(db, ownerTeam);
+    await healOnce(db, ownerTeam);
     const rows = await db.select({ animalId: applications.animalId, n: count() })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .leftJoin(animals, animalOf)
         .leftJoin(contractInvitations, liveLink(nowSec))
         .where(and(openOnProfile(scope), noLiveLink))
         .groupBy(applications.animalId)
@@ -52,10 +67,11 @@ export async function countToEvaluateByAnimal(db: Db, ownerTeam: readonly string
 export async function countOpenByAnimal(db: Db, ownerTeam: readonly string[]): Promise<Map<string, number>> {
     const scope = teamApplicationsWhere(ownerTeam, 'animals');
     if (!scope) return new Map();
-    await healMissingApplications(db, ownerTeam);
+    await healOnce(db, ownerTeam);
     const rows = await db.select({ animalId: applications.animalId, n: count() })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .leftJoin(animals, animalOf)
         .where(and(scope, eq(applications.state, APPLICATION_STATES.OPEN)))
         .groupBy(applications.animalId)
         .all() as Array<{ animalId: string; n: number }>;
@@ -66,7 +82,7 @@ export async function countOpenByAnimal(db: Db, ownerTeam: readonly string[]): P
 export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string[]): Promise<number> {
     const scope = generalScopeWhere(viewerTeam);
     if (!scope) return 0;
-    await healMissingApplications(db, viewerTeam);
+    await healOnce(db, viewerTeam);
     const row = await db.select({ n: count() })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
@@ -80,10 +96,11 @@ export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string
 export async function toEvaluateAdopterIds(db: Db, team: readonly string[], nowSec: number): Promise<Set<string>> {
     const scope = teamApplicationsWhere(team, 'any');
     if (!scope) return new Set();
-    await healMissingApplications(db, team);
+    await healOnce(db, team);
     const rows = await db.select({ adopterId: formSubmissions.linkedAdopterId })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .leftJoin(animals, animalOf)
         .leftJoin(contractInvitations, liveLink(nowSec))
         .where(and(openOnProfile(scope), noLiveLink))
         .groupBy(formSubmissions.linkedAdopterId)
@@ -98,6 +115,7 @@ export async function offerCountsByAnimal(db: Db, ownerTeam: readonly string[]):
     const rows = await db.select({ animalId: applications.animalId, n: count() })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .leftJoin(animals, animalOf)
         .where(and(
             scope,
             eq(applications.state, APPLICATION_STATES.CLOSED),

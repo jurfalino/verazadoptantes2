@@ -20,7 +20,7 @@
  */
 
 import { and, eq, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
-import { applications, formSubmissions } from '@/db/schema';
+import { animals, applications, formSubmissions } from '@/db/schema';
 import { APPLICATION_STATES } from '@/domain/constants';
 
 /** Lower-case, trim, dedupe, drop blanks. `getTeamEmails` already lower-cases;
@@ -82,19 +82,32 @@ export function generalScopeWhere(teamEmails: ReadonlyArray<string | null | unde
     return and(isNull(applications.animalId), inTeam, notReplaced) ?? null;
 }
 
+/** An OR of one bound `lower(trim(animals.added_by)) = ?` per email: the animal's OWNER is in the team. */
+function animalOwnerInTeam(scope: readonly string[]): SQL | undefined {
+    return or(...scope.map(e => sql`lower(trim(${animals.addedBy})) = ${e}`));
+}
+
 /**
- * Every application of ANY animal filed through a form link of `teamEmails`
- * (`animalScope: 'animals'`), or of any application at all (`'any'`): the
- * team-wide variants the grouped counts use — `applicantScopeWhere` per animal
- * without the per-animal fan-out. Same join requirement, fail-closed rule and
- * «replaced» exclusion.
+ * The team-wide variants the grouped counts use — `applicantScopeWhere` /
+ * `generalScopeWhere` without the per-animal fan-out. Same rules as those:
+ * an animal's application belongs to a team when the form link AND the
+ * animal's OWNER are both in it (so a forged `?animal=` row, or an animal
+ * whose owner left the team, is nobody's to evaluate), a general one when the
+ * form link is; «replaced» never counts.
+ *   'animals' → only applications of an animal (grouped per animal);
+ *   'any'     → those plus the general ones.
+ * Callers MUST innerJoin form_submissions AND `leftJoin(animals, eq(animals.id, applications.animalId))`.
+ * Fails closed (null) on an empty team.
  */
 export function teamApplicationsWhere(teamEmails: ReadonlyArray<string | null | undefined>, animalScope: 'animals' | 'any'): SQL | null {
     const scope = normalizeTeamScope(teamEmails);
     if (scope.length === 0) return null;
-    const inTeam = linkOwnerInTeam(scope);
-    if (!inTeam) return null;
-    return and(animalScope === 'animals' ? isNotNull(applications.animalId) : undefined, inTeam, notReplaced) ?? null;
+    const linkInTeam = linkOwnerInTeam(scope);
+    const ownerInTeam = animalOwnerInTeam(scope);
+    if (!linkInTeam || !ownerInTeam) return null;
+    const ofAnimal = and(isNotNull(applications.animalId), ownerInTeam);
+    const target = animalScope === 'animals' ? ofAnimal : or(isNull(applications.animalId), ofAnimal);
+    return and(target, linkInTeam, notReplaced) ?? null;
 }
 
 /**

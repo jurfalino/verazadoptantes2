@@ -5,11 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 
-const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
+const { state } = vi.hoisted(() => ({ state: { db: null as unknown, req: {} as Headers } }));
 vi.mock('@/app/actions/_db', () => ({ getDb: async () => state.db, getUser: async () => 'owner@example.com' }));
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/lib/logger', async (orig) => ({ ...(await orig<typeof import('@/lib/logger')>()), logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') } }));
-vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
+vi.mock('next/headers', () => ({ headers: async () => state.req })); // one object per test = one request
 vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: {} }) }));
 
 import { loadApplicantsForAnimal } from '@/app/actions/_applicants';
@@ -42,11 +42,12 @@ function invite(token: string, animal: string, adopter: string, expiresAt: numbe
 
 /** Counts db.select calls (the counts must each issue exactly one). */
 function spied(db: unknown) {
-    const calls = { select: 0 };
+    const calls = { select: 0, run: 0 };
     const proxy = new Proxy(db as object, {
         get(t, p, r) {
             const v = Reflect.get(t, p, r);
             if (p === 'select') return (...a: unknown[]) => { calls.select++; return (v as (...x: unknown[]) => unknown).apply(t, a); };
+            if (p === 'run') return (...a: unknown[]) => { calls.run++; return (v as (...x: unknown[]) => unknown).apply(t, a); };
             return typeof v === 'function' ? (v as (...x: unknown[]) => unknown).bind(t) : v;
         },
     });
@@ -56,6 +57,7 @@ function spied(db: unknown) {
 beforeEach(() => {
     const m = migratedDb();
     state.db = m.db;
+    state.req = new Headers();
     sqlite = m.sqlite as unknown as Sqlite;
     for (const id of ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9', 'z1', 'z2']) {
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by) VALUES (?, ?, '5', ?)`).run(id, id, OWNER);
@@ -104,6 +106,22 @@ describe('countToEvaluateByAnimal', () => {
         }
     });
 
+    it("an animal the team does not own never gets a key (forged ?animal= through the team's link)", async () => {
+        const m = await countToEvaluateByAnimal(state.db, [OWNER, MATE], NOW);
+        expect([...m.keys()]).toEqual(['luna']);
+        expect([...(await countOpenByAnimal(state.db, [OWNER, MATE])).keys()]).toEqual(['luna']);
+        form('c9', OWNER, 'a7', 'brisa'); app('c9', 'brisa', { state: 'closed', closeReason: 'adopted_other' });
+        expect((await offerCountsByAnimal(state.db, [OWNER, MATE])).has('brisa')).toBe(false);
+    });
+
+    it('two counts in one request heal the team once', async () => {
+        const { db, calls } = spied(state.db);
+        await countToEvaluateByAnimal(db, [OWNER, MATE], NOW);
+        await countOpenByAnimal(db, [MATE, OWNER.toUpperCase()]);
+        await toEvaluateAdopterIds(db, [OWNER, MATE], NOW);
+        expect(calls.run).toBe(1);
+    });
+
     it('fails closed on an empty team', async () => {
         expect((await countToEvaluateByAnimal(state.db, [], NOW)).size).toBe(0);
         expect(await countGeneralToEvaluate(state.db, [])).toBe(0);
@@ -132,7 +150,8 @@ describe('countGeneralToEvaluate', () => {
 describe('toEvaluateAdopterIds', () => {
     it('lists to-evaluate profiles of the team (animal + general); a live link, a decline and an outsider are out', async () => {
         const ids = await toEvaluateAdopterIds(state.db, [OWNER, MATE], NOW);
-        expect([...ids].sort()).toEqual(['a1', 'a3', 'a4', 'a9', 'z2']);
+        expect([...ids].sort()).toEqual(['a1', 'a3', 'a4', 'a9']);
+        expect(ids.has('z2')).toBe(false); // OWNER's link onto ZOE's animal: not the owner's team's to evaluate
         expect(ids.has('a2')).toBe(false); // live link: «Contrato enviado» is an outcome
         expect(ids.has('a5')).toBe(false); // expires_at NULL = live
         expect(ids.has('a8')).toBe(false); // declined

@@ -9,13 +9,19 @@ export type SectionGroup = 'received' | 'sent' | 'declined' | 'pair';
 /**
  * A section: a group, split by whether the next move is the viewer's (UX review 2026-11-10) —
  * a declined request the viewer filed waits on them («Rechazados»); one they declined doesn't
- * ('declined_done', listed with what waits on others).
+ * ('declined_done', listed with what waits on others). A possible duplicate the server deferred
+ * because its person is being evaluated (Q6: needsViewer false) is 'pair_done', in the same place.
  */
-export type SectionKey = SectionGroup | 'declined_done';
+export type SectionKey = SectionGroup | 'declined_done' | 'pair_done';
 /** What waits on the viewer first, then what waits on others (the server pages in this order). */
-export const SECTION_ORDER: readonly SectionKey[] = ['received', 'declined', 'pair', 'sent', 'declined_done'];
+export const SECTION_ORDER: readonly SectionKey[] = ['received', 'declined', 'pair', 'pair_done', 'sent', 'declined_done'];
+/** The sections that don't wait on the viewer: the first one shown opens «No necesitan nada tuyo». */
+export const OTHERS_SECTIONS: ReadonlySet<SectionKey> = new Set<SectionKey>(['pair_done', 'sent', 'declined_done']);
 export const sectionOf = (p: { group: SectionGroup; needsViewer?: boolean }): SectionKey =>
-    p.group === 'declined' && p.needsViewer === false ? 'declined_done' : p.group;
+    p.needsViewer !== false ? p.group
+        : p.group === 'declined' ? 'declined_done'
+        : p.group === 'pair' ? 'pair_done'
+        : p.group;
 
 export type PendientesSection<P, M> =
     | { kind: 'group'; group: SectionKey; pairs: P[] }

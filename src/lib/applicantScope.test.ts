@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
-import { normalizeTeamScope, applicantScopeWhere, generalScopeWhere, isInTeamScope, teammateVisibleAnimal } from './applicantScope';
+import { normalizeTeamScope, applicantScopeWhere, generalScopeWhere, teamApplicationsWhere, isInTeamScope, teammateVisibleAnimal } from './applicantScope';
 
 /**
  * Which applicants belong to an animal (2026-09-30, product decision): a
@@ -102,6 +102,28 @@ describe('generalScopeWhere', () => {
     it('fails CLOSED for an empty team', () => {
         expect(generalScopeWhere([])).toBeNull();
         expect(generalScopeWhere([null, ' '])).toBeNull();
+    });
+});
+
+describe('teamApplicationsWhere', () => {
+    const q = (mode: 'animals' | 'any') => dialect.sqlToQuery(teamApplicationsWhere(['Owner@Example.com', 'mate@example.com'], mode)!);
+    it("'animals': an animal application needs BOTH the form-link owner AND the animal's owner in the team", () => {
+        const c = q('animals');
+        expect(c.sql).toContain('"applications"."animal_id" is not null');
+        expect(c.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g)).toHaveLength(2);
+        expect(c.sql.match(/lower\(trim\("animals"\."added_by"\)\) = \?/g)).toHaveLength(2);
+        expect(c.sql).toContain('"applications"."state" <> ?');
+        expect(c.sql).not.toMatch(/\bin\s*\(/i);
+    });
+    it("'any': a general application needs only the link owner; an animal one also the animal's owner", () => {
+        const c = q('any');
+        expect(c.sql).toContain('"applications"."animal_id" is null');
+        expect(c.sql.match(/lower\(trim\("animals"\."added_by"\)\) = \?/g)).toHaveLength(2);
+        expect(c.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g)).toHaveLength(2);
+    });
+    it('fails CLOSED for an empty team', () => {
+        expect(teamApplicationsWhere([], 'animals')).toBeNull();
+        expect(teamApplicationsWhere([' '], 'any')).toBeNull();
     });
 });
 

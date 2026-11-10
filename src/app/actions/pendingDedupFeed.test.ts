@@ -200,10 +200,20 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(during.needsViewer).toBe(before.needsViewer - 1);
         expect(pairOf(during.pairs, 'cand-newer-mine').needsViewer).toBe(false);
         expect(pairOf(during.pairs, 'cand-anon').needsViewer).toBe(true);
+        // The OTHER profile's owner has no evaluation of it: for them it is still a to-do.
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-newer-mine').needsViewer).toBe(true);
         sqlite.prepare(`UPDATE applications SET state = 'declined' WHERE id = 'app-f-new'`).run(); // «No avanzar»
         const after = await feed(STRANGER);
         expect(after.needsViewer).toBe(before.needsViewer);
         expect(pairOf(after.pairs, 'cand-newer-mine').needsViewer).toBe(true);
+    });
+
+    it('a RECEIVED merge request on a side in evaluation still counts: only a plain possible duplicate is deferred (Q6)', async () => {
+        await mergePendingDedupPair('cand-older-mine'); // STRANGER asks OWNER (o-new is OWNER's)
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES ('f-o', ?, 'Carla', NULL, 'o-new', 1)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id, origin, state) VALUES ('app-f-o', 'f-o', NULL, 'form', 'open')`).run();
+        const pair = pairOf((await feed(OWNER)).pairs, 'cand-older-mine');
+        expect(pair).toMatchObject({ group: 'received', needsViewer: true });
     });
 
     it('a request you sent waits on the other side: it goes after everything that waits on you (UX review 2026-11-10)', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pendientesSections, type SectionGroup } from './sections';
+import { pendientesSections, sectionOf, OTHERS_SECTIONS, type SectionGroup } from './sections';
 
 const ORDER: SectionGroup[] = ['received', 'sent', 'declined', 'pair'];
 const p = (candidateId: string, group: SectionGroup) => ({ candidateId, group });
@@ -19,5 +19,20 @@ describe('pendientesSections (audit C7)', () => {
     });
     it('nothing combined: the groups in order, no merged section', () => {
         expect(pendientesSections([p('d', 'declined'), p('s', 'sent')], [], ORDER).map(x => x.kind === 'group' && x.group)).toEqual(['sent', 'declined']);
+    });
+});
+
+describe('a possible duplicate deferred to an evaluation (Q6)', () => {
+    it('lands in «No necesitan nada tuyo» (pair_done), after the pairs that wait and before sent', () => {
+        const live = { candidateId: 'a', group: 'pair' as const, needsViewer: true };
+        const deferred = { candidateId: 'b', group: 'pair' as const, needsViewer: false };
+        const sent = { candidateId: 'c', group: 'sent' as const, needsViewer: false };
+        const s = pendientesSections([sent, deferred, live], []);
+        expect(s.map(x => x.kind === 'group' && x.group)).toEqual(['pair', 'pair_done', 'sent']);
+        expect(sectionOf(deferred)).toBe('pair_done');
+        expect(OTHERS_SECTIONS.has('pair_done')).toBe(true);
+    });
+    it('a pair with no needsViewer info keeps its own group', () => {
+        expect(sectionOf({ group: 'pair' })).toBe('pair');
     });
 });
