@@ -48,6 +48,14 @@ The single placement write point, `updateRecord`, closes the other candidates wh
 
 ---
 
+## Amendments by the controller (2026-11-10, after the planner's report) — binding
+
+- **A1. Execution order:** Tasks 1–11, then **Task 13**, then Task 12 (e2e last).
+- **A2. «Sí, es la misma persona» in the panel uses the `/form-results` path** (`linkFormToExistingAdopter` through `FormResultMatchCard`): the panel shows the same object (a form match) as `/form-results`, and that path writes the same `duplicate_candidates` pair. Accepted as planned.
+- **A3. The offer to tell the others also lives on Mis animales.** Production has `ENABLE_CLEAN_HOMEPAGE` = false (queried 2026-11-10), so the home row reaches production; but every home row needs its page. Task 11 adds: the adopted animal's card (tabs «Ya adoptados» and «Todos») shows the same amber row «{animal} fue adoptada/o · avisá a N candidatos» (same key as the home row), opening the same offer sheet from Task 10 (`OfferSheet`, Task 8's offer actions); after «Listo» / «Ahora no» the row is gone on both surfaces. Test in Task 11: `adopted card shows the offer row while the offer is pending, and not after markOfferDone`.
+- **A4. Rescuers must see each outcome on the profile** (decision 3: «their history reads …»). The audit History is admin/moderator-only, so the rescuer-visible place is the profile's record list (`AdoptionHistory`), where the form's «Solicitud» (`adoption_request`, `source_url = form:<submissionId>`) record already shows. → **Task 13.**
+- **A5. Forms with no profile** (auto-create failed): listed, not counted, as planned; admin orphan-retry links them. Accepted.
+
 ## File map
 
 | File | Responsibility |
@@ -1216,6 +1224,28 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+### Task 13: The profile's «Solicitud» shows how it ended
+
+**Files:**
+- Modify: `src/components/AdoptionHistory.tsx` (where `adoption_request` records render) and the loader that feeds it its records
+- Create/modify tests next to them (component test with `renderToStaticMarkup`, as the repo does)
+
+**Interfaces:**
+- Consumes: Task 1 (`ApplicationState`, outcome copy keys), Task 3's application read by `submission_id` (or a small `loadApplicationOutcomesBySubmission(db, submissionIds)` in `src/lib/applicationWrites.ts`/`applicationCounts.ts` — Promise.all per id, never IN).
+- Produces: nothing later tasks need.
+
+- [ ] **Step 1: Failing component tests** — a «Solicitud» record whose `source_url` is `form:<id>` renders, under its line, exactly one outcome line from the application of that submission:
+  - `closed` + `adopted_other` → «Cerrada: {animal} fue adoptada por otra persona» (sex-aware as Task 1's helper; «Automático» as actor where actors show)
+  - `closed` + `adopted_open_link` → «Cerrada: {animal} fue adoptada»
+  - `declined` → «No avanzó · {date}» (the observation itself is the record right next to it; no rating repeated)
+  - `proposed` → «Propuesta para {animal}»; `replaced` → «Reemplazada por un formulario más nuevo»; `also_applied` → «También pidió a {animal}»; `adopted` → «Adoptó a {animal}»
+  - `open` (por evaluar or with a live contract) → no line
+  - a «Solicitud» with no `form:` source or no application → no line, no error
+- [ ] **Step 2: Run, watch them fail** (`PATH=/opt/homebrew/opt/node@20/bin:$PATH npx vitest run <the test file>`). Expected: FAIL (no outcome line).
+- [ ] **Step 3: Implement** — the record list's loader fetches each «Solicitud»'s application outcome (bounded: only records with a `form:` source; a failed lookup logs `warn` with `adopterId` and renders no line). Same visibility as the record itself: whoever sees the «Solicitud» sees its outcome; nothing new is exposed (the animal name is already on the record).
+- [ ] **Step 4: Run, watch them pass; then the full vitest suite.** Expected: PASS; suite green.
+- [ ] **Step 5: Commit** (explicit paths).
 
 ## Self-review notes (run 2026-11-10)
 
