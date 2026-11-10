@@ -199,8 +199,8 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
                     .then((r: { name: string | null } | undefined) => r?.name ?? null)
                     .catch((e: unknown) => { logger.warn('homeModules: home name fallback', { ...log, animalId: a.id, error: errMsg(e) }); return null; })
                 : Promise.resolve(null),
-            // Applicants exist only while the animal waits for a home — as on the card.
-            !dueInfo && status === 'available'
+            // Applicants exist while the animal still takes applications (waiting for a home, or fostered) — as on the card.
+            !dueInfo && status !== 'adopted'
                 ? ownerTeam(a.addedBy).then(team => listApplicantIdsForAnimal(db, a.id, team)).then(ids => ids.length)
                     .catch((e: unknown) => { logger.warn('homeModules: applicants fallback', { ...log, animalId: a.id, error: errMsg(e) }); return 0; })
                 : Promise.resolve(0),

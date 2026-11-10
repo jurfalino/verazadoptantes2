@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { logger } from '@/lib/logger';
 import { getFeatureFlag } from '@/config/features';
 import { animalPrimaryFirst } from '@/lib/showcase';
+import { takesContract } from '@/domain/placements';
 
 export const runtime = 'edge';
 
@@ -179,9 +180,9 @@ export async function GET(request: NextRequest) {
                     adopterName = adopter?.name || null;
                 }
 
-                // Only fetch applicants for "available" animals — the card
-                // disclosure isn't useful once the animal has been adopted.
-                const applicants: Array<{ submissionId: string }> = animal.adopterId ? [] : await ownerTeam(animal.addedBy)
+                // Applicants for every animal that still takes a contract (available or
+                // fostered) — the card disclosure isn't useful once it has been adopted.
+                const applicants: Array<{ submissionId: string }> = !takesContract(animal) ? [] : await ownerTeam(animal.addedBy)
                     .then(team => listApplicantIdsForAnimal(db, animal.id, team))
                     .catch((e: unknown) => {
                         logger.warn('my-animals: applicants fallback', { animalId: animal.id, userEmail, view, error: e instanceof Error ? e.message : String(e) });

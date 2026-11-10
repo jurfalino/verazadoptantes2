@@ -23,6 +23,7 @@ import { logger, generateErrorId } from '@/lib/logger';
 import { auth } from '@/auth';
 import { getDb } from './_db';
 import { INVITATION_TTL_DAYS } from '@/domain/constants';
+import { takesContract } from '@/domain/placements';
 
 export interface CreateInvitationResult {
     success: boolean;
@@ -57,6 +58,7 @@ export async function createContractInvitation(
             id: adoptions.id,
             addedBy: adoptions.addedBy,
             adopterId: adoptions.adopterId,
+            recordType: adoptions.recordType,
         }).from(adoptions).where(eq(adoptions.id, animalId)).get();
         if (!animal) return { success: false, error: 'Animal not found' };
         // v2.55.18: org-mates get full parity on team animals. Admins too, like
@@ -64,7 +66,7 @@ export async function createContractInvitation(
         // next step from that list.
         const { isOwnerOrgMateOrAdmin } = await import('./_applicants');
         if (!(await isOwnerOrgMateOrAdmin(userEmail, animal.addedBy))) return { success: false, error: 'Not authorized for this animal' };
-        if (animal.adopterId) return { success: false, error: 'Animal already adopted' };
+        if (!takesContract(animal)) return { success: false, error: 'Animal already adopted' };
 
         // Confirm the adopter exists and is not soft-deleted.
         const adopter = await db.select({ id: adopters.id, deletedAt: adopters.deletedAt, addedBy: adopters.addedBy, isPublic: adopters.isPublic })

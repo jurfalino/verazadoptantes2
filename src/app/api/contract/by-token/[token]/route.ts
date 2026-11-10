@@ -4,6 +4,7 @@ import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { buildContractPrefill, tokenRef, type ContractPrefill } from '@/lib/contractInvitation';
 import { resolveInvitationAccess } from '@/lib/contractInvitationAccess';
+import { takesContract } from '@/domain/placements';
 
 export const runtime = 'edge';
 
@@ -67,7 +68,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
 
         const animal = await db.select().from(adoptions).where(eq(adoptions.id, invite.animalId)).get();
         if (!animal) return withCors(NextResponse.json({ error: 'Animal not found' }, { status: 404 }), origin);
-        if (animal.adopterId) {
+        if (!takesContract(animal)) {
             return withCors(NextResponse.json({ error: 'Animal already adopted', code: 'already_adopted' }, { status: 410 }), origin);
         }
 

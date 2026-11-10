@@ -115,7 +115,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return withCors(NextResponse.json({ error: 'Animal not found' }, { status: 404 }), origin);
         }
 
-        if (animal.adopterId) {
+        // A personal invitation also signs a FOSTERED animal (signing ends the foster);
+        // the tokenless open link keeps refusing any holder.
+        const { signRefused } = await import('@/domain/placements');
+        if (signRefused({ invitation, animal })) {
             return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed' }, { status: 409 }), origin);
         }
 
@@ -201,10 +204,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         // 5. Link the animal to the adopter (convert to adoption). Normalized
         //    write: opens an 'adoption' placement on the animal (`animal` is the
-        //    reconstructed row read above; it was 'available' with no placement).
+        //    reconstructed row read above; it was 'available', or fostered on the token path).
+        //    Compare-and-swap: a concurrent adoption wins cleanly (`lost`).
         const { updateRecord, isActivePlacementConflict } = await import('@/app/actions/_recordWrite');
+        /** Lost the animal to a concurrent placement: the stored file belongs to no adoption. */
+        const refuseLost = async (e: unknown) => {
+            const errorId = logger.error('Contract submit: animal placed concurrently', e, { animalId, adopterId });
+            if (contractKey) {
+                const { deleteContract } = await import('@/lib/contractStorage');
+                await deleteContract(contractKey).catch(err => logger.error('Contract submit: orphan contract not deleted', err, { animalId, errorId }));
+            }
+            return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed', errorId }, { status: 409 }), origin);
+        };
+        let lost = false;
         try {
-            await updateRecord(db, {
+            ({ lost } = await updateRecord(db, {
                 id: animalId,
                 adopterId,
                 recordType: 'adoption',
@@ -215,20 +229,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 // The contract key is NOT a comment: it goes to placements.contract_key below,
                 // a column no rescuer can write (src/lib/contractStorage.ts).
                 comments: null,
-            }, animal, 'contract');
+                // A new placement starts from the animal's current one (CAS mode) — for a
+                // fostered animal that is the FOSTER home's, so these are cleared explicitly.
+                deliveredToHome: null, verifiedAddress: null, identityVerified: null, onBehalfOf: null, sourceUrl: null,
+            }, animal, 'contract', { cas: true, adoptionVia: invitation ? 'invitation' : 'open_link' }));
         } catch (e) {
             // Someone adopted or fostered the animal between the check above
             // and this write (the database allows one active placement per
             // animal, drizzle/0078). Same answer as the check gives.
             if (!isActivePlacementConflict(e)) throw e;
-            const errorId = logger.error('Contract submit: animal placed concurrently', e, { animalId, adopterId });
-            // The file stored above belongs to no adoption now.
-            if (contractKey) {
-                const { deleteContract } = await import('@/lib/contractStorage');
-                await deleteContract(contractKey).catch(err => logger.error('Contract submit: orphan contract not deleted', err, { animalId, errorId }));
-            }
-            return withCors(NextResponse.json({ error: 'This animal has already been adopted', code: 'already_placed', errorId }, { status: 409 }), origin);
+            return refuseLost(e);
         }
+        if (lost) return refuseLost(new Error('compare-and-swap lost: the animal changed under the signature'));
 
         // Link the stored contract to the placement just opened (server-only column).
         if (contractKey) {
