@@ -19,7 +19,8 @@ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export const PAIR_NOTICE_TYPES = ['merge_request', 'duplicate_flagged', 'merge_request_resolved'] as const;
 export type PairNoticeType = typeof PAIR_NOTICE_TYPES[number];
 
-const field = (path: string) => sql`json_extract(${notifications.metadata}, ${path})`;
+// CASE, not `json_valid(...) AND …`: SQLite doesn't promise to test json_valid first, and json_extract raises on invalid JSON.
+const field = (path: string) => sql`CASE WHEN json_valid(${notifications.metadata}) THEN json_extract(${notifications.metadata}, ${path}) END`;
 
 /** The notice is about the pair {a, b}, in either orientation, under either naming. */
 function aboutPair(a: string, b: string): SQL {
@@ -28,6 +29,28 @@ function aboutPair(a: string, b: string): SQL {
         and(sql`${field('$.adopterId')} = ${x}`, sql`${field('$.targetAdopterId')} = ${y}`),
     )!;
     return or(both(a, b), both(b, a))!;
+}
+
+/**
+ * A merge absorbed `profileId`: every pair it was part of is moot (its rows leave «Pendientes de
+ * revisar»), so every pair notice naming it is read, for everyone.
+ */
+export async function clearProfilePairNotices(db: Db, profileId: string, ctx: Record<string, unknown> = {}): Promise<void> {
+    if (!profileId) return;
+    try {
+        const names = (path: string) => sql`${field(path)} = ${profileId}`;
+        await db.update(notifications)
+            .set({ read: 1 })
+            .where(and(
+                eq(notifications.read, 0),
+                or(...PAIR_NOTICE_TYPES.map(t => eq(notifications.type, t)))!,
+                or(names('$.primaryId'), names('$.secondaryId'), names('$.adopterId'), names('$.targetAdopterId'))!,
+            ));
+    } catch (e) {
+        logger.warn('clearProfilePairNotices: notices left unread', {
+            ...ctx, profileId, error: e instanceof Error ? e.message : String(e),
+        });
+    }
 }
 
 export async function clearPairNotices(db: Db, a: string, b: string, opts: {

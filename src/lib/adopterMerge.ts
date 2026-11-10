@@ -13,7 +13,7 @@
 import { adopters, adoptions, adopterImages, adopterFlags, adopterHistory, adopterStats, duplicateTokens, duplicateCandidates, auditLog, placements, adopterEvents, formSubmissions, piiAccessGrants } from '@/db/schema';
 import { eq, or, and, gt, ne, sql, isNull } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
-import { clearPairNotices, PAIR_NOTICE_TYPES } from '@/lib/pairNotices';
+import { clearPairNotices, clearProfilePairNotices, PAIR_NOTICE_TYPES } from '@/lib/pairNotices';
 import { getDb } from '@/lib/db';
 import { reassignAdopterRecords } from '@/app/actions/_recordWrite';
 import { normalizeText } from '@/lib/tokenizer';
@@ -444,6 +444,8 @@ export async function mergeAdopters(
         });
         // Settled: the pair's «¿Es la misma persona?» notices stop reading as unread, for everyone.
         await clearPairNotices(db, primaryId, secondaryId, { types: PAIR_NOTICE_TYPES, ctx: { op: 'mergeAdopters', actor: actorEmail } });
+        // The absorbed profile is gone: its other pairs' notices point at nothing either.
+        await clearProfilePairNotices(db, secondaryId, { op: 'mergeAdopters', actor: actorEmail });
 
         return {
             success: true,

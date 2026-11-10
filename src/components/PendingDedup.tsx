@@ -133,6 +133,12 @@ export default function PendingDedup({ home }: {
             try {
                 const reload = autoOpened.current;
                 const data = await getPendingDuplicatesForUser(1, 1, false, reload ? undefined : home.focusPair, 'needs_viewer');
+                if (data.errorId) {
+                    // Failed, not empty: say so (with the id) instead of closing as if nothing were left.
+                    toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, data.errorId);
+                    home.onClose();
+                    return;
+                }
                 autoOpened.current = true;
                 setPairs(data.pairs);
                 setTotal(data.total);
@@ -153,6 +159,7 @@ export default function PendingDedup({ home }: {
         try {
             const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
             const data = await getPendingDuplicatesForUser(page, PAGE_SIZE, false, focusPair);
+            if (data.errorId) toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, data.errorId);
             if (data.page && data.page !== page) { loadedByFocus.current = data.page; setPage(data.page); }
             setPairs(data.pairs);
             setTotal(data.total);

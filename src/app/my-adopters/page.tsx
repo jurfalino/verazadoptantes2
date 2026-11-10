@@ -4,7 +4,7 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, FileText, Search } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -253,6 +253,13 @@ function ProvenanceLine({
     );
 }
 
+// What the list rules read from a row («Por formulario» = everyone who filled a form, also people
+// whose form joined a profile they already had — which the Origen pill would miss).
+const listRow = (a: Adopter): ListRow => ({
+    name: a.name, createdAt: a.createdAt, avgRating: a.avgRating, source: a.source, formCount: a.formCount,
+    fromPost: a.fromPost, housemateChip: hasHousemateChip(a.housemateAlert), latestFormAt: a.latestForm?.submittedAt ?? null,
+});
+
 export default function MyAdoptersPage() {
     const { t } = useLanguage();
     const { data: session } = useSession();
@@ -310,7 +317,7 @@ export default function MyAdoptersPage() {
                 failed(resolveErrorId(e, 'MyAdopters.pins'));
             });
     };
-    const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}?from=adopters`);
+    const openForm = useCallback((submissionId: string) => router.push(`/form-results/${submissionId}?from=adopters`), [router]);
     const currentEmail = session?.user?.email || '';
     const [adopters, setAdopters] = useState<Adopter[]>([]);
     const [loading, setLoading] = useState(true);
@@ -359,6 +366,228 @@ export default function MyAdoptersPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Memoized (EM review, 2026-11-10): accounts reach ~4,700 people. Rows, counts, the filtered
+    // + sorted list and the two rendered lists are rebuilt only when the data, a filter, the order
+    // or the (deferred) search change — a keystroke's urgent render reuses all of it.
+    const rows = useMemo(() => adopters.map(a => ({ a, r: listRow(a) })), [adopters]);
+    const counts = useMemo(
+        () => Object.fromEntries(FILTER_KEYS.map(k => [k, rows.filter(x => holds(k, x.r)).length])) as Record<FilterKey, number>,
+        [rows],
+    );
+    const visible = useMemo(() => sortRows(
+        rows.filter(x => matches(view.selected, x.r) && nameMatches(deferredQ, x.a.name)).map(x => ({ ...x.r, adopter: x.a })),
+        view.sort, view.selected,
+    ).map(x => x.adopter), [rows, view.selected, view.sort, deferredQ]);
+    const desktopRows = useMemo(() => visible.map((adopter, i) => (
+                                    <div
+                                        key={`adopter-${adopter.id}-${i}`}
+                                        data-testid="my-adopters-row"
+                                        // v2.19.13: pending-duplicate rows get an amber left-border
+                                        // so the actionable row jumps out without sacrificing
+                                        // any name-cell space. Matches the severity-tint pattern
+                                        // OrgActivityFeed (v2.18.14) and /admin/audit (v2.19.5)
+                                        // already use across the app.
+                                        // The row is NOT a link (fix round 2, item 19): its one link is the name, stretched
+                                        // over the row (ROW_LINK), and the pills, the form line and the rating hint sit
+                                        // beside it (ROW_CONTROL) — never an <a>/<button> inside an <a>.
+                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.pendingDuplicates?.length ? 'border-l-4 border-amber-400' : ''}`}
+                                    >
+                                        {/* Name + Thumbnail */}
+                                        <div className="col-span-4 flex items-center gap-3 min-w-0">
+                                            <div className="w-9 h-9 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
+                                                {adopter.thumbnail ? (
+                                                    <img src={adopter.thumbnail} alt={`${adopterDisplayName(adopter, t('adopter.nameless'))} profile photo`} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-stone-500">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                        <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
+                                                    </Link>
+                                                    {/* One decision, one pill: when the person's form is waiting
+                                                        on "¿es la misma persona?", that is the pair the duplicate
+                                                        pill would point at — and the form path also files the
+                                                        request in the right history. */}
+                                                    {!!adopter.pendingDuplicates?.length && <PendingDupPill adopterId={adopter.id} pairs={adopter.pendingDuplicates} t={t} />}
+                                                </div>
+                                                <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
+                                                {/* Inline addedBy was moved to its own column in v2.19.6 —
+                                                    keeps the Name cell focused on identity, lets the
+                                                    Creado-por col carry the resolved name + org chip. */}
+                                            </div>
+                                        </div>
+
+                                        {/* Calificación — avgRating from activity history (legacy `status` is deprecated).
+                                            Flag badges stack underneath the rating badge in v2.19.6 so the
+                                            severity signal and rating live together (a 5-star adopter with a
+                                            period alert now reads in one glance instead of jumping to a
+                                            separate column). Min-height pins both states to row height. */}
+                                        {/* With a housemate chip (a link with a 44px touch area around its 22px pill), 12px under
+                                            the rating keeps that area off the rating's own hint (review fix 6). */}
+                                        <div className={`col-span-2 flex flex-col items-center ${hasHousemateChip(adopter.housemateAlert) ? 'gap-3' : 'gap-1'} min-h-[2rem] min-w-0`}>
+                                            {adopter.avgRating !== null ? (
+                                                <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
+                                                    <RatingBadge rating={adopter.avgRating} />
+                                                </RatingExplainer></span>
+                                            ) : (
+                                                <RatingBadge rating={null} />
+                                            )}
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
+                                        </div>
+
+                                        {/* Actividad — stacked stats with labels (v38). Each line has its own word
+                                            so the column reads naturally instead of relying on emoji recall. */}
+                                        <div className="col-span-2 text-xs text-stone-600 space-y-0.5">
+                                            <div>👁 {adopter.profileViews} {adopter.profileViews === 1 ? (t('stats.view_one') || 'vista') : (t('stats.views') || 'vistas')}</div>
+                                            <div>📋 {adopter.requestCount} {adopter.requestCount === 1 ? (t('stats.request_one') || 'pedido') : (t('stats.requests') || 'pedidos')}</div>
+                                            <div>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? (t('stats.adoption_one') || 'adopción') : (t('stats.adoptions') || 'adopciones')}</div>
+                                            {(adopter.formCount ?? 0) > 0 && (
+                                                <div className="text-teal-600 font-medium">
+                                                    📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'formulario') : (t('dashboard.form_count') || 'formularios')}
+                                                </div>
+                                            )}
+                                            {(adopter.signedContractCount ?? 0) > 0 && (
+                                                <div className="text-amber-700 font-medium">
+                                                    ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contrato firmado') : (t('dashboard.signed_contract_count') || 'contratos firmados')}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Procedencia — v2.19.13. Two-event provenance cell:
+                                            "Creado por X · Org · 📝 Pill · hace 3 meses" on top,
+                                            "Editado por Y · Org · hace 2 días" below if ever edited.
+                                            Replaces three separate columns (Origen, Creado-por,
+                                            Dates). Self vs teammate chip color differs so a feed
+                                            dominated by self-rows doesn't wall of teal: stone for
+                                            "your org", teal for "teammate's org". */}
+                                        <div className="col-span-4 text-xs text-stone-600 min-w-0 space-y-0.5">
+                                            {adopter.latestForm && <FormLine form={adopter.latestForm} onOpen={openForm} t={t} />}
+                                            <ProvenanceLine
+                                                kind="created"
+                                                name={adopter.creatorName}
+                                                org={adopter.creatorOrgName}
+                                                isSelf={!!adopter.creatorIsSelf}
+                                                sourceKind={adopter.source}
+                                                date={adopter.createdAt}
+                                                t={t}
+                                            />
+                                            {adopter.lastEditedAt && adopter.lastEditorName
+                                                && (adopter.lastEditedAt - timeAgoSeconds(adopter.createdAt)) > 60 && (
+                                                <ProvenanceLine
+                                                    kind="edited"
+                                                    name={adopter.lastEditorName}
+                                                    org={adopter.lastEditorOrgName ?? null}
+                                                    isSelf={!!adopter.lastEditorIsSelf}
+                                                    date={adopter.lastEditedAt}
+                                                    t={t}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                )), [visible, openForm, t]);
+    const mobileRows = useMemo(() => visible.map((adopter, i) => (
+                                <div
+                                    key={`adopter-${adopter.id}-${i}`}
+                                    data-testid="my-adopters-row"
+                                    // v2.19.13: amber left-border for pending-dup cards,
+                                    // mirrors the desktop row treatment. Not a link: see the desktop row (item 19).
+                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.pendingDuplicates?.length ? 'border-l-4 border-l-amber-400' : ''}`}
+                                >
+                                    {/* Top Row: Avatar + Name + Rating */}
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
+                                            {adopter.thumbnail ? (
+                                                <img src={adopter.thumbnail} alt={`${adopterDisplayName(adopter, t('adopter.nameless'))} profile photo`} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-stone-500">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
+                                                    <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
+                                                </Link>
+
+                                            </div>
+                                            <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
+                                            {/* v2.19.13: inline addedBy + bottom dates row from
+                                                the mobile card are folded into the provenance lines
+                                                at the bottom of the card. SourcePill no longer
+                                                inline next to the name — it renders inside the
+                                                "Creado por" provenance line where it belongs. */}
+                                        </div>
+                                        {adopter.avgRating !== null ? (
+                                            <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
+                                                <RatingBadge rating={adopter.avgRating} />
+                                            </RatingExplainer></span>
+                                        ) : (
+                                            <RatingBadge rating={null} />
+                                        )}
+                                    </div>
+
+                                    {/* Stats Row */}
+                                    {/* With a housemate chip, 12px between wrapped lines keeps its 44px touch area off the stats (review fix 6). */}
+                                    <div className={`flex flex-wrap items-center gap-x-3 ${hasHousemateChip(adopter.housemateAlert) ? 'gap-y-3' : 'gap-y-1'} text-xs text-stone-500`}>
+                                        <span>👁 {adopter.profileViews} {adopter.profileViews === 1 ? t('stats.view_one') : t('stats.views')}</span>
+                                        <span>📋 {adopter.requestCount} {adopter.requestCount === 1 ? t('stats.request_one') : t('stats.requests')}</span>
+                                        <span>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? t('stats.adoption_one') : t('stats.adoptions')}</span>
+                                        {(adopter.formCount ?? 0) > 0 && (
+                                            <span className="text-teal-600 font-medium">
+                                                📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
+                                            </span>
+                                        )}
+                                        {(adopter.signedContractCount ?? 0) > 0 && (
+                                            <span className="text-amber-700 font-medium">
+                                                ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contract') : (t('dashboard.signed_contract_count') || 'contracts')}
+                                            </span>
+                                        )}
+                                        {/* Flags on mobile */}
+                                        <div className="flex gap-1 ml-auto max-w-full min-w-0">
+                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
+                                        </div>
+                                    </div>
+
+                                    {/* Provenance lines — same component as desktop. */}
+                                    <div className="mt-2 pt-2 border-t border-stone-100 text-xs text-stone-600 space-y-0.5">
+                                        {adopter.latestForm && <FormLine form={adopter.latestForm} onOpen={openForm} t={t} />}
+                                        <ProvenanceLine
+                                            kind="created"
+                                            name={adopter.creatorName}
+                                            org={adopter.creatorOrgName}
+                                            isSelf={!!adopter.creatorIsSelf}
+                                            sourceKind={adopter.source}
+                                            date={adopter.createdAt}
+                                            t={t}
+                                        />
+                                        {adopter.lastEditedAt && adopter.lastEditorName
+                                            && (adopter.lastEditedAt - timeAgoSeconds(adopter.createdAt)) > 60 && (
+                                            <ProvenanceLine
+                                                kind="edited"
+                                                name={adopter.lastEditorName}
+                                                org={adopter.lastEditorOrgName ?? null}
+                                                isSelf={!!adopter.lastEditorIsSelf}
+                                                date={adopter.lastEditedAt}
+                                                t={t}
+                                            />
+                                        )}
+                                    </div>
+                                    {/* The profile's own bar (spec 2026-11-05): the same component and copy,
+                                        a ≥44px «Revisar» instead of a 23px pill on a phone. */}
+                                    {!!adopter.pendingDuplicates?.length && (
+                                        <div className={`mt-3 ${ROW_CONTROL}`}>
+                                            {/* Positioned (ROW_CONTROL) so it paints above the name link stretched over the card. */}
+                                            <PendingDupBar adopterId={adopter.id} pairs={adopter.pendingDuplicates} testId="row-pending-dup-bar" stacked />
+                                        </div>
+                                    )}
+                                </div>
+                            )), [visible, openForm, t]);
+
     if (loading) {
         return (
             <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
@@ -367,18 +596,6 @@ export default function MyAdoptersPage() {
         );
     }
 
-    // What the list rules read from a row («Por formulario» = everyone who filled a form, also people
-    // whose form joined a profile they already had — which the Origen pill would miss).
-    const listRow = (a: Adopter): ListRow => ({
-        name: a.name, createdAt: a.createdAt, avgRating: a.avgRating, source: a.source, formCount: a.formCount,
-        fromPost: a.fromPost, housemateChip: hasHousemateChip(a.housemateAlert), latestFormAt: a.latestForm?.submittedAt ?? null,
-    });
-    const rows = adopters.map(a => ({ a, r: listRow(a) }));
-    const counts = Object.fromEntries(FILTER_KEYS.map(k => [k, rows.filter(x => holds(k, x.r)).length])) as Record<FilterKey, number>;
-    const visible = sortRows(
-        rows.filter(x => matches(view.selected, x.r) && nameMatches(deferredQ, x.a.name)).map(x => ({ ...x.r, adopter: x.a })),
-        view.sort, view.selected,
-    ).map(x => x.adopter);
     const onlyFilter = view.selected.size === 1 && !view.q.trim() ? [...view.selected][0] : null;
     // A computer sorts with the column headers: one tap sorts (`first`), a second reverses (`second`).
     // `firstDir`: which way `first` runs — A–Z and «peor primero» go up, «más nuevos» goes down.
@@ -491,220 +708,13 @@ export default function MyAdoptersPage() {
 
                             {/* Table Rows */}
                             <div className="divide-y divide-stone-100">
-                                {visible.map((adopter, i) => (
-                                    <div
-                                        key={`adopter-${adopter.id}-${i}`}
-                                        data-testid="my-adopters-row"
-                                        // v2.19.13: pending-duplicate rows get an amber left-border
-                                        // so the actionable row jumps out without sacrificing
-                                        // any name-cell space. Matches the severity-tint pattern
-                                        // OrgActivityFeed (v2.18.14) and /admin/audit (v2.19.5)
-                                        // already use across the app.
-                                        // The row is NOT a link (fix round 2, item 19): its one link is the name, stretched
-                                        // over the row (ROW_LINK), and the pills, the form line and the rating hint sit
-                                        // beside it (ROW_CONTROL) — never an <a>/<button> inside an <a>.
-                                        className={`relative grid grid-cols-12 gap-2 px-4 py-3 hover:bg-stone-50 transition-colors group items-center ${adopter.pendingDuplicates?.length ? 'border-l-4 border-amber-400' : ''}`}
-                                    >
-                                        {/* Name + Thumbnail */}
-                                        <div className="col-span-4 flex items-center gap-3 min-w-0">
-                                            <div className="w-9 h-9 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
-                                                {adopter.thumbnail ? (
-                                                    <img src={adopter.thumbnail} alt={`${adopterDisplayName(adopter, t('adopter.nameless'))} profile photo`} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-stone-500">
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <div className="flex items-center gap-2 min-w-0">
-                                                    <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
-                                                        <AdopterName adopter={adopter} className="font-semibold text-stone-900 group-hover:text-teal-700 transition-colors truncate text-sm" title />
-                                                    </Link>
-                                                    {/* One decision, one pill: when the person's form is waiting
-                                                        on "¿es la misma persona?", that is the pair the duplicate
-                                                        pill would point at — and the form path also files the
-                                                        request in the right history. */}
-                                                    {!!adopter.pendingDuplicates?.length && <PendingDupPill adopterId={adopter.id} pairs={adopter.pendingDuplicates} t={t} />}
-                                                </div>
-                                                <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
-                                                {/* Inline addedBy was moved to its own column in v2.19.6 —
-                                                    keeps the Name cell focused on identity, lets the
-                                                    Creado-por col carry the resolved name + org chip. */}
-                                            </div>
-                                        </div>
-
-                                        {/* Calificación — avgRating from activity history (legacy `status` is deprecated).
-                                            Flag badges stack underneath the rating badge in v2.19.6 so the
-                                            severity signal and rating live together (a 5-star adopter with a
-                                            period alert now reads in one glance instead of jumping to a
-                                            separate column). Min-height pins both states to row height. */}
-                                        {/* With a housemate chip (a link with a 44px touch area around its 22px pill), 12px under
-                                            the rating keeps that area off the rating's own hint (review fix 6). */}
-                                        <div className={`col-span-2 flex flex-col items-center ${hasHousemateChip(adopter.housemateAlert) ? 'gap-3' : 'gap-1'} min-h-[2rem] min-w-0`}>
-                                            {adopter.avgRating !== null ? (
-                                                <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
-                                                    <RatingBadge rating={adopter.avgRating} />
-                                                </RatingExplainer></span>
-                                            ) : (
-                                                <RatingBadge rating={null} />
-                                            )}
-                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
-                                        </div>
-
-                                        {/* Actividad — stacked stats with labels (v38). Each line has its own word
-                                            so the column reads naturally instead of relying on emoji recall. */}
-                                        <div className="col-span-2 text-xs text-stone-600 space-y-0.5">
-                                            <div>👁 {adopter.profileViews} {adopter.profileViews === 1 ? (t('stats.view_one') || 'vista') : (t('stats.views') || 'vistas')}</div>
-                                            <div>📋 {adopter.requestCount} {adopter.requestCount === 1 ? (t('stats.request_one') || 'pedido') : (t('stats.requests') || 'pedidos')}</div>
-                                            <div>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? (t('stats.adoption_one') || 'adopción') : (t('stats.adoptions') || 'adopciones')}</div>
-                                            {(adopter.formCount ?? 0) > 0 && (
-                                                <div className="text-teal-600 font-medium">
-                                                    📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'formulario') : (t('dashboard.form_count') || 'formularios')}
-                                                </div>
-                                            )}
-                                            {(adopter.signedContractCount ?? 0) > 0 && (
-                                                <div className="text-amber-700 font-medium">
-                                                    ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contrato firmado') : (t('dashboard.signed_contract_count') || 'contratos firmados')}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Procedencia — v2.19.13. Two-event provenance cell:
-                                            "Creado por X · Org · 📝 Pill · hace 3 meses" on top,
-                                            "Editado por Y · Org · hace 2 días" below if ever edited.
-                                            Replaces three separate columns (Origen, Creado-por,
-                                            Dates). Self vs teammate chip color differs so a feed
-                                            dominated by self-rows doesn't wall of teal: stone for
-                                            "your org", teal for "teammate's org". */}
-                                        <div className="col-span-4 text-xs text-stone-600 min-w-0 space-y-0.5">
-                                            {adopter.latestForm && <FormLine form={adopter.latestForm} onOpen={openForm} t={t} />}
-                                            <ProvenanceLine
-                                                kind="created"
-                                                name={adopter.creatorName}
-                                                org={adopter.creatorOrgName}
-                                                isSelf={!!adopter.creatorIsSelf}
-                                                sourceKind={adopter.source}
-                                                date={adopter.createdAt}
-                                                t={t}
-                                            />
-                                            {adopter.lastEditedAt && adopter.lastEditorName
-                                                && (adopter.lastEditedAt - timeAgoSeconds(adopter.createdAt)) > 60 && (
-                                                <ProvenanceLine
-                                                    kind="edited"
-                                                    name={adopter.lastEditorName}
-                                                    org={adopter.lastEditorOrgName ?? null}
-                                                    isSelf={!!adopter.lastEditorIsSelf}
-                                                    date={adopter.lastEditedAt}
-                                                    t={t}
-                                                />
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
+                                {desktopRows}
                             </div>
                         </div>
 
                         {/* Mobile Cards - Hidden on desktop */}
                         <div className="md:hidden space-y-3">
-                            {visible.map((adopter, i) => (
-                                <div
-                                    key={`adopter-${adopter.id}-${i}`}
-                                    data-testid="my-adopters-row"
-                                    // v2.19.13: amber left-border for pending-dup cards,
-                                    // mirrors the desktop row treatment. Not a link: see the desktop row (item 19).
-                                    className={`relative block bg-white rounded-xl p-4 shadow-sm border border-stone-200 hover:border-teal-300 hover:shadow-md transition-all ${adopter.pendingDuplicates?.length ? 'border-l-4 border-l-amber-400' : ''}`}
-                                >
-                                    {/* Top Row: Avatar + Name + Rating */}
-                                    <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-12 h-12 rounded-full bg-stone-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
-                                            {adopter.thumbnail ? (
-                                                <img src={adopter.thumbnail} alt={`${adopterDisplayName(adopter, t('adopter.nameless'))} profile photo`} className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-stone-500">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                                <Link href={`/adopter/${adopter.id}?ref=my-adopters`} prefetch={false} data-testid="my-adopters-name" className={`min-w-0 truncate ${ROW_LINK}`}>
-                                                    <AdopterName adopter={adopter} className="font-semibold text-stone-900 truncate" title />
-                                                </Link>
-
-                                            </div>
-                                            <div className="text-xs text-stone-500 truncate">{contactBlobForDisplay(adopter.contactInfo, t('adopter.ce_type_alias')) || t('dashboard.no_contact')}</div>
-                                            {/* v2.19.13: inline addedBy + bottom dates row from
-                                                the mobile card are folded into the provenance lines
-                                                at the bottom of the card. SourcePill no longer
-                                                inline next to the name — it renders inside the
-                                                "Creado por" provenance line where it belongs. */}
-                                        </div>
-                                        {adopter.avgRating !== null ? (
-                                            <span className={ROW_CONTROL}><RatingExplainer rating={adopter.avgRating}>
-                                                <RatingBadge rating={adopter.avgRating} />
-                                            </RatingExplainer></span>
-                                        ) : (
-                                            <RatingBadge rating={null} />
-                                        )}
-                                    </div>
-
-                                    {/* Stats Row */}
-                                    {/* With a housemate chip, 12px between wrapped lines keeps its 44px touch area off the stats (review fix 6). */}
-                                    <div className={`flex flex-wrap items-center gap-x-3 ${hasHousemateChip(adopter.housemateAlert) ? 'gap-y-3' : 'gap-y-1'} text-xs text-stone-500`}>
-                                        <span>👁 {adopter.profileViews} {adopter.profileViews === 1 ? t('stats.view_one') : t('stats.views')}</span>
-                                        <span>📋 {adopter.requestCount} {adopter.requestCount === 1 ? t('stats.request_one') : t('stats.requests')}</span>
-                                        <span>🏠 {adopter.adoptionCount} {adopter.adoptionCount === 1 ? t('stats.adoption_one') : t('stats.adoptions')}</span>
-                                        {(adopter.formCount ?? 0) > 0 && (
-                                            <span className="text-teal-600 font-medium">
-                                                📄 {adopter.formCount} {(adopter.formCount ?? 0) === 1 ? (t('dashboard.form_count_one') || 'form') : (t('dashboard.form_count') || 'forms')}
-                                            </span>
-                                        )}
-                                        {(adopter.signedContractCount ?? 0) > 0 && (
-                                            <span className="text-amber-700 font-medium">
-                                                ✍️ {adopter.signedContractCount} {(adopter.signedContractCount ?? 0) === 1 ? (t('dashboard.signed_contract_count_one') || 'contract') : (t('dashboard.signed_contract_count') || 'contracts')}
-                                            </span>
-                                        )}
-                                        {/* Flags on mobile */}
-                                        <div className="flex gap-1 ml-auto max-w-full min-w-0">
-                                            <MyAdoptersFlagBadges flags={adopter.flags} housemateAlert={adopter.housemateAlert} adopterId={adopter.id} personName={adopterDisplayName(adopter, t('adopter.nameless'))} t={t} />
-                                        </div>
-                                    </div>
-
-                                    {/* Provenance lines — same component as desktop. */}
-                                    <div className="mt-2 pt-2 border-t border-stone-100 text-xs text-stone-600 space-y-0.5">
-                                        {adopter.latestForm && <FormLine form={adopter.latestForm} onOpen={openForm} t={t} />}
-                                        <ProvenanceLine
-                                            kind="created"
-                                            name={adopter.creatorName}
-                                            org={adopter.creatorOrgName}
-                                            isSelf={!!adopter.creatorIsSelf}
-                                            sourceKind={adopter.source}
-                                            date={adopter.createdAt}
-                                            t={t}
-                                        />
-                                        {adopter.lastEditedAt && adopter.lastEditorName
-                                            && (adopter.lastEditedAt - timeAgoSeconds(adopter.createdAt)) > 60 && (
-                                            <ProvenanceLine
-                                                kind="edited"
-                                                name={adopter.lastEditorName}
-                                                org={adopter.lastEditorOrgName ?? null}
-                                                isSelf={!!adopter.lastEditorIsSelf}
-                                                date={adopter.lastEditedAt}
-                                                t={t}
-                                            />
-                                        )}
-                                    </div>
-                                    {/* The profile's own bar (spec 2026-11-05): the same component and copy,
-                                        a ≥44px «Revisar» instead of a 23px pill on a phone. */}
-                                    {!!adopter.pendingDuplicates?.length && (
-                                        <div className={`mt-3 ${ROW_CONTROL}`}>
-                                            {/* Positioned (ROW_CONTROL) so it paints above the name link stretched over the card. */}
-                                            <PendingDupBar adopterId={adopter.id} pairs={adopter.pendingDuplicates} testId="row-pending-dup-bar" stacked />
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                            {mobileRows}
                         </div>
                     </>
                 )}

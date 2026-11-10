@@ -235,8 +235,8 @@ export default {
                                 const existing = await env.DB.prepare(
                                     `SELECT 1 AS x FROM notifications
                                      WHERE type = 'follow_up_due' AND user_id = ?
-                                       AND (json_extract(metadata, '$.dedupKey') = ?
-                                            OR EXISTS (SELECT 1 FROM json_each(json_extract(metadata, '$.items')) j
+                                       AND (json_extract(CASE WHEN json_valid(metadata) THEN metadata END, '$.dedupKey') = ?
+                                            OR EXISTS (SELECT 1 FROM json_each(json_extract(CASE WHEN json_valid(metadata) THEN metadata END, '$.items')) j
                                                        WHERE json_extract(j.value, '$.dedupKey') = ?))
                                      LIMIT 1`
                                 ).bind(recipient, key, key).first();

@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { clearPairNotices, PAIR_NOTICE_TYPES } from './pairNotices';
+import { clearPairNotices, clearProfilePairNotices, PAIR_NOTICE_TYPES } from './pairNotices';
 
 let sqlite: Database.Database;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Db union getDb() returns
@@ -40,8 +40,15 @@ describe('clearPairNotices', () => {
         expect(unread()).toEqual(['flag', 'form', 'other-pair', 'req-ana', 'req-bea']);
     });
 
-    it('a broken metadata row never breaks the answer', async () => {
+    it('a broken metadata row is skipped — the pair\'s notices still clear', async () => {
         sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, read, metadata) VALUES ('bad', 'x', 'merge_request', 't', 'b', 0, 'not json')`).run();
-        await expect(clearPairNotices(db, 'A', 'B', { types: PAIR_NOTICE_TYPES })).resolves.toBeUndefined();
+        await clearPairNotices(db, 'A', 'B', { types: PAIR_NOTICE_TYPES });
+        expect(unread()).toEqual(['bad', 'form', 'other-pair']);
+    });
+
+    it('a merge absorbed B: every pair notice naming B clears (A–B and B–C), not A–C', async () => {
+        add('b-c', 'dan@x.org', 'merge_request', { primaryId: 'C', secondaryId: 'B' });
+        await clearProfilePairNotices(db, 'B');
+        expect(unread()).toEqual(['form', 'other-pair']);
     });
 });

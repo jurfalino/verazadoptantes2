@@ -55,8 +55,10 @@ async function isRegistered(db: Db, item: FollowupNoticeItem): Promise<boolean> 
 export async function clearDoneFollowupNotices(db: Db, animalId: string, ctx: Record<string, unknown> = {}): Promise<void> {
     if (!animalId) return;
     try {
-        const mentions = sql`(json_extract(${notifications.metadata}, '$.animalId') = ${animalId}
-            OR EXISTS (SELECT 1 FROM json_each(json_extract(${notifications.metadata}, '$.items')) j
+        // CASE guards: json_extract / json_each raise on invalid JSON, and SQLite doesn't promise to test json_valid first.
+        const meta = sql`CASE WHEN json_valid(${notifications.metadata}) THEN ${notifications.metadata} END`;
+        const mentions = sql`(json_extract(${meta}, '$.animalId') = ${animalId}
+            OR EXISTS (SELECT 1 FROM json_each(json_extract(${meta}, '$.items')) j
                        WHERE json_extract(j.value, '$.animalId') = ${animalId}))`;
         const open = await db.select({ id: notifications.id, metadata: notifications.metadata })
             .from(notifications)

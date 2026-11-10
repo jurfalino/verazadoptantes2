@@ -100,6 +100,9 @@ export function nameMatches(q: string, name: string | null | undefined): boolean
     return words.every(w => n.includes(w));
 }
 
+/** One collator for every comparison (localeCompare builds one per call — thousands per sort). */
+const NAME_ORDER = new Intl.Collator('es', { sensitivity: 'base' });
+
 export type SortKey = 'new' | 'old' | 'name' | 'name_desc' | 'worst' | 'best';
 export const SORT_KEYS: readonly SortKey[] = ['new', 'old', 'name', 'name_desc', 'worst', 'best'];
 export const DEFAULT_SORT: SortKey = 'new';
@@ -121,7 +124,7 @@ const secondsOf = (v: ListRow['createdAt']): number => {
 export function sortRows<R extends ListRow>(rows: readonly R[], sort: SortKey, selected: ReadonlySet<FilterKey>): R[] {
     // A–Z and Z–A both keep nameless profiles («Sin nombre») at the end, not first.
     const nameless = (r: R) => !(r.name ?? '').trim();
-    const byName = (a: R, b: R) => (a.name ?? '').localeCompare(b.name ?? '', 'es', { sensitivity: 'base' });
+    const byName = (a: R, b: R) => NAME_ORDER.compare(a.name ?? '', b.name ?? '');
     const byNameKeepNamelessLast = (dir: 1 | -1) => (a: R, b: R) =>
         nameless(a) !== nameless(b) ? (nameless(a) ? 1 : -1) : dir * byName(a, b);
     // «Por formulario» alone: the date columns read the newest FORM (what that tab always did), both ways.

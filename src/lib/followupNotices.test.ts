@@ -62,6 +62,13 @@ describe('clearDoneFollowupNotices', () => {
         expect(unread()).toContain('ana-bundle');
     });
 
+    it('a broken metadata row is skipped — the rest still clear', async () => {
+        sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, read, metadata) VALUES ('bad', 'x', 'follow_up_due', 't', 'b', 0, 'not json')`).run();
+        care('poti', 'health_neuter');
+        await clearDoneFollowupNotices(db, 'poti');
+        expect(unread()).toEqual(['ana-bundle', 'bad', 'bea-bundle']);
+    });
+
     it('reads both metadata shapes; garbage is no items', () => {
         expect(followupNoticeItems('{"animalId":"a","followupKey":"k"}')).toEqual([{ animalId: 'a', placementId: null, followupKey: 'k' }]);
         expect(followupNoticeItems('nope')).toEqual([]);

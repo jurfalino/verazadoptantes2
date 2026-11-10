@@ -974,7 +974,9 @@ export async function getPendingDuplicatesForUser(
     scope: 'all' | 'needs_viewer' = 'all',
 ): Promise<{ pairs: PendingDedupPair[]; total: number; lowHidden: number; page?: number; focusCandidateId?: string;
     /** Rows whose next move is the viewer's (needsViewer), whatever `scope`: the number on the home card and the section header. */
-    needsViewer: number }> {
+    needsViewer: number;
+    /** Set when the feed failed: the list is empty because of an error, not because nothing is pending. */
+    errorId?: string }> {
     const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0, needsViewer: 0 };
     // From the browser: anything but the one known value is the full list.
     const onlyNeedsViewer = scope === 'needs_viewer';
@@ -1497,10 +1499,8 @@ export async function getPendingDuplicatesForUser(
 
         return { pairs, total, lowHidden, page, focusCandidateId, needsViewer: needsViewerCount };
     } catch (error) {
-        logger.warn('getPendingDuplicatesForUser failed', {
-            actorEmail, error: error instanceof Error ? error.message : String(error),
-        });
-        return EMPTY;
+        const errorId = logger.error('getPendingDuplicatesForUser failed', error, { actorEmail, scope });
+        return { ...EMPTY, errorId };
     }
 }
 
