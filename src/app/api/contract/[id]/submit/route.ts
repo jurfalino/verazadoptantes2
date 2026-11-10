@@ -231,8 +231,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 comments: null,
                 // A new placement starts from the animal's current one (CAS mode) — for a
                 // fostered animal that is the FOSTER home's, so these are cleared explicitly.
-                deliveredToHome: null, verifiedAddress: null, identityVerified: null, onBehalfOf: null, sourceUrl: null,
-            }, animal, 'contract', { cas: true, adoptionVia: invitation ? 'invitation' : 'open_link' }));
+                deliveredToHome: null, verifiedAddress: null, identityVerified: null, onBehalfOf: null,
+            // `sourceUrl` is NOT in `data` (it would overwrite animals.source_url, the original
+            // post), and it is dropped from `existing` so the new placement doesn't copy the
+            // view's COALESCEd value (the foster's / the animal's) — it starts with none.
+            }, { ...animal, sourceUrl: undefined }, 'contract', { cas: true, adoptionVia: invitation ? 'invitation' : 'open_link' }));
         } catch (e) {
             // Someone adopted or fostered the animal between the check above
             // and this write (the database allows one active placement per

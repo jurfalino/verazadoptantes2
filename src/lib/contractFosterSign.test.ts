@@ -48,8 +48,8 @@ function viewRow(): Record<string, unknown> {
 /** The submit route's call, verbatim. */
 const sign = (adopterId: string, invitation: boolean, existing = viewRow()) => updateRecord(state.db, {
     id: 'an1', adopterId, recordType: 'adoption', date: new Date(), status: 'active', rating: null, comments: null,
-    deliveredToHome: null, verifiedAddress: null, identityVerified: null, onBehalfOf: null, sourceUrl: null,
-}, existing, 'contract', { cas: true, adoptionVia: invitation ? 'invitation' : 'open_link' });
+    deliveredToHome: null, verifiedAddress: null, identityVerified: null, onBehalfOf: null,
+}, { ...existing, sourceUrl: undefined }, 'contract', { cas: true, adoptionVia: invitation ? 'invitation' : 'open_link' });
 
 function candidate(id: string, adopterId: string) {
     sqlite.prepare('INSERT INTO form_submissions (id, user_id, name, linked_adopter_id, selected_animal_id, created_at) VALUES (?, ?, ?, ?, ?, 1000)').run(id, OWNER, id, adopterId, 'an1');
@@ -65,7 +65,7 @@ describe('fostered animals take contracts', () => {
         for (const id of ['fo', 'a', 'b', 'c']) {
             sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 1000, 1000)`).run(id, id, OWNER);
         }
-        sqlite.prepare(`INSERT INTO animals (id, name, species, sex, added_by, created_at, updated_at) VALUES ('an1', 'Nina', 'cat', 'hembra', ?, 1000, 1000)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO animals (id, name, species, sex, added_by, source_url, created_at, updated_at) VALUES ('an1', 'Nina', 'cat', 'hembra', ?, 'https://example.com/post', 1000, 1000)`).run(OWNER);
         sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, verified_address, delivered_to_home, identity_verified, on_behalf_of, source_url)
             VALUES ('f1', 'an1', 'fo', 'foster', 1000, 'Casa tránsito 1', 1, 1, 'X', 'https://example.com/foster')`).run();
         candidate('sa', 'a');
@@ -128,5 +128,33 @@ describe('fostered animals take contracts', () => {
         sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES ('p9', 'an1', 'b', 'adoption', 2000)`).run();
         const refused = await createContractInvitation('an1', 'a');
         expect(refused).toMatchObject({ success: false, error: 'Animal already adopted' });
+    });
+
+    describe('a signature never touches the animal\'s original post (animals.source_url)', () => {
+        const POST = 'https://example.com/post';
+        const animalRow = () => sqlite.prepare("SELECT source_url, updated_by FROM animals WHERE id = 'an1'").get()!;
+
+        it('via invitation on a fostered animal: animal kept, new adoption placement has no source_url', async () => {
+            await sign('a', true);
+            expect(animalRow()).toMatchObject({ source_url: POST });
+            expect(active()[0]).toMatchObject({ record_type: 'adoption', source_url: null });
+        });
+
+        it('via the open link on an available animal: animal kept', async () => {
+            sqlite.prepare("UPDATE placements SET ended_at = 2000 WHERE id = 'f1'").run();
+            const res = await sign('a', false);
+            expect(res.lost).toBe(false);
+            expect(animalRow()).toMatchObject({ source_url: POST });
+            expect(active()[0]).toMatchObject({ record_type: 'adoption', source_url: null });
+        });
+
+        it('a losing signature leaves the animal untouched', async () => {
+            const stale = viewRow();
+            sqlite.prepare("UPDATE placements SET ended_at = 2000 WHERE id = 'f1'").run();
+            sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at) VALUES ('p9', 'an1', 'b', 'adoption', 2000)`).run();
+            const res = await sign('a', true, stale);
+            expect(res.lost).toBe(true);
+            expect(animalRow()).toMatchObject({ source_url: POST, updated_by: null });
+        });
     });
 });
