@@ -561,3 +561,53 @@ export async function saveMyLocale(locale: 'es' | 'en' | 'pt'): Promise<{ succes
         return { success: false, errorId };
     }
 }
+
+import { sanitizePins, type FilterKey } from '@/domain/adopterListView';
+import { getAdopterListPinsForEmail, setAdopterListPinsForEmail } from '@/lib/adopterListPins';
+
+/**
+ * Mis adoptantes: the filters the caller pinned onto the main screen (the
+ * defaults when none). Null when signed out or the read failed (logged) —
+ * the page then shows the defaults.
+ */
+export async function getAdopterListPins(): Promise<FilterKey[] | null> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') return null;
+        const db = await getDb();
+        if (!db) return null;
+        return await getAdopterListPinsForEmail(db, userEmail);
+    } catch (error) {
+        logger.warn('getAdopterListPins failed, defaults shown', { userEmail, error: error instanceof Error ? error.message : String(error) });
+        return null;
+    }
+}
+
+/**
+ * Save the caller's pins. Anything not a list is refused; unknown keys,
+ * repeats and anything past PIN_MAX are dropped (sanitizePins) before the
+ * write. Writes only the caller's own user_profiles row. A "view as" session
+ * is read-only by design (warn + errorId).
+ */
+export async function saveAdopterListPins(pins: unknown): Promise<{ success: boolean; pins?: FilterKey[]; errorId?: string }> {
+    let userEmail: string | undefined;
+    try {
+        userEmail = await getUser();
+        if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
+        if (!Array.isArray(pins)) throw new Error('Invalid pins: not a list');
+        const clean = sanitizePins(pins);
+        const db = await getDb();
+        if (!db) throw new Error('No database');
+        await setAdopterListPinsForEmail(db, userEmail, clean);
+        return { success: true, pins: clean };
+    } catch (error) {
+        if (error instanceof Error && error.name === READ_ONLY_ERROR_NAME) {
+            const errorId = generateErrorId();
+            logger.warn('saveAdopterListPins: read-only ("view as") session, not saved', { userEmail, errorId });
+            return { success: false, errorId };
+        }
+        const errorId = logger.error('saveAdopterListPins failed', error, { userEmail });
+        return { success: false, errorId };
+    }
+}

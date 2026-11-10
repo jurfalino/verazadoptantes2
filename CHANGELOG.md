@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.46] - 2026-11-10
+
+### Added — Mis adoptantes: sort, filter, pin, search
+- **Sort by the column headers** (computer): «Nombre» (A–Z, tap again Z–A), «Calificación» (worst first, then
+  best first; unrated always last), «Procedencia» (newest first — the default — then oldest). On a phone, an
+  «Ordenar» menu with the same options.
+- **«Filtros» panel** with every filter in one place: Procedencia (por formulario, desde un post, importado,
+  cargado a mano), Calificación (1★ Peligroso … 5★ Excelente, Sin calificar — several at once) and Alertas
+  (conviviente con alerta). Choices in the same group widen the list; different groups narrow it.
+- **Pin up to 4 filters** onto the main screen as quick buttons (pin icon in the panel). «Por formulario» and
+  «Desde un post» — the old tabs — come pinned. Pins are per person and follow you across devices.
+- **«Buscar por nombre»**, a **«Quitar filtros»** button while anything is applied, and **«Mostrando X de Y
+  adoptantes»**. The whole view lives in the URL (the homepage's «?filtro=posts» links still work).
+- Replaces the «Todos / Por formulario / Desde un post» tabs.
+
 ## [2.58.45] - 2026-11-09
 
 ### Changed — Mis adoptantes lists what waits on you like Mis animales lists its due animals

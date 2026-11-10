@@ -774,6 +774,9 @@ export const userProfiles = sqliteTable("user_profiles", {
     // «Avisame de cambios hechos por:» (src/domain/teamChangeAudience.ts):
     // NULL/'outside' = other rescuers only (default), 'team' = also my team. Bell and email.
     profileChangesFrom: text("profile_changes_from"),
+    // Mis adoptantes: the filters this person pinned onto the main screen — JSON array of
+    // FilterKey (src/domain/adopterListView.ts), at most PIN_MAX. NULL = the defaults.
+    adopterListPins: text("adopter_list_pins"),
     // Homepage modules: what the person hid (the «Para empezar» card) —
     // Unused since 2.58.28 (the homepage «Ocultar» was removed). Kept: migration 0102 already ran on staging.
     homePrefs: text("home_prefs"),

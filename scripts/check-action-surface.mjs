@@ -428,7 +428,15 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // own user_profiles.profile_changes_from (the user row is looked up by the SESSION email; no user
 // row → refused); a "view as" session is read-only (warn + errorId); audited; returns no data.
 // getEmailPrefs (already counted) now also returns the caller's own choice. MEASURED (npm run build): 179.
-const EXPECTED_ACTIONS = 179;
+// 181 = 179 + 2. 2026-11-10 Mis adoptantes «Filtros» pins (src/domain/adopterListView.ts; Jon,
+// option E): +getAdopterListPins() and +saveAdopterListPins(pins) in src/app/actions/settings.ts.
+// get takes no arguments and returns only the caller's own pins (session email; signed out → null).
+// save: session required (else refused with an errorId); `pins` must be a list — every entry not
+// one of the 11 known FilterKeys is dropped, repeats too, and at most 4 are kept (sanitizePins),
+// so a stranger can store nothing but those strings; writes only the caller's own
+// user_profiles.adopter_list_pins (user row looked up by the SESSION email; no row → refused);
+// a "view as" session is read-only (warn + errorId). Returns the stored pins only.
+const EXPECTED_ACTIONS = 181;
 
 let manifest;
 try {

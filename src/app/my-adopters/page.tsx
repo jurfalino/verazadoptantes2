@@ -5,7 +5,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { FileText, Search, Share2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, FileText, Search } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
@@ -15,6 +15,14 @@ import { useShowToast } from '@/components/ui/Toast';
 import { timeAgo, timeAgoSeconds } from '@/lib/timeAgo';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
+import AdopterListToolbar from '@/components/myAdopters/AdopterListToolbar';
+import AdopterFiltersPanel from '@/components/myAdopters/AdopterFiltersPanel';
+import { getAdopterListPins, saveAdopterListPins } from '@/app/actions/settings';
+import { handledAsStale } from '@/lib/errorMessage';
+import {
+    DEFAULT_PINS, DEFAULT_SORT, FILTER_KEYS, PIN_MAX, holds, matches, nameMatches, searchFromView, sortRows, viewFromSearch,
+    type FilterKey, type ListRow, type ListView, type SortKey,
+} from '@/domain/adopterListView';
 import { PendingDupBar, type PendingDupBarPair } from '@/components/PendingDupBar';
 import { GroupChip } from '@/components/GroupChip';
 import { pairKey } from '@/domain/dedupPair';
@@ -77,11 +85,12 @@ interface Adopter {
 }
 
 /**
- * `?filtro=formularios` / `posts` — kept in the URL so Back,
- * shared links and the homepage cards («Ver las N personas») open the list already filtered, with the same count.
+ * Filters, sorting and the name search (Jon 2026-11-10, option E): every
+ * filter in the «Filtros» panel, up to 4 pinned onto the screen, sortable
+ * column headers on a computer. All of it in the URL (`?filtro=posts` — the
+ * homepage cards' links — still opens «Desde un post»). Rules:
+ * src/domain/adopterListView.ts.
  */
-const FILTERS = { forms: 'formularios', posts: 'posts' } as const;
-type Filter = 'all' | keyof typeof FILTERS;
 
 /**
  * The person's newest form as a provenance event: "Formulario para Luna ·
@@ -249,17 +258,39 @@ export default function MyAdoptersPage() {
     const { data: session } = useSession();
     const router = useRouter();
     const toast = useShowToast();
-    const [filter, setFilterState] = useState<Filter>('all');
+    const [view, setViewState] = useState<ListView>({ selected: new Set(), sort: DEFAULT_SORT, q: '' });
     // Read once from the URL (not useSearchParams: that would force a
     // Suspense boundary onto this whole client page).
+    useEffect(() => { setViewState(viewFromSearch(window.location.search)); }, []);
+    const setView = (next: ListView) => {
+        setViewState(next);
+        router.replace(`/my-adopters${searchFromView(next)}`, { scroll: false });
+    };
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    // The person's pinned filters (their own preference); the defaults until read, and if the read fails.
+    const [pins, setPins] = useState<FilterKey[]>([...DEFAULT_PINS]);
     useEffect(() => {
-        const param = new URLSearchParams(window.location.search).get('filtro');
-        const found = (Object.keys(FILTERS) as Array<keyof typeof FILTERS>).find(k => FILTERS[k] === param);
-        setFilterState(found ?? 'all');
+        let active = true;
+        getAdopterListPins()
+            .then(p => { if (active && p) setPins(p); })
+            .catch(e => { resolveErrorId(e, 'MyAdopters.pins'); });
+        return () => { active = false; };
     }, []);
-    const setFilter = (next: Filter) => {
-        setFilterState(next);
-        router.replace(next === 'all' ? '/my-adopters' : `/my-adopters?filtro=${FILTERS[next]}`, { scroll: false });
+    const togglePin = (k: FilterKey) => {
+        const before = pins;
+        const next = pins.includes(k) ? pins.filter(p => p !== k) : pins.length < PIN_MAX ? [...pins, k] : pins;
+        if (next === pins) return;
+        setPins(next);
+        void saveAdopterListPins(next)
+            .then(res => {
+                if (res.success) return;
+                setPins(before);
+                toast.error(t('errors.generic') || 'Error', t('myAdopters.pin_save_failed'), res.errorId);
+            })
+            .catch(e => {
+                setPins(before);
+                if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('myAdopters.pin_save_failed'), resolveErrorId(e, 'MyAdopters.pins'));
+            });
     };
     const openForm = (submissionId: string) => router.push(`/form-results/${submissionId}?from=adopters`);
     const currentEmail = session?.user?.email || '';
@@ -318,23 +349,35 @@ export default function MyAdoptersPage() {
         );
     }
 
-    // "Por formulario": everyone who filled a form — including people whose
-    // form was combined into a profile they already had, which the Origen
-    // pill (how the profile was CREATED) would miss. Newest form first.
-    const withForms = adopters
-        .filter(a => (a.formCount ?? 0) > 0)
-        .sort((a, b) => (b.latestForm?.submittedAt ?? 0) - (a.latestForm?.submittedAt ?? 0));
-    // «Desde un post»: everyone with a record from a social post, same order as «Todos».
-    const fromPosts = adopters.filter(a => a.fromPost);
-    const visible = filter === 'forms' ? withForms : filter === 'posts' ? fromPosts : adopters;
-    // Few accounts import posts; the chip shows only when it has someone (or is the open view).
-    const chips: Array<[Filter, string, number]> = [
-        ['all', t('myAdopters.filter_all') || 'Todos', adopters.length],
-        ['forms', t('myAdopters.filter_forms') || 'Por formulario', withForms.length],
-        ...(fromPosts.length > 0 || filter === 'posts'
-            ? [['posts', t('myAdopters.filter_posts') || 'Desde un post', fromPosts.length] as [Filter, string, number]]
-            : []),
-    ];
+    // What the list rules read from a row («Por formulario» = everyone who filled a form, also people
+    // whose form joined a profile they already had — which the Origen pill would miss).
+    const listRow = (a: Adopter): ListRow => ({
+        name: a.name, createdAt: a.createdAt, avgRating: a.avgRating, source: a.source, formCount: a.formCount,
+        fromPost: a.fromPost, housemateChip: hasHousemateChip(a.housemateAlert), latestFormAt: a.latestForm?.submittedAt ?? null,
+    });
+    const rows = adopters.map(a => ({ a, r: listRow(a) }));
+    const counts = Object.fromEntries(FILTER_KEYS.map(k => [k, rows.filter(x => holds(k, x.r)).length])) as Record<FilterKey, number>;
+    const visible = sortRows(
+        rows.filter(x => matches(view.selected, x.r) && nameMatches(view.q, x.a.name)).map(x => ({ ...x.r, adopter: x.a })),
+        view.sort, view.selected,
+    ).map(x => x.adopter);
+    const onlyFilter = view.selected.size === 1 && !view.q.trim() ? [...view.selected][0] : null;
+    // A computer sorts with the column headers: one tap sorts (`first`), a second reverses (`second`).
+    // `firstDir`: which way `first` runs — A–Z and «peor primero» go up, «más nuevos» goes down.
+    type Dir = 'ascending' | 'descending';
+    const dirOf = (first: SortKey, second: SortKey, firstDir: Dir): Dir | 'none' =>
+        view.sort === first ? firstDir : view.sort === second ? (firstDir === 'ascending' ? 'descending' : 'ascending') : 'none';
+    const sortHeader = (label: string, first: SortKey, second: SortKey, firstDir: Dir) => {
+        const dir = dirOf(first, second, firstDir);
+        const Arrow = dir === 'ascending' ? ArrowUp : dir === 'descending' ? ArrowDown : ArrowUpDown;
+        return (
+            <button type="button" onClick={() => setView({ ...view, sort: view.sort === first ? second : first })}
+                data-testid={`sort-${first}`}
+                className={`inline-flex items-center gap-1 min-h-[32px] uppercase tracking-wide ${dir !== 'none' ? 'text-teal-700' : 'hover:text-stone-700'}`}>
+                {label}<Arrow className="w-3.5 h-3.5" strokeWidth={2.5} aria-hidden="true" />
+            </button>
+        );
+    };
 
     return (
         <div className="min-h-screen bg-stone-50 py-8 px-4">
@@ -377,27 +420,12 @@ export default function MyAdoptersPage() {
                 <PendingDedup />
 
                 {adopters.length > 0 && (
-                    <div role="group" aria-label={t('myAdopters.filter_label') || 'Filtrar'} className="flex flex-wrap gap-2 mb-4">
-                        {chips.map(([key, label, count]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                data-testid={`filter-${key}`}
-                                aria-pressed={filter === key}
-                                onClick={() => setFilter(key)}
-                                className={`inline-flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-[13px] font-bold border transition-colors ${filter === key
-                                    ? 'bg-teal-600 text-white border-transparent'
-                                    // Not hover:bg-stone-100: hover variants have no [data-theme]
-                                    // remap and flash a white chip in Azul Noche.
-                                    : 'bg-white text-stone-700 border-stone-200 hover:bg-[var(--accent-subtle-bg)]'}`}
-                            >
-                                {key === 'forms' && <FileText className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
-                                {key === 'posts' && <Share2 className="w-4 h-4" strokeWidth={2} aria-hidden="true" />}
-                                {label}
-                                <span data-testid={`filter-${key}-count`} className={`text-xs font-semibold px-1.5 rounded-full ${filter === key ? 'bg-white/20' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
-                            </button>
-                        ))}
-                    </div>
+                    <AdopterListToolbar view={view} onView={setView} pins={pins} counts={counts}
+                        total={adopters.length} shown={visible.length} onOpenPanel={() => setFiltersOpen(true)} t={t} />
+                )}
+                {filtersOpen && (
+                    <AdopterFiltersPanel view={view} onView={setView} pins={pins} onPin={togglePin} counts={counts}
+                        shown={visible.length} onClose={() => setFiltersOpen(false)} t={t} />
                 )}
 
                 {adopters.length === 0 ? (
@@ -413,11 +441,13 @@ export default function MyAdoptersPage() {
                         <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
                             <FileText className="w-7 h-7" strokeWidth={1.5} aria-hidden="true" />
                         </div>
-                        <p className="text-stone-600 mb-6 text-sm">{filter === 'posts'
+                        <p className="text-stone-600 mb-6 text-sm">{onlyFilter === 'src:post'
                             ? (t('myAdopters.posts_empty') || 'Todavía no hay perfiles desde un post.')
-                            : (t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.')}</p>
-                        <button type="button" onClick={() => setFilter('all')} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
-                            {t('myAdopters.forms_empty_cta') || 'Ver todos'}
+                            : onlyFilter === 'src:form'
+                                ? (t('myAdopters.forms_empty') || 'Nadie completó tu formulario todavía.')
+                                : t('myAdopters.no_match')}</p>
+                        <button type="button" data-testid="adopter-list-empty-clear" onClick={() => setView({ ...view, selected: new Set(), q: '' })} className="px-4 py-2 rounded-xl text-sm font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 min-h-[44px]">
+                            {t('myAdopters.filters_clear')}
                         </button>
                     </div>
                 ) : (
@@ -431,11 +461,12 @@ export default function MyAdoptersPage() {
                                 and relative timestamps. Name widens 3→4 cols to
                                 fit the breathing room the previous layout owed it.
                                 Rating cell keeps the v2.19.6 flag-badge stack. */}
-                            <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                                <div className="col-span-4">{t('dashboard.table_adopter_name')}</div>
-                                <div className="col-span-2 text-center">{t('dashboard.table_rating') || 'Calificación'}</div>
-                                <div className="col-span-2">{t('dashboard.table_activity') || 'Actividad'}</div>
-                                <div className="col-span-4">{t('dashboard.table_provenance') || 'Procedencia'}</div>
+                            <div role="row" className="grid grid-cols-12 gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                                <div role="columnheader" aria-sort={dirOf('name', 'name_desc', 'ascending')} className="col-span-4">{sortHeader(t('dashboard.table_adopter_name'), 'name', 'name_desc', 'ascending')}</div>
+                                <div role="columnheader" aria-sort={dirOf('worst', 'best', 'ascending')} className="col-span-2 flex justify-center">{sortHeader(t('dashboard.table_rating') || 'Calificación', 'worst', 'best', 'ascending')}</div>
+                                <div role="columnheader" className="col-span-2 flex items-center">{t('dashboard.table_activity') || 'Actividad'}</div>
+                                {/* Procedencia carries the dates: newest first (the default), then oldest. */}
+                                <div role="columnheader" aria-sort={dirOf('new', 'old', 'descending')} className="col-span-4">{sortHeader(t('dashboard.table_provenance') || 'Procedencia', 'new', 'old', 'descending')}</div>
                             </div>
 
                             {/* Table Rows */}
