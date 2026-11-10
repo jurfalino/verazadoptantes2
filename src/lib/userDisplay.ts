@@ -9,6 +9,7 @@
  * full email and do NOT use this. Matches the `email.split('@')[0]` fallback the
  * server-side name resolvers already use (notifications.ts, piiAccess.ts, …).
  */
+import { APPLICATION_AUTO_ACTOR } from '@/domain/constants';
 export function emailHandle(email: string | null | undefined): string {
     if (!email) return '';
     const at = email.indexOf('@');
@@ -52,6 +53,7 @@ const SYSTEM_ACTOR_LABEL_KEYS: ReadonlyMap<string, string> = new Map([
     ['contract-signed-via-invitation', 'common.actor_contract'],
     ['contract-submission', 'common.actor_contract'],
     ['form-submission', 'common.actor_form_submission'],
+    [APPLICATION_AUTO_ACTOR, 'common.actor_automatic'],
 ]);
 
 /**

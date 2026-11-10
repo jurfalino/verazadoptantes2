@@ -10,6 +10,7 @@ import { enrichAdopters } from "@/app/actions/enrichAdopters";
 import { getRatingColors, getRatingDescription } from "@/lib/ratingColors";
 import { StarIcon } from "@/components/StarIcon";
 import { getFeatureFlag } from "@/config/features";
+import { APPLICATION_AUTO_ACTOR } from "@/domain/constants";
 
 
 export default async function AdminAdoptersPage({ searchParams }: { searchParams: Promise<{ q?: string; country?: string; rating?: string; created_by?: string; updated_by?: string; visibility?: string; sort?: string; user?: string }> }) {
@@ -67,6 +68,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                 SELECT adopter_id, changed_by,
                        ROW_NUMBER() OVER (PARTITION BY adopter_id ORDER BY changed_at DESC) AS rn
                 FROM adopter_history
+                WHERE changed_by IS NOT ${APPLICATION_AUTO_ACTOR}
             ) h
             JOIN adopters a ON a.id = h.adopter_id
             WHERE h.rn = 1
@@ -138,6 +140,7 @@ export default async function AdminAdoptersPage({ searchParams }: { searchParams
                 SELECT adopter_id, changed_by,
                        ROW_NUMBER() OVER (PARTITION BY adopter_id ORDER BY changed_at DESC) AS rn
                 FROM adopter_history
+                WHERE changed_by IS NOT ${APPLICATION_AUTO_ACTOR}
             )
             WHERE rn = 1 AND changed_by = ${filterUpdatedBy}
         )`);

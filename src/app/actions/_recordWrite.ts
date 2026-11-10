@@ -11,6 +11,9 @@ import { eq, and, isNull, desc, ne, sql } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { canonField } from '@/domain/fieldCollab';
+import { RECORD_TYPES } from '@/domain/constants';
+import type { AdoptionVia } from '@/domain/applications';
+import { closeApplicationsOnAdoption } from '@/lib/applicationWrites';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
 const EVENT_TYPES = ['observation', 'adoption_request', 'follow_up', 'returned_pet'];
@@ -223,7 +226,7 @@ function asPlanned(viewOf: (f: string) => unknown, existing: RecordData, fields:
  * caller should re-read and re-plan. Without it, writes are unconditional (the
  * pre-collision behaviour, kept for callers that do no checking).
  */
-export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean } = {}): Promise<{ lost: boolean; landed?: string[] }> {
+export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean; adoptionVia?: AdoptionVia } = {}): Promise<{ lost: boolean; landed?: string[]; closedApplications?: number }> {
     const id: string = data.id;
     const now = new Date();
     const cas = !!opts.cas;
@@ -330,6 +333,21 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
         return won.length > 0;
     };
 
+    /** An adoption opened: the animal's other candidates close (never throws). */
+    const closeCandidates = async () => {
+        if (desiredType !== RECORD_TYPES.ADOPTION) return {};
+        const closedApplications = await closeApplicationsOnAdoption(db, {
+            animalId: id,
+            ownerEmail: existing.addedBy ?? null,
+            animalName: existing.animalName ?? null,
+            animalSex: existing.sex ?? null,
+            adopterId: desiredAdopter,
+            via: opts.adoptionVia ?? 'in_app',
+            nowSec: Math.floor(now.getTime() / 1000),
+        });
+        return { closedApplications };
+    };
+
     if (wantsPlacement) {
         if (active) {
             // Reuse the domain decision: does the prior placement END?
@@ -342,6 +360,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
             if (ended) {
                 if (!(await closeActive())) return lostAfterAnimal();
                 if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
+                return { lost: false, ...(await closeCandidates()) };
             } else {
                 // Same holder + type → patch mutable fields on the active placement.
                 const pPatch: RecordData = {};
@@ -370,6 +389,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
             // available → placed: open the first placement. Two people doing
             // this at once: the database lets only one in.
             if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
+            return { lost: false, ...(await closeCandidates()) };
         }
     } else if (active && (desiredType === 'available' || !desiredAdopter)) {
         // Placed → available: close the active placement.

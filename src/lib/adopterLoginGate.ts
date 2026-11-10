@@ -32,7 +32,8 @@
 
 import { ratingBansAdopting } from '@/domain/ratings';
 import { adopters, adoptions, duplicateTokens, adopterHistory } from '@/db/schema';
-import { eq, and, like, isNull, desc } from 'drizzle-orm';
+import { eq, and, like, isNull, desc, sql } from 'drizzle-orm';
+import { APPLICATION_AUTO_ACTOR } from '@/domain/constants';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
@@ -161,7 +162,8 @@ export async function checkAdopterLoginGate(rawEmail: string): Promise<GateResul
             // Most recent 2 editors from history.
             const historyRows = await db.select({ changedBy: adopterHistory.changedBy })
                 .from(adopterHistory)
-                .where(eq(adopterHistory.adopterId, adopterId))
+                // The automatic close of an application is not an editor.
+                .where(and(eq(adopterHistory.adopterId, adopterId), sql`${adopterHistory.changedBy} IS NOT ${APPLICATION_AUTO_ACTOR}`))
                 .orderBy(desc(adopterHistory.changedAt))
                 .limit(2)
                 .catch(() => [] as { changedBy: string | null }[]);

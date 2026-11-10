@@ -26,7 +26,7 @@ import { deliveryAddressGiven, type AddedRecord } from '@/domain/profileAddition
 import { notifyProfileAddition } from '@/lib/profileAdditionNotices';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
-export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[] };
+export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[]; closedApplications?: { animalId: string; count: number } };
 
 // The editable fields of a record, as the `adoptions` view names them.
 // v2.55.17-1: sex/color/microchip/age/sourceUrl/comments were once missing
@@ -276,6 +276,7 @@ async function updateRecordFields(
         const apply = plan.apply.filter(f => canonField(f, payload[f]) !== canonField(f, currentVals[f]));
         const saved = [...plan.alreadySaved, ...plan.apply.filter(f => !apply.includes(f))];
 
+        let closedApplications = 0;
         if (apply.length) {
             const writeData: Record<string, unknown> = { id: recordId };
             for (const f of apply) writeData[f] = payload[f];
@@ -283,7 +284,7 @@ async function updateRecordFields(
             // Normalized write: identity → animals, custody → placements
             // (closing/opening spans on a transition), events → adopter_events.
             // Each table's write is conditional on the values it replaces.
-            const { lost, landed } = await updateRecord(db, writeData, current, changedBy, { cas: true });
+            const { lost, landed, closedApplications: closed } = await updateRecord(db, writeData, current, changedBy, { cas: true });
             if (lost) {
                 // Part of it may have landed (the animal's own fields) before the
                 // placement part lost: those get their history now; the retry
@@ -291,6 +292,7 @@ async function updateRecordFields(
                 if (landed?.length) await recordLanded(landed, currentVals, {}, current);
                 continue; // someone saved in between — re-read and re-check
             }
+            closedApplications = closed ?? 0;
             await recordLanded(apply, currentVals, writeData, current);
             // F4: marking «Entregado en casa» (or changing its address) while
             // editing copies the address into the contacts, as creating does.
@@ -317,6 +319,7 @@ async function updateRecordFields(
             saved: [...apply, ...saved],
             conflicts: plan.conflicts.map(view),
             updatedByOthers: plan.updatedByOthers.map(view),
+            ...(closedApplications ? { closedApplications: { animalId: recordId, count: closedApplications } } : {}),
         };
     }
     // Thrown, not returned: every caller treats a throw as "not saved" (some
