@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.54] - 2026-11-10
+
+### Changed — faster «esperan tu respuesta» (EM review, step b)
+- The pending lookup starts its independent database reads together (all pending pairs, your team's
+  profiles, open flags; and each pair's earlier answers alongside the profile reads) instead of one after
+  another. Same results.
+- The homepage timing log separates «count known» from «rows built», to decide the next step.
+
 ## [2.58.53] - 2026-11-10
 
 ### Changed — faster home cards (EM review)

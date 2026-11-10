@@ -982,7 +982,9 @@ export async function getPendingDuplicatesForUser(
     /** Rows whose next move is the viewer's (needsViewer), whatever `scope`: the number on the home card and the section header. */
     needsViewer: number;
     /** Set when the feed failed: the list is empty because of an error, not because nothing is pending. */
-    errorId?: string }> {
+    errorId?: string;
+    /** Where the time went (ms since the call): `count` = needsViewer known, `rows` = the page's rows built. For the homepage timing log. */
+    phaseMs?: { count: number; rows: number } }> {
     const EMPTY = { pairs: [] as PendingDedupPair[], total: 0, lowHidden: 0, needsViewer: 0 };
     // From the browser: anything but the one known value is the full list.
     const onlyNeedsViewer = scope === 'needs_viewer';
@@ -991,6 +993,8 @@ export async function getPendingDuplicatesForUser(
     pageSize = Math.min(MAX_PENDING_PAGE_SIZE, Math.max(1, Math.floor(Number(pageSize)) || 10));
     page = Math.max(1, Math.floor(Number(page)) || 1);
     let actorEmail: string | null = null;
+    const startedAt = Date.now();
+    let countAt = 0;
     try {
         const { getUser } = await import('./_db');
         const viewer = await getUser();
@@ -999,11 +1003,87 @@ export async function getPendingDuplicatesForUser(
         const db = await getDb();
         if (!db) return EMPTY;
 
+        // Independent reads start together (EM review 2026-11-10: each was a ~180 ms round trip from
+        // Argentina, in series). Every pending candidate needs nothing else, so it starts first.
+        const candidatesP = (async () => db.select({
+            candidateId: duplicateCandidates.id,
+            adopter1Id: duplicateCandidates.adopter1Id,
+            adopter2Id: duplicateCandidates.adopter2Id,
+            matchTypes: duplicateCandidates.matchTypes,
+            matchValues: duplicateCandidates.matchValues,
+            score: duplicateCandidates.score,
+            confidence: duplicateCandidates.confidence,
+            detectedAt: duplicateCandidates.detectedAt,
+            // Housemates (indexed per row, no table scan): filtered below, once the requests are known.
+            housemates: sql<number>`${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
+        })
+            .from(duplicateCandidates)
+            .where(eq(duplicateCandidates.status, 'pending'))
+            .all() as Array<FeedCandidate & { housemates?: number | null }>)();
+        candidatesP.catch(() => { /* awaited below — the outer catch logs it */ });
+
         // The viewer and their org-mates (fails open to the viewer alone):
         // whose open requests concern them, and whose profiles they may
         // absorb (mergeAction).
         const team = await getTeamEmails(viewer);
         const teamKeys = new Set(team.map(normEmail));
+        // lower(trim()) — the same normalization as mayAnswerPair / normEmail, so the list and the bar agree.
+        const teamList = [...new Set([normEmail(viewer), ...teamKeys])].filter(Boolean);
+        const byTeam = (col: typeof adopters.addedBy) => or(...teamList.map(e => sql`lower(trim(${col})) = ${e}`))!;
+        // The sides the viewer OR a teammate loaded (Step 2, Jon 2026-11-05), started with the requests below.
+        const ownRowsP = teamList.length === 0 ? Promise.resolve([] as Array<{ id: string }>)
+            : (async () => db.select({ id: adopters.id }).from(adopters)
+                .where(and(byTeam(adopters.addedBy), isNull(adopters.deletedAt))).all() as Array<{ id: string }>)();
+        ownRowsP.catch(() => { /* awaited below — the outer catch logs it */ });
+        const flagsP = loadOpenDuplicateFlags();
+
+        /** Open duplicate flags the viewer may see (see the block that reads them below); [] if the read fails. */
+        type FlagRow = { id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null };
+        async function loadOpenDuplicateFlags(): Promise<FlagRow[]> {
+            try {
+                // ONE EXISTS for both sides: the team list is bound once (≤30 params), keeping the query
+                // well under D1's 100 bound parameters with a full team (step 2 review).
+                const teamSql = sql.join(teamList.map(e => sql`lower(trim(o.added_by)) = ${e}`), sql` OR `);
+                const eitherSideTeamOwned = sql`EXISTS (SELECT 1 FROM adopters o
+                    WHERE (o.id = ${adopterFlags.adopterId} OR o.id = ${adopterFlags.targetAdopterId}) AND (${teamSql}) AND o.deleted_at IS NULL)`;
+                const party = sql.join([
+                    sql`r.requester_email = ${normEmail(viewer)}`,
+                    ...team.map(e => sql`r.owner_email = ${normEmail(e)}`),
+                ], sql` OR `);
+                const requestOnPair = sql`EXISTS (SELECT 1 FROM merge_requests r
+                    WHERE ((r.primary_id = ${adopterFlags.adopterId} AND r.secondary_id = ${adopterFlags.targetAdopterId})
+                        OR (r.primary_id = ${adopterFlags.targetAdopterId} AND r.secondary_id = ${adopterFlags.adopterId}))
+                      AND (r.status = 'pending' OR r.status = 'declined')
+                      AND (${party}))`;
+                return await db.select({
+                    id: adopterFlags.id,
+                    adopterId: adopterFlags.adopterId,
+                    targetAdopterId: adopterFlags.targetAdopterId,
+                    reason: adopterFlags.reason,
+                    details: adopterFlags.details,
+                    createdAt: adopterFlags.createdAt,
+                // Newest first within the cap: a flag raised now (its owners were just told «Revisar») is always read.
+                }).from(adopterFlags).where(and(
+                    eq(adopterFlags.reason, 'duplicate'),
+                    // Open flags only, in SQL too (isOpenDuplicateFlag's rule), so settled ones never fill the cap.
+                    sql`${adopterFlags.targetAdopterId} IS NOT NULL AND ${adopterFlags.targetAdopterId} <> ${adopterFlags.adopterId}`,
+                    sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
+                        AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
+                    sql`(${eitherSideTeamOwned} OR ${requestOnPair})`,
+                    // Both profiles still there: a flag whose other side was merged away (merges re-point
+                    // adopter_id, not target_adopter_id) has no row to show — the page skips it — so it
+                    // must not be counted either, or «1 de N» and the panel point at nothing.
+                    sql`EXISTS (SELECT 1 FROM adopters l1 WHERE l1.id = ${adopterFlags.adopterId} AND l1.deleted_at IS NULL)`,
+                    sql`EXISTS (SELECT 1 FROM adopters l2 WHERE l2.id = ${adopterFlags.targetAdopterId} AND l2.deleted_at IS NULL)`,
+                )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
+            } catch (e) {
+                // A flag-fetch failure must not take out the detected list.
+                logger.warn('getPendingDuplicatesForUser: flagged-pair fetch failed', {
+                    actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
+                });
+                return [];
+            }
+        }
 
         // Merge requests the viewer is part of, by pair. A failed lookup
         // must not take out the list: the pairs still render, without the
@@ -1055,21 +1135,7 @@ export async function getPendingDuplicatesForUser(
             return { oldOne, newOne, choices, matchTypes, source };
         };
 
-        const candidates = await db.select({
-            candidateId: duplicateCandidates.id,
-            adopter1Id: duplicateCandidates.adopter1Id,
-            adopter2Id: duplicateCandidates.adopter2Id,
-            matchTypes: duplicateCandidates.matchTypes,
-            matchValues: duplicateCandidates.matchValues,
-            score: duplicateCandidates.score,
-            confidence: duplicateCandidates.confidence,
-            detectedAt: duplicateCandidates.detectedAt,
-            // Housemates (indexed per row, no table scan): filtered below, once the requests are known.
-            housemates: sql<number>`${hiddenAsHousematesSql(duplicateCandidates.adopter1Id, duplicateCandidates.adopter2Id, duplicateCandidates.matchTypes)}`,
-        })
-            .from(duplicateCandidates)
-            .where(eq(duplicateCandidates.status, 'pending'))
-            .all() as Array<FeedCandidate & { housemates?: number | null }>;
+        const candidates = await candidatesP;
 
         if (candidates.length === 0 && requests.size === 0) return EMPTY;
 
@@ -1087,11 +1153,8 @@ export async function getPendingDuplicatesForUser(
         // Step 2 (Jon 2026-11-05): the team acts as one — the sides the viewer OR a teammate
         // loaded (mayAnswerPair's rule; OR of bound scalars, never an IN array).
         // lower(trim()) — the same normalization as mayAnswerPair / normEmail, so the list and the bar agree.
-        const teamList = [...new Set([normEmail(viewer), ...teamKeys])].filter(Boolean);
         if (teamList.length === 0) return EMPTY; // unreachable (getUser guarantees an email); never "everyone"
-        const byTeam = (col: typeof adopters.addedBy) => or(...teamList.map(e => sql`lower(trim(${col})) = ${e}`))!;
-        const ownRows = await db.select({ id: adopters.id }).from(adopters)
-            .where(and(byTeam(adopters.addedBy), isNull(adopters.deletedAt))).all();
+        const ownRows = await ownRowsP;
         const ownIds = new Set((ownRows as Array<{ id: string }>).map(r => r.id));
         if (ownIds.size === 0 && requests.size === 0) return EMPTY;
 
@@ -1130,41 +1193,7 @@ export async function getPendingDuplicatesForUser(
         // Correlated EXISTS with bound scalars — never a bound id array (D1
         // does not expand IN).
         try {
-            // ONE EXISTS for both sides: the team list is bound once (≤30 params), keeping the query
-            // well under D1's 100 bound parameters with a full team (step 2 review).
-            const teamSql = sql.join(teamList.map(e => sql`lower(trim(o.added_by)) = ${e}`), sql` OR `);
-            const eitherSideTeamOwned = sql`EXISTS (SELECT 1 FROM adopters o
-                WHERE (o.id = ${adopterFlags.adopterId} OR o.id = ${adopterFlags.targetAdopterId}) AND (${teamSql}) AND o.deleted_at IS NULL)`;
-            const party = sql.join([
-                sql`r.requester_email = ${normEmail(viewer)}`,
-                ...team.map(e => sql`r.owner_email = ${normEmail(e)}`),
-            ], sql` OR `);
-            const requestOnPair = sql`EXISTS (SELECT 1 FROM merge_requests r
-                WHERE ((r.primary_id = ${adopterFlags.adopterId} AND r.secondary_id = ${adopterFlags.targetAdopterId})
-                    OR (r.primary_id = ${adopterFlags.targetAdopterId} AND r.secondary_id = ${adopterFlags.adopterId}))
-                  AND (r.status = 'pending' OR r.status = 'declined')
-                  AND (${party}))`;
-            const flags = await db.select({
-                id: adopterFlags.id,
-                adopterId: adopterFlags.adopterId,
-                targetAdopterId: adopterFlags.targetAdopterId,
-                reason: adopterFlags.reason,
-                details: adopterFlags.details,
-                createdAt: adopterFlags.createdAt,
-            // Newest first within the cap: a flag raised now (its owners were just told «Revisar») is always read.
-            }).from(adopterFlags).where(and(
-                eq(adopterFlags.reason, 'duplicate'),
-                // Open flags only, in SQL too (isOpenDuplicateFlag's rule), so settled ones never fill the cap.
-                sql`${adopterFlags.targetAdopterId} IS NOT NULL AND ${adopterFlags.targetAdopterId} <> ${adopterFlags.adopterId}`,
-                sql`(${adopterFlags.details} IS NULL OR (substr(${adopterFlags.details}, 1, ${MERGED_FLAG_DETAILS_PREFIX.length}) <> ${MERGED_FLAG_DETAILS_PREFIX}
-                    AND substr(${adopterFlags.details}, 1, ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX.length}) <> ${KEPT_SEPARATE_FLAG_DETAILS_PREFIX}))`,
-                sql`(${eitherSideTeamOwned} OR ${requestOnPair})`,
-                // Both profiles still there: a flag whose other side was merged away (merges re-point
-                // adopter_id, not target_adopter_id) has no row to show — the page skips it — so it
-                // must not be counted either, or «1 de N» and the panel point at nothing.
-                sql`EXISTS (SELECT 1 FROM adopters l1 WHERE l1.id = ${adopterFlags.adopterId} AND l1.deleted_at IS NULL)`,
-                sql`EXISTS (SELECT 1 FROM adopters l2 WHERE l2.id = ${adopterFlags.targetAdopterId} AND l2.deleted_at IS NULL)`,
-            )).orderBy(desc(adopterFlags.createdAt)).limit(100).all();
+            const flags = await flagsP;
 
             const seen = new Set(mine.map(c => [c.adopter1Id, c.adopter2Id].sort().join('|')));
             for (const f of flags as Array<{ id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null }>) {
@@ -1330,6 +1359,7 @@ export async function getPendingDuplicatesForUser(
             }
         }));
         const needsViewerCount = needs.size;
+        countAt = Date.now() - startedAt;
         // By what waits on the viewer first (D21's groups within each part).
         const requestTime = (c: FeedCandidate) => requests.get(pairKey(c.adopter1Id, c.adopter2Id))?.createdAt?.getTime() ?? 0;
         eligible.sort((x, y) => {
@@ -1358,7 +1388,25 @@ export async function getPendingDuplicatesForUser(
         const focusCandidateId = focusIndex >= 0 ? waiting[focusIndex].candidateId : focusOther?.candidateId;
         const start = Math.max(0, (page - 1) * pageSize);
         const pageCandidates = [...waiting.slice(start, start + pageSize), ...others];
-        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page, needsViewer: needsViewerCount };
+        if (pageCandidates.length === 0) return { pairs: [], total, lowHidden, page, needsViewer: needsViewerCount, phaseMs: { count: countAt, rows: Date.now() - startedAt } };
+
+        const verdictOnPage = new Map<string, PairVerdict>();
+        // Started with the page's adopter reads (it needs only the pair ids) — EM review 2026-11-10.
+        const verdictsP = (async () => {
+        if (!isAdmin) {
+            const viewerTeam = [viewer, ...teamKeys];
+            return Promise.all(pageCandidates.filter(c => !c.rebuilt).map(async (c) => {
+                try {
+                    verdictOnPage.set(c.candidateId, await loadPairVerdict(db, c.adopter1Id, c.adopter2Id, viewerTeam));
+                } catch (e) {
+                    // Offered anyway; the click re-checks the same verdict.
+                    logger.warn('getPendingDuplicatesForUser: pair verdict check failed', {
+                        actorEmail: viewer, candidateId: c.candidateId, error: e instanceof Error ? e.message : String(e),
+                    });
+                }
+            }));
+        }
+        })();
 
         // Fan out only over the ids on THIS page: at most 2 × pageSize.
         const ids = new Set<string>();
@@ -1426,20 +1474,7 @@ export async function getPendingDuplicatesForUser(
         // separate (D50)? Every request and dispute on it — two queries per pair
         // on THIS page (≤ pageSize), none for admins (who choose freely) or
         // rebuilt pairs (nothing to choose).
-        const verdictOnPage = new Map<string, PairVerdict>();
-        if (!isAdmin) {
-            const viewerTeam = [viewer, ...teamKeys];
-            await Promise.all(pageCandidates.filter(c => !c.rebuilt).map(async (c) => {
-                try {
-                    verdictOnPage.set(c.candidateId, await loadPairVerdict(db, c.adopter1Id, c.adopter2Id, viewerTeam));
-                } catch (e) {
-                    // Offered anyway; the click re-checks the same verdict.
-                    logger.warn('getPendingDuplicatesForUser: pair verdict check failed', {
-                        actorEmail: viewer, candidateId: c.candidateId, error: e instanceof Error ? e.message : String(e),
-                    });
-                }
-            }));
-        }
+        await verdictsP;
 
         // Every side's visibility at once — they're independent, and the loop below then reads the
         // cached answers. Awaited pair by pair they cost ~3 D1 round trips each, in series: ~1.6 s
@@ -1517,7 +1552,7 @@ export async function getPendingDuplicatesForUser(
             }
         }
 
-        return { pairs, total, lowHidden, page, focusCandidateId, needsViewer: needsViewerCount };
+        return { pairs, total, lowHidden, page, focusCandidateId, needsViewer: needsViewerCount, phaseMs: { count: countAt, rows: Date.now() - startedAt } };
     } catch (error) {
         const errorId = logger.error('getPendingDuplicatesForUser failed', error, { actorEmail, scope });
         return { ...EMPTY, errorId };

@@ -51,7 +51,8 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
     const pendingReview = (async () => {
         const t0 = Date.now();
         try {
-            const { needsViewer, pairs } = await getPendingDuplicatesForUser(1, HOME_CARD_SLOTS, false, undefined, 'needs_viewer');
+            const { needsViewer, pairs, phaseMs } = await getPendingDuplicatesForUser(1, HOME_CARD_SLOTS, false, undefined, 'needs_viewer');
+            if (phaseMs) { timings.pendingCount = phaseMs.count; timings.pendingRows = phaseMs.rows; }
             const items = pairs.flatMap(p => p.group === 'sent' ? [] : [{
                 group: p.group,
                 names: [p.newAdopter.name, p.existingAdopter.name] as [string, string],
