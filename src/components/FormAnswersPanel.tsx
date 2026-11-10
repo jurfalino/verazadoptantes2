@@ -3,6 +3,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { answerSignal, personSignal, type AnswerSignal } from '@/domain/answerSignals';
+import { FORM_ANSWER_SECTIONS, answerShown } from '@/domain/formAnswers';
 import { parseGiftRecipient, recipientFullName, type GiftRecipient } from '@/domain/giftRecipient';
 
 /** Token per signal: the semantic status colours both themes define (style guide §1.2). */
@@ -269,20 +270,14 @@ export default function FormAnswersPanel({ fullAnswers, excludeSections = [] }: 
 
     const get = (key: string): any => fullAnswers[key];
 
-    const sections: Array<{ id: string; titleKey: string; fields: string[] }> = [
-        { id: 'identity', titleKey: 'petshield.sections.identity', fields: ['ageRange', 'carer', 'lastAnimal', 'petExperience', 'gaveAway', 'gaveAwayWhy', 'instagram', 'facebook', 'vetReference', 'motivation', 'howHeard'] },
-        { id: 'household', titleKey: 'petshield.sections.household', fields: ['children', 'allergy', 'existingPets', 'petsCare', 'housingType', 'rental', 'hasOutdoor', 'isSafe', 'catOutdoor', 'sleepPlace', 'hoursAlone', 'dogWalks', 'dogTied'] },
-        { id: 'preferences', titleKey: 'petshield.sections.preferences', fields: ['species', 'speciesOther', 'lifeStage', 'intent'] },
-        { id: 'commitments', titleKey: 'petshield.sections.commitments', fields: ['specialNeeds', 'willingToSterilize', 'sterilizeHow', 'vetCommitment', 'movingIfNoPets', 'movingPlans', 'vacationPlan', 'returnReasons', 'adaptPlan', 'visitConsent'] },
-        { id: 'context', titleKey: 'petshield.sections.context', fields: ['geo', 'legal'] },
-    ].filter((s) => !excludeSections.includes(s.id));
+    const sections = FORM_ANSWER_SECTIONS.filter((s) => !excludeSections.includes(s.id));
 
     const renderValue = (key: string, raw: any): string | null => renderFormAnswerValue(key, raw, t);
 
     return (
         <>
             {sections.map(section => {
-                const visibleFields = section.fields.filter(field => get(field) !== undefined && get(field) !== null && get(field) !== '');
+                const visibleFields = section.fields.filter(field => answerShown(field, get(field)));
                 if (visibleFields.length === 0) return null;
 
                 return (

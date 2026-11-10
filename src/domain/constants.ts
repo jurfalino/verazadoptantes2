@@ -75,3 +75,32 @@ export const NOTIFICATION_TYPES = [
     'system',
 ] as const;
 export type NotificationType = typeof NOTIFICATION_TYPES[number];
+
+/** Lifecycle of an adoption application (an `applications` row). */
+export const APPLICATION_STATES = {
+    OPEN: 'open',
+    DECLINED: 'declined',
+    CLOSED: 'closed',
+    ADOPTED: 'adopted',
+    PROPOSED: 'proposed',
+    REPLACED: 'replaced',
+    ALSO_APPLIED: 'also_applied',
+} as const;
+export type ApplicationState = typeof APPLICATION_STATES[keyof typeof APPLICATION_STATES];
+
+/** How an application came to exist. */
+export const APPLICATION_ORIGINS = { FORM: 'form', PROPOSED: 'proposed', ADOPTED_ANIMAL: 'adopted_animal' } as const;
+export type ApplicationOrigin = typeof APPLICATION_ORIGINS[keyof typeof APPLICATION_ORIGINS];
+
+/** Why a `closed` application closed. */
+export const APPLICATION_CLOSE_REASONS = { ADOPTED_OTHER: 'adopted_other', ADOPTED_OPEN_LINK: 'adopted_open_link' } as const;
+export type ApplicationCloseReason = typeof APPLICATION_CLOSE_REASONS[keyof typeof APPLICATION_CLOSE_REASONS];
+
+/** Days a contract link stays valid. Moved from contract.ts (a sync export from a 'use server' file fails the build). */
+export const INVITATION_TTL_DAYS = 30;
+
+/** adopter_history.changed_by / applications.closed_by for automatic closes. */
+export const APPLICATION_AUTO_ACTOR = 'application-auto';
+
+/** «Prefiere» life stage from an animal's estimated birth date (my call — no rule existed). */
+export const LIFE_STAGE_YEARS = { PUPPY_UNDER: 1, SENIOR_FROM: 8 } as const;

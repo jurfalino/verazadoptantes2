@@ -78,3 +78,11 @@ export function deriveEndedPlacement(
         recordedBy,
     };
 }
+
+/**
+ * Whether a contract link can still be sent for this animal: false only for an
+ * active ADOPTION (held by someone) — it is already adopted.
+ */
+export function takesContract(animal: { adopterId: string | null; recordType: string | null }): boolean {
+    return !(animal.adopterId && animal.recordType === 'adoption');
+}

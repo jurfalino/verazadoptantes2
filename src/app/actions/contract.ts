@@ -22,6 +22,7 @@
 import { logger, generateErrorId } from '@/lib/logger';
 import { auth } from '@/auth';
 import { getDb } from './_db';
+import { INVITATION_TTL_DAYS } from '@/domain/constants';
 
 export interface CreateInvitationResult {
     success: boolean;
@@ -32,9 +33,6 @@ export interface CreateInvitationResult {
     error?: string;
     errorId?: string;
 }
-
-/** Days a token stays valid. */
-const INVITATION_TTL_DAYS = 30;
 
 export async function createContractInvitation(
     animalId: string,
