@@ -18,8 +18,12 @@ export type HomePendingItem = {
     group: 'pair' | 'received' | 'declined';
     /** The two profiles' names, as the row shows them. */
     names: [string, string];
-    /** «{name} te pide unir»: the request's other side. */
+    /** The two profiles' ids: which row the panel opens (pairKey). */
+    ids: [string, string];
+    /** «{name} te pide unir» / «{name} no aceptó unir»: the request's other side. */
     by: string | null;
+    /** «Coinciden: … · Distintos: …», as the closed row in Mis adoptantes says it. */
+    summary: { same: string[]; diff: string[]; flagged: boolean };
 };
 
 export type HomeAdoptersData = {
@@ -30,8 +34,8 @@ export type HomeAdoptersData = {
      * the «Pendientes de revisar» section header. Form matches included (spec 2026-11-05).
      */
     pendingReview: number;
-    /** The first of them, named on the amber row; null when there are none (or its profiles just went). */
-    firstPending: HomePendingItem | null;
+    /** The first of them (up to HOME_CARD_SLOTS), one row each, like Mis animales' due animals (option b). */
+    pending: HomePendingItem[];
     /** Newest created first, as /my-adopters lists them. */
     recent: Array<HomePersonRow & {
         createdAt: number;

@@ -50,9 +50,17 @@ export function orderHomeModules(states: Record<HomeModuleKey, HomeModuleState>)
  */
 export const HOME_CARD_SLOTS = 4;
 
-/** Mis adoptantes: people fill the slots the amber row / import link leave. */
-export function homeAdopterRowCount(hasExtraRow: boolean): number {
-    return hasExtraRow ? HOME_CARD_SLOTS - 1 : HOME_CARD_SLOTS;
+/**
+ * Mis adoptantes' pending rows, the same way Mis animales lists its due
+ * animals (Jon 2026-11-09, option b): every row waiting on the viewer is its
+ * own row, up to the slots; with more than fit, one fewer is listed and the
+ * «N más esperan tu respuesta» amber row takes the last slot. `more` counts
+ * every pending row not listed (also any the feed couldn't build).
+ */
+export function homePendingRows<T>(pending: readonly T[], total: number, slots: number = HOME_CARD_SLOTS): { shown: T[]; more: number } {
+    const limit = total > slots ? slots - 1 : slots;
+    const shown = pending.slice(0, Math.min(limit, total));
+    return { shown, more: Math.max(0, total - shown.length) };
 }
 
 /**

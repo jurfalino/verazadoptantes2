@@ -52,7 +52,7 @@ async function personBits(db: Db, ids: string[], log: Record<string, unknown>): 
     return out;
 }
 
-export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: string[], pendingReview: Promise<{ count: number; first: HomePendingItem | null }>): Promise<HomeAdoptersData> {
+export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: string[], pendingReview: Promise<{ count: number; items: HomePendingItem[] }>): Promise<HomeAdoptersData> {
     const log = { userEmail, op: 'loadHomeAdopters' };
     const scope = adopterScope(memberEmails);
     const [{ getOrgsForEmail, pickAttributionOrg }, { resolveDisplayName }] = await Promise.all([
@@ -97,7 +97,7 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
         rowsP,
         pendingReview,
     ]);
-    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending.count, firstPending: pending.first, recent };
+    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending.count, pending: pending.items, recent };
 }
 
 export async function loadHomePosts(db: Db, userEmail: string, memberEmails: string[]): Promise<HomePostsData> {

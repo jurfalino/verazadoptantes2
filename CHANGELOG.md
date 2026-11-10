@@ -2,6 +2,16 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.45] - 2026-11-09
+
+### Changed — Mis adoptantes lists what waits on you like Mis animales lists its due animals
+- Every item waiting on you is its own row (Jon 2026-11-09, option b): the two names, and an amber line under
+  them — «¿Es la misma persona? · Coinciden: teléfono, email», «María te pide unir» or «María no aceptó unir».
+  Up to 4; with more, 3 rows + «N más esperan tu respuesta» (to Mis adoptantes › Pendientes). Free slots show
+  your newest people, as before. Replaces the single «¿Es la misma persona? · 1 de N» row.
+- Tapping a row opens that item over the home; after answering, the panel shows the next one and the card
+  updates behind it. Close it with × whenever.
+
 ## [2.58.44] - 2026-11-09
 
 ### Fixed

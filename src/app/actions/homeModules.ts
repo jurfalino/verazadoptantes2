@@ -2,6 +2,7 @@
 
 import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
+import { HOME_CARD_SLOTS } from '@/domain/homeModules';
 import { getFeatureFlag } from '@/config/features';
 import type { HomeModulesData, HomeSection } from '@/types/homeModules';
 
@@ -45,18 +46,20 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
     // waits for the other.
     const members = getOrgMemberEmails();
     // Only the rows whose next move is the viewer's (needsViewer, Jon
-    // 2026-11-09), and the first of them, which the amber row names.
+    // 2026-11-09), and the first of them — one card row each, like the due
+    // animals (option b).
     const pendingReview = (async () => {
         const t0 = Date.now();
         try {
-            const { needsViewer, pairs } = await getPendingDuplicatesForUser(1, 1, false, undefined, 'needs_viewer');
-            const p = pairs[0];
-            const first = p && p.group !== 'sent' ? {
+            const { needsViewer, pairs } = await getPendingDuplicatesForUser(1, HOME_CARD_SLOTS, false, undefined, 'needs_viewer');
+            const items = pairs.flatMap(p => p.group === 'sent' ? [] : [{
                 group: p.group,
                 names: [p.newAdopter.name, p.existingAdopter.name] as [string, string],
+                ids: [p.newAdopter.id, p.existingAdopter.id] as [string, string],
                 by: p.request?.counterpartName ?? null,
-            } : null;
-            return { count: needsViewer, first };
+                summary: { same: [...p.summary.same], diff: [...p.summary.diff], flagged: p.summary.flagged },
+            }]);
+            return { count: needsViewer, items };
         } finally { timings.pendingReview = Date.now() - t0; }
     })();
 

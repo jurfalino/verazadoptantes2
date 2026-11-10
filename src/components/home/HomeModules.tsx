@@ -26,8 +26,10 @@ import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLaunc
 // page crashed the homepage («async__chunk_… is not defined», v2.58.43 CI). Both render only once opened.
 import HomeDuePanel from '@/components/home/HomeDuePanel';
 import PendingDedup from '@/components/PendingDedup';
+import { summaryLine } from '@/components/pendientes/summaryLine';
+import { pairKey } from '@/domain/dedupPair';
 import { getHomeModules } from '@/app/actions/homeModules';
-import { orderHomeModules, homeAdopterRowCount, HOME_CARD_SLOTS, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
+import { orderHomeModules, homePendingRows, HOME_CARD_SLOTS, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
 import { HOME_POSTS_WINDOW_DAYS } from '@/config/constants';
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -48,6 +50,9 @@ const PATHS = {
     person: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
     contacts: 'M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm9 4a3 3 0 100 6 3 3 0 000-6zm-4.5 9.5h9a4.5 4.5 0 00-9 0z',
     chevron: 'M9 5l7 7-7 7',
+    // «Pendientes de revisar»'s row icons (lucide Copy / Inbox), for the card's pending rows.
+    copy: 'M8 8h12v12H8zM4 16V4h12',
+    inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
     plus: 'M12 5v14m-7-7h14',
 } as const;
 
@@ -116,7 +121,6 @@ const SLOT_PX = 56;
 /** «Ver los N …» (MoreRow, min-h-11). */
 const MORE_PX = 44;
 const SLOT_GAP_ABOVE = 'mt-3';
-const SLOT_GAP_BELOW = 'mb-3';
 
 /**
  * The amber «pendiente» row from the /my-animals cards: same 12px bold text,
@@ -251,9 +255,12 @@ function SectionError({ errorId, t }: { errorId: string; t: T }) {
 /** What Mis adoptantes lists — shared by the card and the desktop layout. */
 function adopterParts(d: HomeAdoptersData, hasContacts: boolean) {
     const hasTodo = d.pendingReview > 0;
+    // Waiting on the viewer first, one row each (option b) — as Mis animales lists its due animals.
+    const { shown: pending, more: morePending } = homePendingRows(d.pending, d.pendingReview);
     const showContacts = !hasTodo && hasContacts;
-    const rows = d.recent.slice(0, homeAdopterRowCount(hasTodo || showContacts));
-    return { hasTodo, showContacts, rows, more: d.total > rows.length, slots: rows.length + (hasTodo || showContacts ? 1 : 0) };
+    const used = pending.length + (morePending > 0 ? 1 : 0) + (showContacts ? 1 : 0);
+    const rows = d.recent.slice(0, Math.max(0, HOME_CARD_SLOTS - used));
+    return { hasTodo, showContacts, pending, morePending, rows, more: d.total > rows.length, slots: rows.length + used };
 }
 
 /** What Mis animales lists — shared by the card and the desktop layout. */
@@ -264,14 +271,14 @@ function animalParts(d: HomeAnimalsData) {
 
 export function AdoptersCard({ section, contacts, t, rel, className, onOpenPending }: {
     section: HomeSection<HomeAdoptersData>; contacts: ReactNode; t: T; rel: (ms: number) => string; className?: string;
-    /** Opens the first pending row over the home (PendingDedup's home mode). */
-    onOpenPending?: () => void;
+    /** Opens a pending row over the home (PendingDedup's home mode). Without it, pending rows link to the list. */
+    onOpenPending?: (item: HomePendingItem) => void;
 }) {
     if (!section.ok) {
         return <ModuleShell icon="people" title={t('homeModules.adopters_title')} href="/my-adopters" testId="home-adopters" className={className}><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
     const d = section.data;
-    const { hasTodo, showContacts, rows, more } = adopterParts(d, contacts != null);
+    const { showContacts, pending, morePending, rows, more } = adopterParts(d, contacts != null);
     const meta = (r: HomeAdoptersData['recent'][number]) => r.viaForm
         ? interpolate(t('homeModules.via_form'), { when: rel(r.createdAt) })
         : r.creatorIsSelf || !r.creatorName
@@ -282,19 +289,21 @@ export function AdoptersCard({ section, contacts, t, rel, className, onOpenPendi
             add={{ href: '/adopter/create', label: t('homeModules.add'), aria: t('homeModules.add_adopter') }} className={className}>
             {/* One block, so the slots sit at their own fixed spacing (SLOT_*). */}
             <div>
-                {hasTodo && d.firstPending && onOpenPending && (
-                    <PendingItemRow item={d.firstPending} n={d.pendingReview} onOpen={onOpenPending} t={t} className={SLOT_GAP_BELOW} />
-                )}
-                {hasTodo && !(d.firstPending && onOpenPending) && (
-                    <TodoRow href="/my-adopters#pendientes" testId="home-adopters-pending" className={SLOT_GAP_BELOW}>
-                        {count(t, d.pendingReview, 'homeModules.pending_review_one', 'homeModules.pending_review_many')}
-                    </TodoRow>
-                )}
                 <div className={ROWS}>
+                    {pending.map(item => onOpenPending
+                        ? <PendingRow key={item.ids.join('|')} item={item} onOpen={() => onOpenPending(item)} t={t} />
+                        : null)}
                     {rows.map(r => (
                         <PersonRow key={r.id} {...r} t={t} meta={meta(r)} chip={r.groupName ? <GroupChip name={r.groupName} self={r.creatorIsSelf} /> : undefined} />
                     ))}
                 </div>
+                {(morePending > 0 || (pending.length > 0 && !onOpenPending)) && (
+                    <TodoRow href="/my-adopters#pendientes" testId="home-adopters-pending-more" className={SLOT_GAP_ABOVE}>
+                        {onOpenPending
+                            ? count(t, morePending, 'homeModules.more_pending_one', 'homeModules.more_pending_many')
+                            : count(t, d.pendingReview, 'homeModules.pending_review_one', 'homeModules.pending_review_many')}
+                    </TodoRow>
+                )}
                 {more && (
                     <MoreRow href="/my-adopters" testId="home-adopters-more" label={interpolate(t('homeModules.see_adopters'), { n: d.total })} />
                 )}
@@ -305,30 +314,29 @@ export function AdoptersCard({ section, contacts, t, rel, className, onOpenPendi
 }
 
 /**
- * Mis adoptantes' amber row, naming the first row whose next move is the
- * viewer's (Jon 2026-11-09, option A): «¿Es la misma persona? · 1 de N» (or
- * «María te pide unir», or — the viewer's request declined — «María no aceptó
- * unir») over the two names as «Pendientes de
- * revisar» shows them. It opens that row over the home. Same 44px as the
- * other amber rows, one slot.
+ * One row waiting on the viewer, shaped like a due animal (Jon 2026-11-09,
+ * option b): the two names as «Pendientes de revisar» writes them, and the
+ * amber line under them — «¿Es la misma persona? · Coinciden: …», «María te
+ * pide unir» or «María no aceptó unir». It opens that row over the home.
  */
-function PendingItemRow({ item, n, onOpen, t, className = '' }: { item: HomePendingItem; n: number; onOpen: () => void; t: T; className?: string }) {
+function PendingRow({ item, onOpen, t }: { item: HomePendingItem; onOpen: () => void; t: T }) {
     const [a, b] = item.names;
     const names = a.trim() === b.trim() ? `${a} ×2` : `${a} / ${b}`;
     const who = item.by || t('myAdopters.pending_dedup_a_user');
-    const head = item.group === 'received' ? interpolate(t('homeModules.pending_asks'), { name: who })
+    const summary = summaryLine(item, t);
+    const line = item.group === 'received' ? interpolate(t('homeModules.pending_asks'), { name: who })
         : item.group === 'declined' ? interpolate(t('homeModules.pending_declined'), { name: who })
-            : t('samePerson.question');
+            : summary ? `${t('samePerson.question')} · ${summary}` : t('samePerson.question');
     return (
         <button type="button" onClick={onOpen} aria-haspopup="dialog" data-testid="home-adopters-pending"
-            className={`flex items-center gap-2 w-full min-h-11 md:h-11 px-4 py-1.5 rounded-lg text-left bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors ${className}`}>
-            <span className="flex-1 min-w-0">
-                <span className="block text-xs font-bold [overflow-wrap:anywhere] md:truncate">
-                    {head} <span className="font-semibold">· {interpolate(t('homeModules.pending_position'), { n })}</span>
-                </span>
-                <span title={names} className="block text-xs font-semibold text-amber-800 [overflow-wrap:anywhere] md:truncate">{names}</span>
+            className={`w-full text-left flex items-center gap-3 min-h-11 py-2 group ${SLOT_ROW}`}>
+            <span className="w-10 h-10 shrink-0 rounded-full border bg-amber-50 border-amber-200 text-amber-700 flex items-center justify-center">
+                <Icon name={item.group === 'received' ? 'inbox' : 'copy'} className="w-5 h-5" />
             </span>
-            <Icon name="chevron" className="w-4 h-4 shrink-0" />
+            <span className="flex-1 min-w-0">
+                <span title={names} className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere] md:truncate">{names}</span>
+                <span title={line} className="block text-xs font-semibold text-amber-700 [overflow-wrap:anywhere] md:truncate">{line}</span>
+            </span>
         </button>
     );
 }
@@ -493,8 +501,9 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     }, [load]);
     const closeDuePanel = useCallback(() => setDuePanel(null), []);
     /** «¿Es la misma persona?» open over the home (option A). Stable, so the panel's loader isn't recreated each render. */
-    const [pendingOpen, setPendingOpen] = useState(false);
-    const pendingPanel = useMemo(() => ({ onChanged: load, onClose: () => setPendingOpen(false) }), [load]);
+    const [pendingFocus, setPendingFocus] = useState<string | null>(null);
+    const pendingPanel = useMemo(() => pendingFocus === null ? null
+        : ({ onChanged: load, onClose: () => setPendingFocus(null), focusPair: pendingFocus }), [load, pendingFocus]);
 
     // Same compact wording as /my-adopters' «Creado por … hace 4 sem».
     const rel = (ms: number) => timeAgo(new Date(ms), locale !== 'en');
@@ -559,7 +568,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     const spanIf = (k: HomeModuleKey) => (k === taller ? 'md:row-span-2' : '');
 
     const card = (k: HomeModuleKey) => {
-        if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} onOpenPending={() => setPendingOpen(true)} />;
+        if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} onOpenPending={item => setPendingFocus(pairKey(item.ids[0], item.ids[1]))} />;
         if (k === 'animals' && data.animals) return <AnimalsCard key={k} section={data.animals} t={t} className={spanIf(k)} onOpenDue={setDuePanel} />;
         if (k === 'posts' && posts) return <PostsCard key={k} section={posts} t={t} rel={rel} />;
         return null;
@@ -585,7 +594,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
                 {items}
             </div>
             {duePanel && <HomeDuePanel key={duePanel.id} animalId={duePanel.id} animalName={duePanel.name} onClose={closeDuePanel} onChanged={load} />}
-            {pendingOpen && <PendingDedup home={pendingPanel} />}
+            {pendingPanel && <PendingDedup key={pendingPanel.focusPair} home={pendingPanel} />}
         </>
     );
 }

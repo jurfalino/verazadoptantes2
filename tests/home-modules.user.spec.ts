@@ -92,7 +92,8 @@ test.describe.serial('homepage modules', () => {
         }
         await page.goto('/');
         await dismissCountryBanner(page);
-        await expect(page.getByTestId('home-adopters-pending')).toBeVisible({ timeout: 60_000 });
+        // One row per pending item now (option b): any of them.
+        await expect(page.getByTestId('home-adopters-pending').first()).toBeVisible({ timeout: 60_000 });
         await expect(page.getByTestId('home-adopters-forms')).toHaveCount(0);
     });
 
@@ -156,29 +157,28 @@ test.describe.serial('homepage modules', () => {
         }, { timeout: 200_000, intervals: [2_000] }).toBe(true);
     });
 
-    test('Mis adoptantes: the amber row names the first pending pair; answering it over the home moves on to the next', async ({ page }) => {
+    test('Mis adoptantes: a pending pair is its own row; answering it over the home shows the next one', async ({ page }) => {
         test.setTimeout(240_000);
         await openHome(page);
-        const amber = page.getByTestId('home-adopters-pending');
-        // «¿Es la misma persona? · 1 de N» over the two names — the fixture is the newest, strongest pair.
-        await expect(amber).toContainText(PAIR_NAME, { timeout: 60_000 });
-        await amber.click();
+        // One row per item waiting on the user (option b) — the fixture is the newest, strongest pair.
+        const row = page.getByTestId('home-adopters-pending').filter({ hasText: PAIR_NAME });
+        await expect(row).toHaveCount(1, { timeout: 60_000 });
+        await row.click();
 
         // Over the home: that pair, open, with «No, es otra persona».
         const panel = page.getByTestId('home-pending-panel');
         await expect(panel).toBeVisible({ timeout: 60_000 });
         await expect(page).toHaveURL(/\/$|\/\?/);
-        const row = panel.getByTestId('dedup-row');
-        await expect(row).toContainText(PAIR_NAME, { timeout: 60_000 });
+        const open = panel.getByTestId('dedup-row');
+        await expect(open).toContainText(PAIR_NAME, { timeout: 60_000 });
         await expect(panel.getByTestId('home-pending-panel-all')).toHaveAttribute('href', '/my-adopters#pendientes');
-        await row.getByTestId('dedup-keep-separate').click();
+        await open.getByTestId('dedup-keep-separate').click();
 
-        // Still on the home: the next pair (or none, and the panel closes); the card no longer names this one.
+        // Still on the home: the panel moves to the next pair (or closes when none is left); the card drops this row.
         await expect(page).toHaveURL(/\/$|\/\?/);
         await expect(panel.getByTestId('dedup-row').filter({ hasText: PAIR_NAME })).toHaveCount(0, { timeout: 60_000 });
         if (await panel.isVisible()) await panel.getByTestId('home-pending-panel-close').click();
-        await expect.poll(async () => (await amber.count()) === 0 || !((await amber.textContent()) ?? '').includes(PAIR_NAME),
-            { timeout: 60_000, intervals: [2_000] }).toBe(true);
+        await expect(row).toHaveCount(0, { timeout: 60_000 });
     });
 
     // Last: it resolves the fixture's check-in, which the tests above count on.

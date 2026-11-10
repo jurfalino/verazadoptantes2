@@ -20,7 +20,7 @@ import { ChevronDown, Copy, Inbox, Mail, Send, XCircle } from 'lucide-react';
 import { OpenProfileLink } from '@/components/OpenProfileLink';
 import type { PendingDedupPair, PendingDedupSide } from '@/app/actions/duplicates';
 import MatchCompare, { AdminScore, entriesAsShown } from '@/components/MatchCompare';
-import { matchTypeLabel } from '@/lib/matchTypeLabels';
+import { summaryLine } from './summaryLine';
 import { MinorTag } from '@/components/MinorTag';
 import { HousemateAlert } from '@/components/HousemateAlert';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -116,15 +116,6 @@ function stateLine(pair: PendingDedupPair, t: T, age: (epochS: number) => string
 }
 
 /** «Coinciden: nombre, teléfono · Distintos: email», or «Marcado manualmente» (D22). */
-function summaryLine(pair: PendingDedupPair, t: T): string {
-    const field = (f: string) => (t(`matchCompare.field_${f}`) || f).toLocaleLowerCase();
-    const parts: string[] = [];
-    if (pair.summary.flagged) parts.push(matchTypeLabel('flagged_by_user', t) || 'Marcado manualmente');
-    if (pair.summary.same.length) parts.push(`${t('matchCompare.count_same') || 'Coinciden'}: ${pair.summary.same.map(field).join(', ')}`);
-    if (pair.summary.diff.length) parts.push(`${t('matchCompare.count_diff') || 'Distintos'}: ${pair.summary.diff.map(field).join(', ')}`);
-    return parts.join(' · ');
-}
-
 /** What the open row will do, in one line (D23). */
 function explanation(pair: PendingDedupPair, keep: KeepSide, isAdmin: boolean, t: T): string | null {
     const r = pair.request;

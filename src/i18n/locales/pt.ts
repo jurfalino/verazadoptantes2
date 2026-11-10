@@ -3856,6 +3856,8 @@ export const pt = {
         pending_position: '1 de {n}',
         pending_asks: '{name} pede para unir',
         pending_declined: '{name} não aceitou unir',
+        more_pending_one: '1 a mais espera sua resposta',
+        more_pending_many: '{n} a mais esperam sua resposta',
         pending_see_all: 'Ver tudo em Meus adotantes',
     },
 };

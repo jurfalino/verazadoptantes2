@@ -3858,6 +3858,8 @@ export const es = {
         pending_position: '1 de {n}',
         pending_asks: '{name} te pide unir',
         pending_declined: '{name} no aceptó unir',
+        more_pending_one: '1 más espera tu respuesta',
+        more_pending_many: '{n} más esperan tu respuesta',
         pending_see_all: 'Ver todo en Mis adoptantes',
     },
 };

@@ -84,7 +84,10 @@ const STALE_REFUSALS: Record<string, { key: string; fallback: string }> = {
  * After each answer the next row loads (and the card reloads); with none left
  * the panel closes.
  */
-export default function PendingDedup({ home }: { home?: { onChanged: () => void; onClose: () => void } } = {}) {
+export default function PendingDedup({ home }: {
+    /** `focusPair`: the row the home card's row was (pairKey), shown first; then the first left. */
+    home?: { onChanged: () => void; onClose: () => void; focusPair?: string };
+} = {}) {
     const { t, locale } = useLanguage();
     const { formatShortDate } = useDateFormat();
     const toast = useShowToast();
@@ -128,8 +131,8 @@ export default function PendingDedup({ home }: { home?: { onChanged: () => void;
     const load = useCallback(async () => {
         if (home) {
             try {
-                const data = await getPendingDuplicatesForUser(1, 1, false, undefined, 'needs_viewer');
                 const reload = autoOpened.current;
+                const data = await getPendingDuplicatesForUser(1, 1, false, reload ? undefined : home.focusPair, 'needs_viewer');
                 autoOpened.current = true;
                 setPairs(data.pairs);
                 setTotal(data.total);

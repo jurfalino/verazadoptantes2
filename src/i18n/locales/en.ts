@@ -3851,6 +3851,8 @@ export const en = {
         pending_position: '1 of {n}',
         pending_asks: '{name} asks to merge',
         pending_declined: '{name} declined to merge',
+        more_pending_one: '1 more waiting for your answer',
+        more_pending_many: '{n} more waiting for your answer',
         pending_see_all: 'See everything in My adopters',
     },
 };

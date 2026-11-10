@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { orderHomeModules, homeAdopterRowCount, HOME_CARD_SLOTS, homeAnimalRows, isPostRecord, postsCardLive } from './homeModules';
+import { orderHomeModules, HOME_CARD_SLOTS, homeAnimalRows, homePendingRows, isPostRecord, postsCardLive } from './homeModules';
 
 describe('orderHomeModules', () => {
     it('a brand-new account gets no cards, only «Para empezar» with every step', () => {
@@ -25,12 +25,8 @@ describe('orderHomeModules', () => {
     });
 });
 
-describe('homeAdopterRowCount — 4 slots; the amber row / import link takes one', () => {
-    it('4 people, 3 under an amber row or above the import link', () => {
-        expect(HOME_CARD_SLOTS).toBe(4);
-        expect(homeAdopterRowCount(false)).toBe(4);
-        expect(homeAdopterRowCount(true)).toBe(3);
-    });
+describe('HOME_CARD_SLOTS', () => {
+    it('4 slots per card', () => expect(HOME_CARD_SLOTS).toBe(4));
 });
 
 describe('homeAnimalRows — 4 slots; the «N más» amber row takes one', () => {
@@ -70,6 +66,15 @@ describe('homeAnimalRows — 4 slots; the «N más» amber row takes one', () =>
         expect(ids(homeAnimalRows([], [a('r1'), a('r1'), a('r2')])))
             .toEqual({ due: [], recent: ['r1', 'r2'], moreDue: 0 });
     });
+});
+
+describe('homePendingRows — like the due animals: one row each, «N más» takes the 4th slot', () => {
+    const p = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
+    it('none', () => expect(homePendingRows([], 0)).toEqual({ shown: [], more: 0 }));
+    it('1 of 1: listed, nothing more', () => expect(homePendingRows(p(1), 1)).toEqual({ shown: ['p0'], more: 0 }));
+    it('exactly 4: all 4, no «más» row', () => expect(homePendingRows(p(4), 4)).toEqual({ shown: p(4), more: 0 }));
+    it('65 waiting (4 fetched): 3 rows + «62 más»', () => expect(homePendingRows(p(4), 65)).toEqual({ shown: p(3), more: 62 }));
+    it('a row the feed could not build still counts in «más»', () => expect(homePendingRows(p(1), 2)).toEqual({ shown: ['p0'], more: 1 }));
 });
 
 describe('isPostRecord', () => {
