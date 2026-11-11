@@ -229,3 +229,32 @@ describe('Mis adoptantes — each row that waits on you is its own row, like Mis
         expect(text(rows(render(data([item(1, { names: ['Luz', 'Luz '] })], 1)))[0] ?? '')).toContain('Luz ×2');
     });
 });
+
+describe('signed-out home: the same «Para empezar» card a new rescuer sees (Jon 2026-11-11)', () => {
+    it('lists the three steps with the new-rescuer copy, as buttons that hand their destination to onStep', async () => {
+        const { GuestFirstSteps } = await import('./HomeModules');
+        const html = renderToStaticMarkup(<GuestFirstSteps animals posts onStep={() => {}} t={t} />);
+        expect(html).toContain('data-testid="home-first-steps"');
+        expect(html).toContain('Para empezar');
+        for (const k of ['adopters', 'animals', 'posts']) expect(html).toContain(`data-testid="home-step-${k}"`);
+        expect(html).toContain('Registrá un adoptante');
+        // Buttons, not links: a guest is sent through the login box first.
+        expect(html).not.toMatch(/<a [^>]*data-testid="home-step-/);
+        expect(html).toMatch(/<button [^>]*data-testid="home-step-adopters"/);
+    });
+
+    it('leaves out the animals step when animals for adoption is off, and the posts step when post import is off', async () => {
+        const { GuestFirstSteps } = await import('./HomeModules');
+        const html = renderToStaticMarkup(<GuestFirstSteps animals={false} posts={false} onStep={() => {}} t={t} />);
+        expect(html).toContain('data-testid="home-step-adopters"');
+        expect(html).not.toContain('data-testid="home-step-animals"');
+        expect(html).not.toContain('data-testid="home-step-posts"');
+    });
+
+    it('a step hands its destination to onStep', async () => {
+        const { guestStepHref } = await import('./HomeModules');
+        expect(guestStepHref('adopters')).toBe('/adopter/create');
+        expect(guestStepHref('animals')).toBe('/my-animals/new');
+        expect(guestStepHref('posts')).toBe('/import');
+    });
+});

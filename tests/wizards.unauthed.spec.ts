@@ -5,12 +5,12 @@ import { dismissCountryBanner } from './helpers';
 test.setTimeout(120000); // Extended timeout for wizard interactions
 
 /**
- * The homepage action cards are the GUEST homepage now: signed-in rescuers
- * get the homepage modules instead (2026-11-04), so this runs unauthenticated
- * and every «Start» must ask to sign in.
+ * The signed-out homepage shows the same «Para empezar» card a brand-new
+ * signed-in rescuer sees (Jon 2026-11-11) — the old action cards are gone.
+ * Every step asks a guest to sign in before it continues.
  */
 
-test.describe('Home Screen Wizards', () => {
+test.describe('Home Screen — signed-out «Para empezar»', () => {
 
     test.beforeEach(async ({ page }) => {
         await page.goto('/');
@@ -19,37 +19,30 @@ test.describe('Home Screen Wizards', () => {
         await expect(page.locator('input#search')).toBeVisible({ timeout: 30000 });
     });
 
-    test('Adoption card asks a guest to sign in', async ({ page }) => {
-        // Card → AdopterPicker overlay. Picker heading is "Who is the adopter?" / "¿Quién es el adoptante?".
-        const registerBtn = page.getByRole('button', { name: /^Start$|^Empezar$/i }).first();
-        await expect(registerBtn).toBeVisible({ timeout: 30000 });
-        await registerBtn.click();
-
-        await expect(page.getByText(/Sign In|Iniciar/i).first()).toBeVisible({ timeout: 30000 });
+    test('a guest sees «Para empezar», not the old action cards', async ({ page }) => {
+        await expect(page.getByTestId('home-first-steps')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('home-step-adopters')).toBeVisible();
+        await expect(page.locator('#action-cards')).toHaveCount(0);
+        await expect(page.getByTestId('adoption-wizard-btn')).toHaveCount(0);
+        await expect(page.getByTestId('report-wizard-btn')).toHaveCount(0);
     });
 
-    test('Observation card asks a guest to sign in', async ({ page }) => {
-        // The observation card says "Leave an observation" / "Dejar una observación".
-        // Heading is <h2> since v2.14.3 (action cards demoted from h3 to h2 to fix heading hierarchy after the new sr-only h1).
-        const reportCard = page.locator('h2').filter({ hasText: /observation|observación/i }).locator('..');
-        const registerBtn = reportCard.getByRole('button', { name: /^Start$|^Empezar$/i });
-        await expect(registerBtn).toBeVisible({ timeout: 30000 });
-        await registerBtn.click();
+    test('«Registrá un adoptante» asks a guest to sign in, never opens the form', async ({ page }) => {
+        await page.getByTestId('home-step-adopters').click();
 
-        // A guest gets the sign-in prompt (the homepage's own search box also says «name»).
         await expect(page.getByText(/Sign In|Iniciar/i).first()).toBeVisible({ timeout: 30000 });
+        await expect(page).toHaveURL(/\/$|\/\?/);
     });
 
-    test('Auth gate — unauthenticated click triggers login', async ({ page }) => {
-        // Look for the adoption card "Start" button (<h2> since v2.14.3).
-        const adoptionCard = page.locator('h2').filter({ hasText: /Record an adoption|Registrar una adopción/i }).locator('..');
-        const registerBtn = adoptionCard.getByRole('button', { name: /^Start$|^Empezar$/i });
-
-        await expect(registerBtn).toBeVisible({ timeout: 30000 });
-        await registerBtn.click();
-
-        // A guest gets the sign-in prompt, never the picker.
-        await expect(page.getByText(/Sign In|Iniciar/i).first()).toBeVisible({ timeout: 30000 });
-        await expect(page.getByRole('heading', { name: /Who is the adopter|Quién es el adoptante/i })).toHaveCount(0);
+    test('every step on the card asks a guest to sign in', async ({ page }) => {
+        const steps = page.locator('[data-testid^="home-step-"]');
+        const n = await steps.count();
+        expect(n).toBeGreaterThan(0);
+        for (let i = 0; i < n; i++) {
+            await page.goto('/');
+            await dismissCountryBanner(page);
+            await page.locator('[data-testid^="home-step-"]').nth(i).click();
+            await expect(page.getByText(/Sign In|Iniciar/i).first()).toBeVisible({ timeout: 30000 });
+        }
     });
 });
