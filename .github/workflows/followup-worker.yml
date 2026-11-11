@@ -6,6 +6,9 @@ on:
     paths:
       - 'workers/followup-cron/**'
       - 'src/domain/followups.ts'
+      # Imported by index.ts / recipientSettings.ts (kill switch, «Avisos» animals scope).
+      - 'src/domain/notificationKillSwitch.ts'
+      - 'src/domain/animalNotices.ts'
       # Bundled by copy.ts (digest email link tagging).
       - 'src/domain/notificationTracking.ts'
       - 'src/domain/constants.ts'

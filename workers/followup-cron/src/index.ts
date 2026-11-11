@@ -17,15 +17,16 @@
  */
 
 import {
-    computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
+    computeFollowups, mergeSchedule, mergeFosterRule,
     FOLLOWUPS_EPOCH,
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
     followupsEnabled,
 } from '../../../src/domain/followups';
 import { notificationKillSwitchKey, notificationTypeEnabled } from '../../../src/domain/notificationKillSwitch';
-import { followupDelivery, parseAnimalsScope, type AnimalsScope } from '../../../src/domain/animalNotices';
+import { followupDelivery, type AnimalsScope } from '../../../src/domain/animalNotices';
 import { dedupKey, notificationBody, bellNotice, buildFollowupEmail, type FollowupEmailItem, type BellItem } from './copy';
 import { log, type AxiomEnv } from './log';
+import { readRecipientSettings } from './recipientSettings';
 
 interface Env extends AxiomEnv {
     DB: D1Database;
@@ -168,18 +169,11 @@ export default {
             // The recipient's user id tags their digest links (u), so a click names whose email it was.
             const userIdByEmail = new Map<string, string>();
             for (const email of everyEmail) {
-                try {
-                    const row = await env.DB.prepare(
-                        `SELECT u.id AS id, up.followup_settings AS s, up.animals_scope AS scope FROM user u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.email = ? LIMIT 1`
-                    ).bind(email).first<{ id: string; s: string | null; scope: string | null }>();
-                    if (row?.id) userIdByEmail.set(email, row.id);
-                    settingsByEmail.set(email, parseFollowupSettings(row?.s));
-                    scopeByEmail.set(email, parseAnimalsScope(row?.scope));
-                } catch (e) {
-                    log(env, 'warn', { warn: 'settings fallback', email, error: String(e) }, ctx);
-                    settingsByEmail.set(email, null);
-                    scopeByEmail.set(email, 'team');
-                }
+                // Two reads (recipientSettings.ts): a scope read failing (before 0107) never drops the settings.
+                const r = await readRecipientSettings(env.DB, email, fields => log(env, 'warn', fields, ctx));
+                if (r.id) userIdByEmail.set(email, r.id);
+                settingsByEmail.set(email, r.settings);
+                scopeByEmail.set(email, r.scope);
             }
 
             // v2.55.21: email is DIGESTED — one message per recipient per run,
