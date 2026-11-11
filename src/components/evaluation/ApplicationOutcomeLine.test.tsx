@@ -14,8 +14,9 @@ vi.mock('@/context/TimezoneContext', () => ({ useDateFormat: () => ({ formatShor
 
 const { ApplicationOutcomeLine } = await import('./ApplicationStatusLine');
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-const LUNA = { name: 'Luna', sex: 'hembra' };
-const render = (status: ApplicationStatus, animal: typeof LUNA | null = LUNA, outcomeAnimal: typeof LUNA | null = null) =>
+type A = { name: string; sex: string | null };
+const LUNA: A = { name: 'Luna', sex: 'hembra' };
+const render = (status: ApplicationStatus, animal: A | null = LUNA, outcomeAnimal: A | null = null) =>
     renderToStaticMarkup(<ApplicationOutcomeLine outcome={{ status, animal, outcomeAnimal }} />);
 
 describe('ApplicationOutcomeLine (a «Solicitud» on the profile)', () => {
@@ -36,8 +37,17 @@ describe('ApplicationOutcomeLine (a «Solicitud» on the profile)', () => {
         expect(text(render({ kind: 'also_applied' }, null, LUNA))).toBe('También pidió a Luna');
         expect(text(render({ kind: 'adopted' }))).toBe('Adoptó a Luna');
     });
-    it('an unseen animal reads «Sin nombre», never another team\'s name', () => {
-        expect(text(render({ kind: 'closed', reason: 'adopted_other' }, null))).toContain('Sin nombre');
+    it('an animal hidden from this viewer (null) is never named nor called «Sin nombre»', () => {
+        expect(text(render({ kind: 'closed', reason: 'adopted_other' }, null))).toBe('Cerrada: el animal fue adoptado por otra persona');
+        expect(text(render({ kind: 'closed', reason: 'adopted_open_link' }, null))).toBe('Cerrada: el animal fue adoptado');
+        expect(text(render({ kind: 'adopted' }, null))).toBe('Adoptó');
+        expect(text(render({ kind: 'proposed' }, null, null))).toBe('Propuesta para otro animal');
+    });
+    it('a known but unnamed animal (own team) still reads «Sin nombre»', () => {
+        const NONAME = { name: '', sex: null };
+        expect(text(render({ kind: 'closed', reason: 'adopted_other' }, NONAME))).toContain('Sin nombre');
+        expect(text(render({ kind: 'adopted' }, NONAME))).toBe('Adoptó a Sin nombre');
+        expect(text(render({ kind: 'proposed' }, null, NONAME))).toBe('Propuesta para Sin nombre');
     });
     it('still open: no line', () => {
         expect(render({ kind: 'to_evaluate', note: null })).toBe('');

@@ -46,3 +46,18 @@ describe('«Con solicitudes por evaluar» with nothing in it', () => {
         expect(pt.evaluation.tab_empty).toBe('Nenhuma candidatura para avaliar');
     });
 });
+
+describe('hidden-animal outcome lines (the animal has a name this viewer cannot see)', () => {
+    it('read the same in each locale\'s words', () => {
+        const want = {
+            closed_other_hidden: ['el animal fue adoptado por otra persona', 'the animal was adopted by someone else', 'o animal foi adotado por outra pessoa'],
+            closed_open_link_hidden: ['el animal fue adoptado', 'the animal was adopted', 'o animal foi adotado'],
+            status_adopted_hidden: ['Adoptó', 'Adopted', 'Adotou'],
+            status_proposed_hidden: ['Propuesta para otro animal', 'Proposed for another animal', 'Proposta para outro animal'],
+        } as const;
+        for (const [k, [e, n, p]] of Object.entries(want)) {
+            const key = k as keyof typeof want;
+            expect([es.evaluation[key], en.evaluation[key], pt.evaluation[key]]).toEqual([e, n, p]);
+        }
+    });
+});

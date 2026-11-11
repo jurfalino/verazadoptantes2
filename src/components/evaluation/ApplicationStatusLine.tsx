@@ -27,10 +27,13 @@ export function statusLineText(
     t: (k: string) => string,
     formatDate: (unixSec: number) => string,
 ): string | null {
-    // A decided application always says how it ended: an unnamed (or unknown) animal reads «Sin nombre».
+    // An animal of this viewer's team with no name reads «Sin nombre» (`name: ''`); an animal HIDDEN from this
+    // viewer (null) is never named and never called unnamed — it has its own wording (`*_hidden`).
     const unnamed = t('homeModules.unnamed_animal');
-    const nameOf = (animal: NamedAnimal | null) => animal?.name.trim() || unnamed;
-    const named = (key: string, animal: NamedAnimal | null) => t(key).replace('{animal}', nameOf(animal));
+    const nameOf = (animal: NamedAnimal) => animal.name.trim() || unnamed;
+    const named = (key: string, animal: NamedAnimal | null) => animal
+        ? t(key).replace('{animal}', nameOf(animal))
+        : t(`${key}_hidden`);
     switch (status.kind) {
         case 'to_evaluate':
             if (!status.note) return null;
@@ -44,7 +47,8 @@ export function statusLineText(
         }
         case 'closed': {
             const reasonKey = status.reason === APPLICATION_CLOSE_REASONS.ADOPTED_OPEN_LINK ? 'evaluation.closed_open_link' : 'evaluation.closed_other';
-            return t('evaluation.status_closed').replace('{reason}', animalLine(t, reasonKey, { name: nameOf(ctx.animal), sex: ctx.animal?.sex ?? null }));
+            const reason = ctx.animal ? animalLine(t, reasonKey, { name: nameOf(ctx.animal), sex: ctx.animal.sex }) : t(`${reasonKey}_hidden`);
+            return t('evaluation.status_closed').replace('{reason}', reason);
         }
         case 'adopted': return named('evaluation.status_adopted', ctx.animal);
         case 'proposed': return named('evaluation.status_proposed', ctx.outcomeAnimal);
