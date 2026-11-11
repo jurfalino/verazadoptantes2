@@ -10,6 +10,8 @@ import { renameUndoOf } from '@/domain/profileIdentity';
 import { RenameUndoButton } from '@/components/RenameUndo';
 import { NotificationTypeIcon } from '@/components/NotificationTypeIcon';
 import { useEscapeToClose } from '@/hooks/useEscapeToClose';
+import { trackNotificationBellOpened, trackNotificationClicked } from '@/lib/notificationEvents';
+import { isViewingAs } from '@/lib/viewAsClient';
 
 interface NotificationItem {
     id: string;
@@ -139,6 +141,8 @@ export default function NotificationBell() {
         const willOpen = !open;
         setOpen(willOpen);
         if (willOpen) {
+            // The badge as the person saw it; viewing as someone isn't their behaviour.
+            if (!isViewingAs(session)) trackNotificationBellOpened(unreadCount);
             setLoading(true);
             await fetchFullList();
             setLoading(false);
@@ -166,6 +170,7 @@ export default function NotificationBell() {
 
     // Click a notification → mark read + navigate
     const handleClick = async (item: NotificationItem) => {
+        if (!isViewingAs(session)) trackNotificationClicked(item, 'bell');
         if (!item.read) {
             // Optimistic update
             setItems(prev => prev.map(n => n.id === item.id ? { ...n, read: 1 } : n));

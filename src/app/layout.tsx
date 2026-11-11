@@ -24,6 +24,7 @@ import { CountryConfirmBanner } from '@/components/CountryConfirmBanner';
 import ZarazIdentify from '@/components/ZarazIdentify';
 import ClarityScript from '@/components/ClarityScript';
 import PostHogProvider from '@/components/PostHogProvider';
+import NotificationEmailLanding from '@/components/NotificationEmailLanding';
 import { WebApplicationJsonLd, OrganizationJsonLd } from '@/components/JsonLd';
 import ChatWidget from '@/components/ChatWidget';
 import { ViewAsBanner } from '@/components/ViewAsBanner';
@@ -170,6 +171,7 @@ export default async function RootLayout({
             enabled={posthogEnabled}
             projectKey={process.env.POSTHOG_PROJECT_KEY ?? null}
           />
+          <NotificationEmailLanding />
           <LanguageProvider>
             <TimezoneProvider timezone={viewerTimezone}>
             <ThemeProvider>
