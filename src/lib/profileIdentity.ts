@@ -1,5 +1,5 @@
 /**
- * A profile's name and age, changed by anyone signed in (households as
+ * A profile's name, changed by anyone signed in (households as
  * profiles, Task 3 — Jon, 2026-10-27). The rules live in
  * src/domain/profileIdentity.ts; this is the write side and the notices.
  * Plain server module: every function takes the actor as an argument, so none
@@ -9,10 +9,9 @@
  * - `renameProfile`: one compare-and-swap of name + contact entries + blob
  *   (the old name lands as a rename alias in the same write — never a renamed
  *   profile without its alias), then history, audit and re-tokenizing.
- * - `setProfileAge`: compare-and-swap of age / age_as_of / is_minor + history.
  * - Notices run after the response and never throw.
  */
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { adopterHistory, adopters, notifications } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -24,10 +23,9 @@ import { historyKindForOwner, isPrivilegedOnProfile } from '@/lib/profilePrivile
 import { isRealActorEmail } from '@/lib/piiAccess';
 import { actorNameOf, teamsOf } from '@/lib/householdNotices';
 import { keepChangeRecipients } from '@/lib/teamChangeAudience';
-import { currentAge, isMinor } from '@/domain/households';
 import type { NotificationType } from '@/domain/constants';
 import { realOwner } from '@/domain/dedupPair';
-import { ageColumns, parseNameChange, renameEntries, sameName, RENAME_NOTICE_WINDOW_MS } from '@/domain/profileIdentity';
+import { parseNameChange, renameEntries, sameName, RENAME_NOTICE_WINDOW_MS } from '@/domain/profileIdentity';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -180,71 +178,6 @@ export async function undoRename(db: Db, historyId: string, actor: string): Prom
     }
     await notifyRenameUndone(db, { adopterId: state.adopterId, actor, renamer: state.renamer, restored: res.to, reverted: res.from });
     return { status: 'undone', adopterId: state.adopterId, restored: res.to, reverted: res.from, ...(res.warningErrorId ? { warningErrorId: res.warningErrorId } : {}) };
-}
-
-export type AgeResult =
-    | { status: 'changed'; from: { age: number | null; minor: boolean }; to: { age: number | null; minor: boolean }; name: string; ownerEmail: string | null; historyId: string | null; warningErrorId?: string }
-    | { status: 'unchanged' }
-    | { status: 'missing' }
-    /** Final fix P1: the age / box shown when the form opened is no longer what is stored. */
-    | { status: 'conflict' }
-    | { status: 'busy'; errorId: string };
-
-/**
- * Set the age (as told today) and «Es menor de edad». With an age the box
- * follows it; the box counts only with no age. «Menor de edad» is an
- * informational marker only (Jon, 2026-10-28): any profile can be marked,
- * whatever its records or alerts.
- */
-export async function setProfileAge(db: Db, input: {
-    adopterId: string; age: number | null; isMinor: boolean; actor: string; today?: Date;
-    /** What the form showed (the age counted up to then, and «menor»); a different stored value is a conflict. */
-    expected?: { age: number | null; isMinor: boolean };
-}): Promise<AgeResult> {
-    const { adopterId, actor } = input;
-    const today = input.today ?? new Date();
-    const ctx: Ctx = { op: 'setProfileAge', adopterId, actor };
-    const next = ageColumns(input.age, input.isMinor, today);
-    const nextMinor = isMinor(next, today);
-    for (let attempt = 0; attempt < 2; attempt++) {
-        const row = await db.select().from(adopters).where(eq(adopters.id, adopterId)).get() as typeof adopters.$inferSelect | undefined;
-        if (!row || row.deletedAt) return { status: 'missing' };
-        const was = { age: currentAge(row, today), minor: isMinor(row, today) };
-        if (was.age === next.age && was.minor === nextMinor && (next.age !== null || !!row.isMinor === !!next.isMinor)) return { status: 'unchanged' };
-        // A birthday passing while the form is open reads as a change too: the safe side (shown, never overwritten).
-        if (input.expected && (input.expected.age !== was.age || input.expected.isMinor !== was.minor)) {
-            logger.info('setProfileAge: conflict — the age changed since the form opened', ctx);
-            return { status: 'conflict' };
-        }
-        const won = await db.update(adopters).set({ age: next.age, ageAsOf: next.ageAsOf, isMinor: next.isMinor, updatedAt: new Date() })
-            .where(and(
-                eq(adopters.id, adopterId), isNull(adopters.deletedAt),
-                row.age === null ? isNull(adopters.age) : eq(adopters.age, row.age),
-                row.ageAsOf === null ? isNull(adopters.ageAsOf) : eq(adopters.ageAsOf, row.ageAsOf),
-                eq(adopters.isMinor, row.isMinor ?? 0),
-            )).returning({ id: adopters.id });
-        if (!won.length) continue;
-
-        const to = { age: next.age, minor: nextMinor };
-        let historyId: string | null = crypto.randomUUID();
-        let warningErrorId: string | undefined;
-        try {
-            await db.insert(adopterHistory).values({
-                id: historyId, adopterId, changedBy: actor,
-                kind: await historyKindForOwner(actor, row.addedBy, ctx),
-                changes: JSON.stringify({ age_changed: { from: was, to } }),
-                changedAt: new Date(),
-            });
-        } catch (e) {
-            warningErrorId = logger.error('setProfileAge: changed, but the history row failed', e, ctx);
-            historyId = null;
-        }
-        logAudit({ userEmail: actor, action: 'adopter_age_changed', target: adopterId, details: { from: was, to } });
-        logger.info('setProfileAge: changed', { ...ctx, minor: to.minor });
-        return { status: 'changed', from: was, to, name: row.name ?? '', ownerEmail: row.addedBy ?? null, historyId, ...(warningErrorId ? { warningErrorId } : {}) };
-    }
-    const errorId = logger.error('setProfileAge: lost the race twice', new Error('busy'), ctx);
-    return { status: 'busy', errorId };
 }
 
 // ── Notices ─────────────────────────────────────────────────────
@@ -403,21 +336,6 @@ export async function notifyRenameUndone(db: Db, n: { adopterId: string; actor: 
                 {}, '↩️', ctx);
         } catch (e) {
             logger.warn('profileIdentity: undo notice failed', { ...ctx, error: errMsg(e) });
-        }
-    }, ctx);
-}
-
-/** The owner's team hears about an age change (teamWhoHears). */
-export async function notifyProfileAgeChanged(db: Db, n: { adopterId: string; actor: string; ownerEmail: string | null; name: string; age: number | null; minor: boolean }): Promise<void> {
-    const ctx: Ctx = { op: 'notifyProfileAgeChanged', adopterId: n.adopterId, actor: n.actor };
-    await runAfterResponse('profileIdentity.age', async () => {
-        try {
-            const [recipients, actorName] = await Promise.all([teamWhoHears(db, n.adopterId, n.actor, ctx), actorNameOf(n.actor, ctx)]);
-            await sendTo(recipients, 'profile_age_changed',
-                { key: 'profile_age_changed', params: { actorName, personName: n.name || undefined, ...(n.age !== null ? { age: String(n.age) } : {}), ...(n.minor ? { minor: '1' } : {}) } },
-                {}, '🎂', ctx);
-        } catch (e) {
-            logger.warn('profileIdentity: age notice failed', { ...ctx, error: errMsg(e) });
         }
     }, ctx);
 }

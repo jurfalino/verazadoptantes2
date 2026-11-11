@@ -50,8 +50,6 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     merge_dispute_resolved: { outcome: 'undone', ...sides },
     pair_message: { fromName: 'Jon', profileName: 'Julieta Paz', message: 'Hola' },
     household_linked: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
-    household_link_removed: { actorName: 'María', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
-    household_link_disputed: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_contribution: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' },
     household_also_lives_with: { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez' },
     household_relationship_changed: { actorName: 'Ana', personName: 'Marta Paez', relationship: 'partner', relativeName: 'Pedro Paez' },
@@ -59,7 +57,6 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     household_member_disputed: { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez' },
     profile_renamed: { actorName: 'Jonathan U', fromName: 'Pedro Paez', toName: 'P. Paez' },
     profile_rename_undone: { actorName: 'Ana', restoredName: 'Pedro Paez', revertedName: 'P. Paez' },
-    profile_age_changed: { actorName: 'Ana', personName: 'Lucas Paez', age: '12', minor: '1' },
     profile_content_added: { actorName: 'Ana', adopterName: 'Marta Paez', records: 'adoption:4', photos: '3', address: '1' },
 };
 
@@ -271,14 +268,6 @@ describe('profile identity notices (households as profiles, Task 3)', () => {
         expect(es.title).toBe('Jonathan U cambió el nombre de Pedro Paez a P. Paez');
         expect(es.body).toBe('El nombre anterior quedó como «Conocido/a como», así que buscar «Pedro Paez» lo sigue encontrando. Si el cambio no corresponde, deshacelo.');
         expect(renderNotification({ key: 'profile_renamed', params: { actorName: 'Ana', toName: 'Lucas' } }, 'en')!.title).toBe('Ana named a profile Lucas');
-    });
-    it('profile_age_changed: an age must be digits; a minor is only named as one (no rule about records — Jon, 2026-10-28)', () => {
-        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', age: 'doce' } }, 'es')).toBeNull();
-        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', age: '12', minor: '1' } }, 'es')!.body)
-            .toBe('Ana indicó que Lucas tiene 12 años.');
-        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas', minor: '1' } }, 'es')!.body)
-            .toBe('Ana indicó que Lucas es menor de edad.');
-        expect(renderNotification({ key: 'profile_age_changed', params: { actorName: 'Ana', personName: 'Lucas' } }, 'pt')!.body).toBe('Ana removeu a idade de Lucas.');
     });
     it('profile_content_added: one notice says everything one save added (Jon, 2026-11-08)', () => {
         const r = (params: Record<string, string>, l: NotificationLocale = 'es') => renderNotification({ key: 'profile_content_added', params: { actorName: 'Ana', ...params } }, l);

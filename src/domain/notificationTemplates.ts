@@ -83,13 +83,6 @@ export interface NotificationTemplateParams {
     pair_message: { fromName: string; profileName?: string; message: string };
     /** D45: someone recorded that the reader's profile `linkedName` lives with `hostName`. */
     household_linked: { actorName: string; hostName?: string; linkedName?: string };
-    /** D48, the host's owner team: `actorName` (the linked profile's team) said `linkedName` doesn't live with `hostName`; the member was removed on both profiles. */
-    household_link_removed: { actorName: string; hostName?: string; linkedName?: string };
-    /**
-     * D48, admins only: `actorName` re-added `linkedName` to `hostName`'s household after the
-     * other side said they don't live together; `viaMerge: '1'` when a merge they did carried it back (D51).
-     */
-    household_link_disputed: { actorName: string; hostName?: string; linkedName?: string; viaMerge?: string };
     /**
      * D54, the owner + editors: someone with no standing on `adopterName` added to its
      * household. `what`: 'member' (a person) or 'contact' (a contact on a member;
@@ -119,8 +112,6 @@ export interface NotificationTemplateParams {
         viaContract?: string };
     /** The renamer: `actorName` (the owner's team) undid their rename — back to `restoredName`; `revertedName` stays as «Conocido/a como». */
     profile_rename_undone: { actorName: string; restoredName?: string; revertedName?: string };
-    /** The owner's team: `actorName` set `personName`'s age (`age`, digits) or, with no age, marked them a minor (`minor: '1'`). */
-    profile_age_changed: { actorName: string; personName?: string; age?: string; minor?: string };
     /** The owner's team: what `actorName` added to the profile in one go (src/domain/profileAdditions.ts params). */
     profile_content_added: { actorName: string; adopterName?: string } & ProfileAdditionParams;
 }
@@ -619,27 +610,6 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         en: p => ({ title: `${plainName(p.linkedName, 'en')} lives with ${plainName(p.hostName, 'en')}`, body: `${p.actorName} noted that ${plainName(p.linkedName, 'en')} lives with ${plainName(p.hostName, 'en')}. Your profile now shows it under “Lives with”.` }),
         pt: p => ({ title: `${plainName(p.linkedName, 'pt')} mora com ${plainName(p.hostName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} mora com ${plainName(p.hostName, 'pt')}. Seu perfil agora mostra isso em «Mora com».` }),
     },
-    household_link_removed: {
-        required: ['actorName'],
-        es: p => ({ title: `No conviven: ${plainName(p.linkedName, 'es')}`, body: `${p.actorName} indicó que ${plainName(p.linkedName, 'es')} no vive con ${plainName(p.hostName, 'es')}. Se quitó del hogar de tu perfil y del perfil de ${plainName(p.linkedName, 'es')}; queda en el historial de ambos. Si no es así, podés volver a agregarlo y un administrador lo revisa.` }),
-        en: p => ({ title: `Not living together: ${plainName(p.linkedName, 'en')}`, body: `${p.actorName} said ${plainName(p.linkedName, 'en')} doesn't live with ${plainName(p.hostName, 'en')}. They were removed from your profile's household and from ${plainName(p.linkedName, 'en')}'s profile; both histories show it. If that's wrong, you can add them again and an administrator will review it.` }),
-        pt: p => ({ title: `Não moram juntos: ${plainName(p.linkedName, 'pt')}`, body: `${p.actorName} indicou que ${plainName(p.linkedName, 'pt')} não mora com ${plainName(p.hostName, 'pt')}. Foi removido do lar do seu perfil e do perfil de ${plainName(p.linkedName, 'pt')}; fica no histórico dos dois. Se não for assim, você pode adicioná-lo de novo e um administrador vai revisar.` }),
-    },
-    household_link_disputed: {
-        required: ['actorName'],
-        es: p => ({
-            title: `Convivencia en disputa: ${plainName(p.linkedName, 'es')}`,
-            body: `${p.viaMerge === '1' ? `Al unir perfiles, ${p.actorName} volvió a dejar` : `${p.actorName} volvió a agregar`} a ${plainName(p.linkedName, 'es')} en el hogar de ${plainName(p.hostName, 'es')}, después de que el equipo de ${plainName(p.linkedName, 'es')} indicara que no conviven. Revisá quién tiene razón.`,
-        }),
-        en: p => ({
-            title: `Household link disputed: ${plainName(p.linkedName, 'en')}`,
-            body: `${p.viaMerge === '1' ? `By joining profiles, ${p.actorName} put` : `${p.actorName} added`} ${plainName(p.linkedName, 'en')} back in ${plainName(p.hostName, 'en')}'s household, after ${plainName(p.linkedName, 'en')}'s team said they don't live together. Please review who is right.`,
-        }),
-        pt: p => ({
-            title: `Convivência em disputa: ${plainName(p.linkedName, 'pt')}`,
-            body: `${p.viaMerge === '1' ? `Ao unir perfis, ${p.actorName} colocou de novo` : `${p.actorName} adicionou de novo`} ${plainName(p.linkedName, 'pt')} no lar de ${plainName(p.hostName, 'pt')}, depois que a equipe de ${plainName(p.linkedName, 'pt')} indicou que não moram juntos. Revise quem tem razão.`,
-        }),
-    },
     household_contribution: {
         required: ['actorName', 'what'],
         es: p => p.what === 'member'
@@ -744,27 +714,6 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
             title: `Sua mudança de nome foi desfeita: ${plainName(p.restoredName, 'pt')}`,
             body: `${p.actorName} desfez a mudança: o perfil volta a se chamar ${plainName(p.restoredName, 'pt')}.${p.revertedName?.trim() ? ` «${p.revertedName.trim()}» ficou como «Também conhecido/a como».` : ''}`,
         }),
-    },
-    profile_age_changed: {
-        required: ['actorName'],
-        es: p => {
-            const who = plainName(p.personName, 'es');
-            if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
-            const body = p.age !== undefined ? `${p.actorName} indicó que ${who} tiene ${p.age} años.` : p.minor === '1' ? `${p.actorName} indicó que ${who} es menor de edad.` : `${p.actorName} quitó la edad de ${who}.`;
-            return { title: `Edad cambiada: ${who}`, body };
-        },
-        en: p => {
-            const who = plainName(p.personName, 'en');
-            if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
-            const body = p.age !== undefined ? `${p.actorName} said ${who} is ${p.age} years old.` : p.minor === '1' ? `${p.actorName} said ${who} is a minor.` : `${p.actorName} removed ${who}'s age.`;
-            return { title: `Age changed: ${who}`, body };
-        },
-        pt: p => {
-            const who = plainName(p.personName, 'pt');
-            if (p.age !== undefined && !/^\d{1,3}$/.test(p.age)) return null;
-            const body = p.age !== undefined ? `${p.actorName} indicou que ${who} tem ${p.age} anos.` : p.minor === '1' ? `${p.actorName} indicou que ${who} é menor de idade.` : `${p.actorName} removeu a idade de ${who}.`;
-            return { title: `Idade alterada: ${who}`, body };
-        },
     },
     profile_content_added: {
         required: ['actorName'],
