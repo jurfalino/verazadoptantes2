@@ -36,6 +36,13 @@ describe('HomeApplicantsPanel — one read of the list', () => {
         expect(await readPanel(async () => list)).toEqual({ kind: 'ok', list, index: 0 });
     });
 
+    it('a deep link (a bell notice) opens at that application, decided or not; gone → the first to evaluate', async () => {
+        const list = [app('a', 'to_evaluate'), app('b', 'declined'), app('c', 'to_evaluate')];
+        expect(await readPanel(async () => list, 'c')).toEqual({ kind: 'ok', list, index: 2 });
+        expect(await readPanel(async () => list, 'b')).toEqual({ kind: 'ok', list, index: 1 });
+        expect(await readPanel(async () => list, 'gone')).toEqual({ kind: 'ok', list, index: 0 });
+    });
+
     it('an older tab: «stale» (the page reloads itself); any other failure: the errorId', async () => {
         expect(await readPanel(async () => { throw new Error('stale deploy'); })).toEqual({ kind: 'stale' });
         expect(await readPanel(async () => { throw new Error('boom'); })).toEqual({ kind: 'error', errorId: 'err12345' });

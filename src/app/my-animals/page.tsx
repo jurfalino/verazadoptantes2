@@ -5,8 +5,9 @@ import SignedContractLinks from '@/components/SignedContractLinks';
 import { useLanguage } from '@/context/LanguageContext';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { FileText } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useDateFormat, useRelativeTime } from '@/context/TimezoneContext';
 import { actorLabel } from '@/lib/userDisplay';
@@ -20,6 +21,11 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { myAnimalsTabCount, type MyAnimalsTabCounts } from '@/lib/myAnimalsTabCount';
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
+import { GENERAL_ROW_ID } from '@/domain/homeModules';
+import { interpolate } from '@/lib/interpolate';
+import HomeApplicantsPanel, { type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
+import { AdoptionOfferSheet } from '@/components/evaluation/AdoptionOfferSheet';
+import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
 
 interface AnimalImage {
     id: string;
@@ -69,6 +75,10 @@ interface Animal {
     dueTop?: { copyKey: string; offsetDays?: number; dueDate: number } | null;
     /** v2.56.16: last identified touch (ficha edit, placement or event). */
     lastUpdate?: { by: string; at: number; kind: 'updated' | 'added'; name?: string | null } | null;
+    /** Applications to evaluate (0 once adopted) — the amber «N solicitudes por evaluar» row. */
+    toEvaluate?: number;
+    /** Candidates its adoption closed, not told yet — the amber «… avisá a N candidatos» row. */
+    offer?: number;
 }
 
 export default function MyAnimalsPage() {
@@ -78,8 +88,12 @@ export default function MyAnimalsPage() {
     const searchParams = useSearchParams();
     const { data: session } = useSession();
     const toast = useShowToast();
+    const router = useRouter();
     const view = searchParams.get('view') || 'available';
     const userId = session?.user?.id || '';
+    // A bell notice's deep link: `?view=solicitudes&animal=<id|general>&solicitud=<applicationId>`.
+    const linkAnimal = searchParams.get('animal');
+    const linkApplication = searchParams.get('solicitud');
 
     const [animals, setAnimals] = useState<Animal[]>([]);
     /** Which tab `animals` belongs to — right after a tab switch it is still the old one. */
@@ -92,11 +106,25 @@ export default function MyAnimalsPage() {
     const [tabCounts, setTabCounts] = useState<MyAnimalsTabCounts | null>(null);
     /** «Con controles pendientes»: comes with every tab's list (x-pending-count), not with ?counts=1. */
     const [pendingCount, setPendingCount] = useState<number | null>(null);
-    const counts: MyAnimalsTabCounts | null = tabCounts ? { ...tabCounts, ...(pendingCount != null ? { pending: pendingCount } : {}) } : null;
+    /** «Con solicitudes por evaluar»: its cards («Sin animal elegido» included), with every tab's list (x-solicitudes-count). */
+    const [solicitudesCount, setSolicitudesCount] = useState<number | null>(null);
+    /** «Sin animal elegido»: the team's general applications to evaluate (x-general-to-evaluate). */
+    const [generalToEvaluate, setGeneralToEvaluate] = useState(0);
+    const counts: MyAnimalsTabCounts | null = tabCounts ? {
+        ...tabCounts,
+        ...(pendingCount != null ? { pending: pendingCount } : {}),
+        ...(solicitudesCount != null ? { solicitudes: solicitudesCount } : {}),
+    } : null;
+    /** The applicant panel (an animal's candidates, or the general applications), over the page. Apart from the list, so a re-read never closes it. */
+    const [applicantsPanel, setApplicantsPanel] = useState<{ target: HomeApplicantsTarget; applicationId: string | null } | null>(null);
+    /** The adopted animal whose offer to tell the other candidates is open. */
+    const [offerAnimalId, setOfferAnimalId] = useState<string | null>(null);
+    /** Re-reads the list and the counts in place (after an outcome, a contract or the offer) — no loading screen. */
+    const reloadRef = useRef<() => void>(() => {});
 
     useEffect(() => {
-        async function fetchAnimals() {
-            setLoading(true);
+        async function fetchAnimals(silent = false) {
+            if (!silent) setLoading(true);
             try {
                 const res = await fetch(`/api/my-animals?view=${view}`);
                 if (res.status === 403) {
@@ -111,6 +139,10 @@ export default function MyAnimalsPage() {
                     setLoadedView(view);
                     const pending = res.headers.get('x-pending-count');
                     if (pending != null) setPendingCount(Number(pending));
+                    const solicitudes = res.headers.get('x-solicitudes-count');
+                    if (solicitudes != null) setSolicitudesCount(Number(solicitudes));
+                    const general = res.headers.get('x-general-to-evaluate');
+                    if (general != null) setGeneralToEvaluate(Number(general));
                 } else {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
                     toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
@@ -118,7 +150,7 @@ export default function MyAnimalsPage() {
             } catch (e) {
                 toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', resolveErrorId(e, 'page'));
             } finally {
-                setLoading(false);
+                if (!silent) setLoading(false);
             }
         }
         async function fetchCounts() {
@@ -137,11 +169,57 @@ export default function MyAnimalsPage() {
         fetchAnimals();
         // Re-read on every tab switch: the tabs are links, so the page does not remount.
         fetchCounts();
+        reloadRef.current = () => { void fetchAnimals(true); void fetchCounts(); };
         // Reset filters when switching tabs
         setSearchQuery('');
         setSpeciesFilter('all');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [view]);
+
+    const onPanelChanged = useCallback(() => reloadRef.current(), []);
+    const hasLink = !!linkAnimal;
+    /** Closes the panel; a deep link's params go with it, so the same notice opens it again. */
+    const closePanel = useCallback(() => {
+        setApplicantsPanel(null);
+        if (hasLink) router.replace(`/my-animals?view=${encodeURIComponent(view)}`, { scroll: false });
+    }, [hasLink, router, view]);
+    const closeOffer = useCallback(() => setOfferAnimalId(null), []);
+    const panelAnimal = (a: Animal) => ({ id: a.id, name: a.animalName || t('adoption.unnamed') || 'Unnamed', sex: a.sex });
+
+    // The deep link opens the panel at that application once the list is in: the animal's name
+    // comes from the list, else (decided meanwhile, or another tab) from a read of that one animal.
+    const openedLink = useRef<string | null>(null);
+    useEffect(() => {
+        if (!linkAnimal) { openedLink.current = null; return; }
+        if (loadedView !== view) return;
+        const key = `${linkAnimal}|${linkApplication ?? ''}`;
+        if (openedLink.current === key) return;
+        openedLink.current = key;
+        const applicationId = linkApplication;
+        if (linkAnimal === GENERAL_ROW_ID) { setApplicantsPanel({ target: 'general', applicationId }); return; }
+        const listed = animals.find(a => a.id === linkAnimal);
+        if (listed) { setApplicantsPanel({ target: { animal: panelAnimal(listed) }, applicationId }); return; }
+        void (async () => {
+            try {
+                const res = await fetch(`/api/my-animals?id=${encodeURIComponent(linkAnimal)}`);
+                const body = await res.json().catch(() => null) as Animal[] | { error?: string; errorId?: string } | null;
+                if (openedLink.current !== key) return;
+                if (!res.ok || !Array.isArray(body)) {
+                    const err = (body && !Array.isArray(body) ? body : {}) as { error?: string; errorId?: string };
+                    toast.error(t('errors.generic') || 'Error', err.error || 'Failed to load animals.',
+                        err.errorId ?? resolveErrorId(new Error(`my-animals deep link: ${res.status}`), 'MyAnimalsPage'));
+                    return;
+                }
+                if (body[0]) setApplicantsPanel({ target: { animal: panelAnimal(body[0]) }, applicationId });
+                // Not the team's (or gone): nothing to open — say so in the console, drop the link.
+                else { console.warn('my-animals: deep-linked animal not found', { animalId: linkAnimal, applicationId }); closePanel(); }
+            } catch (e) {
+                toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', resolveErrorId(e, 'MyAnimalsPage'));
+            }
+        })();
+        // The list re-reads in place; `openedLink` keeps one link from opening twice.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [linkAnimal, linkApplication, loadedView, view, animals]);
 
     // Derive unique species from data
     const speciesList = Array.from(new Set(animals.map(a => (a.species || 'unknown').toLowerCase()))).sort();
@@ -188,6 +266,13 @@ export default function MyAnimalsPage() {
                 animals,
             }));
     })();
+
+    /** «N solicitudes por evaluar» («1 solicitud por evaluar»). */
+    const toEvaluateLine = (n: number) => interpolate(t(n === 1 ? 'evaluation.to_evaluate_one' : 'evaluation.to_evaluate_many'), { n });
+    /** «Sin animal elegido» is the first card of «Con solicitudes por evaluar», and only there (it is not an animal). */
+    const showGeneral = view === 'solicitudes' && generalToEvaluate > 0;
+    /** The amber row of a card: the same look as the due badge, a 44px tap target, opening a panel over the page. */
+    const amberRow = 'flex items-center gap-1.5 w-full min-h-11 px-2.5 py-1.5 rounded-lg text-left text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors';
 
     if (loading) {
         return (
@@ -297,6 +382,22 @@ export default function MyAnimalsPage() {
                             {t('dashboard.pending_followups_tab') || 'Con controles pendientes'} ({myAnimalsTabCount('pendientes', view, loadedView, animals.length, counts)})
                         </Link>
                     )}
+                    {/* «Con solicitudes por evaluar»: where the homepage's «N animales más con
+                        solicitudes» lands — the animals with applications to evaluate, and
+                        «Sin animal elegido». Only while there is one (or you are on it). */}
+                    {(view === 'solicitudes' || (solicitudesCount ?? 0) > 0) && (
+                        <Link
+                            href="/my-animals?view=solicitudes"
+                            data-testid="tab-solicitudes"
+                            className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'solicitudes'
+                                ? 'bg-stone-800 text-white shadow-sm'
+                                : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'
+                                }`}
+                        >
+                            <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+                            {t('evaluation.tab')} ({myAnimalsTabCount('solicitudes', view, loadedView, animals.length + (showGeneral ? 1 : 0), counts)})
+                        </Link>
+                    )}
                 </div>
 
                 {/* Search & Filters */}
@@ -354,7 +455,12 @@ export default function MyAnimalsPage() {
                     </p>
                 )}
 
-                {filteredAnimals.length === 0 ? (
+                {filteredAnimals.length === 0 && !showGeneral ? (
+                    view === 'solicitudes' ? (
+                        <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm" data-testid="solicitudes-empty">
+                            <h3 className="text-xl font-semibold text-stone-900">{t('notifications.no_unread')}</h3>
+                        </div>
+                    ) : (
                     <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm">
                         <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
                             <span className="text-3xl">🐾</span>
@@ -384,6 +490,7 @@ export default function MyAnimalsPage() {
                             </Link>
                         )}
                     </div>
+                    )
                 ) : (
                     <>
                     {animalGroups.map((group) => (
@@ -396,6 +503,29 @@ export default function MyAnimalsPage() {
                             </div>
                         )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {showGeneral && group.key === 'all' && (
+                            <div className="bg-white rounded-xl shadow-sm border border-stone-200" data-testid="general-card">
+                                {/* The form icon in place of a photo: this card is the general applications, not an animal. */}
+                                <div className="aspect-video bg-stone-50 rounded-t-xl flex items-center justify-center text-stone-400">
+                                    <FileText className="w-16 h-16" strokeWidth={1.5} aria-hidden="true" />
+                                </div>
+                                <div className="p-4">
+                                    <h3 className="font-semibold text-stone-900 text-lg mb-1">{t('evaluation.general_title')}</h3>
+                                    <p className="text-sm text-stone-500 mb-3">{t('evaluation.general_body')}</p>
+                                    <div className="pt-3 border-t border-stone-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => setApplicantsPanel({ target: 'general', applicationId: null })}
+                                            aria-haspopup="dialog"
+                                            className={amberRow}
+                                            data-testid="general-card-badge"
+                                        >
+                                            {toEvaluateLine(generalToEvaluate)}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {group.animals.map((animal) => {
                             // A fostered ("Tránsito") animal carries an adopterId
                             // (the foster home) but recordType='foster'. It lives
@@ -535,6 +665,32 @@ export default function MyAnimalsPage() {
                                             {followupBadgeLabel(t, animal.dueFollowups, animal.dueTop, Date.now())}
                                         </Link>
                                     )}
+                                    {/* Beside the due badge (both show when both apply): it opens the
+                                        applicant panel over the page, por evaluar first. */}
+                                    {!!animal.toEvaluate && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setApplicantsPanel({ target: { animal: panelAnimal(animal) }, applicationId: null })}
+                                            aria-haspopup="dialog"
+                                            className={amberRow}
+                                            data-testid={`solicitudes-badge-${animal.id}`}
+                                        >
+                                            {toEvaluateLine(animal.toEvaluate)}
+                                        </button>
+                                    )}
+                                    {/* Adopted: the candidates its adoption closed are not told yet — the
+                                        home's row, here on its card too (until «Listo» / «Ahora no»). */}
+                                    {!!animal.offer && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setOfferAnimalId(animal.id)}
+                                            aria-haspopup="dialog"
+                                            className={amberRow}
+                                            data-testid={`offer-badge-${animal.id}`}
+                                        >
+                                            {interpolate(animalLine(t, `evaluation.offer_row_${animal.offer === 1 ? 'one' : 'many'}`, panelAnimal(animal)), { n: animal.offer })}
+                                        </button>
+                                    )}
                                     {/* Sits with the card's other state rows («Adoptado por»,
                                         «En tránsito con», the pendientes badge) rather than in
                                         the action row below — guidelines §1.3, affordances for
@@ -619,6 +775,20 @@ export default function MyAnimalsPage() {
                     </>
                 )}
             </div>
+            {applicantsPanel && (
+                <HomeApplicantsPanel
+                    key={applicantsPanel.target === 'general' ? GENERAL_ROW_ID : applicantsPanel.target.animal.id}
+                    target={applicantsPanel.target}
+                    applicationId={applicantsPanel.applicationId}
+                    returnLabel
+                    testId="my-animals-applicants-panel"
+                    onClose={closePanel}
+                    onChanged={onPanelChanged}
+                />
+            )}
+            {offerAnimalId && (
+                <AdoptionOfferSheet key={offerAnimalId} animalId={offerAnimalId} onClose={closeOffer} onDone={onPanelChanged} />
+            )}
         </div>
     );
 }

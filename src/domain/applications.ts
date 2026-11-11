@@ -6,6 +6,7 @@ import {
     APPLICATION_STATES, APPLICATION_ORIGINS, APPLICATION_CLOSE_REASONS, INVITATION_TTL_DAYS, LIFE_STAGE_YEARS,
     type ApplicationState, type ApplicationOrigin, type ApplicationCloseReason,
 } from './constants';
+import { GENERAL_ROW_ID } from './homeModules';
 
 const DAY_SEC = 86_400;
 
@@ -137,6 +138,19 @@ export function submissionApplication(selectedAnimalId: string | null, animal: {
         return { animalId: null, origin: APPLICATION_ORIGINS.ADOPTED_ANIMAL, askedAnimalId: selectedAnimalId };
     }
     return { animalId: selectedAnimalId, origin: APPLICATION_ORIGINS.FORM, askedAnimalId: null };
+}
+
+/**
+ * Where a form's bell notice leads (spec «Notifications»: its link opens the panel for that
+ * application): «Con solicitudes por evaluar» on Mis animales, at that application — `animal=general`
+ * for a general one («Sin animal elegido»). The form itself when Mis animales is off, when no
+ * application was written, or when the application's animal is not the link owner's team's (a
+ * forged `?animal=`: nobody's to evaluate — `teamApplicationsWhere`).
+ */
+export function formNoticeUrl(n: { submissionId: string; applicationId: string | null; animalId: string | null; animalInTeam: boolean; animalsOn: boolean }): string {
+    const form = `/form-results/${n.submissionId}`;
+    if (!n.animalsOn || !n.applicationId || (n.animalId && !n.animalInTeam)) return form;
+    return `/my-animals?view=solicitudes&animal=${encodeURIComponent(n.animalId ?? GENERAL_ROW_ID)}&solicitud=${encodeURIComponent(n.applicationId)}`;
 }
 
 export type LifeStage = 'puppy' | 'young' | 'senior';

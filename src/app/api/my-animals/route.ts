@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'No email in session' }, { status: 401 });
     }
     const { searchParams } = new URL(request.url);
-    const view = searchParams.get('view') || 'available'; // 'available', 'adopted', or 'all'
+    // 'available', 'adopted', 'todos', 'pendientes', 'solicitudes', or 'all' (edit-mode lookups)
+    const view = searchParams.get('view') || 'available';
 
     try {
         const { getDb } = await import('@/app/actions/_db');
@@ -77,6 +78,75 @@ export async function GET(request: NextRequest) {
             ? select().then(rows => withDueFollowups(rows, bulk, followupCtx, log))
             : Promise.resolve([]);
 
+        // «Con solicitudes por evaluar» and each card's amber rows: the applications to evaluate and
+        // the offers to tell the other candidates, per animal, counted exactly as the homepage card
+        // counts them (loadHomeAnimals) — ONE grouped query of each per distinct animal-OWNER team
+        // (org-mates share one), each animal read from its owner's team, applications only while
+        // the animal takes a contract. This page heals missing application rows first (once per team
+        // per request, inside the counts). Never per animal, never per application.
+        const [{ createOwnerTeamResolver, listApplicantIdsForAnimal }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal }, { normalizeTeamScope }] = await Promise.all([
+            import('@/app/actions/_applicants'),
+            import('@/lib/applicationCounts'),
+            import('@/lib/applicantScope'),
+        ]);
+        const ownerTeam = createOwnerTeamResolver();
+        const nowSec = Math.floor(Date.now() / 1000);
+        const errMsg = (e: unknown) => e instanceof Error ? e.message : String(e);
+        type AppCounts = { toEvaluate: Map<string, number>; offer: Map<string, number> };
+        const teamCounts = new Map<string, Promise<AppCounts>>();
+        const countsOfTeam = (team: string[]): Promise<AppCounts> => {
+            const key = normalizeTeamScope(team).slice().sort().join(',');
+            let hit = teamCounts.get(key);
+            if (!hit) {
+                hit = Promise.all([
+                    countToEvaluateByAnimal(db, team, nowSec).catch((e: unknown) => {
+                        logger.warn('my-animals: D1 fallback hit (to evaluate)', { userEmail, view, team: key, error: errMsg(e) });
+                        return new Map<string, number>();
+                    }),
+                    offerCountsByAnimal(db, team).catch((e: unknown) => {
+                        logger.warn('my-animals: D1 fallback hit (offers)', { userEmail, view, team: key, error: errMsg(e) });
+                        return new Map<string, number>();
+                    }),
+                ]).then(([toEvaluate, offer]) => ({ toEvaluate, offer }));
+                teamCounts.set(key, hit);
+            }
+            return hit;
+        };
+        const ownerKey = (email: string | null | undefined) => (email ?? '').trim().toLowerCase();
+        type CountedRow = { id: string; addedBy: string | null; adopterId: string | null; recordType: string | null };
+        /** Each row's «N solicitudes por evaluar» and «avisá a N candidatos», from its owner's team. */
+        const applicationCountsOf = async (rows: readonly CountedRow[]) => {
+            const owners = [...new Set(rows.map(r => ownerKey(r.addedBy)).filter(Boolean))];
+            const byOwner = new Map(await Promise.all(owners.map(async (o) => [o, await countsOfTeam(await ownerTeam(o))] as const)));
+            return (a: CountedRow) => {
+                const c = byOwner.get(ownerKey(a.addedBy));
+                return { toEvaluate: c && takesContract(a) ? c.toEvaluate.get(a.id) ?? 0 : 0, offer: c?.offer.get(a.id) ?? 0 };
+            };
+        };
+        // «Sin animal elegido»: the team's general applications to evaluate (tab lists only).
+        const tabList = !idParam && view !== 'all';
+        const generalP: Promise<number> = tabList
+            ? countGeneralToEvaluate(db, scopeEmails).catch((e: unknown) => {
+                logger.warn('my-animals: D1 fallback hit (general)', { userEmail, view, error: errMsg(e) });
+                return 0;
+            })
+            : Promise.resolve(0);
+        // …and its animals, for the tab label on every other tab: one id select over «Todos», counted
+        // from the same per-team maps as the rows (started now, beside the list). Null (logged) when
+        // the read fails: the header is left out and the page keeps the count it had.
+        const waitingP: Promise<number | null> = tabList && view !== 'solicitudes'
+            ? db.select({ id: adoptions.id, addedBy: adoptions.addedBy, adopterId: adoptions.adopterId, recordType: adoptions.recordType })
+                .from(adoptions).where(allWhere).all()
+                .then(async (rows: CountedRow[]) => {
+                    const countsOf = await applicationCountsOf(rows);
+                    return new Set(rows.filter(r => countsOf(r).toEvaluate > 0).map(r => r.id)).size;
+                })
+                .catch((e: unknown) => {
+                    logger.warn('my-animals: D1 fallback hit (solicitudes count)', { userEmail, view, error: errMsg(e) });
+                    return null;
+                })
+            : Promise.resolve(null);
+
         let results;
         if (idParam) {
             results = await db.select().from(adoptions)
@@ -90,6 +160,13 @@ export async function GET(request: NextRequest) {
                 .where(adoptedWhere)
                 .orderBy(sql`${adoptions.date} DESC`)
                 .all();
+        } else if (view === 'solicitudes') {
+            // «Con solicitudes por evaluar»: the «Todos» animals with applications to evaluate, most
+            // waiting first (then newest, as the SQL order; sort is stable).
+            const all = await db.select().from(adoptions).where(allWhere).orderBy(sql`${adoptions.date} DESC`).all();
+            const countsOf = await applicationCountsOf(all);
+            results = all.filter((a: CountedRow) => countsOf(a).toEvaluate > 0)
+                .sort((a: CountedRow, b: CountedRow) => countsOf(b).toEvaluate - countsOf(a).toEvaluate);
         } else if (view === 'todos') {
             // «Todos»: both tabs; reordered below by last update, newest first.
             results = await db.select().from(adoptions)
@@ -126,6 +203,9 @@ export async function GET(request: NextRequest) {
         }
         logger.info('my-animals query', { view, userEmail, resultCount: results.length, uniqueCount: new Set(queryIds).size });
 
+        // Only the tab lists show the amber rows (not edit mode's ?id= nor view=all).
+        const rowCounts = tabList ? await applicationCountsOf(results) : () => ({ toEvaluate: undefined, offer: undefined });
+
         // «N interesadas» chip: applicants of each AVAILABLE animal, scoped to
         // the animal OWNER's team — the exact rule the animal page lists with
         // (src/lib/applicantScope.ts), so the chip and the page never disagree.
@@ -135,9 +215,6 @@ export async function GET(request: NextRequest) {
         // is one id-select per available animal — no per-card auth/org checks
         // and no per-applicant enrichment (that payload, with contact details,
         // is the animal page's job).
-        const { createOwnerTeamResolver, listApplicantIdsForAnimal } = await import('@/app/actions/_applicants');
-        const ownerTeam = createOwnerTeamResolver();
-
         // Enrich with images, adopter name, and (for available animals) the
         // list of people who applied via the customized form.
         const enriched = await Promise.all(
@@ -196,8 +273,11 @@ export async function GET(request: NextRequest) {
                 // v2.56.16: who last touched this animal, and when (src/lib/animalFollowupsDue.ts).
                 const lastUpdate = animalLastUpdate(animal, bulk);
 
+                // The card's amber rows: «N solicitudes por evaluar» and (adopted) «… avisá a N candidatos».
+                const { toEvaluate, offer } = rowCounts(animal);
+
                 return {
-                    ...animal, images, adopterName, applicants, dueFollowups, dueTop,
+                    ...animal, images, adopterName, applicants, dueFollowups, dueTop, toEvaluate, offer,
                     // v2.55.18: who added this animal, resolved for display.
                     addedByName: (animal.addedBy && teamNameMap[animal.addedBy]) || null,
                     lastUpdate,
@@ -245,12 +325,16 @@ export async function GET(request: NextRequest) {
         // The «Con controles pendientes» tab count, from the bulk this request
         // already read (one narrow extra select). Only for the tab lists.
         const headers: Record<string, string> = {};
-        if (!idParam && view !== 'all') {
+        if (tabList) {
             const pending = view === 'pendientes'
                 ? deduped.length
                 : (await pendingRows(() => db.select({ id: adoptions.id, adopterId: adoptions.adopterId, date: adoptions.date })
                     .from(adoptions).where(placedWhere).all())).length;
             headers['x-pending-count'] = String(pending);
+            // «Con solicitudes por evaluar»: its cards — the animals waiting plus «Sin animal elegido».
+            const [waiting, general] = await Promise.all([view === 'solicitudes' ? deduped.length : waitingP, generalP]);
+            if (waiting != null) headers['x-solicitudes-count'] = String(waiting + (general > 0 ? 1 : 0));
+            headers['x-general-to-evaluate'] = String(general);
         }
         return NextResponse.json(listed, { headers });
     } catch (error) {

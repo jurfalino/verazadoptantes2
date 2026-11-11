@@ -229,9 +229,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
         // The form is an application (one per form). Its own try: a failure is
         // logged and the saved form stays.
+        let applicationId: string | null = null;
         try {
             const { createApplicationForSubmission } = await import('@/lib/applicationWrites');
-            await createApplicationForSubmission(db, { submissionId, selectedAnimalId, animal: selectedAnimalRow, createdAt: new Date() });
+            applicationId = await createApplicationForSubmission(db, { submissionId, selectedAnimalId, animal: selectedAnimalRow, createdAt: new Date() });
         } catch (e) {
             logger.error('form submit: application not created', e, { submissionId, selectedAnimalId });
         }
@@ -327,6 +328,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
         logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId, shownCount: shownSteps ? shownSteps.length : null });
 
+        // Where the notice leads (owner and teammates alike): that application on Mis animales'
+        // «Con solicitudes por evaluar», where the panel opens at it — else the form (formNoticeUrl).
+        // The application's animal, not the asked one: a form for an adopted animal is general.
+        const noticeUrl = await (async () => {
+            try {
+                const [{ formNoticeUrl, submissionApplication }, { getFeatureFlag }] = await Promise.all([
+                    import('@/domain/applications'),
+                    import('@/config/features'),
+                ]);
+                const animalId = submissionApplication(selectedAnimalId, selectedAnimalRow).animalId;
+                const owner = (selectedAnimalOwner ?? '').trim().toLowerCase();
+                const animalInTeam = !!animalId && !!owner && (owner === rescuerEmail.trim().toLowerCase()
+                    || (await import('@/lib/orgMembership').then(m => m.getTeamEmails(rescuerEmail))).some(e => e.trim().toLowerCase() === owner));
+                return formNoticeUrl({ submissionId, applicationId, animalId, animalInTeam, animalsOn: await getFeatureFlag('ENABLE_ANIMALS_FOR_ADOPTION') });
+            } catch (e) {
+                logger.warn('Form submit: notice link falls back to the form', { submissionId, applicationId, selectedAnimalId, error: e instanceof Error ? e.message : String(e) });
+                return `/form-results/${submissionId}`;
+            }
+        })();
+
         // Notification + org fan-out. Helper above already ran duplicate
         // detection and returned the matches; we just plug them into the
         // notification metadata.
@@ -349,7 +370,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     userId: rescuerEmail,
                     type: 'form_submission',
                     ...ownerContent,
-                    url: `/form-results/${submissionId}`,
+                    url: noticeUrl,
                     icon: '⚠️',
                     metadata: {
                         submissionId,
@@ -372,7 +393,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     userId: rescuerEmail,
                     type: 'form_submission',
                     ...ownerContent,
-                    url: `/form-results/${submissionId}`,
+                    url: noticeUrl,
                     icon: '📋',
                     metadata: {
                         submissionId,
@@ -413,7 +434,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         key: 'form_submission_teammate',
                         params: { ...titleParams, sharedByName, ...(animal?.name ? { animalName: animal.name } : {}) },
                     }),
-                    url: `/form-results/${submissionId}`,
+                    url: noticeUrl,
                     icon: '📋',
                     metadata: {
                         submissionId, submitterName: name,

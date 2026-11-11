@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     isLiveInvitation, contractNote, applicationStatus, isToEvaluate, isToDo, panelOrder, nextToEvaluateIndex,
-    planAdoptionClose, planMergeDedupe, submissionApplication, lifeStageOf, matchesPreference, rankProposalAnimals,
+    planAdoptionClose, planMergeDedupe, submissionApplication, lifeStageOf, matchesPreference, rankProposalAnimals, formNoticeUrl,
     type ApplicationStatus, type ApplicationFacts,
 } from './applications';
 import { takesContract } from './placements';
@@ -179,5 +179,23 @@ describe('takesContract', () => {
         expect(takesContract({ adopterId: 'p', recordType: 'foster' })).toBe(true);
         expect(takesContract({ adopterId: null, recordType: 'available' })).toBe(true);
         expect(takesContract({ adopterId: null, recordType: 'adoption' })).toBe(true);
+    });
+});
+
+describe('formNoticeUrl — where a form\'s bell notice leads', () => {
+    const base = { submissionId: 's-1', applicationId: 'app-s-1', animalId: 'luna', animalInTeam: true, animalsOn: true };
+    it('opens that application on «Con solicitudes por evaluar»', () => {
+        expect(formNoticeUrl(base)).toBe('/my-animals?view=solicitudes&animal=luna&solicitud=app-s-1');
+    });
+    it('a general application (no animal, or an adopted one asked for) opens «Sin animal elegido»', () => {
+        expect(formNoticeUrl({ ...base, animalId: null, animalInTeam: false })).toBe('/my-animals?view=solicitudes&animal=general&solicitud=app-s-1');
+    });
+    it('ids are encoded', () => {
+        expect(formNoticeUrl({ ...base, animalId: 'a b&c', applicationId: 'app-x?y' })).toBe('/my-animals?view=solicitudes&animal=a%20b%26c&solicitud=app-x%3Fy');
+    });
+    it('the form itself when animals are off, no application was created, or the animal is another team\'s', () => {
+        expect(formNoticeUrl({ ...base, animalsOn: false })).toBe('/form-results/s-1');
+        expect(formNoticeUrl({ ...base, applicationId: null })).toBe('/form-results/s-1');
+        expect(formNoticeUrl({ ...base, animalInTeam: false })).toBe('/form-results/s-1');
     });
 });

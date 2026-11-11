@@ -326,3 +326,90 @@ test.describe.serial('homepage modules', () => {
     });
 
 });
+
+/**
+ * Home ↔ «Con solicitudes por evaluar» (spec «every home count equals the page it opens»): the
+ * home's application rows, «Sin animal elegido» and «N animales más con solicitudes» account for
+ * every card on /my-animals?view=solicitudes — including an animal that is both due and has
+ * applications, which the home lists as due (check-up first) but the tab must still list. Its own
+ * fixtures (more to-dos than the 4 slots, so «más» shows), made after the suite above has cleaned up.
+ */
+test.describe.serial('homepage ↔ «Con solicitudes por evaluar»', () => {
+    const P = (k: string) => `test-hm-fixture-par-${k}-${stamp}`;
+    // Fostered 35 days ago: its first monthly foster check-in is due, and it takes applications.
+    const DUAL = P('dual');
+    const DUAL_NAME = `Transitoria ${stamp}`;
+    const FOSTER_HOME = P('foster');
+    const ANIMALS = [DUAL, ...[1, 2, 3, 4].map(i => P(`an${i}`))];
+    const NAMES = [DUAL_NAME, ...[1, 2, 3, 4].map(i => `Pedida ${i} ${stamp}`)];
+    // One applicant per animal, plus one general application.
+    const APPS = [...ANIMALS.map((animal, i) => ({ animal: animal as string | null, i })), { animal: null as string | null, i: ANIMALS.length }]
+        .map(({ animal, i }) => ({ animal, adopter: P(`ad${i}`), form: P(`fs${i}`), app: P(`app${i}`), name: `Paridad ${i} ${stamp}` }));
+    const ROW_NAME = '[title]';
+
+    test.beforeAll(() => {
+        execD1Batch([
+            ...ANIMALS.map((id, i) => `INSERT INTO animals (id, name, species, sex, added_by, created_at, updated_at) VALUES ('${id}', '${NAMES[i]}', 'dog', 'macho', '${USER}', strftime('%s','now','-50 days'), strftime('%s','now','-50 days'))`),
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${FOSTER_HOME}', 'Hogar Paridad ${stamp}', '', '5', '${USER}', strftime('%s','now','-35 days'), strftime('%s','now','-35 days'))`,
+            `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('${P('pl')}', '${DUAL}', '${FOSTER_HOME}', 'foster', strftime('%s','now','-35 days'), '${USER}')`,
+            ...APPS.flatMap(a => [
+                `INSERT INTO adopters (id, name, contact_info, status, added_by, source, created_at, updated_at) VALUES ('${a.adopter}', '${a.name}', '', '5', '${USER}', 'form', strftime('%s','now','-1 days'), strftime('%s','now','-1 days'))`,
+                `INSERT INTO form_submissions (id, user_id, name, email, status, selected_animal_id, linked_adopter_id, created_at) VALUES ('${a.form}', '${USER}', '${a.name}', '${a.form}@example.com', 'pending', ${a.animal ? `'${a.animal}'` : 'NULL'}, '${a.adopter}', strftime('%s','now','-1 days'))`,
+                `INSERT INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES ('${a.app}', '${a.form}', ${a.animal ? `'${a.animal}'` : 'NULL'}, 'form', 'open', strftime('%s','now','-1 days'))`,
+            ]),
+        ]);
+    });
+
+    test.afterAll(() => {
+        execD1Batch([
+            `DELETE FROM applications WHERE submission_id IN (${inList(APPS.map(a => a.form))})`,
+            `DELETE FROM form_submissions WHERE id IN (${inList(APPS.map(a => a.form))})`,
+            `DELETE FROM adopter_events WHERE adopter_id IN (${inList([FOSTER_HOME, ...APPS.map(a => a.adopter)])})`,
+            `DELETE FROM adopter_history WHERE adopter_id IN (${inList([FOSTER_HOME, ...APPS.map(a => a.adopter)])})`,
+            `DELETE FROM notifications WHERE url LIKE '%${stamp}%' OR metadata LIKE '%${stamp}%'`,
+            `DELETE FROM placements WHERE id = '${P('pl')}'`,
+            `DELETE FROM animals WHERE id IN (${inList(ANIMALS)})`,
+            `DELETE FROM adopters WHERE id IN (${inList([FOSTER_HOME, ...APPS.map(a => a.adopter)])})`,
+        ]);
+    });
+
+    test('the home\'s «N solicitudes por evaluar» rows + «N animales más con solicitudes» account for every card on the tab, an animal both due and with applications included', async ({ page }) => {
+        test.setTimeout(240_000);
+        await expect.poll(async () => {
+            await openHome(page);
+            const card = page.getByTestId('home-animals');
+            await expect(card.locator(ANIMAL_ROWS).first()).toBeVisible({ timeout: 60_000 });
+            // Every row shown, by name (the general row is named «Sin animal elegido», as its card).
+            const shown = new Set<string>();
+            for (const r of await card.locator(`${ANIMAL_ROWS}, [data-testid="home-animals-general"]`).all()) {
+                shown.add((await r.locator(ROW_NAME).first().getAttribute('title')) ?? '');
+            }
+            const appRows: string[] = [];
+            for (const r of await card.locator('[data-testid="home-animals-applications"], [data-testid="home-animals-general"]').all()) {
+                appRows.push((await r.locator(ROW_NAME).first().getAttribute('title')) ?? '');
+            }
+            // The fostered animal reads as due on the home, never as an applications row.
+            const dualAsApplications = await card.getByTestId('home-animals-applications').filter({ hasText: DUAL_NAME }).count();
+            const moreRow = card.getByTestId('home-animals-applications-more');
+            const more = (await moreRow.count()) > 0 ? await numberIn(moreRow) : 0;
+
+            await page.goto('/my-animals?view=solicitudes');
+            const tab = page.getByTestId('tab-solicitudes');
+            await expect(tab).toBeVisible({ timeout: 60_000 });
+            await expect(page.getByTestId('general-card')).toBeVisible({ timeout: 60_000 });
+            const tabNames = (await page.locator('[data-testid="general-card"] h3, [data-testid^="animal-card-"] + div h3').allTextContents()).map(n => n.trim());
+            const verdict = {
+                tabIsItsCards: (await numberIn(tab)) === tabNames.length,
+                hiddenAreTheMore: tabNames.filter(n => !shown.has(n)).length === more,
+                applicationRowsOnTab: appRows.every(n => tabNames.includes(n)),
+                dualOnTab: tabNames.includes(DUAL_NAME),
+                dualAsApplications,
+                moreShows: more > 0,
+            };
+            console.log('PARITY', JSON.stringify({ ...verdict, more, shown: [...shown], tabNames }));
+            return verdict;
+        }, { timeout: 200_000, intervals: [2_000] }).toEqual({
+            tabIsItsCards: true, hiddenAreTheMore: true, applicationRowsOnTab: true, dualOnTab: true, dualAsApplications: 0, moreShows: true,
+        });
+    });
+});

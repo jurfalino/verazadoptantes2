@@ -7,12 +7,16 @@
  * still loading — shows its total from `/api/my-animals?counts=1`, or "..."
  * until that arrives.
  */
-export type MyAnimalsTab = 'available' | 'adopted' | 'todos' | 'pendientes';
+export type MyAnimalsTab = 'available' | 'adopted' | 'todos' | 'pendientes' | 'solicitudes';
 
-/** ?counts=1 (`all` = the «Todos» tab), plus `pending` (the «Con controles pendientes» tab) from the list's x-pending-count header. */
-export type MyAnimalsTabCounts = { available: number; adopted: number; all?: number; pending?: number };
+/**
+ * ?counts=1 (`all` = the «Todos» tab), plus two counts every tab's list carries in a header:
+ * `pending` («Con controles pendientes», x-pending-count) and `solicitudes` («Con solicitudes por
+ * evaluar», x-solicitudes-count — its cards, «Sin animal elegido» included).
+ */
+export type MyAnimalsTabCounts = { available: number; adopted: number; all?: number; pending?: number; solicitudes?: number };
 
-const COUNT_KEY: Record<MyAnimalsTab, keyof MyAnimalsTabCounts> = { available: 'available', adopted: 'adopted', todos: 'all', pendientes: 'pending' };
+const COUNT_KEY: Record<MyAnimalsTab, keyof MyAnimalsTabCounts> = { available: 'available', adopted: 'adopted', todos: 'all', pendientes: 'pending', solicitudes: 'solicitudes' };
 
 export function myAnimalsTabCount(
     tab: MyAnimalsTab,
