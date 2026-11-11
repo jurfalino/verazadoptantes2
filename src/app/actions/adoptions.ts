@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit';
 import { getDb, getUser } from './_db';
 import { deleteRecordById, softDeleteAnimal, isAnimalBacked, countAnimalLinks, deletePlacementForAdopter } from './_recordWrite';
 import { decideAnimalFate, NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
+import { countOpenApplicationsForAnimal } from '@/lib/applicationWrites';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { historyKindFor } from '@/lib/profilePrivilege';
 import { saveRecordFor, type RecordSaveResult, type RecordField } from '@/lib/recordSave';
@@ -32,8 +33,10 @@ export async function getAdoptionDeleteImpact(adoptionId: string, adopterId: str
     /** True when the animal has no other link and would go to the trash. */
     willDeleteAnimal: boolean;
     links: AnimalLinks;
+    /** Open applications the trash would close (Jon 2026-11-11: warn that these candidates are lost). */
+    openCandidates: number;
 }> {
-    const fallback = { kind: 'event' as const, animalName: null, willDeleteAnimal: false, links: { ...NO_LINKS } };
+    const fallback = { kind: 'event' as const, animalName: null, willDeleteAnimal: false, links: { ...NO_LINKS }, openCandidates: 0 };
     try {
         const db = await getDb();
         if (!db) return fallback;
@@ -43,13 +46,17 @@ export async function getAdoptionDeleteImpact(adoptionId: string, adopterId: str
         const animal = await db.select({ name: animals.name }).from(animals).where(eq(animals.id, adoptionId)).get();
         const active = await db.select({ id: placements.id }).from(placements)
             .where(and(eq(placements.animalId, adoptionId), eq(placements.adopterId, adopterId))).get();
-        const links = await countAnimalLinks(db, adoptionId, active?.id ?? null);
+        const [links, openCandidates] = await Promise.all([
+            countAnimalLinks(db, adoptionId, active?.id ?? null),
+            countOpenApplicationsForAnimal(db, adoptionId),
+        ]);
 
         return {
             kind: 'animal',
             animalName: animal?.name ?? null,
             willDeleteAnimal: decideAnimalFate({ links }) === 'soft-delete',
             links,
+            openCandidates,
         };
     } catch (error) {
         // Fail toward the quieter warning: never claim an animal is safe when we

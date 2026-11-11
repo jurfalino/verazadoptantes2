@@ -21,7 +21,7 @@ export interface AnimalLinks {
     adopterEvents: number;
     /** The animal's own care log: vaccination, deworming, vet visit, neuter, note. */
     animalEvents: number;
-    /** contract_invitations + open applications (forms or proposals) pointing at this animal. */
+    /** contract_invitations pointing at this animal. Open applications do NOT keep it (Jon 2026-11-11: deleting with candidates is allowed, with a warning that they are lost). */
     formsAndContracts: number;
 }
 

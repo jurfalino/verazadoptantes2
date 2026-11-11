@@ -152,6 +152,17 @@ export async function closeApplicationsOnAdoption(db: Db, input: {
 }
 
 /**
+ * How many candidates deleting this animal would lose: exactly the rows `closeApplicationsOnAnimalDelete`
+ * closes (OPEN, any origin — proposals included). For the delete warnings; a count, no person's data.
+ */
+export async function countOpenApplicationsForAnimal(db: Db, animalId: string): Promise<number> {
+    const row = await db.select({ n: sql<number>`count(*)` }).from(applications)
+        .where(and(eq(applications.animalId, animalId), eq(applications.state, APPLICATION_STATES.OPEN)))
+        .get() as { n: number } | undefined;
+    return Number(row?.n ?? 0);
+}
+
+/**
  * An animal was deleted (softDeleteAnimal): its open applications end as «closed / animal_deleted» — its page
  * refuses every action, so they could never leave the to-do list otherwise. Only OPEN rows (a concurrent
  * decision wins); each one's form notices read. A restore does not reopen them.
