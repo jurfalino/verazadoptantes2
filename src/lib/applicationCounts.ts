@@ -28,6 +28,13 @@ function healOnce(db: Db, team: readonly string[]): Promise<number> {
     return perRequest(`healApplications:${key}`, () => healMissingApplications(db, team));
 }
 
+/**
+ * `heal: false` — the homepage: it reads without the heal WRITE on its path and schedules
+ * `healMissingApplications` after the response instead (loadHomeAnimals), so the next load counts
+ * any healed row. Every other caller heals first (once per team per request).
+ */
+export type CountOpts = { heal?: boolean };
+
 /** The animal row of an application, for the owner rule in `teamApplicationsWhere`. */
 const animalOf = eq(animals.id, applications.animalId);
 
@@ -48,10 +55,10 @@ const openOnProfile = (scope: unknown) => and(
 const noLiveLink = isNull(contractInvitations.token);
 
 /** Open applications on a profile with NO live link, per animal (the animals whose owner's team is `ownerTeam`). */
-export async function countToEvaluateByAnimal(db: Db, ownerTeam: readonly string[], nowSec: number): Promise<Map<string, number>> {
+export async function countToEvaluateByAnimal(db: Db, ownerTeam: readonly string[], nowSec: number, opts: CountOpts = {}): Promise<Map<string, number>> {
     const scope = teamApplicationsWhere(ownerTeam, 'animals');
     if (!scope) return new Map();
-    await healOnce(db, ownerTeam);
+    if (opts.heal !== false) await healOnce(db, ownerTeam);
     const rows = await db.select({ animalId: applications.animalId, n: count() })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
@@ -79,10 +86,10 @@ export async function countOpenByAnimal(db: Db, ownerTeam: readonly string[]): P
 }
 
 /** The team's general applications still to evaluate (`isToDo` rows only). */
-export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string[]): Promise<number> {
+export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string[], opts: CountOpts = {}): Promise<number> {
     const scope = generalScopeWhere(viewerTeam);
     if (!scope) return 0;
-    await healOnce(db, viewerTeam);
+    if (opts.heal !== false) await healOnce(db, viewerTeam);
     const row = await db.select({ n: count() })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))

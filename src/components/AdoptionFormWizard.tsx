@@ -184,7 +184,7 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
     // An adoption that closed other candidates offers to tell them before the wizard closes (decision 4).
-    const { offerSheet, offerOpen, offerThen } = useAdoptionOfferAfterSave();
+    const { offerSheet, offerOpen, offerAfterSave } = useAdoptionOfferAfterSave();
 
     const newAdoptionParam = searchParams.get('newAdoption');
     const continueToAdoption = searchParams.get('continueToAdoption') === 'true';
@@ -503,6 +503,16 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
             return;
         }
 
+        // Logged (resolveErrorId) and shown with its errorId — also when the close after the offer sheet throws.
+        const reportSaveError = (err: unknown) => {
+            toast.error(
+                t('errors.generic'),
+                isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)
+                    : isSaveBusyError(err) ? t('collab.busy')
+                    : t('errors.save_failed_generic'),
+                resolveErrorId(err, 'AdoptionFormWizard'),
+            );
+        };
         setLoading(true);
         try {
             const parseLocalDate = (s: string) => {
@@ -641,16 +651,11 @@ export default function AdoptionFormWizard({ adopterId, adopterName = '', avgRat
                 await new Promise(r => setTimeout(r, 100));
                 router.refresh();
             };
-            // Candidates closed by this adoption: the offer to tell them first, then the wizard closes.
-            offerThen(result, () => { void finish(); });
+            // Candidates closed by this adoption: the offer to tell them first, and the wizard closes after it
+            // (outside this try, so its own catch reports). Otherwise it closes right here, as before.
+            if (!offerAfterSave(result, () => { finish().catch(reportSaveError); })) await finish();
         } catch (err) {
-            toast.error(
-                t('errors.generic'),
-                isAnimalAlreadyPlacedError(err) ? animalAlreadyPlacedMessage(t, formData.animalName)
-                    : isSaveBusyError(err) ? t('collab.busy')
-                    : t('errors.save_failed_generic'),
-                resolveErrorId(err, 'AdoptionFormWizard'),
-            );
+            reportSaveError(err);
         } finally {
             setLoading(false);
         }

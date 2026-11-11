@@ -75,9 +75,10 @@ export const GENERAL_ROW_ID = 'general';
  * spec «Calls I made»). When they fit, the most recently updated fill the
  * card. Otherwise one fewer is listed and an amber «N más» row takes the
  * slot — two fewer when both due animals and applications are left out
- * (each kind has its own «more» row: `moreDue`, `moreApplications`). A hidden
- * offer is never counted as «more»: it waits for a free slot. Every list
- * arrives already ordered.
+ * (each kind has its own «more» row: `moreDue`, `moreApplications`, counted by
+ * membership in the input lists, so each equals what its tab lists beyond the
+ * card). A hidden offer is never counted as «more»: it waits for a free slot.
+ * Every list arrives already ordered.
  */
 export function homeAnimalRows<O extends { id: string }, D extends { id: string }, A extends { id: string }, R extends { id: string }>(
     todo: { offers: readonly O[]; due: readonly D[]; applications: readonly A[] },
@@ -92,14 +93,19 @@ export function homeAnimalRows<O extends { id: string }, D extends { id: string 
     for (const row of todo.due) add({ kind: 'due', row });
     for (const row of todo.applications) add({ kind: 'application', row });
 
+    // «More» counts what each tab lists that the card doesn't show, by membership in the ORIGINAL
+    // lists: an animal both due and with applications, hidden, is one more in both tabs (the
+    // dedup above only decides how a SHOWN animal reads).
+    const hiddenOf = (list: readonly { id: string }[], shownIds: ReadonlySet<string>) => list.filter(x => !shownIds.has(x.id)).length;
+    const idsOf = (n: number) => new Set(items.slice(0, n).map(i => i.row.id));
     let n = slots;
     if (items.length > slots) {
         n = slots - 1;
-        const hidden = items.slice(n);
-        if (hidden.some(i => i.kind === 'due') && hidden.some(i => i.kind === 'application')) n = slots - 2;
+        const ids = idsOf(n);
+        if (hiddenOf(todo.due, ids) > 0 && hiddenOf(todo.applications, ids) > 0) n = slots - 2;
     }
     const shown = items.slice(0, n);
-    const hidden = items.slice(n);
+    const shownIds = idsOf(n);
 
     const recentShown: R[] = [];
     if (items.length <= slots) {
@@ -116,8 +122,8 @@ export function homeAnimalRows<O extends { id: string }, D extends { id: string 
         due: of('due'),
         applications: of('application'),
         recent: recentShown,
-        moreDue: hidden.filter(i => i.kind === 'due').length,
-        moreApplications: hidden.filter(i => i.kind === 'application').length,
+        moreDue: hiddenOf(todo.due, shownIds),
+        moreApplications: hiddenOf(todo.applications, shownIds),
     };
 }
 

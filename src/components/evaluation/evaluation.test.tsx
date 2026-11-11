@@ -39,7 +39,7 @@ const { ApplicationAnswersSummary } = await import('./ApplicationAnswersSummary'
 const { DeclineApplicationDialog, DeclineForm, declineMissing } = await import('./DeclineApplicationDialog');
 const { DuplicateCards } = await import('./ApplicationDuplicate');
 const { ProposalAnimalList } = await import('./ProposeAnimalSheet');
-const { OfferSheetBody, offerLinks, offerMessage } = await import('./AdoptionOfferSheet');
+const { OfferSheetBody, offerLinks, offerMessage, offerAnimalOf } = await import('./AdoptionOfferSheet');
 const { default: FormAnswersPanel } = await import('@/components/FormAnswersPanel');
 const { summarizeAnswers } = await import('@/domain/formAnswers');
 
@@ -250,5 +250,15 @@ describe('the offer to tell the others (decision 4)', () => {
         const links = html.match(/<a[^>]*data-testid="offer-(wa|email)-[^"]*"[^>]*>/g) ?? [];
         expect(links).toHaveLength(4);
         for (const a of links) expect(a).toMatch(/min-h-(11|\[44px\])/);
+    });
+});
+
+describe('after a save: the offer sheet only when the save closed other candidates', () => {
+    it('closedApplications with a count → that animal; none, zero or no result → the form closes as before', () => {
+        expect(offerAnimalOf({ closedApplications: { animalId: 'luna', count: 2 } })).toBe('luna');
+        expect(offerAnimalOf({ closedApplications: { animalId: 'luna', count: 0 } })).toBeNull();
+        expect(offerAnimalOf({})).toBeNull();
+        expect(offerAnimalOf(null)).toBeNull();
+        expect(offerAnimalOf(undefined)).toBeNull();
     });
 });

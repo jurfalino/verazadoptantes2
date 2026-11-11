@@ -178,26 +178,37 @@ export function AdoptionOfferSheet({ animalId, onClose, onDone }: {
     );
 }
 
+type SaveResult = { closedApplications?: { animalId: string; count: number } } | null | undefined;
+
+/** The animal whose other candidates this save closed (the sheet to show), or null: the form closes as before. */
+export function offerAnimalOf(result: SaveResult): string | null {
+    const closed = result?.closedApplications;
+    return closed && closed.count > 0 ? closed.animalId : null;
+}
+
 /**
- * After a save: when it closed other candidates (`closedApplications`), the
- * offer sheet first, then `then` (the form's own reset / close / refresh) on
- * its close; otherwise `then` right away. Render `offerSheet` inside the form,
- * and pause the form's own Escape while `offerOpen`.
+ * After a save: `offerAfterSave(result, then)` returns true when the save closed
+ * other candidates — the offer sheet shows, and `then` (the form's own reset /
+ * close / refresh) runs when it closes; false otherwise, and the caller goes on
+ * exactly as before (`then` is not called). `then` must report its own errors
+ * (it runs outside the save's try). Render `offerSheet` inside the form, and
+ * pause the form's own Escape while `offerOpen`.
  */
 export function useAdoptionOfferAfterSave(): {
     offerSheet: ReactNode;
     offerOpen: boolean;
-    offerThen: (result: { closedApplications?: { animalId: string; count: number } } | null | undefined, then: () => void) => void;
+    offerAfterSave: (result: SaveResult, then: () => void) => boolean;
 } {
     const [pending, setPending] = useState<{ animalId: string; then: () => void } | null>(null);
-    const offerThen = (result: { closedApplications?: { animalId: string; count: number } } | null | undefined, then: () => void) => {
-        const closed = result?.closedApplications;
-        if (closed && closed.count > 0) setPending({ animalId: closed.animalId, then });
-        else then();
+    const offerAfterSave = (result: SaveResult, then: () => void) => {
+        const animalId = offerAnimalOf(result);
+        if (!animalId) return false;
+        setPending({ animalId, then });
+        return true;
     };
     const offerSheet = pending ? (
         <AdoptionOfferSheet key={pending.animalId} animalId={pending.animalId}
             onClose={() => { const next = pending.then; setPending(null); next(); }} />
     ) : null;
-    return { offerSheet, offerOpen: pending !== null, offerThen };
+    return { offerSheet, offerOpen: pending !== null, offerAfterSave };
 }

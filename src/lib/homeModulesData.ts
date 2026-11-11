@@ -150,13 +150,15 @@ export async function loadHomePosts(db: Db, userEmail: string, memberEmails: str
 
 export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAnimalsData> {
     const log = { userEmail, op: 'loadHomeAnimals' };
-    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { createOwnerTeamResolver, listApplicantIdsForAnimal }, { animalPrimaryFirst }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal }, { normalizeTeamScope }] = await Promise.all([
+    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { createOwnerTeamResolver, listApplicantIdsForAnimal }, { animalPrimaryFirst }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal }, { normalizeTeamScope }, { runAfterResponse }, { healMissingApplications }] = await Promise.all([
         import('@/lib/myAnimalsScope'),
         import('@/lib/animalFollowupsDue'),
         import('@/app/actions/_applicants'),
         import('@/lib/showcase'),
         import('@/lib/applicationCounts'),
         import('@/lib/applicantScope'),
+        import('@/lib/background'),
+        import('@/lib/applicationWrites'),
     ]);
     const [{ scopeEmails, adoptedWhere, availableWhere, placedWhere, allWhere }, followupCtx] = await Promise.all([
         myAnimalsScope(userEmail),
@@ -185,37 +187,48 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
 
     // Applications to evaluate and offers to tell, per animal: ONE grouped query of each per
     // distinct owner team (org-mates share one), each animal read from its OWNER's team — as the
-    // animal page and «Con solicitudes por evaluar» scope them. Started as soon as the animals
-    // are known, beside the activity reads.
+    // animal page and «Con solicitudes por evaluar» scope them. The viewer's own team (the owner
+    // of most animals) is counted from the start, beside the «Todos» select; only an owner whose
+    // team differs waits for the animals to be known. No heal write on this path: the missing
+    // application rows are healed after the response (runAfterResponse), for the next load.
     const nowSec = Math.floor(Date.now() / 1000);
-    const noCounts = { toEvaluate: new Map<string, number>(), offer: new Map<string, number>() };
+    type Counts = { toEvaluate: Map<string, number>; offer: Map<string, number> };
+    const noCounts: Counts = { toEvaluate: new Map(), offer: new Map() };
     const ownerKey = (email: string | null) => (email ?? '').trim().toLowerCase();
+    const teamKey = (team: readonly string[]) => normalizeTeamScope(team).slice().sort().join(',');
+    const noHeal = { heal: false };
+    const heals: Promise<void>[] = [];
+    const perTeam = new Map<string, Promise<Counts>>();
+    const startTeam = (key: string, team: readonly string[]) => {
+        if (perTeam.has(key)) return;
+        perTeam.set(key, Promise.all([
+            countToEvaluateByAnimal(db, team, nowSec, noHeal)
+                .catch((e: unknown) => { logger.warn('loadHomeAnimals: D1 fallback hit (to evaluate)', { ...log, team: key, error: errMsg(e) }); return new Map<string, number>(); }),
+            offerCountsByAnimal(db, team)
+                .catch((e: unknown) => { logger.warn('loadHomeAnimals: D1 fallback hit (offers)', { ...log, team: key, error: errMsg(e) }); return new Map<string, number>(); }),
+        ]).then(([toEvaluate, offer]) => ({ toEvaluate, offer })));
+        heals.push(runAfterResponse('loadHomeAnimals: heal missing applications', () => healMissingApplications(db, team), { ...log, team: key }));
+    };
+    const viewer = ownerKey(userEmail);
+    const viewerKey = teamKey(scopeEmails);
+    startTeam(viewerKey, scopeEmails);
     const countsP = allP.then(async (rows) => {
         const owners = [...new Set(rows.map(r => ownerKey(r.addedBy)).filter(Boolean))];
-        const teams = await Promise.all(owners.map(o => ownerTeam(o)));
-        const teamKeyOf = new Map<string, string>();
-        const teamByKey = new Map<string, string[]>();
-        owners.forEach((o, i) => {
-            const key = normalizeTeamScope(teams[i]).slice().sort().join(',');
-            teamKeyOf.set(o, key);
-            teamByKey.set(key, teams[i]);
-        });
-        const perTeam = new Map(await Promise.all([...teamByKey].map(async ([key, team]) => {
-            const [toEvaluate, offer] = await Promise.all([
-                countToEvaluateByAnimal(db, team, nowSec)
-                    .catch((e: unknown) => { logger.warn('loadHomeAnimals: D1 fallback hit (to evaluate)', { ...log, team: key, error: errMsg(e) }); return new Map<string, number>(); }),
-                offerCountsByAnimal(db, team)
-                    .catch((e: unknown) => { logger.warn('loadHomeAnimals: D1 fallback hit (offers)', { ...log, team: key, error: errMsg(e) }); return new Map<string, number>(); }),
-            ]);
-            return [key, { toEvaluate, offer }] as const;
-        })));
+        const keyOf = new Map<string, string>([[viewer, viewerKey]]);
+        await Promise.all(owners.filter(o => o !== viewer).map(async (o) => {
+            const team = await ownerTeam(o);
+            const key = teamKey(team);
+            keyOf.set(o, key);
+            startTeam(key, team);
+        }));
+        const done = new Map(await Promise.all([...perTeam].map(async ([key, p]) => [key, await p] as const)));
         return (a: Animal) => {
-            const c = perTeam.get(teamKeyOf.get(ownerKey(a.addedBy)) ?? '') ?? noCounts;
+            const c = done.get(keyOf.get(ownerKey(a.addedBy)) ?? '') ?? noCounts;
             // Applications are evaluated while the animal takes a contract (waiting for a home, or fostered).
             return { toEvaluate: takesContract(a) ? c.toEvaluate.get(a.id) ?? 0 : 0, offer: c.offer.get(a.id) ?? 0 };
         };
     });
-    const generalP: Promise<number> = countGeneralToEvaluate(db, scopeEmails)
+    const generalP: Promise<number> = countGeneralToEvaluate(db, scopeEmails, noHeal)
         .catch((e: unknown) => { logger.warn('loadHomeAnimals: D1 fallback hit (general)', { ...log, error: errMsg(e) }); return 0; });
 
     const [available, adopted, total, due, recent, countsOf, general] = await Promise.all([
@@ -265,6 +278,8 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
         ...shown.recent.map(a => enrich(a, null)),
     ]);
     const solicitudesCount = recent.filter(a => countsOf(a).toEvaluate > 0).length + (generalRow ? 1 : 0);
+    // Resolves at once where the platform keeps the worker alive (waitUntil); local dev waits, in parallel with the reads above.
+    await Promise.all(heals);
     return {
         available, adopted, total, dueCount: due.length, moreDue: shown.moreDue,
         solicitudesCount, moreApplications: shown.moreApplications, rows,

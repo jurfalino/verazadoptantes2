@@ -103,6 +103,26 @@ describe('homeAnimalRows — offers, due animals and applications share the 4 sl
             .toEqual({ offers: ['o0', 'o1', 'o2'], due: [], applications: [], recent: [], moreDue: 0, moreApplications: 0 });
     });
 
+    it('an id in both due and applications that ends up hidden is counted in both «more» rows', () => {
+        // d4 also has applications: hidden, it is one of the 3 due AND one of the 2 with applications the tab lists.
+        const due = Array.from({ length: 5 }, (_, i) => a(`d${i}`));
+        expect(all(homeAnimalRows({ offers: [], due, applications: [a('d4'), a('x1')] }, [])))
+            .toEqual({ offers: [], due: ['d0', 'd1'], applications: [], recent: [], moreDue: 3, moreApplications: 2 });
+    });
+
+    it('a hidden offer that is also due counts in «más con controles» (the due tab lists it)', () => {
+        const offers = Array.from({ length: 5 }, (_, i) => a(`o${i}`));
+        expect(all(homeAnimalRows({ offers, due: [a('o4')], applications: [] }, [])))
+            .toEqual({ offers: ['o0', 'o1', 'o2'], due: [], applications: [], recent: [], moreDue: 1, moreApplications: 0 });
+    });
+
+    it('the reservation uses the same membership: a hidden due item that also has applications needs both «more» rows', () => {
+        // Only due items are hidden after dedup, but d3 also has applications → two «more» rows, 2 listed.
+        const due = Array.from({ length: 4 }, (_, i) => a(`d${i}`));
+        expect(all(homeAnimalRows({ offers: [a('o0')], due, applications: [a('d3')] }, [])))
+            .toEqual({ offers: ['o0'], due: ['d0'], applications: [], recent: [], moreDue: 3, moreApplications: 1 });
+    });
+
     it('an offer that is also due is listed once, as the offer', () => {
         expect(all(homeAnimalRows({ offers: [a('luna')], due: [a('luna'), a('d1')], applications: [] }, [a('luna'), a('r1')])))
             .toEqual({ offers: ['luna'], due: ['d1'], applications: [], recent: ['r1'], moreDue: 0, moreApplications: 0 });

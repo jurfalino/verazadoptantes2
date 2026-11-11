@@ -25,6 +25,27 @@ export type HomeApplicantsTarget = { animal: { id: string; name: string; sex: st
 
 type Loaded = { kind: 'loading' } | { kind: 'ok'; list: ApplicantSummary[]; index: number } | { kind: 'error'; errorId: string };
 
+/**
+ * One read of the list, and what it leads to:
+ * - `ok`: open at the first one to evaluate (else the first), the rest still there to compare;
+ * - `empty`: everything was decided meanwhile (another tab, a teammate) — close quietly, the card re-reads;
+ * - `stale`: an older tab (the page reloads itself) — close;
+ * - `error`: say so, with the errorId.
+ * Both loaders fail closed to [] after logging on the server, so a failed read also lands on `empty`.
+ */
+export async function readPanel(read: () => Promise<ApplicantSummary[]>):
+    Promise<{ kind: 'ok'; list: ApplicantSummary[]; index: number } | { kind: 'empty' } | { kind: 'stale' } | { kind: 'error'; errorId: string }> {
+    try {
+        const list = await read();
+        if (list.length === 0) return { kind: 'empty' };
+        const first = nextToEvaluateIndex(list.map(a => a.status), -1);
+        return { kind: 'ok', list, index: first === -1 ? 0 : first };
+    } catch (e) {
+        if (handledAsStale(e)) return { kind: 'stale' };
+        return { kind: 'error', errorId: resolveErrorId(e, 'HomeApplicantsPanel') };
+    }
+}
+
 export default function HomeApplicantsPanel({ target, onClose, onChanged }: {
     target: HomeApplicantsTarget;
     onClose: () => void;
@@ -44,26 +65,14 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged }: {
 
     useEffect(() => {
         let current = true;
-        read()
-            .then((list) => {
-                if (!current) return;
-                if (list.length === 0) {
-                    // Nothing to show for a row that said there was: gone meanwhile, or the read failed.
-                    // Say so with the errorId, and let the card re-read.
-                    setState({ kind: 'error', errorId: resolveErrorId(new Error(`HomeApplicantsPanel: no applications for ${animalId ?? 'general'}`), 'HomeApplicantsPanel') });
-                    onChanged();
-                    return;
-                }
-                const first = nextToEvaluateIndex(list.map(a => a.status), -1);
-                setState({ kind: 'ok', list, index: first === -1 ? 0 : first });
-            })
-            .catch((e: unknown) => {
-                if (!current) return;
-                if (handledAsStale(e)) { onClose(); return; }
-                setState({ kind: 'error', errorId: resolveErrorId(e, 'HomeApplicantsPanel') });
-            });
+        void readPanel(read).then((res) => {
+            if (!current) return;
+            if (res.kind === 'empty') { onChanged(); onClose(); return; }
+            if (res.kind === 'stale') { onClose(); return; }
+            setState(res);
+        });
         return () => { current = false; };
-    }, [read, animalId, onClose, onChanged]);
+    }, [read, onClose, onChanged]);
 
     const onOutcome = useCallback(async () => {
         onChanged();
