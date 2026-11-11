@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.3] - 2026-11-11
+
+### Fixed — the enadopcion.org move (review of 2.59.2)
+- Old addresses now actually forward on staging: the setting is built into each deploy (the hosting platform
+  was erasing it on every deploy). A mistyped address in that setting switches the forwarding off instead of
+  looping the site onto itself, and the forwarding is temporary (302) until the new domain is settled.
+- enadopcion.org and www.enadopcion.org no longer share a cached API answer that one of them would refuse.
+
 ## [2.59.2] - 2026-11-11
 
 ### Changed — the public site moves to enadopcion.org (Jon)

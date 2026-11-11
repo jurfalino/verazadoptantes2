@@ -46,6 +46,16 @@ jobs:
           VITE_API_URL: ${{ env.IS_PROD == 'true' && vars.VITE_API_URL_PROD || vars.VITE_API_URL_STAGING }}
         run: npm run build -- --mode ${{ env.IS_PROD == 'true' && 'production' || 'staging' }}
 
+      - name: Canonical host (old addresses redirect here; empty = off)
+        working-directory: contract-app
+        # Not a ternary: `a && b || c` would fall through to the STAGING host when the prod variable is empty.
+        env:
+          PROD_HOST: ${{ vars.CANONICAL_HOST_PROD }}
+          STAGING_HOST: ${{ vars.CANONICAL_HOST_STAGING }}
+        run: |
+          if [ "$IS_PROD" = "true" ]; then H="$PROD_HOST"; else H="$STAGING_HOST"; fi
+          node -e 'const h=(process.argv[1]||"").trim(); require("fs").writeFileSync("src/canonicalHost.generated.ts", "export const CANONICAL_HOST = " + JSON.stringify(h) + ";\n"); console.log("canonical host:", h || "(off)")' "$H"
+
       - name: Deploy to Cloudflare Pages
         working-directory: contract-app
         # NB: each project's production branch differs.
