@@ -11,7 +11,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { EmailLocale } from '@/lib/email';
 import type { getDb } from '@/lib/db';
 import { userProfiles, users } from '@/db/schema';
-import { parseNoticePrefs, withNoticePref, type NoticePrefs, type SwitchableRowKey } from '@/domain/noticeRows';
+import { parseNoticePrefs, withNoticePrefs, type NoticePrefs, type SwitchableRowKey } from '@/domain/noticeRows';
 import { parseFollowupSettings, withEmailReminders } from '@/domain/followups';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
@@ -55,9 +55,14 @@ export async function getNoticePrefsForEmail(db: Db, email: string): Promise<Not
 
 /** Switch one «Avisos» row, keeping the others (migrated). Throws when the user row does not exist. */
 export async function setNoticePrefForEmail(db: Db, email: string, key: SwitchableRowKey, enabled: boolean): Promise<void> {
+    await setNoticePrefsForEmail(db, email, [key], enabled);
+}
+
+/** Switch several rows in one write (an old category's unsubscribe link). Throws when the user row does not exist. */
+export async function setNoticePrefsForEmail(db: Db, email: string, keys: readonly SwitchableRowKey[], enabled: boolean): Promise<void> {
     const row = await rawPrefsRow(db, email);
     if (!row) throw new Error('No user row for the email');
-    const value = withNoticePref(row.prefs, key, enabled);
+    const value = withNoticePrefs(row.prefs, keys, enabled);
     await db.insert(userProfiles)
         .values({ userId: row.id, emailPrefs: value })
         .onConflictDoUpdate({ target: userProfiles.userId, set: { emailPrefs: value } });

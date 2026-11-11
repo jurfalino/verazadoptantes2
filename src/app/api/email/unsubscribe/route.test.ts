@@ -63,9 +63,25 @@ describe('POST /api/email/unsubscribe', () => {
         expect(JSON.parse(String(prefs()))).toEqual({ form: false, contract: false, group: true, duplicates: false });
     });
 
-    it('an old category link (before «Avisos») is invalid and writes nothing', async () => {
-        const sig = await hashOtpCode(`unsub:v1:${EMAIL}:forms`, SECRET);
-        const res = await post({ e: EMAIL, c: 'forms', s: sig });
+    // Emails sent before «Avisos» carry the old categories, signed the same way.
+    it.each([
+        ['forms', { form: false, contract: false }],
+        ['merges', { duplicates: false, answers: false }],
+        ['contact_access', { answers: false }],
+        ['profile_changes', { content: false, contact: false, rename: false, household: false, inaccuracy: false, transfer: false }],
+        ['other', { group: false }],
+    ])('an old «%s» link switches off the rows it maps to and lands on ?done=1', async (category, expected) => {
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, email_prefs) VALUES ('u1', '{"form":true,"contact":true}')`).run();
+        const sig = await hashOtpCode(`unsub:v1:${EMAIL}:${category}`, SECRET);
+        const res = await post({ e: EMAIL, c: category, s: sig });
+        expect(location(res).searchParams.get('done')).toBe('1');
+        expect(location(res).searchParams.get('c')).toBe(category);
+        expect(JSON.parse(String(prefs()))).toEqual({ form: true, contact: true, ...expected });
+    });
+
+    it('an old «requests» link (always on, never had one) is still invalid', async () => {
+        const sig = await hashOtpCode(`unsub:v1:${EMAIL}:requests`, SECRET);
+        const res = await post({ e: EMAIL, c: 'requests', s: sig });
         expect(location(res).searchParams.get('invalid')).toBe('1');
         expect(prefs()).toBeNull();
     });

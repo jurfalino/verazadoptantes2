@@ -7,7 +7,7 @@ import { NOTIFICATION_TYPES } from './constants';
 import {
     NOTICE_ROWS, ALWAYS_EMAILED_TYPES, ADMIN_ONLY_TYPES, NOT_WRITTEN_TYPES,
     rowForType, parseNoticePrefs, withNoticePref, isNoticeEmailOn, noticeEmailVerdict,
-    noticeThrottleKey, unsubscribableRow, SWITCHABLE_ROW_KEYS,
+    noticeThrottleKey, unsubscribableRow, unsubscribeRows, withNoticePrefs, SWITCHABLE_ROW_KEYS,
 } from './noticeRows';
 
 const LIVE = NOTIFICATION_TYPES as readonly string[];
@@ -170,5 +170,45 @@ describe('unsubscribableRow', () => {
         for (const k of ['merge_request', 'pii_request', 'pair_message', 'followups', 'forms', 'requests', 'bogus', '']) {
             expect(unsubscribableRow(k), k).toBeNull();
         }
+    });
+});
+
+describe('unsubscribeRows (what a link\'s `c` switches off)', () => {
+    it('a row key: that row', () => {
+        expect(unsubscribeRows('form')).toEqual(['form']);
+        expect(unsubscribeRows('group')).toEqual(['group']);
+    });
+    // Links in emails sent before «Avisos» carry the old categories (src/domain/emailCategories.ts, gone).
+    it('forms → the form and contract rows', () => {
+        expect(unsubscribeRows('forms')).toEqual(['form', 'contract']);
+    });
+    it('merges → duplicates/merges, and «Responden tu pedido…» (merge answers lived in merges)', () => {
+        expect(unsubscribeRows('merges')).toEqual(['duplicates', 'answers']);
+    });
+    it('contact_access → «Responden tu pedido…»', () => {
+        expect(unsubscribeRows('contact_access')).toEqual(['answers']);
+    });
+    it('profile_changes → the profile-change rows, and «Te pasan un perfil» (ownership_transferred lived there)', () => {
+        expect(unsubscribeRows('profile_changes')).toEqual(['content', 'contact', 'rename', 'household', 'inaccuracy', 'transfer']);
+    });
+    it('other → «Tu grupo»', () => {
+        expect(unsubscribeRows('other')).toEqual(['group']);
+    });
+    it('every mapped row is switchable', () => {
+        for (const c of ['forms', 'merges', 'contact_access', 'profile_changes', 'other']) {
+            for (const r of unsubscribeRows(c)!) expect(SWITCHABLE_ROW_KEYS, `${c} → ${r}`).toContain(r);
+        }
+    });
+    it('nothing for an always row, the check-up row, the old always-on category or anything else', () => {
+        for (const k of ['merge_request', 'pii_request', 'pair_message', 'followups', 'requests', 'bogus', '', 'toString', '__proto__']) {
+            expect(unsubscribeRows(k), k).toBeNull();
+        }
+    });
+});
+
+describe('withNoticePrefs', () => {
+    it('switches several rows in one write, keeping the rest (migrated)', () => {
+        expect(JSON.parse(withNoticePrefs('{"forms":false,"group":true}', ['duplicates', 'answers'], false)))
+            .toEqual({ form: false, contract: false, group: true, duplicates: false, answers: false });
     });
 });

@@ -163,3 +163,33 @@ export function noticeThrottleKey(type: string): string | null {
 export function unsubscribableRow(key: string): SwitchableRowKey | null {
     return isSwitchable(key) ? key : null;
 }
+
+/**
+ * Emails sent before «Avisos» carry an old category in their unsubscribe link
+ * (`c=`, signed the same way). Each maps to the rows that now hold its types:
+ * merge answers (merge_request_resolved) were in «merges», ownership transfers in
+ * «profile_changes». «requests» was always on and never had a link; «api» has no
+ * switchable row left (api_access is always emailed, api_record is not written).
+ */
+const LEGACY_UNSUBSCRIBE_ROWS: ReadonlyMap<string, readonly SwitchableRowKey[]> = new Map<string, readonly SwitchableRowKey[]>([
+    ['forms', ['form', 'contract']],
+    ['merges', ['duplicates', 'answers']],
+    ['contact_access', ['answers']],
+    ['profile_changes', ['content', 'contact', 'rename', 'household', 'inaccuracy', 'transfer']],
+    ['other', ['group']],
+]);
+
+/** The rows an unsubscribe link's `c` switches off: a switchable row, or an old category's rows; else null. */
+export function unsubscribeRows(key: string): SwitchableRowKey[] | null {
+    const row = unsubscribableRow(key);
+    if (row) return [row];
+    const legacy = LEGACY_UNSUBSCRIBE_ROWS.get(key);
+    return legacy ? [...legacy] : null;
+}
+
+/** withNoticePref for several rows at once (one read-modify-write). */
+export function withNoticePrefs(raw: string | null | undefined, keys: readonly SwitchableRowKey[], enabled: boolean): string {
+    const next: NoticePrefs = parseNoticePrefs(raw);
+    for (const k of keys) next[k] = enabled;
+    return JSON.stringify(next);
+}

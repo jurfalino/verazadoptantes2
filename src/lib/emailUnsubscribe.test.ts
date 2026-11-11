@@ -32,6 +32,14 @@ describe('emailUnsubscribe', () => {
         expect(await verifyUnsubscribe('a@b.com', 'bogus', sig2, SECRET)).toBe(false);
     });
 
+    it('verifies an old category link (signed before «Avisos»)', async () => {
+        for (const c of ['forms', 'merges', 'contact_access', 'profile_changes', 'other']) {
+            const sig = await hashOtpCode(`unsub:v1:a@b.com:${c}`, SECRET);
+            expect(await verifyUnsubscribe('a@b.com', c, sig, SECRET), c).toBe(true);
+            expect(await verifyUnsubscribe('a@b.com', c === 'forms' ? 'merges' : 'forms', sig, SECRET), c).toBe(false);
+        }
+    });
+
     it('is email case-insensitive', async () => {
         const sig = await signUnsubscribe('A@B.com', 'duplicates', SECRET);
         expect(await verifyUnsubscribe('a@b.COM', 'duplicates', sig, SECRET)).toBe(true);

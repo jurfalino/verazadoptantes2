@@ -1,6 +1,6 @@
 export const runtime = 'edge';
 
-import { unsubscribableRow, type SwitchableRowKey } from '@/domain/noticeRows';
+import { unsubscribeRows, type SwitchableRowKey } from '@/domain/noticeRows';
 import { resolveAuthSecret } from '@/lib/otp';
 import { logger } from '@/lib/logger';
 import { verifyUnsubscribe } from '@/lib/emailUnsubscribe';
@@ -8,6 +8,12 @@ import { es } from '@/i18n/locales/es';
 
 /** The same names Configuración → «Avisos» shows (Spanish, like the emails). */
 const label = (row: SwitchableRowKey): string => es.settings[`notice_row_${row}`];
+
+/** «A», «A» y «B», «A», «B» y «C»: an old category's link names every row it switches off. */
+function labels(rows: readonly SwitchableRowKey[]): string {
+    const quoted = rows.map(r => `«${label(r)}»`);
+    return quoted.length > 1 ? `${quoted.slice(0, -1).join(', ')} y ${quoted[quoted.length - 1]}` : quoted[0];
+}
 
 function first(v: string | string[] | undefined): string {
     return (Array.isArray(v) ? v[0] : v) ?? '';
@@ -26,7 +32,8 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
     const e = first(sp.e);
     const c = first(sp.c);
     const s = first(sp.s);
-    const category = unsubscribableRow(c);
+    // A row key, or an old category (emails sent before «Avisos») mapped to its rows.
+    const rows = unsubscribeRows(c);
 
     const errorId = first(sp.error);
     if (errorId) {
@@ -37,7 +44,7 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
         );
     }
 
-    if (first(sp.done) === '1' && category) {
+    if (first(sp.done) === '1' && rows) {
         return (
             <Card>
                 <p className="text-stone-900 font-medium">Listo. Podés volver a activarlo en Configuración.</p>
@@ -46,7 +53,7 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
     }
 
     let valid = false;
-    if (!first(sp.invalid) && e && s && category) {
+    if (!first(sp.invalid) && e && s && rows) {
         try {
             valid = await verifyUnsubscribe(e, c, s, resolveAuthSecret());
         } catch (err) {
@@ -54,7 +61,7 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
             valid = false;
         }
     }
-    if (!valid || !category) {
+    if (!valid || !rows) {
         return (
             <Card>
                 <p className="text-stone-900 font-medium">Este enlace no es válido.</p>
@@ -64,7 +71,7 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
 
     return (
         <Card>
-            <p className="text-stone-900 font-medium">¿Dejar de recibir «{label(category)}» por email?</p>
+            <p className="text-stone-900 font-medium">¿Dejar de recibir {labels(rows)} por email?</p>
             <form method="POST" action="/api/email/unsubscribe">
                 <input type="hidden" name="e" value={e} />
                 <input type="hidden" name="c" value={c} />

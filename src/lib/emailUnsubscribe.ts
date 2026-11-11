@@ -2,9 +2,11 @@
  * Signed one-click unsubscribe links for notification emails. The signature
  * is an HMAC over email + «Avisos» row key, so a link can only switch off the
  * one row it was issued for. The rows someone waits on («Siempre») are never
- * unsubscribable (src/domain/noticeRows.ts: unsubscribableRow).
+ * unsubscribable. Links from before «Avisos» carry an old category, signed the
+ * same way; they still verify and switch off the rows that category maps to
+ * (src/domain/noticeRows.ts: unsubscribeRows).
  */
-import { unsubscribableRow, type SwitchableRowKey } from '@/domain/noticeRows';
+import { unsubscribeRows, type SwitchableRowKey } from '@/domain/noticeRows';
 import { hashOtpCode } from '@/lib/otp';
 
 function payload(email: string, row: string): string {
@@ -23,10 +25,10 @@ function constantTimeEqual(a: string, b: string): boolean {
     return diff === 0;
 }
 
-export async function verifyUnsubscribe(email: string, row: string, sig: string, secret: string): Promise<boolean> {
-    const r = unsubscribableRow(row);
-    if (!r || !email || !sig) return false;
-    const expected = await signUnsubscribe(email, r, secret);
+/** `key` is a row key, or an old category from an email sent before «Avisos». */
+export async function verifyUnsubscribe(email: string, key: string, sig: string, secret: string): Promise<boolean> {
+    if (!unsubscribeRows(key) || !email || !sig) return false;
+    const expected = await hashOtpCode(payload(email, key), secret);
     return constantTimeEqual(expected, sig);
 }
 
