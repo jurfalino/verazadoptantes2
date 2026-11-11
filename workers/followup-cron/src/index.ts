@@ -165,11 +165,14 @@ export default {
             const settingsByEmail = new Map<string, FollowupSettings | null>();
             // «Formularios, contratos y controles de:» (Configuración → Avisos), 'team' when unreadable.
             const scopeByEmail = new Map<string, AnimalsScope>();
+            // The recipient's user id tags their digest links (u), so a click names whose email it was.
+            const userIdByEmail = new Map<string, string>();
             for (const email of everyEmail) {
                 try {
                     const row = await env.DB.prepare(
-                        `SELECT up.followup_settings AS s, up.animals_scope AS scope FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
-                    ).bind(email).first<{ s: string | null; scope: string | null }>();
+                        `SELECT u.id AS id, up.followup_settings AS s, up.animals_scope AS scope FROM user u LEFT JOIN user_profiles up ON up.user_id = u.id WHERE u.email = ? LIMIT 1`
+                    ).bind(email).first<{ id: string; s: string | null; scope: string | null }>();
+                    if (row?.id) userIdByEmail.set(email, row.id);
                     settingsByEmail.set(email, parseFollowupSettings(row?.s));
                     scopeByEmail.set(email, parseAnimalsScope(row?.scope));
                 } catch (e) {
@@ -312,7 +315,7 @@ export default {
             for (const [recipient, queueItems] of emailQueue) {
                 if (queueItems.length === 0) continue;
                 try {
-                    const mail = buildFollowupEmail(queueItems, `${baseUrl}/my-animals`);
+                    const mail = buildFollowupEmail(queueItems, `${baseUrl}/my-animals`, userIdByEmail.get(recipient));
                     const res = await fetch('https://api.resend.com/emails', {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },

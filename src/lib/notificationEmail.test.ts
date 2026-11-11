@@ -309,6 +309,15 @@ describe('buildNotificationEmail', () => {
         expect(m.html).toContain('href="https://staging.buenadoptante.org/settings"');
         expect(m.html).toContain('href="https://u/x"');
     });
+    it('the main link names the recipient (u = their user id) so a click says whose email it was', () => {
+        const m = buildNotificationEmail({ title: 't', body: 'b', url: '/a', notificationId: 'n-1', type: 'form_submission', recipientUserId: 'u1' }, links, prod);
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/a?n=n-1&amp;ch=email&amp;kind=form_submission&amp;u=u1"');
+    });
+    it('sendNotificationEmail passes the recipient\'s user id into the link', async () => {
+        await call(addNotif('form_submission'), 'form_submission');
+        const html = String(send.mock.calls.at(-1)?.[0]?.html ?? JSON.stringify(send.mock.calls.at(-1)));
+        expect(html).toContain('u=u1');
+    });
     it('without a notification id the link is untagged', () => {
         const m = buildNotificationEmail({ title: 't', body: 'b', url: '/a' }, links, prod);
         expect(m.html).toContain('href="https://staging.buenadoptante.org/a"');

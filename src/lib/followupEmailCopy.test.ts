@@ -47,6 +47,12 @@ describe('buildFollowupEmail — one adaptive template', () => {
         expect(mail.text).toContain('Seguimiento pendiente: Luna');
     });
 
+    it('every digest link names the recipient when given (u = their user id)', () => {
+        const mail = buildFollowupEmail([item('Luna', 1), item('Rocco', 2)], 'https://app.test/my-animals', 'user-7');
+        expect(mail.html).toContain('href="https://app.test/my-animals/a2?ch=email&amp;kind=follow_up_digest&amp;u=user-7#next-action"');
+        expect(mail.html).toContain('href="https://app.test/my-animals?ch=email&amp;kind=follow_up_digest&amp;u=user-7"');
+    });
+
     it('several reminders digest into one message listing each, CTA to the list', () => {
         const mail = buildFollowupEmail([item('Luna', 1), item('Rocco', 2), item('Milo', 3)], 'https://app.test/my-animals');
         expect(mail.subject).toBe('3 seguimientos pendientes');

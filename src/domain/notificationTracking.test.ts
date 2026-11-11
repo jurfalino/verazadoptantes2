@@ -132,6 +132,20 @@ describe('parseEmailLanding — reads the email params and cleans the address ba
         expect(parseEmailLanding(loc('?ch=email&n=abc-1&kind=form_submission'))?.viaLogin).toBe(false);
     });
 
+    it('the recipient travels in the link (u) and reaches the event as recipientUserId', () => {
+        const tagged = new URL(notificationEmailLink('https://x.org/adopter/a1', 'n-9', 'form_submission', 'user-123'));
+        expect(tagged.searchParams.get('u')).toBe('user-123');
+        const r = parseEmailLanding(tagged);
+        expect(r?.recipientUserId).toBe('user-123');
+        expect(r?.cleanedUrl).toBe('/adopter/a1');
+        const digest = new URL(followupDigestLink('https://x.org/my-animals', 'user-9'));
+        expect(parseEmailLanding(digest)?.recipientUserId).toBe('user-9');
+        // a malformed recipient is dropped (no emails or free text in the event), and still stripped
+        const bad = parseEmailLanding(loc('?ch=email&u=someone%40x.com&kind=form_submission'));
+        expect(bad?.recipientUserId).toBeUndefined();
+        expect(bad?.cleanedUrl).toBe('/adopter/a1');
+    });
+
     it('round-trips with notificationEmailLink', () => {
         const tagged = new URL(notificationEmailLink('https://x.org/my-animals?view=pendientes#h', 'abc-1', 'follow_up_due'));
         expect(parseEmailLanding(tagged)).toEqual({

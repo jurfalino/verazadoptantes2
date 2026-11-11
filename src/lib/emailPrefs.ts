@@ -33,10 +33,10 @@ async function userIdForEmail(db: Db, email: string): Promise<string | null> {
  * this email (nobody to manage the switches or follow an unsubscribe link);
  * prefs are {} (the defaults) with no profile row or malformed JSON. One query.
  */
-export async function getEmailRecipient(db: Db, email: string): Promise<{ prefs: NoticePrefs } | null> {
+export async function getEmailRecipient(db: Db, email: string): Promise<{ id: string; prefs: NoticePrefs } | null> {
     const row = await rawPrefsRow(db, email);
     if (!row) return null;
-    return { prefs: parseNoticePrefs(row.prefs ?? null) };
+    return { id: row.id, prefs: parseNoticePrefs(row.prefs ?? null) };
 }
 
 async function rawPrefsRow(db: Db, email: string): Promise<{ id: string; prefs: string | null } | null> {

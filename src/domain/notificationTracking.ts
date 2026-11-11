@@ -21,7 +21,9 @@ export const DEFAULT_EMAIL_KIND = 'notification';
 const PARAM_ID = 'n';
 const PARAM_CHANNEL = 'ch';
 const PARAM_KIND = 'kind';
-const TRACKING_PARAMS = [PARAM_ID, PARAM_CHANNEL, PARAM_KIND];
+/** The email's recipient (their user id, the same id PostHog identifies them by): who the email was for. */
+const PARAM_RECIPIENT = 'u';
+const TRACKING_PARAMS = [PARAM_ID, PARAM_CHANNEL, PARAM_KIND, PARAM_RECIPIENT];
 
 // What a landing URL may put into an event. `kind` is an allowlist (every
 // notification type + the digest), so a crafted link can't carry free text such
@@ -59,18 +61,26 @@ export function withTrackingParams(url: string, params: Record<string, string>):
 }
 
 /** The main link of a notification's email twin. */
-export function notificationEmailLink(url: string, notificationId: string, type: string): string {
-    return withTrackingParams(url, { [PARAM_ID]: notificationId, [PARAM_CHANNEL]: EMAIL_CHANNEL, [PARAM_KIND]: type });
+export function notificationEmailLink(url: string, notificationId: string, type: string, recipientUserId?: string): string {
+    return withTrackingParams(url, {
+        [PARAM_ID]: notificationId, [PARAM_CHANNEL]: EMAIL_CHANNEL, [PARAM_KIND]: type,
+        ...(recipientUserId ? { [PARAM_RECIPIENT]: recipientUserId } : {}),
+    });
 }
 
 /** Links in the follow-up cron's digest email. */
-export function followupDigestLink(url: string): string {
-    return withTrackingParams(url, { [PARAM_CHANNEL]: EMAIL_CHANNEL, [PARAM_KIND]: FOLLOWUP_DIGEST_KIND });
+export function followupDigestLink(url: string, recipientUserId?: string): string {
+    return withTrackingParams(url, {
+        [PARAM_CHANNEL]: EMAIL_CHANNEL, [PARAM_KIND]: FOLLOWUP_DIGEST_KIND,
+        ...(recipientUserId ? { [PARAM_RECIPIENT]: recipientUserId } : {}),
+    });
 }
 
 export interface EmailLanding {
     /** Undefined for the digest, or when the link's id is malformed. */
     notificationId: string | undefined;
+    /** User id of the person the email was sent to (shape-checked); undefined on older links. */
+    recipientUserId?: string;
     kind: string;
     /** True when the person was signed out and the tags arrived inside the sign-in `callbackUrl`. */
     viaLogin: boolean;
@@ -79,7 +89,7 @@ export interface EmailLanding {
 }
 
 /** The email tags in one query string, or null when it carries no `ch=email`. */
-function readTags(search: string): { notificationId: string | undefined; kind: string; kept: string } | null {
+function readTags(search: string): { notificationId: string | undefined; recipientUserId: string | undefined; kind: string; kept: string } | null {
     const params = new URLSearchParams(search);
     if (params.get(PARAM_CHANNEL) !== EMAIL_CHANNEL) return null;
     const id = params.get(PARAM_ID);
@@ -87,6 +97,7 @@ function readTags(search: string): { notificationId: string | undefined; kind: s
     const kept = keepSegments(search.replace(/^\?/, ''), TRACKING_PARAMS);
     return {
         notificationId: id && ID_SHAPE.test(id) ? id : undefined,
+        recipientUserId: (() => { const u = params.get(PARAM_RECIPIENT); return u && ID_SHAPE.test(u) ? u : undefined; })(),
         kind: kind && KNOWN_KINDS.has(kind) ? kind : DEFAULT_EMAIL_KIND,
         kept: kept.length ? `?${kept.join('&')}` : '',
     };
@@ -107,6 +118,7 @@ export function parseEmailLanding(loc: { pathname: string; search: string; hash:
     if (direct) {
         return {
             notificationId: direct.notificationId,
+            recipientUserId: direct.recipientUserId,
             kind: direct.kind,
             viaLogin: false,
             cleanedUrl: `${loc.pathname}${direct.kept}${loc.hash}`,
@@ -129,6 +141,7 @@ export function parseEmailLanding(loc: { pathname: string; search: string; hash:
     ).join('&');
     return {
         notificationId: inner.notificationId,
+        recipientUserId: inner.recipientUserId,
         kind: inner.kind,
         viaLogin: true,
         cleanedUrl: `${loc.pathname}?${rebuilt}${loc.hash}`,

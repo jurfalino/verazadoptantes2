@@ -167,14 +167,14 @@ const NOTIFICATION_CHROME: Record<EmailLocale, { cta: string; undo: string; sett
 export function buildNotificationEmail(
     /** `undoUrl`: a second, outlined «Deshacer» button (a path; it opens a confirmation, never acts on the click). */
     /** `notificationId` + `type`: tag the main link so the landing reports `notification_email_clicked` (src/domain/notificationTracking.ts). */
-    n: { title: string; body: string; url: string | null; undoUrl?: string | null; notificationId?: string; type?: string },
+    n: { title: string; body: string; url: string | null; undoUrl?: string | null; notificationId?: string; type?: string; recipientUserId?: string },
     links: { appBaseUrl: string; unsubscribeUrl: string | null },
     opts: { locale: EmailLocale; staging: boolean },
 ): { subject: string; html: string; text: string } {
     const c = NOTIFICATION_CHROME[opts.locale] ?? NOTIFICATION_CHROME.es;
     const plainTarget = n.url ? `${links.appBaseUrl}${n.url}` : links.appBaseUrl;
     // Only the main button: the undo opens a confirmation, and settings/unsubscribe (signed) are not the notice.
-    const target = n.notificationId && n.type ? notificationEmailLink(plainTarget, n.notificationId, n.type) : plainTarget;
+    const target = n.notificationId && n.type ? notificationEmailLink(plainTarget, n.notificationId, n.type, n.recipientUserId) : plainTarget;
     const undo = n.undoUrl ? `${links.appBaseUrl}${n.undoUrl}` : null;
     const settings = `${links.appBaseUrl}/settings`;
     const unsub = links.unsubscribeUrl;
