@@ -6,12 +6,12 @@
  * come through here. See .agents/plans/animals-placements-normalization.md.
  */
 
-import { animals, placements, adopterEvents, adopterImages, animalEvents, contractInvitations, activityForms } from '@/db/schema';
+import { animals, placements, adopterEvents, adopterImages, animalEvents, contractInvitations, activityForms, applications } from '@/db/schema';
 import { eq, and, isNull, desc, ne, sql } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { canonField } from '@/domain/fieldCollab';
-import { RECORD_TYPES } from '@/domain/constants';
+import { RECORD_TYPES, APPLICATION_STATES } from '@/domain/constants';
 import type { AdoptionVia } from '@/domain/applications';
 import { closeApplicationsOnAdoption, closeApplicationsOnAnimalDelete } from '@/lib/applicationWrites';
 
@@ -434,7 +434,7 @@ export async function countAnimalLinks(db: Db, animalId: string, excludePlacemen
     };
     const N = { n: sql<number>`count(*)`.as('n') };
 
-    const [otherPlacements, adopterEventsN, animalEventsN, contracts] = await Promise.all([
+    const [otherPlacements, adopterEventsN, animalEventsN, contracts, openApplications] = await Promise.all([
         count(db.select(N).from(placements).where(
             excludePlacementId
                 ? and(eq(placements.animalId, animalId), ne(placements.id, excludePlacementId))
@@ -445,6 +445,9 @@ export async function countAnimalLinks(db: Db, animalId: string, excludePlacemen
         // form_submissions has no animal_id — it links to an adopter
         // (linked_adopter_id), so it cannot keep an animal alive.
         count(db.select(N).from(contractInvitations).where(eq(contractInvitations.animalId, animalId))),
+        // An open application (a form for this animal, or a proposal that has no form for it) is a
+        // candidate the delete would close: such an animal is kept, never silently lost.
+        count(db.select(N).from(applications).where(and(eq(applications.animalId, animalId), eq(applications.state, APPLICATION_STATES.OPEN)))),
     ]);
 
     return {
@@ -452,7 +455,7 @@ export async function countAnimalLinks(db: Db, animalId: string, excludePlacemen
         otherPlacements,
         adopterEvents: adopterEventsN,
         animalEvents: animalEventsN,
-        formsAndContracts: contracts,
+        formsAndContracts: contracts + openApplications,
     };
 }
 

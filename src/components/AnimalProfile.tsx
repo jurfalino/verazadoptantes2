@@ -35,6 +35,8 @@ import { showableCount } from '@/domain/animalAccess';
 import { isSaveBusyError } from '@/domain/fieldCollab';
 import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
+import AnimalDeleteWarning from '@/components/evaluation/AnimalDeleteWarning';
+import { candidatesLostOnDelete } from '@/domain/applications';
 import DueNowBlock, { useDueSlotCopy } from '@/components/DueNowBlock';
 
 function placeholderFor(species: string | null): string {
@@ -460,7 +462,8 @@ export default function AnimalProfile({ profile, applicants, applicantsErrorId =
                 <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !busy && setConfirmDelete(false)} role="presentation">
                     <div className="bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-4" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
                         <h3 className="text-base font-bold text-stone-900 mb-1">{(t('animalProfile.delete_confirm_title') || '¿Eliminar a {name}?').replace('{name}', animal.name || '')}</h3>
-                        <p className="text-sm text-stone-600 mb-4">{t('animalProfile.delete_confirm_body') || 'Se borra el animal con toda su línea de vida: tenencias, eventos y fotos. Esta acción no se puede deshacer.'}</p>
+                        <p className="text-sm text-stone-600 mb-3">{t('animalProfile.delete_confirm_body') || 'Se borra el animal con toda su línea de vida: tenencias, eventos y fotos. Esta acción no se puede deshacer.'}</p>
+                        <AnimalDeleteWarning animalName={animal.name || ''} count={applicantsErrorId ? null : candidatesLostOnDelete(applicants)} />
                         <div className="flex gap-2">
                             <button
                                 type="button" onClick={handleDelete} disabled={busy}

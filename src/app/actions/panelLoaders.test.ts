@@ -28,6 +28,7 @@ vi.mock('@/lib/logger', () => ({ logger, generateErrorId: () => 'gen12345' }));
 
 import { getApplicantsForAnimal } from './applicants';
 import { getGeneralApplications } from './applications';
+import { candidatesLostOnDelete } from '@/domain/applications';
 
 let sqlite: Sqlite;
 let errorSpy: ReturnType<typeof vi.spyOn>;
@@ -75,5 +76,16 @@ describe('getApplicantsForAnimal / getGeneralApplications — a failure is not a
         state.db = failingAfter(state.db as object, 0);
         expect(await getGeneralApplications()).toEqual({ ok: false, errorId: 'abcd1234' });
         expect(errorSpy).toHaveBeenCalledWith('getGeneralApplications failed', expect.any(Error), expect.objectContaining({ viewer: OWNER }));
+    });
+});
+
+describe('the edit-page delete warning reads getApplicantsForAnimal — an outsider gets no count', () => {
+    it('the team sees its open candidates; a stranger gets an empty list (never a hint)', async () => {
+        const mine = await getApplicantsForAnimal('luna');
+        expect(mine.ok && candidatesLostOnDelete(mine.applicants)).toBe(1);
+        session.user = STRANGER;
+        const theirs = await getApplicantsForAnimal('luna');
+        expect(theirs).toEqual({ ok: true, applicants: [] });
+        expect(theirs.ok && candidatesLostOnDelete(theirs.applicants)).toBe(0);
     });
 });

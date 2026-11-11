@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    isLiveInvitation, contractNote, applicationStatus, isToEvaluate, isToDo, panelOrder, nextToEvaluateIndex,
+    isLiveInvitation, contractNote, applicationStatus, candidatesLostOnDelete, isToEvaluate, isToDo, panelOrder, nextToEvaluateIndex,
     planAdoptionClose, planMergeDedupe, submissionApplication, lifeStageOf, matchesPreference, rankProposalAnimals, formNoticeUrl,
     type ApplicationStatus, type ApplicationFacts,
 } from './applications';
@@ -197,5 +197,17 @@ describe('formNoticeUrl — where a form\'s bell notice leads', () => {
         expect(formNoticeUrl({ ...base, animalsOn: false })).toBe('/form-results/s-1');
         expect(formNoticeUrl({ ...base, applicationId: null })).toBe('/form-results/s-1');
         expect(formNoticeUrl({ ...base, animalInTeam: false })).toBe('/form-results/s-1');
+    });
+});
+
+describe('candidatesLostOnDelete', () => {
+    it('counts only the open ones (to evaluate or contract sent); decided or closed ones are not lost', () => {
+        const items = [
+            { status: te }, { status: te }, { status: cs },
+            { status: done }, { status: { kind: 'closed', reason: 'adopted_other' } as ApplicationStatus },
+            { status: { kind: 'replaced' } as ApplicationStatus }, { status: { kind: 'adopted' } as ApplicationStatus },
+        ];
+        expect(candidatesLostOnDelete(items)).toBe(3);
+        expect(candidatesLostOnDelete([])).toBe(0);
     });
 });

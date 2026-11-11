@@ -57,6 +57,11 @@ export function isToEvaluate(s: ApplicationStatus): boolean {
     return s.kind === 'to_evaluate';
 }
 
+/** What deleting the animal loses: its applications still open (to evaluate, or with a live contract). Declined / closed / replaced ones are already outcomes. */
+export function candidatesLostOnDelete(items: ReadonlyArray<{ status: ApplicationStatus }>): number {
+    return items.filter((a) => a.status.kind === 'to_evaluate' || a.status.kind === 'contract_sent').length;
+}
+
 /** What every count counts: to evaluate AND on a profile. A form whose profile auto-create failed is listed (with «Ver formulario») but is no to-do until linked: it can't be declined or proposed. */
 export function isToDo(a: { status: ApplicationStatus; adopterId: string | null }): boolean {
     return isToEvaluate(a.status) && a.adopterId != null;

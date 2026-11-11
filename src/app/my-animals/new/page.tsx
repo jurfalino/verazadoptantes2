@@ -8,6 +8,9 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { saveAdoption, deleteAnimalForAdoption, deleteAnimalImage } from '@/app/actions';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { getApplicantsForAnimal } from '@/app/actions/applicants';
+import { candidatesLostOnDelete } from '@/domain/applications';
+import { animalDeleteWarningText } from '@/components/evaluation/AnimalDeleteWarning';
 import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
 import Link from 'next/link';
 import { zarazTrack } from '@/lib/zaraz';
@@ -538,10 +541,18 @@ function CreateAnimalForm() {
                                     type="button"
                                     disabled={deleting}
                                     onClick={async () => {
+                                        const animalName = formData.animalName || 'Animal';
+                                        // Candidates the delete would lose: one read; a failed read says the generic warning (never zero).
+                                        let lost: number | null = null;
+                                        try {
+                                            const load = await getApplicantsForAnimal(editId);
+                                            if (load.ok) lost = candidatesLostOnDelete(load.applicants);
+                                        } catch (err) {
+                                            resolveErrorId(err, 'page'); // reports with context; the confirm falls back to the generic warning
+                                        }
+                                        const warning = animalDeleteWarningText(t, animalName, lost);
                                         const confirmed = window.confirm(
-                                            locale !== 'en'
-                                                ? `¿Eliminar "${formData.animalName || 'este animal'}"? Se borrarán también todas sus fotos. Esta acción no se puede deshacer.`
-                                                : `Delete "${formData.animalName || 'this animal'}"? All photos will also be removed. This cannot be undone.`
+                                            t('animalProfile.delete_confirm_plain').replace('{name}', animalName) + (warning ? '\n\n' + warning : '')
                                         );
                                         if (!confirmed) return;
                                         setDeleting(true);

@@ -21,7 +21,7 @@ export interface AnimalLinks {
     adopterEvents: number;
     /** The animal's own care log: vaccination, deworming, vet visit, neuter, note. */
     animalEvents: number;
-    /** form_submissions + contract_invitations pointing at this animal. */
+    /** contract_invitations + open applications (forms or proposals) pointing at this animal. */
     formsAndContracts: number;
 }
 
