@@ -77,21 +77,21 @@ export function formatDuration(totalMinutes: number, locale: EmailLocale): strin
     return `${totalMinutes} ${totalMinutes === 1 ? units.minute : units.minutes}`;
 }
 
-const OTP_COPY: Record<EmailLocale, { subject: string; greeting: string; expires: (duration: string) => string; ignore: string }> = {
+const OTP_COPY: Record<EmailLocale, { subject: (code: string) => string; greeting: string; expires: (duration: string) => string; ignore: string }> = {
     es: {
-        subject: 'Tu código de acceso a BuenAdoptante',
+        subject: (code) => `${code} es tu código de BuenAdoptante`,
         greeting: 'Usá este código para iniciar sesión en BuenAdoptante:',
         expires: (d) => `El código vence en ${d}.`,
         ignore: 'Si no pediste este código, podés ignorar este correo.',
     },
     en: {
-        subject: 'Your BuenAdoptante sign-in code',
+        subject: (code) => `${code} is your BuenAdoptante sign-in code`,
         greeting: 'Use this code to sign in to BuenAdoptante:',
         expires: (d) => `The code expires in ${d}.`,
         ignore: "If you didn't request this code, you can ignore this email.",
     },
     pt: {
-        subject: 'Seu código de acesso ao BuenAdoptante',
+        subject: (code) => `${code} é seu código de acesso ao BuenAdoptante`,
         greeting: 'Use este código para entrar no BuenAdoptante:',
         expires: (d) => `O código expira em ${d}.`,
         ignore: 'Se você não pediu este código, pode ignorar este e-mail.',
@@ -105,6 +105,13 @@ const OTP_COPY: Record<EmailLocale, { subject: string; greeting: string; expires
  *
  * ttlMinutes is passed in (from OTP_TTL_MS) instead of being written into the
  * copy, so the stated expiry can never disagree with the enforced one.
+ *
+ * The code leads the subject so it is readable from the phone
+ * notification and inbox row without opening the email, and so each login
+ * email starts its own Gmail conversation instead of stacking into one. The
+ * body preview already exposed the code on lock screens, so this adds no new
+ * exposure. (It does NOT unlock Gmail's "Copy code" chip — five variants were
+ * tested 2026-11-11; Gmail grants that per sender.)
  */
 export function buildOtpEmail(code: string, locale: EmailLocale, ttlMinutes: number): { subject: string; html: string; text: string } {
     const safeLocale: EmailLocale = OTP_COPY[locale] ? locale : 'es';
@@ -118,7 +125,7 @@ export function buildOtpEmail(code: string, locale: EmailLocale, ttlMinutes: num
   <p style="margin:0;font-size:14px;color:#57534e;">${copy.ignore}</p>
 </div>`;
     const text = `${copy.greeting}\n\n${code}\n\n${expires}\n${copy.ignore}\n`;
-    return { subject: copy.subject, html, text };
+    return { subject: copy.subject(code), html, text };
 }
 
 function escapeHtml(s: string): string {
