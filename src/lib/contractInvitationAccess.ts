@@ -10,6 +10,7 @@
  */
 
 import { animals, applications, formSubmissions } from '@/db/schema';
+import { APPLICATION_STATES } from '@/domain/constants';
 import { and, eq, or } from 'drizzle-orm';
 import { applicantScopeWhere } from '@/lib/applicantScope';
 import { healMissingApplications } from '@/lib/applicationWrites';
@@ -29,6 +30,8 @@ export interface InvitationAccess extends InvitationAccessDecision {
     submitted: string[];
     /** Those forms — a contract sent answers their applications (their bell notices clear). */
     submissionIds: string[];
+    /** An applicant with at least one OPEN application for this animal. False when every one is decided — or when there is none. */
+    hasOpenApplication: boolean;
 }
 
 /**
@@ -56,15 +59,15 @@ export async function resolveInvitationAccess(
     const [submissions, gatingOn, visibility, maskOptions, isOwnerOrTeammate] = await Promise.all([
         // No scope (unknown or deleted animal, empty team) → not an applicant: fail closed.
         scope
-            ? db.select({ id: formSubmissions.id, email: formSubmissions.email, phone: formSubmissions.phone })
+            ? db.select({ id: formSubmissions.id, email: formSubmissions.email, phone: formSubmissions.phone, state: applications.state })
                 .from(applications)
                 .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
                 .where(and(
                     scope,
                     or(eq(formSubmissions.linkedAdopterId, adopter.id), eq(formSubmissions.autoAdopterId, adopter.id)),
                 ))
-                .all() as Promise<Array<{ id: string; email: string | null; phone: string | null }>>
-            : Promise.resolve([] as Array<{ id: string; email: string | null; phone: string | null }>),
+                .all() as Promise<Array<{ id: string; email: string | null; phone: string | null; state: string }>>
+            : Promise.resolve([] as Array<{ id: string; email: string | null; phone: string | null; state: string }>),
         isPiiGatingEnabled(),
         resolveAdopterVisibility(rescuerEmail, { id: adopter.id, addedBy: adopter.addedBy }),
         buildMaskOptions(adopter),
@@ -86,5 +89,6 @@ export async function resolveInvitationAccess(
         maskOptions,
         submitted,
         submissionIds: [...new Set(submissions.map(s => s.id))],
+        hasOpenApplication: submissions.some(s => s.state === APPLICATION_STATES.OPEN),
     };
 }

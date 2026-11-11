@@ -20,7 +20,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { createContractInvitation } from '@/app/actions/contract';
 import { getApplicantsForAnimal } from '@/app/actions/applicants';
 import { zarazTrack } from '@/lib/zaraz';
-import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
+import ApplicantDetailPanel, { sendOutcome } from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
 import { FlagSummary } from '@/components/AlertPill';
 import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
@@ -273,11 +273,16 @@ export default function AnimalApplicants({
         setBusySubmissionId(applicant.submissionId);
         try {
             const result = await createContractInvitation(animalId, applicant.adopterId, locale);
-            if (result.success && result.url) {
+            const next = sendOutcome(result);
+            if (next === 'share' && result.url) {
                 zarazTrack('contract_issued', { surface: 'applicants_list' });
                 setShareUrl({ url: result.url, adopterName: applicant.adopterName });
+            } else if (next === 'refresh') {
+                // Decided meanwhile (a teammate): re-read, so the row shows its outcome instead of the button.
+                const fresh = await getApplicantsForAnimal(animalId);
+                if (fresh.length > 0) setApplicants(fresh);
             } else {
-                const message = result.error === 'not_allowed'
+                const message = next === 'not_allowed'
                     ? (t('errors.contract_invite_not_allowed') || 'You can only send the contract to someone who applied for this animal.')
                     : (t('errors.contract_invite_failed') || 'Could not issue invitation');
                 toast.error(t('errors.generic') || 'Error', message, result.errorId ?? resolveErrorId(new Error(`createContractInvitation: ${result.error}`), 'AnimalApplicants'));

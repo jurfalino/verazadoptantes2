@@ -39,7 +39,7 @@ const SENT_AT = 1_762_700_000;
 const REPLACED_AT = 1_762_600_000;
 const DECLINED_AT = 1_762_800_000;
 
-const { default: ApplicantDetailPanel, indexAfterOutcome } = await import('./ApplicantDetailPanel');
+const { default: ApplicantDetailPanel, indexAfterOutcome, sendOutcome } = await import('./ApplicantDetailPanel');
 const { ApplicantRowAction } = await import('./AnimalApplicants');
 
 const text = (html: string) => html.replace(/<wbr\s*\/?>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -298,5 +298,14 @@ describe('AnimalApplicants rows — a decided application offers no contract', (
 
     it('adopted: «Firmado», as before', () => {
         expect(text(row({ status: { kind: 'adopted' }, isSigned: true }))).toContain(es.myAnimals.applicants_signed);
+    });
+});
+
+describe('«Enviar contrato» — what the answer leads to (final review I3)', () => {
+    it('a link → share it; already decided (a teammate\'s «No avanzar» while the panel was open) → re-read the list, no error toast', () => {
+        expect(sendOutcome({ success: true, url: 'https://c/x', token: 'x' })).toBe('share');
+        expect(sendOutcome({ success: false, error: 'already_decided' })).toBe('refresh');
+        expect(sendOutcome({ success: false, error: 'not_allowed', errorId: 'e1' })).toBe('not_allowed');
+        expect(sendOutcome({ success: false, error: 'Failed to create invitation (e2)', errorId: 'e2' })).toBe('failed');
     });
 });

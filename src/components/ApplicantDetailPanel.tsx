@@ -35,7 +35,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { RatingExplainer } from '@/components/RatingExplainer';
 import FormAnswersPanel, { AnswerRow } from '@/components/FormAnswersPanel';
 import FormPhotos from '@/components/FormPhotos';
-import { createContractInvitation } from '@/app/actions/contract';
+import { createContractInvitation, type CreateInvitationResult } from '@/app/actions/contract';
 import { zarazTrack } from '@/lib/zaraz';
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import LocationMap from '@/components/LocationMap';
@@ -74,6 +74,17 @@ interface Props {
  */
 export function indexAfterOutcome(statuses: readonly ApplicationStatus[], decidedIndex: number): number {
     return nextToEvaluateIndex(statuses, decidedIndex - 1);
+}
+
+/**
+ * What «Enviar contrato»'s answer leads to: `share` the link; `refresh` when the application already has an
+ * outcome (a teammate decided while this panel was open — re-read the list, its status line says what
+ * happened); otherwise an error toast (`not_allowed` has its own words).
+ */
+export function sendOutcome(result: CreateInvitationResult): 'share' | 'refresh' | 'not_allowed' | 'failed' {
+    if (result.success && result.url) return 'share';
+    if (result.error === 'already_decided') return 'refresh';
+    return result.error === 'not_allowed' ? 'not_allowed' : 'failed';
 }
 
 const isEditable = (el: EventTarget | null) =>
@@ -146,12 +157,12 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
      * After an outcome (or «Sí, es la misma persona»): re-read the list. An outcome moves on to the
      * next one to evaluate (closing when none is left); a link stays on the same application.
      */
-    const afterChange = async (mode: 'outcome' | 'linked') => {
+    const afterChange = async (mode: 'outcome' | 'linked' | 'refresh') => {
         const decidedIndex = index;
         const decidedId = applicant.applicationId;
         setDialog(null);
         if (!onOutcome) {
-            if (mode === 'outcome') onClose();
+            if (mode !== 'linked') onClose();
             return;
         }
         let fresh: ApplicantSummary[] | null = null;
@@ -166,7 +177,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         }
         resetPerApplicant();
         setList(fresh);
-        if (mode === 'linked') {
+        // A link or a refresh stays on the same application (its new status line shows); an outcome moves on.
+        if (mode !== 'outcome') {
             const same = fresh.findIndex(a => a.applicationId === decidedId);
             if (same !== -1) {
                 setIndex(same);
@@ -188,12 +200,15 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         setBusy(true);
         try {
             const result = await createContractInvitation(animal.id, applicant.adopterId, locale);
-            if (result.success && result.url) {
+            const next = sendOutcome(result);
+            if (next === 'share' && result.url) {
                 zarazTrack('contract_issued', { surface: 'applicant_detail' });
                 setShareUrl(result.url);
                 onContractIssued?.(result.url, applicant);
+            } else if (next === 'refresh') {
+                await afterChange('refresh');
             } else {
-                const message = result.error === 'not_allowed'
+                const message = next === 'not_allowed'
                     ? (t('errors.contract_invite_not_allowed') || 'Solo podés enviar el contrato a quien se postuló para este animal.')
                     : (t('errors.contract_invite_failed') || 'No se pudo generar la invitación');
                 toast.error(t('errors.generic') || 'Error', message, result.errorId ?? resolveErrorId(new Error(`createContractInvitation: ${result.error}`), 'ApplicantDetailPanel'));
