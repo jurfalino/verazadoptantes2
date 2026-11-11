@@ -44,10 +44,15 @@ describe('buildOtpEmail', () => {
     });
 
     it('carries the code in both the HTML and plain-text bodies', () => {
-        const { html, text, subject } = buildOtpEmail('428317', 'es', TTL_MINUTES);
+        const { html, text } = buildOtpEmail('428317', 'es', TTL_MINUTES);
         expect(html).toContain('428317');
         expect(text).toContain('428317');
-        expect(subject).not.toContain('428317'); // never put the code in the subject line
+    });
+
+    it('leads the subject with the code, in every locale', () => {
+        expect(buildOtpEmail('428317', 'es', 60).subject).toBe('428317 es tu código de BuenAdoptante');
+        expect(buildOtpEmail('428317', 'en', 60).subject).toBe('428317 is your BuenAdoptante sign-in code');
+        expect(buildOtpEmail('428317', 'pt', 60).subject).toBe('428317 é seu código de acesso ao BuenAdoptante');
     });
 
     it('falls back to Spanish for an unknown locale', () => {
