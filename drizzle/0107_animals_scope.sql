@@ -5,10 +5,11 @@
 -- follow-up cron Worker. Replaces followup_settings.onlyMyAnimals («Recordarme
 -- solo los animales que cargué yo»): whoever had it on starts on 'mine'.
 -- Additive and idempotent: the backfill only fills rows still NULL.
+-- CASE, not `json_valid(...) AND json_extract(...)`: SQLite doesn't promise to
+-- test json_valid first, and json_extract raises on malformed JSON.
 ALTER TABLE user_profiles ADD COLUMN animals_scope TEXT;
 --> statement-breakpoint
 UPDATE user_profiles SET animals_scope = 'mine'
 WHERE animals_scope IS NULL
   AND followup_settings IS NOT NULL
-  AND json_valid(followup_settings)
-  AND json_extract(followup_settings, '$.onlyMyAnimals') = 1;
+  AND CASE WHEN json_valid(followup_settings) THEN json_extract(followup_settings, '$.onlyMyAnimals') END = 1;
