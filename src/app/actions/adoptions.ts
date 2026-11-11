@@ -229,7 +229,11 @@ export async function getAdoptions(adopterId: string) {
         const withOrigin = await getFeatureFlag('ENABLE_ORIGIN_LABELS') ? await attachApiTools(db, withForms) : withForms;
         // `canEdit` per record (the pencil = the save gate) + the delivery address masked outside the team.
         const { attachRecordViewerAccess } = await import('@/lib/recordEditAccess');
-        return await attachRecordViewerAccess(db, await attachAdoptionThumbnails(db, withOrigin), { viewer, viewerIsAdmin, adopterId });
+        const withAccess = await attachRecordViewerAccess(db, await attachAdoptionThumbnails(db, withOrigin), { viewer, viewerIsAdmin, adopterId });
+        // How each «Solicitud» ended — whoever sees the record sees it; animals are named only inside the viewer's team.
+        const { attachApplicationOutcomes } = await import('@/lib/applicationOutcomes');
+        const { getTeamEmails } = await import('@/lib/orgMembership');
+        return await attachApplicationOutcomes(db, withAccess, { teamEmails: await getTeamEmails(viewer), adopterId });
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];

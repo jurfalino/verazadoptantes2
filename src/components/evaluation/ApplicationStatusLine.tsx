@@ -79,3 +79,20 @@ export function ApplicationStatusLine({ status, animal, outcomeAnimal }: {
         </p>
     );
 }
+
+/**
+ * The same sentence on the profile's «Solicitud» record (src/lib/applicationOutcomes.ts):
+ * `statusLineText` is the single source, so the profile and the panel never differ.
+ * Open applications have no line.
+ */
+export function ApplicationOutcomeLine({ outcome }: { outcome: { status: ApplicationStatus; animal: NamedAnimal | null; outcomeAnimal: NamedAnimal | null } }) {
+    const { t } = useLanguage();
+    const { formatShortDate } = useDateFormat();
+    const line = statusLineText(outcome.status, { animal: outcome.animal, outcomeAnimal: outcome.outcomeAnimal }, t, formatShortDate);
+    if (!line) return null;
+    return (
+        <p data-testid="record-outcome-line" data-status={outcome.status.kind} className="mt-2.5 text-sm font-semibold text-stone-700 [overflow-wrap:anywhere]">
+            {line}
+        </p>
+    );
+}
