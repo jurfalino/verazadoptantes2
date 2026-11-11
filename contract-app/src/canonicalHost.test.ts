@@ -30,4 +30,10 @@ describe('canonicalRedirect — old addresses land on enadopcion.org (Jon 2026-1
         expect(canonicalRedirect('https://3f2a.adoptions.pages.dev/', 'enadopcion.org')).toBeNull();
         expect(canonicalRedirect('http://localhost:5173/', 'enadopcion.org')).toBeNull();
     });
+
+    it('a mistyped CANONICAL_HOST (scheme, port, path) never redirects — it would 301 the site to itself', () => {
+        for (const bad of ['https://enadopcion.org', 'enadopcion.org:8443', 'enadopcion.org/', 'enadopcion org']) {
+            expect(canonicalRedirect('https://adoptions.pages.dev/x', bad)).toBeNull();
+        }
+    });
 });

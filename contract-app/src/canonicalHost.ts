@@ -15,9 +15,12 @@ const LEGACY_HOSTS = new Set([
     'www.staging.enadopcion.org',
 ]);
 
+/** A bare hostname only. Anything else (a scheme, a port, a path) would leave the URL unchanged → a 301 to itself. */
+const BARE_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
 export function canonicalRedirect(requestUrl: string, canonicalHost: string | undefined | null): string | null {
     const target = (canonicalHost ?? '').trim().toLowerCase();
-    if (!target) return null;
+    if (!BARE_HOST.test(target)) return null;
     const url = new URL(requestUrl);
     const host = url.hostname.toLowerCase();
     if (host === target || !LEGACY_HOSTS.has(host)) return null;

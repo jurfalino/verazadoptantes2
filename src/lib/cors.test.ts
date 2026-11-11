@@ -17,4 +17,9 @@ describe('withCors', () => {
     it.each(['https://evil.org', 'https://enadopcion.org.evil.com', 'https://notenadopcion.org'])('refuses look-alikes: %s', (o) => {
         expect(allowed(o)).toBe(false);
     });
+
+    it('marks responses as varying by Origin, so a cached answer for www is not reused for the bare domain', () => {
+        const vary = withCors(new NextResponse(null), 'https://www.enadopcion.org').headers.get('Vary') ?? '';
+        expect(vary.split(',').map((v) => v.trim().toLowerCase())).toContain('origin');
+    });
 });

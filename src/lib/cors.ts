@@ -32,6 +32,7 @@ function isAllowedOrigin(origin: string): boolean {
 export function withCors(response: NextResponse, requestOrigin: string | null): NextResponse {
     const origin = requestOrigin && isAllowedOrigin(requestOrigin) ? requestOrigin : EXACT_ORIGINS[0];
     response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.append('Vary', 'Origin');
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
     response.headers.set('Access-Control-Max-Age', '86400');
