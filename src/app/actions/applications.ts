@@ -118,13 +118,19 @@ export async function getApplicationDuplicates(applicationId: string): Promise<{
  * pointing at it; a live contract link of this animal + person is voided.
  * The observation id is pre-seeded from the application id, so a retry (a
  * double tap, a network retry) is the same record, never a second one.
+ *
+ * Never over another rescuer's words (final review M8): an application no
+ * longer open is refused before any write, and so is one whose observation
+ * another rescuer already wrote (their decline in flight, or its close timed
+ * out) — that one is finished with THEIR observation, and this call answers
+ * `already_decided` (the dialog says this text was not saved).
  */
 export async function declineApplication(applicationId: string, input: { text: string; rating: number; reason: string }): Promise<{ ok: true; recordId: string } | Fail> {
     let viewer: string | null = null;
     try {
         viewer = await sessionViewer();
         if (!viewer) return fail('unauthorized');
-        const { isId, parseDecline, loadAuthorizedApplication, liveAdopterExists, declineRecordId, retireLiveLink, markDeclined } = await import('./_applications');
+        const { isId, parseDecline, loadAuthorizedApplication, liveAdopterExists, declineRecordId, retireLiveLink, markDeclined, declineRecordAuthor, isDeclinedWith } = await import('./_applications');
         if (!isId(applicationId)) return fail('invalid');
         const decline = parseDecline(input);
         if (!decline) return fail('invalid');
@@ -136,11 +142,28 @@ export async function declineApplication(applicationId: string, input: { text: s
         const adopterId = submission.linkedAdopterId;
         if (!adopterId || !(await liveAdopterExists(db, adopterId))) return fail('not_allowed');
 
+        // 0. Another rescuer's observation already sits on the pre-seeded id: theirs is the decision. Nothing of
+        //    this call is written; their decline is finished (CAS) so the application never stays open behind it.
+        const recordId = declineRecordId(applicationId);
+        const author = await declineRecordAuthor(db, recordId);
+        const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
+        if (author !== undefined && norm(author) !== norm(viewer)) {
+            const finishedBy = author || viewer;
+            const nowSec = Math.floor(Date.now() / 1000);
+            if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
+            if (await markDeclined(db, applicationId, recordId, finishedBy, nowSec)) {
+                const { clearFormNotices } = await import('@/lib/formNotices');
+                await clearFormNotices(db, submission.id, { op: 'declineApplication', applicationId, viewer, finishedFor: finishedBy });
+            }
+            logger.info("declineApplication: another rescuer's observation decides it — this one not saved", { applicationId, viewer, author });
+            return fail('already_decided');
+        }
+
         // 1. The observation, through the one record save (visibility, history, notices as any observation).
         const { saveRecordFor } = await import('@/lib/recordSave');
         // `animalId` is a pass-through field of the record save (the event's animal), not a column of the `adoptions` view.
         const record: Parameters<typeof saveRecordFor>[0] & { animalId?: string } = {
-            id: declineRecordId(applicationId),
+            id: recordId,
             recordType: RECORD_TYPES.OBSERVATION,
             adopterId,
             rating: decline.rating,
@@ -153,8 +176,11 @@ export async function declineApplication(applicationId: string, input: { text: s
         const nowSec = Math.floor(Date.now() / 1000);
         // 2. Their live contract link for this animal, if any, stops working.
         if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
-        // 3. The application ends, only if it is still open (a concurrent decision wins).
-        if (!(await markDeclined(db, applicationId, saved.id, viewer, nowSec))) return fail('already_decided');
+        // 3. The application ends, only if it is still open (a concurrent decision wins) — unless the call that
+        //    won closed it with THIS observation (a teammate finishing it, step 0): then this one did land.
+        if (!(await markDeclined(db, applicationId, saved.id, viewer, nowSec)) && !(await isDeclinedWith(db, applicationId, saved.id))) {
+            return fail('already_decided');
+        }
         // 4. Answered once: its bell notices read, for everyone (best-effort, logged).
         const { clearFormNotices } = await import('@/lib/formNotices');
         await clearFormNotices(db, submission.id, { op: 'declineApplication', applicationId, viewer });

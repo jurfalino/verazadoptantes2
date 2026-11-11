@@ -54,6 +54,7 @@ export const en = {
         missing_rating: 'Missing: rating',
         missing_reason: 'Missing: reason',
         decline_failed: 'Couldn\'t save. Try again.',
+        decline_already_decided: 'This application already had an outcome. Your observation was not saved.',
         propose_title: 'Suggest an animal to {name}',
         candidates_one: '1 applicant',
         candidates_many: '{n} applicants',

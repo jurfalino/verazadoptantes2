@@ -36,7 +36,7 @@ vi.mock('@/components/ui/Modal', async (orig) => ({
 }));
 
 const { ApplicationAnswersSummary } = await import('./ApplicationAnswersSummary');
-const { DeclineApplicationDialog, DeclineForm, declineMissing } = await import('./DeclineApplicationDialog');
+const { DeclineApplicationDialog, DeclineForm, declineMissing, declineOutcome } = await import('./DeclineApplicationDialog');
 const { DuplicateCards } = await import('./ApplicationDuplicate');
 const { ProposalAnimalList } = await import('./ProposeAnimalSheet');
 const { OfferSheetBody, offerLinks, offerMessage, offerAnimalOf } = await import('./AdoptionOfferSheet');
@@ -260,5 +260,15 @@ describe('after a save: the offer sheet only when the save closed other candidat
         expect(offerAnimalOf({})).toBeNull();
         expect(offerAnimalOf(null)).toBeNull();
         expect(offerAnimalOf(undefined)).toBeNull();
+    });
+});
+
+describe('«No avanzar» — what the answer leads to (final review M8)', () => {
+    it('done / already decided elsewhere (an info notice: the observation was NOT saved) / failed', () => {
+        expect(declineOutcome({ ok: true, recordId: 'r' })).toEqual({ kind: 'done' });
+        expect(declineOutcome({ ok: false, error: 'already_decided' })).toEqual({ kind: 'already_decided', messageKey: 'evaluation.decline_already_decided' });
+        expect(declineOutcome({ ok: false, error: 'failed', errorId: 'abcd1234' })).toEqual({ kind: 'failed', errorId: 'abcd1234' });
+        expect(declineOutcome({ ok: false, error: 'not_allowed' })).toEqual({ kind: 'failed', errorId: null });
+        expect(t('evaluation.decline_already_decided')).toBe('Esta solicitud ya tenía un resultado. No se guardó tu observación.');
     });
 });

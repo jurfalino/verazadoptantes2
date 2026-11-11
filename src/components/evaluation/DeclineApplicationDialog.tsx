@@ -17,6 +17,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { firstName } from '@/lib/householdCopy';
 import { DECLINE_REASON_MAX, DECLINE_TEXT_MAX } from '@/domain/constants';
+import type { Fail } from '@/app/actions/applications';
 
 export type DeclineMissing = 'missing_both' | 'missing_rating' | 'missing_reason';
 
@@ -25,6 +26,18 @@ export function declineMissing(rating: number, reason: string): DeclineMissing |
     const noRating = !(rating > 0);
     const noReason = !reason.trim();
     return noRating && noReason ? 'missing_both' : noRating ? 'missing_rating' : noReason ? 'missing_reason' : null;
+}
+
+/**
+ * What the save's answer leads to. `already_decided` is NOT a success: the application already had an
+ * outcome (decided elsewhere, or another rescuer's «No avanzar» got there first), so this text and rating
+ * were not saved — the rescuer is told so, and the panel re-reads (final review M8).
+ */
+export function declineOutcome(res: { ok: true; recordId: string } | Fail):
+    { kind: 'done' } | { kind: 'already_decided'; messageKey: string } | { kind: 'failed'; errorId: string | null } {
+    if (res.ok) return { kind: 'done' };
+    if (res.error === 'already_decided') return { kind: 'already_decided', messageKey: 'evaluation.decline_already_decided' };
+    return { kind: 'failed', errorId: res.errorId ?? null };
 }
 
 const FIELD = 'w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500';
@@ -69,7 +82,7 @@ export function DeclineApplicationDialog({ applicationId, personName, animalName
     /** null: a general application. */
     animalName: string | null;
     onClose: () => void;
-    /** The outcome is recorded (or already was): the panel re-reads and moves on. */
+    /** The outcome is recorded (or another one already was — said in an info notice): the panel re-reads and moves on. */
     onDone: () => void;
 }) {
     const { t } = useLanguage();
@@ -90,13 +103,19 @@ export function DeclineApplicationDialog({ applicationId, personName, animalName
         try {
             // An emptied first line saves as the pre-filled one (the observation always says what it is).
             const res = await declineApplication(applicationId, { text: text.trim() || prefill, rating, reason });
-            // `already_decided`: the outcome is already recorded (a double tap, another tab) — same as done.
-            if (res.ok || res.error === 'already_decided') {
+            const outcome = declineOutcome(res);
+            if (outcome.kind === 'done') {
+                onDone();
+                return;
+            }
+            if (outcome.kind === 'already_decided') {
+                // Not a success: this text was not saved. Say so, then show what the application became.
+                toast.info(t(outcome.messageKey));
                 onDone();
                 return;
             }
             toast.error(t('errors.generic'), t('evaluation.decline_failed'),
-                res.errorId ?? resolveErrorId(new Error(`declineApplication: ${res.error}`), 'DeclineApplicationDialog'));
+                outcome.errorId ?? resolveErrorId(new Error(`declineApplication: ${res.ok ? 'unknown' : res.error}`), 'DeclineApplicationDialog'));
         } catch (e) {
             if (!handledAsStale(e)) toast.error(t('errors.generic'), t('evaluation.decline_failed'), resolveErrorId(e, 'DeclineApplicationDialog'));
         } finally {

@@ -54,6 +54,7 @@ export const pt = {
         missing_rating: 'Falta: avaliação',
         missing_reason: 'Falta: motivo',
         decline_failed: 'Não foi possível salvar. Tente de novo.',
+        decline_already_decided: 'Esta solicitação já tinha um resultado. Sua observação não foi salva.',
         propose_title: 'Propor um animal para {name}',
         candidates_one: '1 candidato',
         candidates_many: '{n} candidatos',

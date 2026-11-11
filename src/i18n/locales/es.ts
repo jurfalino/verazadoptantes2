@@ -54,6 +54,7 @@ export const es = {
         missing_rating: 'Falta: calificación',
         missing_reason: 'Falta: motivo',
         decline_failed: 'No se pudo guardar. Probá de nuevo.',
+        decline_already_decided: 'Esta solicitud ya tenía un resultado. No se guardó tu observación.',
         propose_title: 'Proponer un animal a {name}',
         candidates_one: '1 candidato',
         candidates_many: '{n} candidatos',

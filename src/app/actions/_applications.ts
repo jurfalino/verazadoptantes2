@@ -12,7 +12,7 @@
  * «not found» — never a hint that it exists.
  */
 import { and, eq, isNotNull, isNull, ne, or, gt, sql } from 'drizzle-orm';
-import { adopterImages, adopters, adoptions, animals, applications, contractInvitations, formSubmissions, placements } from '@/db/schema';
+import { adopterEvents, adopterImages, adopters, adoptions, animals, applications, contractInvitations, formSubmissions, placements } from '@/db/schema';
 import { APPLICATION_CLOSE_REASONS, APPLICATION_ORIGINS, APPLICATION_STATES, DECLINE_REASON_MAX, DECLINE_TEXT_MAX, RECORD_TYPES } from '@/domain/constants';
 import { rankProposalAnimals } from '@/domain/applications';
 import { takesContract } from '@/domain/placements';
@@ -149,6 +149,24 @@ export async function retireLiveLink(db: Db, animalId: string, adopterId: string
 }
 
 /** Compare-and-swap: an OPEN application becomes «declined», pointing at its observation. False when it was no longer open. */
+/**
+ * Who wrote the pre-seeded «No avanzar» observation of this application, if it exists (`undefined`: none
+ * yet). Another rescuer's means their decline is in flight (or its close timed out): this call must not
+ * take the record save's EDIT branch over their text.
+ */
+export async function declineRecordAuthor(db: Db, recordId: string): Promise<string | null | undefined> {
+    const row = await db.select({ recordedBy: adopterEvents.recordedBy }).from(adopterEvents)
+        .where(eq(adopterEvents.id, recordId)).get() as { recordedBy: string | null } | undefined;
+    return row ? row.recordedBy : undefined;
+}
+
+/** The application ended «No avanzó» with this observation — whoever's call closed it. */
+export async function isDeclinedWith(db: Db, applicationId: string, recordId: string): Promise<boolean> {
+    const row = await db.select({ state: applications.state, declineRecordId: applications.declineRecordId }).from(applications)
+        .where(eq(applications.id, applicationId)).get() as { state: string; declineRecordId: string | null } | undefined;
+    return !!row && row.state === APPLICATION_STATES.DECLINED && row.declineRecordId === recordId;
+}
+
 export async function markDeclined(db: Db, applicationId: string, recordId: string, viewer: string, nowSec: number): Promise<boolean> {
     const won = await db.update(applications)
         .set({ state: APPLICATION_STATES.DECLINED, declineRecordId: recordId, closedAt: nowSec, closedBy: viewer })

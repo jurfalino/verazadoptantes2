@@ -42,6 +42,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates } from './applications';
 import { loadApplicantsForAnimal } from './_applicants';
+import { applications as applicationsTable } from '@/db/schema';
 import { GET as contractByToken } from '@/app/api/contract/by-token/[token]/route';
 
 let sqlite: Sqlite;
@@ -105,6 +106,39 @@ describe('declineApplication («No avanzar»)', () => {
         for (const r of results) if (!r.ok) expect(r.error).toBe('already_decided');
         expect(events('decline-app-s-gen')).toHaveLength(1);
         expect(appRow('app-s-gen')).toMatchObject({ state: 'declined', decline_record_id: 'decline-app-s-gen' });
+    });
+
+    it("a second decliner with different text, while the first one's observation is written but the application not yet closed → the first one's text intact, already_decided (final review M8)", async () => {
+        // MATE's «No avanzar» wrote its observation; its close has not landed (in flight, or a timeout).
+        sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, animal_id, animal_name, rating, details, recorded_by, created_at)
+            VALUES ('decline-app-s-luna', 'ana', 'observation', 'luna', 'Luna', 2, 'Texto de Mate\nMotivo de Mate', ?, 1000)`).run(MATE);
+        const before = events('decline-app-s-luna');
+        expect(await declineApplication('app-s-luna', { ...DECLINE, rating: 5 })).toEqual({ ok: false, error: 'already_decided' });
+        // Nothing of OWNER's was written over MATE's observation.
+        expect(events('decline-app-s-luna')).toEqual(before);
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adopter_events WHERE adopter_id = 'ana'").get()!.n).toBe(1);
+        // The application ends with MATE's observation (never stuck open behind a record only MATE could finish).
+        expect(appRow('app-s-luna')).toMatchObject({ state: 'declined', decline_record_id: 'decline-app-s-luna', closed_by: MATE });
+    });
+
+    it('the first decliner, whose close another tap finished with ITS OWN observation, is told it worked (final review M8)', async () => {
+        // Between this call's observation and its close, a teammate's call finished the decline with that observation.
+        const real = (state.db as { update: (t: unknown) => unknown }).update.bind(state.db);
+        let raced = false;
+        state.db = new Proxy(state.db as object, {
+            get(t, p, r) {
+                if (p === 'update') return (table: unknown) => {
+                    if (!raced && table === applicationsTable) {
+                        raced = true;
+                        sqlite.prepare(`UPDATE applications SET state = 'declined', decline_record_id = 'decline-app-s-luna', closed_by = ? WHERE id = 'app-s-luna'`).run(MATE);
+                    }
+                    return real(table);
+                };
+                return Reflect.get(t, p, r);
+            },
+        });
+        expect(await declineApplication('app-s-luna', DECLINE)).toEqual({ ok: true, recordId: 'decline-app-s-luna' });
+        expect(events('decline-app-s-luna')[0]).toMatchObject({ details: `${DECLINE.text}\n${DECLINE.reason}`, recorded_by: OWNER });
     });
 
     it('declineApplication on a live contract retires the link (by-token would answer expired)', async () => {
