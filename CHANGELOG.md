@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.2] - 2026-11-11
+
+### Changed — the public site moves to enadopcion.org (Jon)
+- The catalogue, forms and contracts are served from **enadopcion.org** (staging: staging.enadopcion.org).
+  Links already shared and QR codes already printed keep working: the old adoptions.pages.dev addresses (and
+  www) send visitors to the same page on the new domain. The redirect is switched on per environment, so
+  production only starts redirecting once the app accepts requests from the new address.
+
 ## [2.59.1] - 2026-11-11
 
 ### Fixed — the delete warning (review of 2.59.0)
