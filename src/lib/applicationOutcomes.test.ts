@@ -11,12 +11,14 @@ const { attachApplicationOutcomes } = await import('./applicationOutcomes');
 let m: ReturnType<typeof migratedDb>;
 const sqlite = () => m.sqlite as unknown as Sqlite;
 const TEAM = [OWNER, MATE];
-const rec = (id: string, sourceUrl: string | null, recordType = 'adoption_request') => ({ id, recordType, sourceUrl });
+const rec = (id: string, sourceUrl: string | null, recordType = 'adoption_request', animal: { animalName: string; sex: string } | null = null) => ({ id, recordType, sourceUrl, animalName: animal?.animalName ?? null, sex: animal?.sex ?? null });
+const teamFn = vi.fn(async () => TEAM as readonly string[]);
 const outcomeOf = async (records: ReturnType<typeof rec>[], team: string[] = TEAM) =>
-    (await attachApplicationOutcomes(asyncDb(m.db) as never, records, { teamEmails: team, adopterId: 'ana' })).map((r) => (r as { applicationOutcome?: unknown }).applicationOutcome);
+    (await attachApplicationOutcomes(asyncDb(m.db) as never, records, { teamEmails: async () => team, adopterId: 'ana' })).map((r) => (r as { applicationOutcome?: unknown }).applicationOutcome);
 
 beforeEach(() => {
     warn.mockClear();
+    teamFn.mockClear();
     m = migratedDb();
     adopter(sqlite(), 'ana', 'Ana Pérez', OWNER);
     animal(sqlite(), 'luna', 'Luna', OWNER, { sex: 'hembra' });
@@ -31,11 +33,42 @@ describe('attachApplicationOutcomes', () => {
         expect(o).toEqual({ status: { kind: 'closed', reason: 'adopted_other' }, animal: { name: 'Luna', sex: 'hembra' }, outcomeAnimal: null });
     });
 
-    it('another team\'s animal is never named', async () => {
+    it('the record\'s own animal is named from the record, whoever views it (an outsider sees «Sol» on the record already)', async () => {
+        form(sqlite(), 's2', { adopter: 'ana', animal: 'sol' });
+        application(sqlite(), 'app-s2', 's2', 'sol', { state: 'closed', closeReason: 'adopted_other' });
+        const [o] = await outcomeOf([rec('r2', 'form:s2', 'adoption_request', { animalName: 'Sol', sex: 'macho' })], [STRANGER]);
+        expect(o).toEqual({ status: { kind: 'closed', reason: 'adopted_other' }, animal: { name: 'Sol', sex: 'macho' }, outcomeAnimal: null });
+        expect(teamFn).not.toHaveBeenCalled();
+    });
+
+    it('a record that shows no animal does not reveal another team\'s one', async () => {
         form(sqlite(), 's2', { adopter: 'ana', animal: 'sol' });
         application(sqlite(), 'app-s2', 's2', 'sol', { state: 'closed', closeReason: 'adopted_other' });
         const [o] = await outcomeOf([rec('r2', 'form:s2')]);
         expect(o).toEqual({ status: { kind: 'closed', reason: 'adopted_other' }, animal: null, outcomeAnimal: null });
+    });
+
+    it('a proposal to another team\'s animal is not named', async () => {
+        form(sqlite(), 's3', { adopter: 'ana' });
+        application(sqlite(), 'app-prop', 's3', 'sol', { origin: 'proposed' });
+        application(sqlite(), 'app-s3', 's3', null, { state: 'proposed' });
+        sqlite().prepare("UPDATE applications SET proposed_application_id = 'app-prop' WHERE id = 'app-s3'").run();
+        const [o] = await outcomeOf([rec('r3', 'form:s3')]);
+        expect(o).toEqual({ status: { kind: 'proposed' }, animal: null, outcomeAnimal: null });
+    });
+
+    it('one animal lookup per distinct animal, and the team only when a gated animal is needed', async () => {
+        for (const n of [1, 2, 3]) {
+            form(sqlite(), `x${n}`, { adopter: 'ana', animal: 'luna' });
+            application(sqlite(), `app-x${n}`, `x${n}`, 'luna', { state: 'closed', closeReason: 'adopted_other' });
+        }
+        const selects: string[] = [];
+        const db = asyncDb(m.db) as unknown as { select: (...a: unknown[]) => unknown };
+        const spy = new Proxy(db, { get: (t, p, r) => p === 'select' ? (...a: unknown[]) => { selects.push(String(Object.keys((a[0] ?? {}) as object).join(','))); return (t.select as (...x: unknown[]) => unknown)(...a); } : Reflect.get(t, p, r) });
+        const out = await attachApplicationOutcomes(spy as never, [rec('a', 'form:x1'), rec('b', 'form:x2'), rec('c', 'form:x3')], { teamEmails: teamFn, adopterId: 'ana' });
+        expect(out.every((r) => (r as { applicationOutcome?: { animal: unknown } }).applicationOutcome?.animal !== null)).toBe(true);
+        expect(selects.filter((k) => k.includes('owner'))).toHaveLength(1);
+        expect(teamFn).toHaveBeenCalledTimes(1);
     });
 
     it('an open application, a record without a form source, a non-request and a missing application carry nothing', async () => {
@@ -61,7 +94,7 @@ describe('attachApplicationOutcomes', () => {
 
     it('a failed lookup logs a warning with the adopter and the record gets no outcome', async () => {
         const db = { select: () => { throw new Error('D1 down'); } };
-        const out = await attachApplicationOutcomes(db as never, [rec('r1', 'form:s1')], { teamEmails: TEAM, adopterId: 'ana' });
+        const out = await attachApplicationOutcomes(db as never, [rec('r1', 'form:s1')], { teamEmails: teamFn, adopterId: 'ana' });
         expect((out[0] as { applicationOutcome?: unknown }).applicationOutcome).toBeUndefined();
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('applicationOutcomes'), expect.objectContaining({ adopterId: 'ana' }));
     });

@@ -233,7 +233,7 @@ export async function getAdoptions(adopterId: string) {
         // How each «Solicitud» ended — whoever sees the record sees it; animals are named only inside the viewer's team.
         const { attachApplicationOutcomes } = await import('@/lib/applicationOutcomes');
         const { getTeamEmails } = await import('@/lib/orgMembership');
-        return await attachApplicationOutcomes(db, withAccess, { teamEmails: await getTeamEmails(viewer), adopterId });
+        return await attachApplicationOutcomes(db, withAccess, { teamEmails: () => getTeamEmails(viewer), adopterId });
     } catch (error) {
         logger.error('Get adoptions failed', error, { adopterId });
         return [];
