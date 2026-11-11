@@ -50,6 +50,17 @@ export function formNoticeRecipients(c: { linkOwner: string; animalOwner: string
     return { linkOwnerBellOnly: false, animalOwnerCopy: null, excludeFromTeam: [], teamCopy: { emailTo: linkOwner, animalOwner: null } };
 }
 
+/**
+ * The plan once the animal owner's own copy was attempted: if it wasn't saved, fall back to the
+ * «team lookup failed» shape — the link owner is emailed and the owner still gets the fan-out's
+ * bell copy — so a failed insert can never leave the form without an email.
+ */
+export function afterOwnerCopy(c: { linkOwner: string; animalOwner: string | null; ownerInTeam: boolean | null }, ownerCopySaved: boolean): FormNoticeRecipients {
+    const plan = formNoticeRecipients(c);
+    if (!plan.animalOwnerCopy || ownerCopySaved) return plan;
+    return formNoticeRecipients({ ...c, ownerInTeam: null });
+}
+
 export type TeamCopyDelivery = 'skip' | 'bell' | 'bell_and_email';
 
 /**

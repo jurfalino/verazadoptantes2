@@ -4,7 +4,7 @@
  * there's no animal of the team.
  */
 import { describe, it, expect } from 'vitest';
-import { formNoticeRecipients, teamCopyDelivery, parseAnimalsScope, followupDelivery } from './animalNotices';
+import { afterOwnerCopy, formNoticeRecipients, teamCopyDelivery, parseAnimalsScope, followupDelivery } from './animalNotices';
 
 type Member = { email: string; scope: 'mine' | 'team' };
 
@@ -117,5 +117,19 @@ describe('followupDelivery (the daily check-up Worker)', () => {
     it('a teammate: bell only, whatever their email switch; nothing with «Mis animales»', () => {
         expect(followupDelivery({ recipient: 'bea@x.org', owner, scope: 'team', emailReminders: true })).toBe('bell');
         expect(followupDelivery({ recipient: 'bea@x.org', owner, scope: 'mine', emailReminders: true })).toBe('skip');
+    });
+});
+
+describe('afterOwnerCopy — the animal owner\'s copy failed to save: nobody may end up without the email', () => {
+    const c = { linkOwner: 'ana@x.org', animalOwner: 'Bea@x.org', ownerInTeam: true as const };
+    it('owner copy saved → the plan stands (link owner bell only, owner excluded from the fan-out)', () => {
+        expect(afterOwnerCopy(c, true)).toEqual(formNoticeRecipients(c));
+    });
+    it('owner copy NOT saved → the link owner is emailed and the owner is not excluded (bell from the fan-out)', () => {
+        const r = afterOwnerCopy(c, false);
+        expect(r.linkOwnerBellOnly).toBe(false);
+        expect(r.animalOwnerCopy).toBeNull();
+        expect(r.excludeFromTeam).toEqual([]);
+        expect(r.teamCopy.emailTo).toBe('ana@x.org');
     });
 });

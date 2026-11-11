@@ -507,7 +507,14 @@ export async function notifyOrgMembers(opts: {
 
         // Exclude the actor, and whoever the caller already notified
         const excluded = new Set([opts.actorEmail, ...(opts.excludeEmails ?? [])].map(e => e.trim().toLowerCase()));
-        const recipients = emails.filter((e: string) => !excluded.has(e.trim().toLowerCase()));
+        // One copy per person: the same member may appear in two groups with different capitals.
+        const seen = new Set<string>();
+        const recipients = emails.filter((e: string) => {
+            const key = e.trim().toLowerCase();
+            if (excluded.has(key) || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
         if (recipients.length === 0) return;
 
         // Forms and contracts: each member's «Formularios, contratos y controles de:» choice.

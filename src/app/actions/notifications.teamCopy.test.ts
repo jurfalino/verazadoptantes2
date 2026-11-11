@@ -73,6 +73,14 @@ describe('notifyOrgMembers — team copies', () => {
         expect(bellOnlyByRecipient()).toEqual({ [CAL]: true });
     });
 
+    it('one person in two groups with different capitals gets ONE copy', async () => {
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email) VALUES ('m9', 'org-2', 'Bea@Example.com')`).run();
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email) VALUES ('m10', 'org-2', ?)`).run(ANA);
+        await notifyOrgMembers({ actorEmail: ANA, type: 'member_joined', title: 't', body: 'b' });
+        const ids = sqlite.prepare("SELECT lower(user_id) AS u FROM notifications ORDER BY u").all().map(r => r.u);
+        expect(ids).toEqual([BEA, CAL]);
+    });
+
     it('the actor is never notified, whatever the case of their email', async () => {
         await notifyOrgMembers({ actorEmail: ' Ana@Example.com', type: 'member_joined', title: 't', body: 'b' });
         expect(sqlite.prepare("SELECT user_id FROM notifications ORDER BY user_id").all().map(r => r.user_id)).toEqual([BEA, CAL]);
