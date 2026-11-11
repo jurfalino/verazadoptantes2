@@ -435,26 +435,57 @@ const STEPS: Record<HomeModuleKey, { icon: keyof typeof PATHS; key: string; href
     posts: { icon: 'post', key: 'posts', href: '/import' },
 };
 
-function FirstSteps({ steps, title, t }: { steps: HomeModuleKey[]; title: string; t: T }) {
+/** Where a «Para empezar» step leads — the signed-out card sends it through the login box first. */
+export function guestStepHref(k: HomeModuleKey): string {
+    return STEPS[k].href;
+}
+
+/**
+ * «Para empezar» / «También podés». Signed in, each step is a link. With
+ * `onStep` (the signed-out home, Jon 2026-11-11) it is a button that hands its
+ * destination over instead, so the home can open the login box and continue
+ * there afterwards — same card, same words, same look.
+ */
+function FirstSteps({ steps, title, t, onStep }: { steps: HomeModuleKey[]; title: string; t: T; onStep?: (href: string) => void }) {
+    const rowClass = 'flex items-center gap-3 min-h-14 py-3 group';
+    const body = (k: HomeModuleKey) => (
+        <>
+            <span className="w-10 h-10 shrink-0 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
+                <Icon name={STEPS[k].icon} />
+            </span>
+            <span className="flex-1 min-w-0">
+                <span className="block text-sm font-bold text-stone-900 group-hover:text-teal-700">{t(`homeModules.step_${STEPS[k].key}_title`)}</span>
+                <span className="block text-xs text-stone-500 leading-snug">{t(`homeModules.step_${STEPS[k].key}_desc`)}</span>
+            </span>
+            <Icon name="chevron" className="w-4 h-4 text-stone-400 shrink-0" />
+        </>
+    );
     return (
         <section data-testid="home-first-steps" className="bg-white rounded-2xl border border-stone-200 px-4 py-2 shadow-sm">
             <h2 className="flex items-center min-h-11 text-base font-bold text-stone-900">{title}</h2>
             <div className={ROWS}>
-                {steps.map(k => (
-                    <Link key={k} href={STEPS[k].href} data-testid={`home-step-${k}`} className="flex items-center gap-3 min-h-14 py-3 group">
-                        <span className="w-10 h-10 shrink-0 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
-                            <Icon name={STEPS[k].icon} />
-                        </span>
-                        <span className="flex-1 min-w-0">
-                            <span className="block text-sm font-bold text-stone-900 group-hover:text-teal-700">{t(`homeModules.step_${STEPS[k].key}_title`)}</span>
-                            <span className="block text-xs text-stone-500 leading-snug">{t(`homeModules.step_${STEPS[k].key}_desc`)}</span>
-                        </span>
-                        <Icon name="chevron" className="w-4 h-4 text-stone-400 shrink-0" />
+                {steps.map(k => onStep ? (
+                    <button key={k} type="button" onClick={() => onStep(STEPS[k].href)} data-testid={`home-step-${k}`} className={`${rowClass} w-full text-left`}>
+                        {body(k)}
+                    </button>
+                ) : (
+                    <Link key={k} href={STEPS[k].href} data-testid={`home-step-${k}`} className={rowClass}>
+                        {body(k)}
                     </Link>
                 ))}
             </div>
         </section>
     );
+}
+
+/**
+ * The signed-out home below the search (Jon 2026-11-11): the «Para empezar»
+ * card a brand-new rescuer sees, in place of the old action cards. A step the
+ * feature flags turn off is left out, as on the signed-in home.
+ */
+export function GuestFirstSteps({ animals, posts, onStep, t }: { animals: boolean; posts: boolean; onStep: (href: string) => void; t: T }) {
+    const steps: HomeModuleKey[] = ['adopters', ...(animals ? ['animals' as const] : []), ...(posts ? ['posts' as const] : [])];
+    return <FirstSteps steps={steps} title={t('homeModules.first_steps_start')} t={t} onStep={onStep} />;
 }
 
 // ── The stack ──────────────────────────────────────────────────────────────

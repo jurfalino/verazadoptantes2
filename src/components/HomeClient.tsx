@@ -6,8 +6,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
-import HomepageActionCard from '@/components/HomepageActionCard';
-import HomeModules from '@/components/home/HomeModules';
+import HomeModules, { GuestFirstSteps } from '@/components/home/HomeModules';
 import PendingSearchesDeck from '@/components/PendingSearchesDeck';
 import ContactPickerLauncher, { useContactPickerSupported } from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
@@ -141,8 +140,9 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                       below the search so search remains visually primary
                       (v2.16.0-16, two-pill variant in v2.16.0-33).
                     – Flag off + signed in: the homepage modules (Mis adoptantes,
-                      Mis animales, Posts de redes) replace the cards; guests keep
-                      them (.agents/plans/2026-11-04-home-modules.md). */}
+                      Mis animales, Posts de redes) replace the cards
+                      (.agents/plans/2026-11-04-home-modules.md); signed out: the
+                      «Para empezar» card (Jon 2026-11-11). */}
                 {/* userEmail comes from the server render, so a signed-in visit never flashes the guest cards while the session loads. */}
                 {appConfig.ENABLE_CLEAN_HOMEPAGE !== 'true' && (userEmail || session?.user) ? (
                     <HomeModules contactImportAvailable={contactImportAvailable} googleContactsImportEnabled={googleContactsImportEnabled} />
@@ -199,87 +199,16 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                         </div>
                     )
                 ) : (
-                    <div id="action-cards" className={`grid gap-6 mt-6 ${anyImportEnabled ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-                        {/* Register Adoption — typed entry-point. Picks adopter, then hands off to
-                            AdoptionFormWizard via /adopter/<id>?newAdoption=adoption (or
-                            /adopter/create?continueToAdoption=true&newAdoption=adoption). */}
-                        <HomepageActionCard
-                            recordType="adoption"
-                            testId="adoption-wizard-btn"
-                            palette="teal"
-                            titleKey="home.action_register_title"
-                            descKey="home.action_register_desc"
-                            btnKey="home.action_register_btn"
-                            icon="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    /* Signed out (Jon 2026-11-11): the same «Para empezar» card a
+                       brand-new rescuer sees — every step asks to sign in first and
+                       continues there afterwards. Replaces the old action cards. */
+                    <div id="guest-first-steps" className="mt-6">
+                        <GuestFirstSteps
+                            animals={appConfig.ENABLE_ANIMALS_FOR_ADOPTION === 'true'}
+                            posts={contentImportEnabled}
+                            onStep={handleAuthNavigation}
+                            t={t}
                         />
-
-                        {/* Observation / Note — same entry-point pattern, observation record type. */}
-                        <HomepageActionCard
-                            recordType="observation"
-                            testId="report-wizard-btn"
-                            palette="rose"
-                            titleKey="home.action_report_title"
-                            descKey="home.action_report_desc"
-                            btnKey="home.action_report_btn"
-                            icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                        />
-
-                        {/* Import-perfil — last position; one parent card hosts
-                            up to two source buttons ("Desde un post" + "Desde
-                            contactos"). Card renders if EITHER source is on. */}
-                        {anyImportEnabled && (
-                            <div
-                                data-testid="import-card"
-                                className="bg-white p-6 rounded-2xl shadow-sm border border-stone-200 hover:shadow-md hover:border-teal-200 transition-all text-center h-full flex flex-col items-center justify-center"
-                            >
-                                <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 text-teal-700">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                    </svg>
-                                </div>
-                                <h2 className="text-lg font-semibold text-stone-900 mb-1">{t('home.action_import_title')}</h2>
-                                <p className="text-stone-500 text-sm mb-3">{t('home.action_import_desc')}</p>
-                                <div className="flex flex-col gap-2 w-full max-w-[220px]">
-                                    {contentImportEnabled && (
-                                        <button
-                                            type="button"
-                                            data-testid="import-content-btn"
-                                            onClick={() => handleAuthNavigation('/import')}
-                                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-200 text-teal-900 font-semibold rounded-xl hover:bg-teal-300 transition-colors shadow-sm text-sm"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                            </svg>
-                                            <span>{t('home.action_import_post_btn')}</span>
-                                        </button>
-                                    )}
-                                    {contactImportAvailable && (
-                                        <ContactPickerLauncher
-                                            testId="import-contacts-btn"
-                                            onPicked={() => handleAuthNavigation('/import?contact_import=1')}
-                                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-800 font-semibold rounded-xl hover:bg-teal-100 transition-colors border border-teal-200 text-sm"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                            <span>{t('home.action_import_contacts_btn')}</span>
-                                        </ContactPickerLauncher>
-                                    )}
-                                    {googleContactsImportEnabled && (
-                                        <GoogleContactsPickerLauncher
-                                            testId="import-google-contacts-btn"
-                                            onPicked={() => handleAuthNavigation('/import?contact_import=1')}
-                                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-800 font-semibold rounded-xl hover:bg-teal-100 transition-colors border border-teal-200 text-sm"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm9 4a3 3 0 100 6 3 3 0 000-6zm-4.5 9.5h9a4.5 4.5 0 00-9 0z" />
-                                            </svg>
-                                            <span>{t('home.action_import_google_contacts_btn')}</span>
-                                        </GoogleContactsPickerLauncher>
-                                    )}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
 

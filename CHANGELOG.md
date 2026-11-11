@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.55] - 2026-11-11
+
+### Changed — the signed-out home shows «Para empezar» (Jon)
+- A visitor who isn't signed in now sees, below the search, the same «Para empezar» card a brand-new rescuer
+  sees: «Registrá un adoptante», «Cargá un animal en adopción» and «Importá un post de redes» (each only when
+  its feature is on). A step opens the login box and continues there after signing in.
+- Replaces the three old action cards («Registrar adopción», «Reportar», «Importar») that guests still saw.
+  The clean-homepage mode is unchanged.
+
 ## [2.58.54] - 2026-11-10
 
 ### Changed — faster «esperan tu respuesta» (EM review, step b)
