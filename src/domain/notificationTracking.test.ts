@@ -75,6 +75,7 @@ describe('parseEmailLanding — reads the email params and cleans the address ba
         expect(parseEmailLanding(loc('?view=x&n=n-123&ch=email&kind=merge_request', '#top'))).toEqual({
             notificationId: 'n-123',
             kind: 'merge_request',
+            viaLogin: false,
             cleanedUrl: '/adopter/a1?view=x#top',
         });
     });
@@ -88,6 +89,7 @@ describe('parseEmailLanding — reads the email params and cleans the address ba
         expect(parseEmailLanding(loc(`?ch=email&kind=${FOLLOWUP_DIGEST_KIND}`, '#next-action', '/my-animals/a1'))).toEqual({
             notificationId: undefined,
             kind: FOLLOWUP_DIGEST_KIND,
+            viaLogin: false,
             cleanedUrl: '/my-animals/a1#next-action',
         });
     });
@@ -107,11 +109,35 @@ describe('parseEmailLanding — reads the email params and cleans the address ba
         expect(parseEmailLanding(loc('?ch=email&kind=follow_up_digest'))?.kind).toBe(FOLLOWUP_DIGEST_KIND);
     });
 
+    it('signed out: the tags arrive inside the sign-in callbackUrl — counted once, via_login, and stripped there', () => {
+        const cb = encodeURIComponent('/my-animals?view=pendientes&ch=email&kind=follow_up_digest#h');
+        const r = parseEmailLanding(loc(`?callbackUrl=${cb}&authRequired=true`, '', '/'));
+        expect(r).toEqual({
+            notificationId: undefined,
+            kind: FOLLOWUP_DIGEST_KIND,
+            viaLogin: true,
+            cleanedUrl: `/?callbackUrl=${encodeURIComponent('/my-animals?view=pendientes#h')}&authRequired=true`,
+        });
+        // after sign-in the person lands on the cleaned callback: no second event
+        expect(parseEmailLanding(loc('?view=pendientes', '#h', '/my-animals'))).toBeNull();
+    });
+
+    it('a callbackUrl without our tags, or pointing off-site, is left alone', () => {
+        expect(parseEmailLanding(loc(`?callbackUrl=${encodeURIComponent('/my-animals')}`, '', '/'))).toBeNull();
+        expect(parseEmailLanding(loc(`?callbackUrl=${encodeURIComponent('//evil.org/x?ch=email')}`, '', '/'))).toBeNull();
+        expect(parseEmailLanding(loc(`?callbackUrl=${encodeURIComponent('https://evil.org/x?ch=email')}`, '', '/'))).toBeNull();
+    });
+
+    it('a direct landing is not via_login', () => {
+        expect(parseEmailLanding(loc('?ch=email&n=abc-1&kind=form_submission'))?.viaLogin).toBe(false);
+    });
+
     it('round-trips with notificationEmailLink', () => {
         const tagged = new URL(notificationEmailLink('https://x.org/my-animals?view=pendientes#h', 'abc-1', 'follow_up_due'));
         expect(parseEmailLanding(tagged)).toEqual({
             notificationId: 'abc-1',
             kind: 'follow_up_due',
+            viaLogin: false,
             cleanedUrl: '/my-animals?view=pendientes#h',
         });
     });

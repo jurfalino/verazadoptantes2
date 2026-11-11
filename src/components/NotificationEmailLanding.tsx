@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { parseEmailLanding } from '@/domain/notificationTracking';
+import { parseEmailLanding, type EmailLanding } from '@/domain/notificationTracking';
 import { trackNotificationEmailClicked } from '@/lib/notificationEvents';
 import { reportClientError } from '@/lib/clientErrorReporter';
 import { isViewingAs } from '@/lib/viewAsClient';
@@ -18,22 +18,71 @@ import { isViewingAs } from '@/lib/viewAsClient';
  * When the link names a notification, it is marked read through the bell's
  * own path (PATCH /api/notifications, scoped server-side to the signed-in
  * user's rows): the person has seen it in the email and acted on it.
+ *
+ * Signed out on a protected page, middleware sends the person to
+ * `/?callbackUrl=<tagged path>` and HomeClient opens the login with that path
+ * and clears `callbackUrl` in its own mount effect — so the URL is read during
+ * this component's first client render (before any effect runs), the click is
+ * counted there with via_login, and the URL is left to HomeClient. After sign-in
+ * the person lands on the tagged path again: sessionStorage keeps that from
+ * counting twice, and the notice is marked read then.
+ *
+ * replaceState runs on the next tick, after Next's router has patched history
+ * (otherwise Next's own URL state keeps the tags and a router.refresh() writes
+ * them back), and is guarded: a crafted `//host/…` path would throw.
  */
+
+const SEEN_KEY = 'ba:notifEmailSeen';
+const SEEN_TTL_MS = 30 * 60 * 1000;
+
+/** True the first time this tab sees this email click in the last 30 min (storage blocked → true). */
+function firstSighting(key: string): boolean {
+    try {
+        const seen = JSON.parse(sessionStorage.getItem(SEEN_KEY) || '{}') as Record<string, number>;
+        const now = Date.now();
+        const fresh = Object.fromEntries(Object.entries(seen).filter(([, at]) => now - at < SEEN_TTL_MS));
+        if (fresh[key]) return false;
+        fresh[key] = now;
+        sessionStorage.setItem(SEEN_KEY, JSON.stringify(fresh));
+        return true;
+    } catch {
+        // SSR-safe storage access (private mode / blocked): count it.
+        return true;
+    }
+}
 export default function NotificationEmailLanding() {
     const { data: session, status } = useSession();
+    // Read during the first client render: HomeClient's mount effect may clear callbackUrl before ours runs.
+    const landingRef = useRef<EmailLanding | null | undefined>(undefined);
+    if (landingRef.current === undefined && typeof window !== 'undefined') {
+        landingRef.current = parseEmailLanding(window.location);
+    }
     const handled = useRef(false);
     const [markReadId, setMarkReadId] = useState<string | null>(null);
 
     useEffect(() => {
         if (handled.current) return;
         handled.current = true;
-        const landing = parseEmailLanding(window.location);
+        const landing = landingRef.current;
         if (!landing) return;
-        trackNotificationEmailClicked(landing);
-        // A fresh state object, as LoginHandoffReceiver does: reusing Next's
-        // history state lets the router write the old URL back.
-        window.history.replaceState({}, '', landing.cleanedUrl);
-        if (landing.notificationId) setMarkReadId(landing.notificationId);
+        if (firstSighting(`${landing.kind}:${landing.notificationId ?? ''}`)) trackNotificationEmailClicked(landing);
+        if (landing.notificationId && !landing.viaLogin) setMarkReadId(landing.notificationId);
+        if (landing.viaLogin) return; // HomeClient owns this URL (login + clearing callbackUrl)
+        const cleaned = landing.cleanedUrl;
+        // No cleanup: in dev StrictMode a cleanup would cancel it and `handled` blocks the re-run.
+        window.setTimeout(() => {
+            try {
+                const target = new URL(cleaned, window.location.origin);
+                if (target.origin !== window.location.origin) return;
+                // A fresh state object, as LoginHandoffReceiver does.
+                window.history.replaceState({}, '', target.pathname + target.search + target.hash);
+            } catch (e) {
+                void reportClientError({
+                    message: e instanceof Error ? e.message : String(e),
+                    source: 'NotificationEmailLanding.replaceState', level: 'warn', extra: { kind: landing.kind },
+                });
+            }
+        }, 0);
     }, []);
 
     useEffect(() => {

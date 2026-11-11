@@ -27,6 +27,7 @@ export function trackNotificationClicked(
 export function trackNotificationEmailClicked(landing: EmailLanding): void {
     posthogTrack('notification_email_clicked', {
         kind: landing.kind,
+        via_login: landing.viaLogin,
         ...(landing.notificationId ? { notification_id: landing.notificationId } : {}),
     });
 }

@@ -72,22 +72,63 @@ export interface EmailLanding {
     /** Undefined for the digest, or when the link's id is malformed. */
     notificationId: string | undefined;
     kind: string;
+    /** True when the person was signed out and the tags arrived inside the sign-in `callbackUrl`. */
+    viaLogin: boolean;
     /** pathname + remaining query + hash, for `history.replaceState`. */
     cleanedUrl: string;
 }
 
-/** Null unless the URL came from one of our emails (`ch=email`). */
-export function parseEmailLanding(loc: { pathname: string; search: string; hash: string }): EmailLanding | null {
-    const params = new URLSearchParams(loc.search);
+/** The email tags in one query string, or null when it carries no `ch=email`. */
+function readTags(search: string): { notificationId: string | undefined; kind: string; kept: string } | null {
+    const params = new URLSearchParams(search);
     if (params.get(PARAM_CHANNEL) !== EMAIL_CHANNEL) return null;
-
     const id = params.get(PARAM_ID);
     const kind = params.get(PARAM_KIND);
-    const kept = keepSegments(loc.search.replace(/^\?/, ''), TRACKING_PARAMS);
+    const kept = keepSegments(search.replace(/^\?/, ''), TRACKING_PARAMS);
     return {
         notificationId: id && ID_SHAPE.test(id) ? id : undefined,
         kind: kind && KNOWN_KINDS.has(kind) ? kind : DEFAULT_EMAIL_KIND,
-        cleanedUrl: `${loc.pathname}${kept.length ? `?${kept.join('&')}` : ''}${loc.hash}`,
+        kept: kept.length ? `?${kept.join('&')}` : '',
+    };
+}
+
+/**
+ * Null unless the URL came from one of our emails (`ch=email`). A signed-out
+ * click on a protected page is redirected by middleware to
+ * `/?callbackUrl=<path+query>`: the tags are then read from (and stripped out
+ * of) that same-site callback, so the click is counted once, before sign-in,
+ * and the post-login landing carries no tags.
+ */
+export function parseEmailLanding(loc: { pathname: string; search: string; hash: string }): EmailLanding | null {
+    const direct = readTags(loc.search);
+    if (direct) {
+        return {
+            notificationId: direct.notificationId,
+            kind: direct.kind,
+            viaLogin: false,
+            cleanedUrl: `${loc.pathname}${direct.kept}${loc.hash}`,
+        };
+    }
+    const outer = new URLSearchParams(loc.search);
+    const cb = outer.get('callbackUrl');
+    // Same-site paths only ('/x', never '//host' or 'https://…').
+    if (!cb || !cb.startsWith('/') || cb.startsWith('//')) return null;
+    const hashAt = cb.indexOf('#');
+    const cbNoHash = hashAt === -1 ? cb : cb.slice(0, hashAt);
+    const cbHash = hashAt === -1 ? '' : cb.slice(hashAt);
+    const qAt = cbNoHash.indexOf('?');
+    if (qAt === -1) return null;
+    const inner = readTags(cbNoHash.slice(qAt));
+    if (!inner) return null;
+    const cleanedCb = `${cbNoHash.slice(0, qAt)}${inner.kept}${cbHash}`;
+    const rebuilt = loc.search.replace(/^\?/, '').split('&').map(seg =>
+        paramKey(seg) === 'callbackUrl' ? `callbackUrl=${encodeURIComponent(cleanedCb)}` : seg,
+    ).join('&');
+    return {
+        notificationId: inner.notificationId,
+        kind: inner.kind,
+        viaLogin: true,
+        cleanedUrl: `${loc.pathname}?${rebuilt}${loc.hash}`,
     };
 }
 
