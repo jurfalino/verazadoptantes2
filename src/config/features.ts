@@ -139,7 +139,7 @@ export const FEATURE_FLAGS = {
     // PUBLIC_FLAG_KEYS. Default off.
     ENABLE_PUBLIC_API: false,
     // Email twin of every bell notification (src/lib/notificationEmail.ts),
-    // governed per user by the «Avisos por email» switches. Defaults ON (spec
+    // governed per user by the «Avisos» rows (src/domain/noticeRows.ts). Defaults ON (spec
     // D20): this flag is only an emergency off switch — notification email
     // shares Resend with OTP login, so it can be stopped without touching
     // login. Server-side only, deliberately NOT in PUBLIC_FLAG_KEYS.

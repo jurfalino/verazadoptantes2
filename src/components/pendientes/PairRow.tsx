@@ -262,13 +262,13 @@ function messageCountLabel(n: number, t: T): string {
  */
 function PairMessages({ messages, t, age }: { messages: NonNullable<PendingDedupPair['request']>['messages']; t: T; age: (epochS: number) => string }) {
     return (
-        <div data-testid="pair-messages" className="mt-4 pt-3 border-t border-[var(--border-default)] flex flex-col gap-2">
+        <div data-testid="pair-messages" className="mt-4 pt-4 border-t border-[var(--border-default)] flex flex-col gap-2">
             <h4 className={`text-[13px] font-bold text-[var(--accent)]`}>
                 {fill(t('myAdopters.pending_d_messages_title') || 'Mensajes ({n})', { n: String(messages.length) })}
             </h4>
             {messages.map(m => (
                 <div key={m.id} data-testid="pair-message" data-mine={m.mine ? 'true' : 'false'}
-                    className={`max-w-[92%] rounded-xl border px-3 py-2 text-[13px] ${T_PRIMARY} ${m.mine
+                    className={`max-w-[92%] rounded-xl border px-4 py-2 text-[13px] ${T_PRIMARY} ${m.mine
                         ? 'self-end bg-[var(--accent-badge-bg)] border-[var(--border-accent)]'
                         : 'self-start bg-[var(--surface-card)] border-[var(--border-default)]'}`}>
                     <span className={`block text-[12px] ${T_MUTED}`}>

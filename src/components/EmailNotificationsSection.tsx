@@ -66,7 +66,7 @@ function Choice<V extends string>({ label, name, options, value, optionLabel, on
 }) {
     const labelId = useId();
     return (
-        <div className="border-t border-[var(--border-default)] pt-3 pb-1" data-testid={testId}>
+        <div className="border-t border-[var(--border-default)] pt-4 pb-2" data-testid={testId}>
             <p id={labelId} className="text-xs font-semibold text-stone-700">{label}</p>
             <div role="radiogroup" aria-labelledby={labelId} className="mt-1">
                 {options.map(v => (
@@ -211,7 +211,7 @@ export default function EmailNotificationsSection() {
                                     )}
                                 </div>
                                 <span className="justify-self-center text-[var(--accent)]" role="img" aria-label={t('settings.notices_col_bell')}>
-                                    <Check className="w-5 h-5" aria-hidden="true" />
+                                    <Check className="w-5 h-5" strokeWidth={1.5} aria-hidden="true" />
                                 </span>
                                 {emailCell(row)}
                             </li>
@@ -244,9 +244,9 @@ export default function EmailNotificationsSection() {
                 </section>
             ))}
 
-            <details className="mt-4 border-t border-[var(--border-default)] pt-3 text-xs" data-testid="notices-not-sent">
-                <summary className="cursor-pointer py-3 font-semibold text-stone-500">{t('settings.notices_not_sent_summary')}</summary>
-                <p className="mt-1 text-stone-500 max-w-prose">{t('settings.notices_not_sent_body')}</p>
+            <details className="mt-4 border-t border-[var(--border-default)] text-xs" data-testid="notices-not-sent">
+                <summary className="cursor-pointer py-4 font-semibold text-stone-500">{t('settings.notices_not_sent_summary')}</summary>
+                <p className="pb-2 text-stone-500 max-w-prose">{t('settings.notices_not_sent_body')}</p>
             </details>
         </div>
     );
