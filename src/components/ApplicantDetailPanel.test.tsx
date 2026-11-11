@@ -203,6 +203,33 @@ describe('ApplicantDetailPanel — the evaluation (outcome, footer, answers)', (
         }
     });
 
+    // Paging (Task 12 fix): one dot per applicant fits up to 8; past that a «{i} / {N}» counter, so
+    // «Siguiente →» never leaves the screen (it did at 390px with 25 general applications).
+    const many = (n: number) => Array.from({ length: n }, (_, i) => applicant({ applicationId: `app-${i}`, submissionId: `s${i}` }));
+    const renderMany = (n: number, index = 0) => renderToStaticMarkup(
+        <ApplicantDetailPanel applicants={many(n)} initialIndex={index} animal={LUNA} onClose={() => {}} />,
+    );
+    const dotCount = (html: string) => (html.match(/w-1\.5 h-1\.5 rounded-full/g) ?? []).length;
+
+    it('up to 8 applicants: the dots, as before', () => {
+        const html = renderMany(8, 2);
+        expect(dotCount(html)).toBe(8);
+        expect(html).toContain('aria-label="3 / 8"');
+        expect(has(html, 'applicant-panel-counter')).toBe(false);
+    });
+
+    it('more than 8: a «3 / 25» counter instead of the dots, same aria-label', () => {
+        const html = renderMany(25, 2);
+        expect(dotCount(html)).toBe(0);
+        const counter = html.match(/<div[^>]*data-testid="applicant-panel-counter"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+        expect(text(counter)).toBe('3 / 25');
+        expect(html).toContain('aria-label="3 / 25"');
+    });
+
+    it('the sticky footer is findable by its testid', () => {
+        expect(has(render(applicant()), 'applicant-panel-footer')).toBe(true);
+    });
+
     it('to_evaluate with a replaced link: «Su contrato se reemplazó el {date}»', () => {
         const html = render(applicant({ status: { kind: 'to_evaluate', note: { kind: 'replaced', at: REPLACED_AT } } }));
         expect(text(html)).toContain('Su contrato se reemplazó el 8 nov');

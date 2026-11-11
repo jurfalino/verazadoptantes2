@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 import { dismissCountryBanner } from './helpers';
 import { execD1Batch } from './db';
 
@@ -78,7 +78,6 @@ test.describe('Mobile Responsive', () => {
             ]);
         });
 
-        type Box = { label: string; h: number; scrollW: number; clientW: number };
         /** The element's own overflow and every button in it. */
         const measure = (root: Locator) => root.evaluate((el) => ({
             scrollW: el.scrollWidth, clientW: el.clientWidth,
@@ -87,18 +86,16 @@ test.describe('Mobile Responsive', () => {
                 h: Math.round(b.getBoundingClientRect().height), scrollW: b.scrollWidth, clientW: b.clientWidth,
             })),
         }));
-        // StarRating's stars, told apart by their aria-label («1 star» … «5 stars»).
-        const isStar = (b: Box) => /^\d stars?$/.test(b.label);
 
-        /** The panel at the application, then the «No avanzar» dialog: what each measures. */
-        async function openDecline(page: Page) {
+        test('the panel footer and the «No avanzar» dialog fit 390px; every button (the stars too) is ≥44px tall', async ({ page }) => {
+            test.setTimeout(180_000);
             await page.goto(`/my-animals?view=solicitudes&animal=${animal}&solicitud=${app}`);
             await dismissCountryBanner(page);
             const panel = page.getByTestId('my-animals-applicants-panel');
             await expect(panel.locator('#applicant-panel-title')).toContainText(name, { timeout: 60_000 });
             expect(page.viewportSize()?.width).toBe(390);
             // The sticky footer: «No avanzar» + «Enviar contrato».
-            const footer = panel.getByTestId('evaluate-decline').locator('xpath=ancestor::div[contains(@class,"sticky")][1]');
+            const footer = panel.getByTestId('applicant-panel-footer');
             await expect(footer.getByTestId('evaluate-send-contract')).toBeVisible();
             const footerBox = await measure(footer);
             await panel.getByTestId('evaluate-decline').click();
@@ -106,36 +103,69 @@ test.describe('Mobile Responsive', () => {
             await expect(dialog).toBeVisible();
             const dialogBox = await measure(dialog);
             const rect = await dialog.boundingBox();
-            console.log('MOBILE panel', JSON.stringify({ footerBox, dialogBox, rect }));
-            return { dialog, footerBox, dialogBox, rect };
-        }
 
-        test('the panel footer and the «No avanzar» dialog fit 390px; their buttons are ≥44px tall', async ({ page }) => {
-            test.setTimeout(180_000);
-            const { dialog, footerBox, dialogBox, rect } = await openDecline(page);
             for (const [what, m] of [['panel footer', footerBox], ['decline dialog', dialogBox]] as const) {
                 expect(m.scrollW, `${what} overflows`).toBeLessThanOrEqual(m.clientW);
                 expect(m.buttons.length, `${what} has buttons`).toBeGreaterThan(0);
-                for (const b of m.buttons) expect(b.scrollW, `${what} «${b.label}» overflows`).toBeLessThanOrEqual(b.clientW);
-                // The stars have their own (known-failing) test below.
-                for (const b of m.buttons.filter(b => !isStar(b))) expect(b.h, `${what} «${b.label}» height`).toBeGreaterThanOrEqual(44);
+                for (const b of m.buttons) {
+                    expect(b.scrollW, `${what} «${b.label}» overflows`).toBeLessThanOrEqual(b.clientW);
+                    expect(b.h, `${what} «${b.label}» height`).toBeGreaterThanOrEqual(44);
+                }
             }
-            expect(footerBox.buttons.map(b => b.label)).toHaveLength(2);
+            expect(footerBox.buttons).toHaveLength(2);
+            // The five rating stars are among the dialog's buttons.
+            expect(dialogBox.buttons.filter(b => /^\d stars?$/.test(b.label))).toHaveLength(5);
             expect(rect && rect.x >= 0 && rect.x + rect.width <= 390, 'dialog inside the viewport').toBe(true);
             // Nothing saved: cancel.
             await dialog.locator('[data-modal-cancel]').click();
             await expect(dialog).toHaveCount(0);
         });
+    });
 
-        test('the «No avanzar» rating stars are ≥44px tall', async ({ page }) => {
-            // KNOWN GAP: the shared StarRating (size lg) draws 32px stars, under the 44px tap-target rule.
-            // Expected to fail until StarRating grows its hit area; Playwright reports it when it starts passing.
-            test.fail(true, 'StarRating lg stars are 32px tall (< 44px)');
+    // Many applications (the «Sin animal elegido» list grows): the paging stays on screen at 390px.
+    test.describe('applicant panel with 25 applications at 390px', () => {
+        const USER = 'testuser@example.com';
+        const stamp = Date.now();
+        const N = 25;
+        const people = Array.from({ length: N }, (_, i) => ({
+            adopter: `test-ev-fixture-ga${i}-${stamp}`, form: `test-ev-fixture-gf${i}-${stamp}`, app: `test-ev-fixture-gp${i}-${stamp}`, name: `Muchos ${i} ${stamp}`,
+        }));
+
+        test.beforeAll(() => {
+            execD1Batch(people.flatMap((p, i) => [
+                `INSERT INTO adopters (id, name, contact_info, status, added_by, source, created_at, updated_at) VALUES ('${p.adopter}', '${p.name}', '', '5', '${USER}', 'form', strftime('%s','now','-${i + 1} hours'), strftime('%s','now','-${i + 1} hours'))`,
+                `INSERT INTO form_submissions (id, user_id, name, email, status, linked_adopter_id, created_at) VALUES ('${p.form}', '${USER}', '${p.name}', 'ev-muchos${i}-${stamp}@example.com', 'linked', '${p.adopter}', strftime('%s','now','-${i + 1} hours'))`,
+                `INSERT INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES ('${p.app}', '${p.form}', NULL, 'form', 'open', strftime('%s','now','-${i + 1} hours'))`,
+            ]));
+        });
+        test.afterAll(() => {
+            execD1Batch(people.flatMap(p => [
+                `DELETE FROM applications WHERE id = '${p.app}'`,
+                `DELETE FROM form_submissions WHERE id = '${p.form}'`,
+                `DELETE FROM adopter_history WHERE adopter_id = '${p.adopter}'`,
+                `DELETE FROM adopters WHERE id = '${p.adopter}'`,
+            ]));
+        });
+
+        test('«Siguiente →» and «← Volver» stay within 390px; a «i / N» counter replaces the dots', async ({ page }) => {
             test.setTimeout(180_000);
-            const { dialogBox } = await openDecline(page);
-            const stars = dialogBox.buttons.filter(isStar);
-            expect(stars).toHaveLength(5);
-            for (const b of stars) expect(b.h, `«${b.label}» height`).toBeGreaterThanOrEqual(44);
+            // The oldest of them: the list runs oldest first, so newer ones follow and «Siguiente» is enabled.
+            const first = people[N - 1];
+            await page.goto(`/my-animals?view=solicitudes&animal=general&solicitud=${first.app}`);
+            await dismissCountryBanner(page);
+            const panel = page.getByTestId('my-animals-applicants-panel');
+            await expect(panel.locator('#applicant-panel-title')).toContainText(first.name, { timeout: 60_000 });
+            const counter = panel.getByTestId('applicant-panel-counter');
+            await expect(counter).toHaveText(/^\d+ \/ \d+$/);
+            expect(Number((await counter.textContent())!.split('/')[1])).toBeGreaterThanOrEqual(N);
+            for (const button of [panel.getByRole('button', { name: /Siguiente|Next|Próximo/ }), panel.getByTestId('applicant-panel-back')]) {
+                const box = await button.boundingBox();
+                expect(box && box.x >= 0 && box.x + box.width <= 390, `${await button.textContent()} inside 390px: ${JSON.stringify(box)}`).toBe(true);
+            }
+            // It still pages.
+            const before = await counter.textContent();
+            await panel.getByRole('button', { name: /Siguiente|Next|Próximo/ }).click();
+            await expect(counter).not.toHaveText(before!);
         });
     });
 });

@@ -92,6 +92,9 @@ function FlagBadge({ icon, label, tone }: { icon: string; label: string; tone: '
     );
 }
 
+/** Paging dots up to this many applicants; more get a «{i} / {N}» counter. */
+const MAX_PAGING_DOTS = 8;
+
 export default function ApplicantDetailPanel({ applicants, initialIndex, animal, onClose, onOutcome, returnLabel = false, onContractIssued, testId }: Props) {
     const { formatShortDate } = useDateFormat();
     const { t, locale } = useLanguage();
@@ -318,14 +321,22 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                     >
                         ← {t('myAnimals.applicants_panel_prev') || 'Anterior'}
                     </button>
-                    <div className="flex items-center gap-1.5 flex-1 justify-center" aria-label={`${index + 1} / ${total}`}>
-                        {list.map((_, i) => (
-                            <span
-                                key={i}
-                                className={`w-1.5 h-1.5 rounded-full ${i === index ? 'bg-teal-700' : 'bg-stone-300'}`}
-                            />
-                        ))}
-                    </div>
+                    {/* One dot per applicant fits up to 8; past that the dots would push «Siguiente →»
+                        off a phone screen, so a «3 / 25» counter instead. */}
+                    {total > MAX_PAGING_DOTS ? (
+                        <div className="flex-1 min-w-0 text-center text-xs font-semibold text-stone-600 tabular-nums" aria-label={`${index + 1} / ${total}`} data-testid="applicant-panel-counter">
+                            {index + 1} / {total}
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1.5 flex-1 justify-center" aria-label={`${index + 1} / ${total}`}>
+                            {list.map((_, i) => (
+                                <span
+                                    key={i}
+                                    className={`w-1.5 h-1.5 rounded-full ${i === index ? 'bg-teal-700' : 'bg-stone-300'}`}
+                                />
+                            ))}
+                        </div>
+                    )}
                     <button
                         type="button"
                         onClick={goNext}
@@ -498,7 +509,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
 
                 {/* Sticky footer — how the evaluation ends; after sending, the contract's share block */}
                 {(shareUrl || footer) && (
-                    <div className="sticky bottom-0 bg-white border-t border-stone-200 px-5 py-3 space-y-2">
+                    <div className="sticky bottom-0 bg-white border-t border-stone-200 px-5 py-3 space-y-2" data-testid="applicant-panel-footer">
                         {shareUrl ? (
                             <div className="space-y-2">
                                 <p className="text-xs font-semibold text-teal-700">

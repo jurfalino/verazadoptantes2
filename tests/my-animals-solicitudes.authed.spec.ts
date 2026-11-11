@@ -56,11 +56,14 @@ async function openTab(page: Page, view = 'solicitudes') {
 /** Every card of the tab: «Sin animal elegido» and the animals. */
 const cardsOf = (page: Page) => page.locator('[data-testid="general-card"], [data-testid^="animal-card-"]');
 
-/** The panel's applicant named `name`, paging with «Siguiente». */
+/** The panel's applicant named `name`, paging with «Siguiente» through the whole list (the shared DB
+ *  collects other specs' general applications, so it can be long). */
 async function goToApplicant(panel: Locator, name: string) {
     const title = panel.locator('#applicant-panel-title');
     await expect(title).toBeVisible({ timeout: 60_000 });
-    for (let i = 0; i < 30 && !((await title.textContent()) ?? '').includes(name); i++) {
+    // «i / N» is the paging's aria-label (dots or counter).
+    const total = Number(((await panel.locator('[aria-label*=" / "]').first().getAttribute('aria-label')) ?? '').split('/')[1]) || 30;
+    for (let i = 0; i < total && !((await title.textContent()) ?? '').includes(name); i++) {
         await panel.getByRole('button', { name: /Siguiente|Next|Próximo/ }).click();
     }
     await expect(title).toContainText(name);
