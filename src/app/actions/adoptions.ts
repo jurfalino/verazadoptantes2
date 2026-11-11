@@ -33,13 +33,19 @@ export async function getAdoptionDeleteImpact(adoptionId: string, adopterId: str
     /** True when the animal has no other link and would go to the trash. */
     willDeleteAnimal: boolean;
     links: AnimalLinks;
-    /** Open applications the trash would close (Jon 2026-11-11: warn that these candidates are lost). */
-    openCandidates: number;
+    /** Open applications the trash would close (Jon 2026-11-11: warn that these candidates are lost); null = the count failed (the generic warning, never «0»). */
+    openCandidates: number | null;
 }> {
     const fallback = { kind: 'event' as const, animalName: null, willDeleteAnimal: false, links: { ...NO_LINKS }, openCandidates: 0 };
     try {
         const db = await getDb();
         if (!db) return fallback;
+
+        // Only someone who may delete this record learns what the delete would do (same gate as deleteAdoption).
+        const viewer = await getUser();
+        const record = await db.select({ addedBy: adoptions.addedBy }).from(adoptions).where(eq(adoptions.id, adoptionId)).get();
+        const { canEditRecordAs } = await import('@/lib/recordEditAccess');
+        if (!record || !(await canEditRecordAs(viewer, record.addedBy))) return fallback;
 
         if (!(await isAnimalBacked(db, adoptionId))) return fallback;
 
@@ -48,7 +54,12 @@ export async function getAdoptionDeleteImpact(adoptionId: string, adopterId: str
             .where(and(eq(placements.animalId, adoptionId), eq(placements.adopterId, adopterId))).get();
         const [links, openCandidates] = await Promise.all([
             countAnimalLinks(db, adoptionId, active?.id ?? null),
-            countOpenApplicationsForAnimal(db, adoptionId),
+            countOpenApplicationsForAnimal(db, adoptionId).catch((e): null => {
+                logger.warn('getAdoptionDeleteImpact: candidate count failed; the dialog shows the generic warning', {
+                    adoptionId, adopterId, error: e instanceof Error ? e.message : String(e),
+                });
+                return null;
+            }),
         ]);
 
         return {

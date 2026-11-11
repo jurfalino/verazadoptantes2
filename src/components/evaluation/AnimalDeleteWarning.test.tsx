@@ -18,10 +18,10 @@ const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '
 describe('AnimalDeleteWarning', () => {
     it('says how many candidates are lost, singular and plural, and that the profiles stay', () => {
         const one = text(renderToStaticMarkup(<AnimalDeleteWarning animalName="Luna" count={1} />));
-        expect(one).toContain('Luna tiene 1 candidato por evaluar');
+        expect(one).toContain('Luna tiene 1 candidato.');
         expect(one).toContain('no se borra');
         const many = text(renderToStaticMarkup(<AnimalDeleteWarning animalName="Luna" count={3} />));
-        expect(many).toContain('Luna tiene 3 candidatos por evaluar');
+        expect(many).toContain('Luna tiene 3 candidatos.');
         expect(many).toContain('no se borran');
     });
     it('says the generic variant when the count is unknown (read failed), never zero', () => {
