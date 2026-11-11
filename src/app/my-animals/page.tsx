@@ -18,6 +18,7 @@ import AnimalListingToggle from '@/components/AnimalListingToggle';
 import ShowcaseUrlChips from '@/components/ShowcaseUrlChips';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
 import { myAnimalsTabCount, type MyAnimalsTabCounts } from '@/lib/myAnimalsTabCount';
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
@@ -214,7 +215,7 @@ export default function MyAnimalsPage() {
                 // Not the team's (or gone): nothing to open — say so in the console, drop the link.
                 else { console.warn('my-animals: deep-linked animal not found', { animalId: linkAnimal, applicationId }); closePanel(); }
             } catch (e) {
-                toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', resolveErrorId(e, 'MyAnimalsPage'));
+                if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', resolveErrorId(e, 'MyAnimalsPage'));
             }
         })();
         // The list re-reads in place; `openedLink` keeps one link from opening twice.
