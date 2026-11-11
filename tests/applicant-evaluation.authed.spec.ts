@@ -220,6 +220,8 @@ test.describe.serial('Evaluating applicants, end to end', () => {
         await sheet.getByTestId('offer-done').click();
         await expect(sheet).toHaveCount(0, { timeout: 60_000 });
         await expect(page.getByTestId('wizard-close')).toHaveCount(0, { timeout: 60_000 });
+        // …and its refresh: the profile lists the new adoption.
+        await expect(page.locator(`[id="adoption-${ADOPT.id}"]`)).toBeVisible({ timeout: 60_000 });
         expect(isDbNull(applicationRow(ADOPT_B.app).offer_done_at)).toBe(false);
         expect(rows(`SELECT adopter_id FROM adoptions WHERE id = '${ADOPT.id}'`)[0]?.adopter_id).toBe(ADOPT_A.adopter);
 
@@ -239,6 +241,7 @@ test.describe.serial('Evaluating applicants, end to end', () => {
         // The wizard closes only after the sheet would have: closing untouched means no sheet was shown.
         await expect(page.getByTestId('wizard-close')).toHaveCount(0, { timeout: 60_000 });
         await expect(page.getByTestId('offer-sheet')).toHaveCount(0);
+        await expect(page.locator(`[id="adoption-${SOLO.id}"]`)).toBeVisible({ timeout: 60_000 });
         expect(rows(`SELECT adopter_id FROM adoptions WHERE id = '${SOLO.id}'`)[0]?.adopter_id).toBe(SOLO_A.adopter);
         expect(applicationRow(SOLO_A.app).state).toBe('adopted');
     });
@@ -268,6 +271,7 @@ test.describe.serial('Evaluating applicants, end to end', () => {
             await sheet.getByTestId('offer-sheet-close').click();
             await expect(sheet).toHaveCount(0, { timeout: 30_000 });
             await expect(page.getByTestId('wizard-close')).toHaveCount(0, { timeout: 60_000 });
+            await expect(page.locator(`[id="adoption-${f.animal.id}"]`)).toBeVisible({ timeout: 60_000 });
             // The adoption was saved and B closed; the offer is still pending (it can be done later).
             expect(rows(`SELECT adopter_id FROM adoptions WHERE id = '${f.animal.id}'`)[0]?.adopter_id).toBe(f.a.adopter);
             const b = applicationRow(f.b.app);
