@@ -63,30 +63,62 @@ export function homePendingRows<T>(pending: readonly T[], total: number, slots: 
     return { shown, more: Math.max(0, total - shown.length) };
 }
 
+/** The id of the «Sin animal elegido» row (general applications): never an animal id. */
+export const GENERAL_ROW_ID = 'general';
+
 /**
- * The homepage animals card's rows: the animals that need you first (a
- * check-up due, most overdue first), then the most recently updated ones to
- * fill the card. `moreDue` = due animals that didn't fit — the «N animales
- * más con controles pendientes» amber row, which takes a slot: with more due
- * animals than slots, one fewer animal is listed. `due` and `recent` arrive
- * already ordered; an animal never appears twice.
+ * The homepage animals card's rows. What waits on the rescuer comes first,
+ * one row each: the offers to tell the other candidates, the animals with a
+ * check-up due (most overdue first), the applications to evaluate (the
+ * «Sin animal elegido» row, then animals by how many wait). An animal is
+ * listed once, as its first kind (a check-up due wins over its applications —
+ * spec «Calls I made»). When they fit, the most recently updated fill the
+ * card. Otherwise one fewer is listed and an amber «N más» row takes the
+ * slot — two fewer when both due animals and applications are left out
+ * (each kind has its own «more» row: `moreDue`, `moreApplications`). A hidden
+ * offer is never counted as «more»: it waits for a free slot. Every list
+ * arrives already ordered.
  */
-export function homeAnimalRows<D extends { id: string }, R extends { id: string }>(
-    due: readonly D[],
+export function homeAnimalRows<O extends { id: string }, D extends { id: string }, A extends { id: string }, R extends { id: string }>(
+    todo: { offers: readonly O[]; due: readonly D[]; applications: readonly A[] },
     recent: readonly R[],
     slots: number = HOME_CARD_SLOTS,
-): { due: D[]; recent: R[]; moreDue: number } {
-    const limit = due.length > slots ? slots - 1 : slots;
-    const dueShown = due.slice(0, limit);
-    const taken = new Set(dueShown.map(a => a.id));
-    const recentShown: R[] = [];
-    for (const a of recent) {
-        if (dueShown.length + recentShown.length >= limit) break;
-        if (taken.has(a.id)) continue;
-        taken.add(a.id);
-        recentShown.push(a);
+): { offers: O[]; due: D[]; applications: A[]; recent: R[]; moreDue: number; moreApplications: number } {
+    type Item = { kind: 'offer'; row: O } | { kind: 'due'; row: D } | { kind: 'application'; row: A };
+    const seen = new Set<string>();
+    const items: Item[] = [];
+    const add = (item: Item) => { if (!seen.has(item.row.id)) { seen.add(item.row.id); items.push(item); } };
+    for (const row of todo.offers) add({ kind: 'offer', row });
+    for (const row of todo.due) add({ kind: 'due', row });
+    for (const row of todo.applications) add({ kind: 'application', row });
+
+    let n = slots;
+    if (items.length > slots) {
+        n = slots - 1;
+        const hidden = items.slice(n);
+        if (hidden.some(i => i.kind === 'due') && hidden.some(i => i.kind === 'application')) n = slots - 2;
     }
-    return { due: dueShown, recent: recentShown, moreDue: due.length - dueShown.length };
+    const shown = items.slice(0, n);
+    const hidden = items.slice(n);
+
+    const recentShown: R[] = [];
+    if (items.length <= slots) {
+        for (const a of recent) {
+            if (shown.length + recentShown.length >= slots) break;
+            if (seen.has(a.id)) continue;
+            seen.add(a.id);
+            recentShown.push(a);
+        }
+    }
+    const of = <K extends Item['kind']>(kind: K) => shown.flatMap(i => (i.kind === kind ? [i.row as Extract<Item, { kind: K }>['row']] : []));
+    return {
+        offers: of('offer'),
+        due: of('due'),
+        applications: of('application'),
+        recent: recentShown,
+        moreDue: hidden.filter(i => i.kind === 'due').length,
+        moreApplications: hidden.filter(i => i.kind === 'application').length,
+    };
 }
 
 /**

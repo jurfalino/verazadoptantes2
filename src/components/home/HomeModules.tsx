@@ -25,6 +25,9 @@ import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLaunc
 // Plain imports, never next/dynamic: on the Cloudflare build (next-on-pages) a dynamic chunk in this edge
 // page crashed the homepage («async__chunk_… is not defined», v2.58.43 CI). Both render only once opened.
 import HomeDuePanel from '@/components/home/HomeDuePanel';
+import HomeApplicantsPanel, { type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
+import { AdoptionOfferSheet } from '@/components/evaluation/AdoptionOfferSheet';
+import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
 import PendingDedup from '@/components/PendingDedup';
 import { summaryLine } from '@/components/pendientes/summaryLine';
 import { pairKey } from '@/domain/dedupPair';
@@ -37,7 +40,7 @@ import { interpolate } from '@/lib/interpolate';
 import { detectSocialPlatform, SOCIAL_PLATFORMS } from '@/lib/contactEntries';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
-import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeModulesData, HomePendingItem, HomePostsData, HomeSection } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeGeneralRow, HomeModulesData, HomePendingItem, HomePostsData, HomeSection } from '@/types/homeModules';
 
 type T = (key: string) => string;
 
@@ -54,6 +57,8 @@ const PATHS = {
     copy: 'M8 8h12v12H8zM4 16V4h12',
     inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
     plus: 'M12 5v14m-7-7h14',
+    // lucide FileText: «Sin animal elegido» (the general applications) has a form, not a photo.
+    form: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8',
 } as const;
 
 function Icon({ name, className = 'w-5 h-5' }: { name: keyof typeof PATHS; className?: string }) {
@@ -136,21 +141,29 @@ function TodoRow({ children, href, testId, className = '' }: { children: ReactNo
 
 /**
  * One animal: its photo (or the species placeholder), its name, one line under
- * it — amber when a check-up is due. With `onOpen` (a check-up due) the row
- * opens «Para hacer ahora» over the home instead of going to the animal's page
- * (HomeDuePanel); it looks the same either way.
+ * it — amber when something waits (a check-up due, applications to evaluate,
+ * the offer to tell the others). With `onOpen` the row opens its panel over
+ * the home (HomeDuePanel, HomeApplicantsPanel, the offer sheet) instead of
+ * going to the page; it looks the same either way. `formIcon`: the
+ * «Sin animal elegido» row, which is no animal.
  */
-function AnimalRow({ href, testId, name, photo, species, line, due = false, onOpen }: {
-    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean; onOpen?: () => void;
+function AnimalRow({ href, testId, name, photo, species, line, due = false, onOpen, formIcon = false }: {
+    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean; onOpen?: () => void; formIcon?: boolean;
 }) {
     const rowClass = `flex items-center gap-3 min-h-11 py-2 group ${SLOT_ROW}`;
     const body = (
         <>
-            <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
-                {photo
-                    ? <img src={photo} alt="" className="w-full h-full object-cover" />
-                    : <img src={`/placeholders/${species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
-            </span>
+            {formIcon ? (
+                <span className="w-10 h-10 shrink-0 rounded-lg border bg-amber-50 border-amber-200 text-amber-700 flex items-center justify-center">
+                    <Icon name="form" className="w-5 h-5" />
+                </span>
+            ) : (
+                <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
+                    {photo
+                        ? <img src={photo} alt="" className="w-full h-full object-cover" />
+                        : <img src={`/placeholders/${species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
+                </span>
+            )}
             <span className="flex-1 min-w-0">
                 <span title={name} className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere] md:truncate">{name}</span>
                 <span title={line} className={`block text-xs [overflow-wrap:anywhere] md:truncate ${due ? 'font-semibold text-amber-700' : 'text-stone-500'}`}>{keepNumberWithUnit(line)}</span>
@@ -265,8 +278,17 @@ function adopterParts(d: HomeAdoptersData, hasContacts: boolean) {
 
 /** What Mis animales lists — shared by the card and the desktop layout. */
 function animalParts(d: HomeAnimalsData) {
-    const moreDue = d.dueCount - d.rows.filter(a => a.due).length;
-    return { moreDue, more: d.total > d.rows.length, slots: d.rows.length + (moreDue > 0 ? 1 : 0) };
+    const { moreDue, moreApplications } = d;
+    // «Ver los N animales» counts animals: «Sin animal elegido» is not one.
+    const animalsListed = d.rows.filter(r => !isGeneral(r)).length;
+    return { moreDue, moreApplications, more: d.total > animalsListed, slots: d.rows.length + (moreDue > 0 ? 1 : 0) + (moreApplications > 0 ? 1 : 0) };
+}
+
+const isGeneral = (r: HomeAnimalRow | HomeGeneralRow): r is HomeGeneralRow => 'general' in r;
+
+/** Mis animales waits on the rescuer: a check-up due, applications to evaluate, or an offer to tell the others. */
+export function animalsTodo(d: HomeAnimalsData): boolean {
+    return d.dueCount > 0 || d.solicitudesCount > 0 || d.rows.some(r => !isGeneral(r) && r.offer > 0);
 }
 
 export function AdoptersCard({ section, contacts, t, rel, className, onOpenPending }: {
@@ -343,10 +365,14 @@ function PendingRow({ item, onOpen, t }: { item: HomePendingItem; onOpen: () => 
 
 // ── Mis animales ───────────────────────────────────────────────────────────
 
-export function AnimalsCard({ section, t, className, onOpenDue }: {
+export function AnimalsCard({ section, t, className, onOpenDue, onOpenApplications, onOpenOffer }: {
     section: HomeSection<HomeAnimalsData>; t: T; className?: string;
     /** Opens «Para hacer ahora» for an animal with a check-up due (HomeDuePanel). */
     onOpenDue?: (a: { id: string; name: string }) => void;
+    /** Opens the applicant panel over the home (HomeApplicantsPanel): an animal's candidates, or the general ones. */
+    onOpenApplications?: (target: HomeApplicantsTarget) => void;
+    /** Opens the offer to tell the other candidates (AdoptionOfferSheet). */
+    onOpenOffer?: (animalId: string) => void;
 }) {
     if (!section.ok) {
         return <ModuleShell icon="paw" title={t('homeModules.animals_title')} href="/my-animals" testId="home-animals" className={className}><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
@@ -365,25 +391,52 @@ export function AnimalsCard({ section, t, className, onOpenDue }: {
             ? `${t('homeModules.available_status')} · ${a.applicants} ${t(a.applicants === 1 ? 'animalProfile.applicant_one' : 'animalProfile.applicant_many')}`
             : t('homeModules.available_status');
     };
-    const { moreDue, more } = animalParts(d);
+    const { moreDue, moreApplications, more } = animalParts(d);
+    const toEvaluate = (n: number) => count(t, n, 'evaluation.to_evaluate_one', 'evaluation.to_evaluate_many');
+    // One row per animal, its line by what waits first: the offer, a check-up due, applications — else where it is.
+    const row = (a: HomeAnimalRow | HomeGeneralRow) => {
+        if (isGeneral(a)) {
+            return <AnimalRow key={a.id} href="/my-animals?view=solicitudes" testId="home-animals-general" formIcon
+                name={t('evaluation.general_title')} photo={null} species={null} due line={toEvaluate(a.toEvaluate)}
+                onOpen={onOpenApplications ? () => onOpenApplications('general') : undefined} />;
+        }
+        const name = a.name || t('homeModules.unnamed_animal');
+        const page = `/my-animals/${encodeURIComponent(a.id)}`;
+        if (a.offer > 0) {
+            const line = interpolate(animalLine(t, `evaluation.offer_row_${a.offer === 1 ? 'one' : 'many'}`, { name, sex: a.sex }), { n: a.offer });
+            return <AnimalRow key={a.id} href={page} testId="home-animals-offer" name={name} photo={a.photo} species={a.species} due line={line}
+                onOpen={onOpenOffer ? () => onOpenOffer(a.id) : undefined} />;
+        }
+        if (a.due) {
+            return <AnimalRow key={a.id} href={`${page}#next-action`} testId="home-animals-due"
+                name={name} photo={a.photo} species={a.species} due
+                onOpen={onOpenDue ? () => onOpenDue({ id: a.id, name }) : undefined}
+                line={followupBadgeLabel(t, a.due.dueFollowups, a.due.dueTop, now, { short: true })} />;
+        }
+        if (a.toEvaluate > 0) {
+            return <AnimalRow key={a.id} href={page} testId="home-animals-applications" name={name} photo={a.photo} species={a.species} due
+                line={toEvaluate(a.toEvaluate)}
+                onOpen={onOpenApplications ? () => onOpenApplications({ animal: { id: a.id, name, sex: a.sex } }) : undefined} />;
+        }
+        return <AnimalRow key={a.id} href={page} testId="home-animal-row" name={name} photo={a.photo} species={a.species} line={status(a)} />;
+    };
     return (
         <ModuleShell icon="paw" title={t('homeModules.animals_title')} summary={summary} href={d.available === 0 ? '/my-animals?view=adopted' : '/my-animals'} testId="home-animals"
             add={{ href: '/my-animals/new', label: t('homeModules.add'), aria: t('homeModules.add_animal') }} className={className}>
             {d.rows.length > 0 && (
                 <div>
-                    {/* Animals that need you first (a check-up due), then the most recently updated. */}
+                    {/* What needs you first (offers, check-ups due, applications), then the most recently updated. */}
                     <div className={ROWS}>
-                        {d.rows.map(a => a.due
-                            ? <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}#next-action`} testId="home-animals-due"
-                                name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} due
-                                onOpen={onOpenDue ? () => onOpenDue({ id: a.id, name: a.name || t('homeModules.unnamed_animal') }) : undefined}
-                                line={followupBadgeLabel(t, a.due.dueFollowups, a.due.dueTop, now, { short: true })} />
-                            : <AnimalRow key={a.id} href={`/my-animals/${encodeURIComponent(a.id)}`} testId="home-animal-row"
-                                name={a.name || t('homeModules.unnamed_animal')} photo={a.photo} species={a.species} line={status(a)} />)}
+                        {d.rows.map(row)}
                     </div>
                     {moreDue > 0 && (
                         <TodoRow href="/my-animals?view=pendientes" testId="home-animals-due-more" className={SLOT_GAP_ABOVE}>
                             {count(t, moreDue, 'homeModules.more_due_one', 'homeModules.more_due_many')}
+                        </TodoRow>
+                    )}
+                    {moreApplications > 0 && (
+                        <TodoRow href="/my-animals?view=solicitudes" testId="home-animals-applications-more" className={SLOT_GAP_ABOVE}>
+                            {count(t, moreApplications, 'evaluation.more_one', 'evaluation.more_many')}
                         </TodoRow>
                     )}
                     {more && (
@@ -475,6 +528,10 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     const [failedId, setFailedId] = useState<string | null>(null);
     /** The animal whose «Para hacer ahora» is open over the home. */
     const [duePanel, setDuePanel] = useState<{ id: string; name: string } | null>(null);
+    /** The applications open over the home (one animal's, or «Sin animal elegido»). */
+    const [applicantsPanel, setApplicantsPanel] = useState<HomeApplicantsTarget | null>(null);
+    /** The animal whose offer to tell the other candidates is open over the home. */
+    const [offerFor, setOfferFor] = useState<string | null>(null);
     const alive = useRef(true);
 
     // First load shows the skeleton; a reload (after registering a check-up
@@ -500,6 +557,8 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         return () => { alive.current = false; };
     }, [load]);
     const closeDuePanel = useCallback(() => setDuePanel(null), []);
+    const closeApplicantsPanel = useCallback(() => setApplicantsPanel(null), []);
+    const closeOffer = useCallback(() => setOfferFor(null), []);
     /** «¿Es la misma persona?» open over the home (option A). Stable, so the panel's loader isn't recreated each render. */
     const [pendingFocus, setPendingFocus] = useState<string | null>(null);
     const pendingPanel = useMemo(() => pendingFocus === null ? null
@@ -533,7 +592,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         : data.posts;
     const { cards, steps, firstSteps } = orderHomeModules({
         adopters: stateOf(data.adopters, d => d.pendingReview > 0, d => d.total > 0),
-        animals: stateOf(data.animals, d => d.dueCount > 0, d => d.total > 0),
+        animals: stateOf(data.animals, animalsTodo, d => d.total > 0),
         posts: stateOf(posts, () => false, d => d.people > 0),
     });
 
@@ -569,7 +628,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
 
     const card = (k: HomeModuleKey) => {
         if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} onOpenPending={item => setPendingFocus(pairKey(item.ids[0], item.ids[1]))} />;
-        if (k === 'animals' && data.animals) return <AnimalsCard key={k} section={data.animals} t={t} className={spanIf(k)} onOpenDue={setDuePanel} />;
+        if (k === 'animals' && data.animals) return <AnimalsCard key={k} section={data.animals} t={t} className={spanIf(k)} onOpenDue={setDuePanel} onOpenApplications={setApplicantsPanel} onOpenOffer={setOfferFor} />;
         if (k === 'posts' && posts) return <PostsCard key={k} section={posts} t={t} rel={rel} />;
         return null;
     };
@@ -594,6 +653,11 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
                 {items}
             </div>
             {duePanel && <HomeDuePanel key={duePanel.id} animalId={duePanel.id} animalName={duePanel.name} onClose={closeDuePanel} onChanged={load} />}
+            {applicantsPanel && (
+                <HomeApplicantsPanel key={applicantsPanel === 'general' ? 'general' : applicantsPanel.animal.id}
+                    target={applicantsPanel} onClose={closeApplicantsPanel} onChanged={load} />
+            )}
+            {offerFor && <AdoptionOfferSheet key={offerFor} animalId={offerFor} onClose={closeOffer} onDone={load} />}
             {pendingPanel && <PendingDedup key={pendingPanel.focusPair} home={pendingPanel} />}
         </>
     );

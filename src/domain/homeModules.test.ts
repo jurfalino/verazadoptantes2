@@ -31,40 +31,81 @@ describe('HOME_CARD_SLOTS', () => {
 
 describe('homeAnimalRows — 4 slots; the «N más» amber row takes one', () => {
     const a = (id: string) => ({ id });
+    const none = { offers: [], due: [], applications: [] };
     const ids = (r: { due: { id: string }[]; recent: { id: string }[]; moreDue: number }) =>
         ({ due: r.due.map(x => x.id), recent: r.recent.map(x => x.id), moreDue: r.moreDue });
 
-    it('nothing due: the 4 most recently updated', () => {
-        expect(ids(homeAnimalRows([], [a('r1'), a('r2'), a('r3'), a('r4'), a('r5')])))
+    it('the existing homeAnimalRows expectations hold with empty offers/applications', () => {
+        // nothing due: the 4 most recently updated
+        expect(ids(homeAnimalRows(none, [a('r1'), a('r2'), a('r3'), a('r4'), a('r5')])))
             .toEqual({ due: [], recent: ['r1', 'r2', 'r3', 'r4'], moreDue: 0 });
+        // fewer animals than rows: all of them, once
+        expect(ids(homeAnimalRows(none, [a('r1'), a('r1'), a('r2')])))
+            .toEqual({ due: [], recent: ['r1', 'r2'], moreDue: 0 });
     });
 
     it('one due: it first, then the 3 most recently updated, never the due one twice', () => {
-        expect(ids(homeAnimalRows([a('luna')], [a('luna'), a('r1'), a('r2'), a('r3'), a('r4')])))
+        expect(ids(homeAnimalRows({ ...none, due: [a('luna')] }, [a('luna'), a('r1'), a('r2'), a('r3'), a('r4')])))
             .toEqual({ due: ['luna'], recent: ['r1', 'r2', 'r3'], moreDue: 0 });
     });
 
     it('exactly 4 due: all 4 listed, no «más» row', () => {
         const due = Array.from({ length: 4 }, (_, i) => a(`d${i}`));
-        expect(ids(homeAnimalRows(due, [a('r1')])))
+        expect(ids(homeAnimalRows({ ...none, due }, [a('r1')])))
             .toEqual({ due: ['d0', 'd1', 'd2', 'd3'], recent: [], moreDue: 0 });
     });
 
     it('five due: the 3 most overdue + «2 animales más» (the amber row takes the 4th slot)', () => {
         const due = Array.from({ length: 5 }, (_, i) => a(`d${i}`));
-        expect(ids(homeAnimalRows(due, [a('r1')])))
+        expect(ids(homeAnimalRows({ ...none, due }, [a('r1')])))
             .toEqual({ due: ['d0', 'd1', 'd2'], recent: [], moreDue: 2 });
     });
 
     it('ten due: the 3 most overdue + «7 animales más»', () => {
         const due = Array.from({ length: 10 }, (_, i) => a(`d${i}`));
-        expect(ids(homeAnimalRows(due, [a('r1')])))
+        expect(ids(homeAnimalRows({ ...none, due }, [a('r1')])))
             .toEqual({ due: ['d0', 'd1', 'd2'], recent: [], moreDue: 7 });
     });
+});
 
-    it('fewer animals than rows: all of them', () => {
-        expect(ids(homeAnimalRows([], [a('r1'), a('r1'), a('r2')])))
-            .toEqual({ due: [], recent: ['r1', 'r2'], moreDue: 0 });
+describe('homeAnimalRows — offers, due animals and applications share the 4 slots', () => {
+    const a = (id: string) => ({ id });
+    const all = (r: ReturnType<typeof homeAnimalRows>) => ({
+        offers: r.offers.map(x => x.id), due: r.due.map(x => x.id), applications: r.applications.map(x => x.id),
+        recent: r.recent.map(x => x.id), moreDue: r.moreDue, moreApplications: r.moreApplications,
+    });
+
+    it('applications take slots like due animals; an animal with both shows as due', () => {
+        expect(all(homeAnimalRows({ offers: [], due: [a('luna')], applications: [a('general'), a('luna'), a('sol')] }, [a('luna'), a('r1'), a('r2')])))
+            .toEqual({ offers: [], due: ['luna'], applications: ['general', 'sol'], recent: ['r1'], moreDue: 0, moreApplications: 0 });
+    });
+
+    it('5 due + 2 applications in 4 slots → 2 due listed, moreDue 3, moreApplications 2 (two «more» rows)', () => {
+        const due = Array.from({ length: 5 }, (_, i) => a(`d${i}`));
+        expect(all(homeAnimalRows({ offers: [], due, applications: [a('x1'), a('x2')] }, [a('r1')])))
+            .toEqual({ offers: [], due: ['d0', 'd1'], applications: [], recent: [], moreDue: 3, moreApplications: 2 });
+    });
+
+    it('only applications hidden: one «more» row, 3 listed', () => {
+        const applications = Array.from({ length: 6 }, (_, i) => a(`x${i}`));
+        expect(all(homeAnimalRows({ offers: [], due: [a('d0')], applications }, [])))
+            .toEqual({ offers: [], due: ['d0'], applications: ['x0', 'x1'], recent: [], moreDue: 0, moreApplications: 4 });
+    });
+
+    it('offers come first and are never counted as «more»', () => {
+        const offers = [a('o1'), a('o2')];
+        const due = Array.from({ length: 3 }, (_, i) => a(`d${i}`));
+        expect(all(homeAnimalRows({ offers, due, applications: [a('x1')] }, [a('r1')])))
+            .toEqual({ offers: ['o1', 'o2'], due: [], applications: [], recent: [], moreDue: 3, moreApplications: 1 });
+        // A hidden offer waits for a free slot: it is not a «more» row.
+        const many = Array.from({ length: 5 }, (_, i) => a(`o${i}`));
+        expect(all(homeAnimalRows({ offers: many, due: [], applications: [] }, [a('r1')])))
+            .toEqual({ offers: ['o0', 'o1', 'o2'], due: [], applications: [], recent: [], moreDue: 0, moreApplications: 0 });
+    });
+
+    it('an offer that is also due is listed once, as the offer', () => {
+        expect(all(homeAnimalRows({ offers: [a('luna')], due: [a('luna'), a('d1')], applications: [] }, [a('luna'), a('r1')])))
+            .toEqual({ offers: ['luna'], due: ['d1'], applications: [], recent: ['r1'], moreDue: 0, moreApplications: 0 });
     });
 });
 

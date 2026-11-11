@@ -63,6 +63,8 @@ interface Props {
     returnLabel?: boolean;
     /** Fired after a contract invitation is issued; lets the parent refresh state. */
     onContractIssued?: (url: string, applicant: ApplicantSummary) => void;
+    /** The dialog's data-testid (the home opens it as `home-applicants-panel`). */
+    testId?: string;
 }
 
 /**
@@ -90,7 +92,7 @@ function FlagBadge({ icon, label, tone }: { icon: string; label: string; tone: '
     );
 }
 
-export default function ApplicantDetailPanel({ applicants, initialIndex, animal, onClose, onOutcome, returnLabel = false, onContractIssued }: Props) {
+export default function ApplicantDetailPanel({ applicants, initialIndex, animal, onClose, onOutcome, returnLabel = false, onContractIssued, testId }: Props) {
     const { formatShortDate } = useDateFormat();
     const { t, locale } = useLanguage();
     const toast = useShowToast();
@@ -288,6 +290,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     return (
         <div
             ref={rootRef}
+            data-testid={testId}
             className="fixed inset-0 z-[60]"
             role="dialog"
             aria-modal="true"

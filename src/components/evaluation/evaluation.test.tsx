@@ -21,7 +21,7 @@ vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t, locale: '
 vi.mock('@/context/TimezoneContext', () => ({ useDateFormat: () => ({ formatShortDate: () => '' }) }));
 vi.mock('@/components/ui/Toast', () => ({ useShowToast: () => ({ error: vi.fn(), success: vi.fn() }) }));
 vi.mock('@/lib/clientErrorReporter', () => ({ resolveErrorId: vi.fn(() => 'err12345'), reportClientError: vi.fn() }));
-vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn() }));
+vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn(), getAdoptionOffer: vi.fn(), markOfferDone: vi.fn() }));
 vi.mock('@/app/actions/formSubmission', () => ({ linkFormToExistingAdopter: vi.fn() }));
 vi.mock('@/app/actions/duplicates', () => ({ dismissDuplicateCandidate: vi.fn() }));
 vi.mock('@/app/actions', () => ({ getMatchContext: vi.fn(async () => ({ ok: false })) }));
@@ -39,6 +39,7 @@ const { ApplicationAnswersSummary } = await import('./ApplicationAnswersSummary'
 const { DeclineApplicationDialog, DeclineForm, declineMissing } = await import('./DeclineApplicationDialog');
 const { DuplicateCards } = await import('./ApplicationDuplicate');
 const { ProposalAnimalList } = await import('./ProposeAnimalSheet');
+const { OfferSheetBody, offerLinks, offerMessage } = await import('./AdoptionOfferSheet');
 const { default: FormAnswersPanel } = await import('@/components/FormAnswersPanel');
 const { summarizeAnswers } = await import('@/domain/formAnswers');
 
@@ -200,5 +201,54 @@ describe('«Proponer un animal»', () => {
 
     it('no animal can take applications: «No hay animales que puedan recibir solicitudes.»', () => {
         expect(text(renderToStaticMarkup(<ProposalAnimalList animals={[]} busyId={null} onPick={() => {}} />))).toContain(E.propose_empty);
+    });
+});
+
+describe('the offer to tell the others (decision 4)', () => {
+    const ana = { applicationId: 'app-1', firstName: 'Ana', phone: '+54 9 11 5555-0101', email: 'ana@example.com' };
+    const beto = { applicationId: 'app-2', firstName: 'Beto', phone: null, email: 'beto+x@example.com' };
+    const caro = { applicationId: 'app-3', firstName: 'Caro', phone: '11 5555 0103', email: null };
+
+    it('AdoptionOfferSheet: Jon\'s message with {name}/{animal} filled; WhatsApp only with a phone (wa.me/<digits>?text=), Email only with an email (mailto:…?subject=&body=)', () => {
+        // The textarea holds Jon's text with the animal filled once; {name} stays for each person.
+        const message = offerMessage(t, 'Luna');
+        expect(message).toBe(E.offer_message.replace('{animal}', 'Luna'));
+        expect(message).toContain('{name}');
+
+        const forAna = E.offer_message.replace('{name}', 'Ana').replace('{animal}', 'Luna');
+        expect(offerLinks(ana, message, 'Luna')).toEqual({
+            whatsapp: `https://wa.me/5491155550101?text=${encodeURIComponent(forAna)}`,
+            email: `mailto:ana@example.com?subject=${encodeURIComponent('Luna')}&body=${encodeURIComponent(forAna)}`,
+        });
+        expect(offerLinks(beto, message, 'Luna').whatsapp).toBeNull();
+        expect(offerLinks(beto, message, 'Luna').email).toMatch(/^mailto:beto%2Bx@example\.com\?subject=Luna&body=Hola%20Beto%2C/);
+        expect(offerLinks(caro, message, 'Luna').email).toBeNull();
+        // An edited message is the one sent.
+        expect(offerLinks(ana, 'Hola {name}! Luna ya tiene casa.', 'Luna').whatsapp).toBe(`https://wa.me/5491155550101?text=${encodeURIComponent('Hola Ana! Luna ya tiene casa.')}`);
+
+        const html = renderToStaticMarkup(
+            <OfferSheetBody animalName="Luna" message={message} onMessage={() => {}} candidates={[ana, beto, caro]} busy={false} onNotNow={() => {}} onDone={() => {}} />,
+        );
+        expect(html).toContain('data-testid="offer-message"');
+        expect(text(html)).toContain(E.offer_message_label);
+        // One row per person, with only the buttons their contacts allow.
+        expect(has(html, 'offer-wa-app-1')).toBe(true);
+        expect(has(html, 'offer-email-app-1')).toBe(true);
+        expect(has(html, 'offer-wa-app-2')).toBe(false);
+        expect(has(html, 'offer-email-app-2')).toBe(true);
+        expect(has(html, 'offer-wa-app-3')).toBe(true);
+        expect(has(html, 'offer-email-app-3')).toBe(false);
+        expect(html).toContain(`href="https://wa.me/5491155550101?text=${encodeURIComponent(forAna)}"`);
+        for (const n of ['Ana', 'Beto', 'Caro']) expect(text(html)).toContain(n);
+        // «Ahora no» and «Listo».
+        expect(has(html, 'offer-not-now')).toBe(true);
+        expect(has(html, 'offer-done')).toBe(true);
+        expect(text(html)).toContain(E.offer_not_now);
+        expect(text(html)).toContain(E.offer_done);
+        // Every button is a ≥44px tap target, never an emoji.
+        expect(html).not.toMatch(/💬|📧/);
+        const links = html.match(/<a[^>]*data-testid="offer-(wa|email)-[^"]*"[^>]*>/g) ?? [];
+        expect(links).toHaveLength(4);
+        for (const a of links) expect(a).toMatch(/min-h-(11|\[44px\])/);
     });
 });

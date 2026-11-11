@@ -1,4 +1,5 @@
 import type { DueTop } from '@/lib/animalFollowupsDue';
+import type { GENERAL_ROW_ID } from '@/domain/homeModules';
 
 /** One card's data, or the errorId of why it could not load (shown, never hidden). */
 export type HomeSection<T> = { ok: true; data: T } | { ok: false; errorId: string };
@@ -52,6 +53,8 @@ export type HomeAnimalRow = {
     id: string;
     name: string | null;
     species: string | null;
+    /** «macho» / «hembra» (or null): the offer row's «fue adoptada / adoptado». */
+    sex: string | null;
     photo: string | null;
     /** Set when a check-up is due: the amber line. */
     due: { dueFollowups: number; dueTop: DueTop } | null;
@@ -61,7 +64,14 @@ export type HomeAnimalRow = {
     personName: string | null;
     /** «N interesadas», for an available animal. */
     applicants: number;
+    /** Applications still to evaluate: the amber «N solicitudes por evaluar» (when no check-up is due). */
+    toEvaluate: number;
+    /** Candidates to tell after the adoption closed them: «{animal} fue adoptada · avisá a N». 0 = none. */
+    offer: number;
 };
+
+/** «Sin animal elegido · N solicitudes por evaluar»: the team's general applications, as one row. */
+export type HomeGeneralRow = { id: typeof GENERAL_ROW_ID; general: true; toEvaluate: number };
 
 export type HomeAnimalsData = {
     /** «Disponibles» tab count (available + in foster). */
@@ -72,8 +82,18 @@ export type HomeAnimalsData = {
     total: number;
     /** «Con controles pendientes» tab count. */
     dueCount: number;
-    /** Up to 4 (3 when the «N más» amber row takes a slot): the animals with a check-up due (most overdue first), then the most recently updated (homeAnimalRows). */
-    rows: HomeAnimalRow[];
+    /** Due animals not listed: «N animales más con controles pendientes» (homeAnimalRows). */
+    moreDue: number;
+    /** «Con solicitudes por evaluar» tab count: animals with applications to evaluate, + 1 when general ones wait. */
+    solicitudesCount: number;
+    /** Application rows not listed: «N animales más con solicitudes» (homeAnimalRows). */
+    moreApplications: number;
+    /**
+     * Up to 4 slots (an amber «N más» row takes one): the offers to tell, the animals with a
+     * check-up due (most overdue first), the applications to evaluate, then the most recently
+     * updated (homeAnimalRows).
+     */
+    rows: Array<HomeAnimalRow | HomeGeneralRow>;
 };
 
 export type HomePostsData = {

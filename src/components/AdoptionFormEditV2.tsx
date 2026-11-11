@@ -4,6 +4,7 @@ import { contractHref, contractResultsHref } from '@/lib/contractLink';
 import SignedContractLinks from '@/components/SignedContractLinks';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveAdoption, getAdoptionImages, deleteImage } from '@/app/actions';
+import { useAdoptionOfferAfterSave } from '@/components/evaluation/AdoptionOfferSheet';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -69,6 +70,8 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
     const { data: session } = useSession();
     const { openLogin } = useAuthContext();
     const toast = useShowToast();
+    // A save that made it an adoption and closed other candidates offers to tell them first (decision 4).
+    const { offerSheet, offerThen } = useAdoptionOfferAfterSave();
 
     // Check if we should auto-open the form with prefilled animal data (from new adopter flow)
     const newAdoptionParam = searchParams.get('newAdoption');
@@ -466,15 +469,19 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                 hasMedia: (pendingImages.length + adoptionImages.length) > 0 ? 1 : 0,
             });
 
-            if (onSuccess) onSuccess();
-            else {
-                setIsOpen(false);
-                setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 0, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
-                setDeliveryParts(splitDeliveryAddress(''));
-                setPendingImages([]);
-                await new Promise(resolve => setTimeout(resolve, 100));
-                router.refresh();
-            }
+            const finish = async () => {
+                if (onSuccess) onSuccess();
+                else {
+                    setIsOpen(false);
+                    setFormData({ id: undefined, animalName: '', details: '', status: 'completed', rating: 0, comments: '', species: '', adopterId, recordType: 'adoption', date: new Date().toISOString().split('T')[0], deliveredToHome: false, verifiedAddress: '', identityVerified: false });
+                    setDeliveryParts(splitDeliveryAddress(''));
+                    setPendingImages([]);
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    router.refresh();
+                }
+            };
+            // Before onSuccess (the parent may unmount this form): the offer sheet, then the usual close.
+            offerThen(result, () => { void finish(); });
         } catch (err) {
             console.error(err);
             toast.error(
@@ -945,6 +952,7 @@ export default function AdoptionFormEditV2({ adopterId, initialData, onCancel, o
                     </div>
                 </form>
             </div>
+            {offerSheet}
         </>
     );
 }
