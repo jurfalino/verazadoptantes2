@@ -270,6 +270,23 @@ export async function getTeamEmails(email: string | null | undefined): Promise<s
 }
 
 /**
+ * Session-free: the member emails of ONE organization (empty when it has none or
+ * the read fails, logged). For notification fan-out to the group an event is
+ * about (member_joined), never the actor's other groups.
+ */
+export async function getMemberEmailsOfOrg(orgId: string): Promise<string[]> {
+    const db = await getDb();
+    if (!db || !orgId) return [];
+    try {
+        const rows = await db.select({ userEmail: orgMembers.userEmail }).from(orgMembers).where(eq(orgMembers.orgId, orgId));
+        return [...new Set<string>(rows.map((r: { userEmail: string }) => r.userEmail))];
+    } catch (error) {
+        logger.error('getMemberEmailsOfOrg failed', error, { orgId });
+        return [];
+    }
+}
+
+/**
  * Session-free: all member emails across every organization the given email
  * belongs to (always including that email). For server code only — public API
  * routes, notification fan-out, visibility resolution — where getUser() would

@@ -473,9 +473,13 @@ export async function notifyAdmins(opts: {
 /**
  * Notify all org members of the actor's organizations, excluding the actor.
  * Uses getOrgMemberEmailsFor() — session-free, safe for public API routes.
+ * With `orgId`, only that organization's members (getMemberEmailsOfOrg): an
+ * event about one group (member_joined) never reaches the actor's other groups.
  */
 export async function notifyOrgMembers(opts: {
     actorEmail: string;
+    /** Only this organization's members, not every group the actor is in. */
+    orgId?: string;
     type: NotificationType;
     title: string;
     body: string;
@@ -485,8 +489,8 @@ export async function notifyOrgMembers(opts: {
     template?: NotificationTemplate;
 }): Promise<void> {
     try {
-        const { getOrgMemberEmailsFor } = await import('@/lib/orgMembership');
-        const emails = await getOrgMemberEmailsFor(opts.actorEmail);
+        const { getOrgMemberEmailsFor, getMemberEmailsOfOrg } = await import('@/lib/orgMembership');
+        const emails = opts.orgId ? await getMemberEmailsOfOrg(opts.orgId) : await getOrgMemberEmailsFor(opts.actorEmail);
 
         // Exclude the actor
         const recipients = emails.filter((e: string) => e !== opts.actorEmail);
@@ -507,7 +511,7 @@ export async function notifyOrgMembers(opts: {
 
         logger.info('Org member notifications sent', { type: opts.type, count: recipients.length });
     } catch (error) {
-        logger.warn('notifyOrgMembers failed (non-critical)', { error: error instanceof Error ? error.message : String(error) });
+        logger.warn('notifyOrgMembers failed (non-critical)', { type: opts.type, orgId: opts.orgId, error: error instanceof Error ? error.message : String(error) });
     }
 }
 
