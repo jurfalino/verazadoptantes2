@@ -11,8 +11,8 @@ import { eq, sql } from 'drizzle-orm';
 import type { EmailLocale } from '@/lib/email';
 import type { getDb } from '@/lib/db';
 import { userProfiles, users } from '@/db/schema';
-import { parseEmailPrefs, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
 import { parseNoticePrefs, withNoticePref, type NoticePrefs, type SwitchableRowKey } from '@/domain/noticeRows';
+import { parseFollowupSettings, withEmailReminders } from '@/domain/followups';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 
@@ -63,25 +63,32 @@ export async function setNoticePrefForEmail(db: Db, email: string, key: Switchab
         .onConflictDoUpdate({ target: userProfiles.userId, set: { emailPrefs: value } });
 }
 
-/** @deprecated The old category switches, for the settings section until «Avisos» replaces it. */
-export async function getEmailPrefsForEmail(db: Db, email: string): Promise<EmailPrefs> {
-    const row = await rawPrefsRow(db, email);
-    return parseEmailPrefs(row?.prefs ?? null);
+/**
+ * «Toca un control de seguimiento»: `followup_settings.emailReminders`, the same
+ * stored value «Seguimientos de adopción» shows. false with nothing stored.
+ */
+export async function getFollowupEmailForEmail(db: Db, email: string): Promise<boolean> {
+    const [row] = await db.select({ settings: userProfiles.followupSettings })
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .where(emailMatches(email))
+        .limit(1);
+    return parseFollowupSettings(row?.settings ?? null)?.emailReminders === true;
 }
 
-/** @deprecated Set one old category switch, keeping every other stored key. Throws when the user row does not exist. */
-export async function setEmailPrefForEmail(db: Db, email: string, category: EmailCategory, enabled: boolean): Promise<void> {
-    const row = await rawPrefsRow(db, email);
+/** Switch it, keeping the schedule and messages. Throws when the user row does not exist. */
+export async function setFollowupEmailForEmail(db: Db, email: string, enabled: boolean): Promise<void> {
+    const [row] = await db.select({ id: users.id, settings: userProfiles.followupSettings })
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .where(emailMatches(email))
+        .limit(1);
     if (!row) throw new Error('No user row for the email');
-    let current: Record<string, unknown> = {};
-    try {
-        const parsed: unknown = row.prefs ? JSON.parse(row.prefs) : {};
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed as Record<string, unknown>;
-    } catch { /* malformed JSON: start from {} (the defaults) */ }
-    const value = JSON.stringify({ ...current, [category]: enabled });
+    const next = withEmailReminders(parseFollowupSettings(row.settings ?? null), enabled);
+    const value = next ? JSON.stringify(next) : null;
     await db.insert(userProfiles)
-        .values({ userId: row.id, emailPrefs: value })
-        .onConflictDoUpdate({ target: userProfiles.userId, set: { emailPrefs: value } });
+        .values({ userId: row.id, followupSettings: value })
+        .onConflictDoUpdate({ target: userProfiles.userId, set: { followupSettings: value } });
 }
 
 const LOCALES: readonly EmailLocale[] = ['es', 'en', 'pt'];

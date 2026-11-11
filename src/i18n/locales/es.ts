@@ -3003,30 +3003,13 @@ export const es = {
         ctaIOSAction: 'y luego "Agregar a inicio"',
     },
     settings: {
-        email_title: 'Avisos por email',
-        email_hint: 'Elegí qué avisos de la campanita también te llegan por correo.',
-        email_always_on: 'Siempre activo',
         email_save_failed: 'No se pudo guardar el cambio.',
-        email_cat_requests: 'Pedidos que necesitan tu respuesta',
-        email_cat_requests_desc: 'Pedidos para unir perfiles y de acceso a datos de contacto.',
-        email_cat_forms: 'Formularios y contratos',
-        email_cat_forms_desc: 'Formularios y contratos recibidos o vinculados a tus perfiles.',
-        email_cat_merges: 'Duplicados y uniones',
-        email_cat_merges_desc: 'Duplicados detectados y perfiles unidos.',
-        email_cat_contact_access: 'Acceso a datos de contacto',
-        email_cat_contact_access_desc: 'Respuestas a tus pedidos de acceso a datos de contacto.',
-        email_cat_profile_changes: 'Cambios en tus perfiles',
-        email_cat_profile_changes_desc: 'Lo que agregan o cambian en tus perfiles: registros y calificaciones, fotos, direcciones de entrega, contactos, reportes, nombre y hogar. También las transferencias.',
         // «Avisame de cambios hechos por:» — bell AND email (src/domain/teamChangeAudience.ts).
         changes_from_label: 'Avisame de cambios hechos por:',
         changes_from_outside: 'Otros rescatistas',
         changes_from_team: 'Otros rescatistas y mi equipo',
         changes_from_outside_hint: 'Los cambios de tu equipo no te avisan. Siguen en el historial del perfil.',
         changes_from_team_hint: 'También te avisamos cuando alguien de tu equipo cambia tus perfiles.',
-        email_cat_api: 'API',
-        email_cat_api_desc: 'Registros y accesos de tus claves de API.',
-        email_cat_other: 'Otros avisos',
-        email_cat_other_desc: 'Cualquier otro aviso de la campanita.',
         // «Avisos» (Jon 2026-11-11): one row per thing that can happen (src/domain/noticeRows.ts).
         notices_title: 'Avisos',
         notices_hint: 'Todo lo que pasa con tus perfiles y animales aparece en la campanita. Elegí qué te llega también por email.',
@@ -3224,6 +3207,8 @@ export const es = {
         guide_link: 'Leé la guía',
     },
     notifications: {
+        /** A type with no label of its own (an old row): the /notificaciones filter chip. */
+        type_other: 'Otros avisos',
         /** One label per notification type (domain NOTIFICATION_TYPES) — /notificaciones chips and rows (audit B4). */
         types: {
             contract_result: 'Contrato',

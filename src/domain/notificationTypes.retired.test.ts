@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NOTIFICATION_TYPES } from './constants';
 import { NOTIFICATION_TEMPLATE_KEYS, localizedNotification } from './notificationTemplates';
-import { categoryForType } from './emailCategories';
+import { rowForType, noticeEmailVerdict } from './noticeRows';
 import { NOTIFICATION_TYPE_ICON } from '@/components/NotificationTypeIcon';
 import { es } from '@/i18n/locales/es';
 import { en } from '@/i18n/locales/en';
@@ -39,8 +39,11 @@ describe('retired notification types', () => {
         expect(RETIRED.filter(t => Object.hasOwn(labelsOf(dict), t))).toEqual([]);
     });
 
-    it('fall into the default email category (no entry of their own)', () => {
-        for (const t of RETIRED) expect(categoryForType(t), t).toBe('other');
+    it('have no «Avisos» row and are never emailed', () => {
+        for (const t of RETIRED) {
+            expect(rowForType(t), t).toBeNull();
+            expect(noticeEmailVerdict({ type: t }, {}), t).toBe('not_emailed');
+        }
     });
 
     it('the age writer is gone: no setProfileAge, no notifyProfileAgeChanged', () => {

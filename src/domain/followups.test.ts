@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { followupsEnabled,
+import { followupsEnabled, withEmailReminders,
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     getMessageTemplate, addDays, DEFAULT_SCHEDULE, DEFAULT_MESSAGES,
     type RecordedFollowup, type ComputeFollowupsInput,
@@ -255,5 +255,18 @@ describe('followupsEnabled — the daily reminder job reads «Seguimientos de ad
         expect(followupsEnabled('false')).toBe(false);
         expect(followupsEnabled('0')).toBe(false);
         expect(followupsEnabled('')).toBe(false);
+    });
+});
+
+describe('withEmailReminders («Toca un control de seguimiento» in Avisos)', () => {
+    it('switches only emailReminders, keeping the schedule and messages', () => {
+        const s = { version: 1 as const, checkins: [{ offsetDays: 10 }], messages: { neuter: 'Hola' }, fosterIntervalDays: 21 };
+        expect(withEmailReminders(s, true)).toEqual({ ...s, emailReminders: true });
+        expect(withEmailReminders({ ...s, emailReminders: true }, false)).toEqual(s);
+    });
+    it('nothing stored: the defaults plus the switch; off again is the defaults', () => {
+        expect(withEmailReminders(null, true)).toEqual({ version: 1, emailReminders: true });
+        expect(withEmailReminders(null, false)).toBeNull();
+        expect(withEmailReminders({ version: 1, emailReminders: true }, false)).toBeNull();
     });
 });

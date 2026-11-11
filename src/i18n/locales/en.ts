@@ -2997,29 +2997,12 @@ export const en = {
         ctaIOSAction: 'then "Add to Home Screen"',
     },
     settings: {
-        email_title: 'Email notifications',
-        email_hint: 'Choose which bell notifications also reach you by email.',
-        email_always_on: 'Always on',
         email_save_failed: 'Could not save the change.',
-        email_cat_requests: 'Requests that need your answer',
-        email_cat_requests_desc: 'Requests to join profiles and contact-data access requests.',
-        email_cat_forms: 'Forms and contracts',
-        email_cat_forms_desc: 'Forms and contracts received or linked to your profiles.',
-        email_cat_merges: 'Duplicates and joins',
-        email_cat_merges_desc: 'Detected duplicates and joined profiles.',
-        email_cat_contact_access: 'Contact data access',
-        email_cat_contact_access_desc: 'Answers to your contact-data access requests.',
-        email_cat_profile_changes: 'Changes to your profiles',
-        email_cat_profile_changes_desc: 'What others add or change on your profiles: records and ratings, photos, delivery addresses, contacts, reports, name and household. Transfers too.',
         changes_from_label: 'Notify me of changes made by:',
         changes_from_outside: 'Other rescuers',
         changes_from_team: 'Other rescuers and my team',
         changes_from_outside_hint: "Your team's changes don't notify you. They stay in the profile's history.",
         changes_from_team_hint: 'We also notify you when someone on your team changes your profiles.',
-        email_cat_api: 'API',
-        email_cat_api_desc: 'Records and access from your API keys.',
-        email_cat_other: 'Other notifications',
-        email_cat_other_desc: 'Any other bell notification.',
         // «Avisos» (Jon 2026-11-11): one row per thing that can happen (src/domain/noticeRows.ts).
         notices_title: 'Notifications',
         notices_hint: 'Everything that happens with your profiles and animals shows up in the bell. Choose what also reaches you by email.',
@@ -3217,6 +3200,8 @@ export const en = {
         guide_link: 'Read the guide',
     },
     notifications: {
+        /** A type with no label of its own (an old row): the /notificaciones filter chip. */
+        type_other: 'Other notifications',
         /** One label per notification type (domain NOTIFICATION_TYPES) — /notificaciones chips and rows (audit B4). */
         types: {
             contract_result: 'Contract',

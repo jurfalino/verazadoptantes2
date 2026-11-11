@@ -109,6 +109,17 @@ export interface FollowupSettings {
     // src/domain/animalNotices.ts) replaced it; migration 0107 copied it over.
 }
 
+/**
+ * The settings with «Recibir recordatorios también por e-mail» switched — the
+ * same value Configuración → Avisos shows as «Toca un control de seguimiento».
+ * Everything else is kept; settings that end up as the bare defaults are null.
+ */
+export function withEmailReminders(settings: FollowupSettings | null, on: boolean): FollowupSettings | null {
+    const { emailReminders: _was, ...rest } = settings ?? { version: 1 as const };
+    const next: FollowupSettings = on ? { ...rest, emailReminders: true } : rest;
+    return Object.keys(next).length === 1 && next.version === 1 ? null : next;
+}
+
 /** Tolerant parse: garbage/legacy JSON → null (defaults). Never throws. */
 export function parseFollowupSettings(json: string | null | undefined): FollowupSettings | null {
     if (!json) return null;

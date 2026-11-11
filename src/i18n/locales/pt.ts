@@ -3002,29 +3002,12 @@ export const pt = {
         ctaIOSAction: 'e depois "Adicionar à tela inicial"',
     },
     settings: {
-        email_title: 'Avisos por email',
-        email_hint: 'Escolha quais avisos do sininho também chegam por e-mail.',
-        email_always_on: 'Sempre ativo',
         email_save_failed: 'Não foi possível salvar a alteração.',
-        email_cat_requests: 'Pedidos que precisam da sua resposta',
-        email_cat_requests_desc: 'Pedidos para unir perfis e de acesso a dados de contato.',
-        email_cat_forms: 'Formulários e contratos',
-        email_cat_forms_desc: 'Formulários e contratos recebidos ou vinculados aos seus perfis.',
-        email_cat_merges: 'Duplicados e uniões',
-        email_cat_merges_desc: 'Duplicados detectados e perfis unidos.',
-        email_cat_contact_access: 'Acesso a dados de contato',
-        email_cat_contact_access_desc: 'Respostas aos seus pedidos de acesso a dados de contato.',
-        email_cat_profile_changes: 'Alterações nos seus perfis',
-        email_cat_profile_changes_desc: 'O que adicionam ou mudam nos seus perfis: registros e avaliações, fotos, endereços de entrega, contatos, avisos de informação incorreta, nome e lar. Também as transferências.',
         changes_from_label: 'Me avise de mudanças feitas por:',
         changes_from_outside: 'Outros resgatistas',
         changes_from_team: 'Outros resgatistas e minha equipe',
         changes_from_outside_hint: 'As mudanças da sua equipe não geram aviso. Continuam no histórico do perfil.',
         changes_from_team_hint: 'Também avisamos quando alguém da sua equipe muda seus perfis.',
-        email_cat_api: 'API',
-        email_cat_api_desc: 'Registros e acessos das suas chaves de API.',
-        email_cat_other: 'Outros avisos',
-        email_cat_other_desc: 'Qualquer outro aviso do sininho.',
         // «Avisos» (Jon 2026-11-11): one row per thing that can happen (src/domain/noticeRows.ts).
         notices_title: 'Avisos',
         notices_hint: 'Tudo o que acontece com seus perfis e animais aparece no sininho. Escolha o que também chega por e-mail.',
@@ -3222,6 +3205,8 @@ export const pt = {
         guide_link: 'Leia o guia',
     },
     notifications: {
+        /** A type with no label of its own (an old row): the /notificaciones filter chip. */
+        type_other: 'Outros avisos',
         /** One label per notification type (domain NOTIFICATION_TYPES) — /notificaciones chips and rows (audit B4). */
         types: {
             contract_result: 'Contrato',

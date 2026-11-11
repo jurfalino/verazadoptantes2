@@ -13,6 +13,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { getFollowupSettings, saveFollowupSettings } from '@/app/actions/settings';
+import { announceFollowupEmail, onFollowupEmail } from '@/lib/followupEmailSync';
 import {
     DEFAULT_SCHEDULE, DEFAULT_FOSTER_RULE, DEFAULT_MESSAGES, FOLLOWUP_SUBTYPES,
     mergeSchedule, type FollowupSettings, type FollowupSubtype,
@@ -96,6 +97,10 @@ export default function FollowupSettingsSection() {
         load();
     }, []);
 
+    // «Toca un control de seguimiento» in Avisos is the same stored switch: follow it, so «Guardar»
+    // here never writes back a stale value.
+    useEffect(() => onFollowupEmail(on => setDraft(d => d ? { ...d, emailReminders: on } : d)), []);
+
     if (!enabled || !draft) return null;
 
     const set = (patch: Partial<Draft>) => setDraft(d => d ? { ...d, ...patch } : d);
@@ -106,6 +111,7 @@ export default function FollowupSettingsSection() {
             const payload = isDefaultDraft(draft) ? null : settingsFrom(draft);
             const res = await saveFollowupSettings(payload);
             if (res?.success) {
+                announceFollowupEmail(draft.emailReminders);
                 toast.success(t('settings.saved') || 'Guardado');
             } else {
                 // The action assigns an errorId to every failure; extractErrorId
