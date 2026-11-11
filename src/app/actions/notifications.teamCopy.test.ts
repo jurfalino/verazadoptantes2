@@ -73,6 +73,16 @@ describe('notifyOrgMembers — team copies', () => {
         expect(bellOnlyByRecipient()).toEqual({ [CAL]: true });
     });
 
+    it('the actor is never notified, whatever the case of their email', async () => {
+        await notifyOrgMembers({ actorEmail: ' Ana@Example.com', type: 'member_joined', title: 't', body: 'b' });
+        expect(sqlite.prepare("SELECT user_id FROM notifications ORDER BY user_id").all().map(r => r.user_id)).toEqual([BEA, CAL]);
+        // And the other way round: the member row keeps capitals.
+        sqlite.prepare('DELETE FROM notifications').run();
+        sqlite.prepare(`UPDATE org_members SET user_email = 'Ana@Example.com' WHERE user_email = ?`).run(ANA);
+        await notifyOrgMembers({ actorEmail: ANA, type: 'member_joined', title: 't', body: 'b' });
+        expect(sqlite.prepare("SELECT user_id FROM notifications ORDER BY user_id").all().map(r => r.user_id)).toEqual([BEA, CAL]);
+    });
+
     it('without teamCopy nothing changes: each copy follows its row', async () => {
         await notifyOrgMembers({ actorEmail: ANA, type: 'member_joined', title: 't', body: 'b' });
         expect(bellOnlyByRecipient()).toEqual({ [BEA]: false, [CAL]: false });

@@ -506,8 +506,8 @@ export async function notifyOrgMembers(opts: {
         const emails = opts.orgId ? await getMemberEmailsOfOrg(opts.orgId) : await getOrgMemberEmailsFor(opts.actorEmail);
 
         // Exclude the actor, and whoever the caller already notified
-        const excluded = new Set((opts.excludeEmails ?? []).map(e => e.trim().toLowerCase()));
-        const recipients = emails.filter((e: string) => e !== opts.actorEmail && !excluded.has(e.trim().toLowerCase()));
+        const excluded = new Set([opts.actorEmail, ...(opts.excludeEmails ?? [])].map(e => e.trim().toLowerCase()));
+        const recipients = emails.filter((e: string) => !excluded.has(e.trim().toLowerCase()));
         if (recipients.length === 0) return;
 
         // Forms and contracts: each member's «Formularios, contratos y controles de:» choice.

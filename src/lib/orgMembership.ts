@@ -11,7 +11,7 @@
  * log + notification system is the trust-but-verify backstop.
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { organizations, orgMembers } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -299,9 +299,11 @@ export async function getOrgMemberEmailsFor(email: string): Promise<string[]> {
     if (!db) return [email];
 
     try {
+        // Case-insensitive on both sides: member rows keep the session email as it was, and the
+        // actor's may differ in case.
         const myOrgs = await db.select({ orgId: orgMembers.orgId })
             .from(orgMembers)
-            .where(eq(orgMembers.userEmail, email));
+            .where(sql`lower(trim(${orgMembers.userEmail})) = ${normEmail(email)}`);
 
         if (myOrgs.length === 0) return [email];
 
