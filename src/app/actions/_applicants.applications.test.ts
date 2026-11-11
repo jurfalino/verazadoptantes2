@@ -150,4 +150,18 @@ describe('applicants are applications', () => {
         expect(by('app-also-ajena').outcomeAnimal).toBeNull();
         expect(by('app-gen').outcomeAnimal).toBeNull();
     });
+
+    it('a proposal to the team\'s own UNNAMED animal still names it (blank → the panel says «Sin nombre»); an unnamed also_applied animal → null', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name, sex, added_by, created_at, updated_at) VALUES ('nube', '', 'hembra', ?, 1000, 1000), ('sin', '', NULL, ?, 1000, 1000)`)
+            .run(OWNER, OWNER);
+        form('s-prop', OWNER, 'ana', null, NOW - 3 * DAY);
+        app('app-to-nube', 's-prop', 'nube', { origin: 'proposed' });
+        app('app-prop', 's-prop', null, { state: 'proposed', proposed: 'app-to-nube', closedAt: NOW - DAY });
+        form('s-also', OWNER, 'beto', null, NOW - 2 * DAY);
+        form('s-beto-sin', OWNER, 'beto', 'sin', NOW - DAY); app('app-beto-sin', 's-beto-sin', 'sin');
+        app('app-also', 's-also', null, { state: 'also_applied', replacedBy: 'app-beto-sin' });
+        const list = await loadGeneralApplications(state.db, [OWNER, MATE], OWNER);
+        expect(list.find(a => a.applicationId === 'app-prop')!.outcomeAnimal).toEqual({ id: 'nube', name: '', sex: 'hembra' });
+        expect(list.find(a => a.applicationId === 'app-also')!.outcomeAnimal).toBeNull();
+    });
 });

@@ -22,6 +22,7 @@ export const en = {
         status_proposed: 'Proposed for {animal}',
         status_replaced: 'Replaced by a newer form',
         status_also_applied: 'Also applied for {animal}',
+        status_also_applied_other: 'Also applied for another animal',
         note_replaced: 'Their contract was replaced on {date}',
         note_expired: 'Their contract expired on {date}',
         asked_adopted_f: 'Asked for {animal} (already adopted)',

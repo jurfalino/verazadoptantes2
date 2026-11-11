@@ -311,7 +311,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         type="button"
                         onClick={goPrev}
                         disabled={index === 0}
-                        className="px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="min-h-11 px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                         ← {t('myAnimals.applicants_panel_prev') || 'Anterior'}
                     </button>
@@ -327,7 +327,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         type="button"
                         onClick={goNext}
                         disabled={index === total - 1}
-                        className="px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="min-h-11 px-2 py-1 text-xs font-semibold text-stone-700 hover:bg-stone-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                         {t('myAnimals.applicants_panel_next') || 'Siguiente'} →
                     </button>

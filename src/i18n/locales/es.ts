@@ -22,6 +22,7 @@ export const es = {
         status_proposed: 'Propuesta para {animal}',
         status_replaced: 'Reemplazada por un formulario más nuevo',
         status_also_applied: 'También pidió a {animal}',
+        status_also_applied_other: 'También pidió otro animal',
         note_replaced: 'Su contrato se reemplazó el {date}',
         note_expired: 'Su contrato venció el {date}',
         asked_adopted_f: 'Pidió a {animal} (ya adoptada)',

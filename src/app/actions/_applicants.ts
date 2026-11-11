@@ -20,7 +20,7 @@ import { NO_HOUSEMATE_ALERT } from '@/domain/households';
 import { APPLICATION_ORIGINS, APPLICATION_STATES, RECORD_TYPES, type ApplicationState, type ApplicationCloseReason } from '@/domain/constants';
 import { applicationStatus, panelOrder, type InvitationLike } from '@/domain/applications';
 import { healMissingApplications } from '@/lib/applicationWrites';
-import { applicantScopeWhere, generalScopeWhere, teammateVisibleAnimal } from '@/lib/applicantScope';
+import { applicantScopeWhere, generalScopeWhere, isInTeamScope, normalizeTeamScope, teammateVisibleAnimal } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
 import type { ApplicantSummary, ApplicantAdopterContext } from './applicants';
 import type { FormSubmissionRef, FormSubmissionAccessDeps } from '@/lib/formSubmissionAccess';
@@ -347,14 +347,20 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
         );
 
         // «Pidió a …» / «Propuesta para …» / «También pidió a …»: only an animal of the viewer's team is named.
-        const teamAnimal = async (animalId: string, what: string): Promise<ApplicantSummary['askedAnimal']> => {
+        // `allowUnnamed`: a proposal's animal is the team's own by construction (proposeAnimal gates it) —
+        // an unnamed one is still returned (blank name; the panel says «Sin nombre»), never another team's.
+        const teamAnimal = async (animalId: string, what: string, opts: { allowUnnamed?: boolean } = {}): Promise<ApplicantSummary['askedAnimal']> => {
             try {
                 const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy })
                     .from(adoptions)
                     .where(eq(adoptions.id, animalId))
                     .get() as { id: string; name: string | null; sex: string | null; owner: string | null } | undefined;
-                const visible = a ? teammateVisibleAnimal({ id: a.id, name: a.name, owner: a.owner }, ctx.teamEmails) : null;
-                return a && visible ? { id: visible.id, name: visible.name, sex: a.sex } : null;
+                if (!a) return null;
+                if (opts.allowUnnamed && !a.name?.trim()) {
+                    return a.owner && isInTeamScope(a.owner, normalizeTeamScope(ctx.teamEmails)) ? { id: a.id, name: '', sex: a.sex } : null;
+                }
+                const visible = teammateVisibleAnimal({ id: a.id, name: a.name, owner: a.owner }, ctx.teamEmails);
+                return visible ? { id: visible.id, name: visible.name, sex: a.sex } : null;
             } catch (e) {
                 logger.warn(`${ctx.op}: ${what} lookup fallback`, {
                     applicationId: row.applicationId, animalId, error: e instanceof Error ? e.message : String(e),
@@ -376,7 +382,7 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
                     .from(applications)
                     .where(eq(applications.id, ledTo))
                     .get() as { animalId: string | null } | undefined;
-                if (target?.animalId) outcomeAnimal = await teamAnimal(target.animalId, 'outcome-animal');
+                if (target?.animalId) outcomeAnimal = await teamAnimal(target.animalId, 'outcome-animal', { allowUnnamed: row.state === APPLICATION_STATES.PROPOSED });
             } catch (e) {
                 logger.warn(`${ctx.op}: outcome-animal lookup fallback`, {
                     applicationId: row.applicationId, ledTo, error: e instanceof Error ? e.message : String(e),

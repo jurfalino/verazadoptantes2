@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { es } from '@/i18n/locales/es';
 import type { ApplicantSummary } from '@/app/actions/applicants';
+import type { ApplicationStatus } from '@/domain/applications';
 
 const tFor = (dict: Record<string, unknown>) => (path: string): string => {
     let cur: unknown = dict;
@@ -161,6 +162,44 @@ describe('ApplicantDetailPanel — the evaluation (outcome, footer, answers)', (
             expect(text(html), line).toContain(line);
             expect(html, line).not.toContain('{animal}');
             for (const id of ['evaluate-decline', 'evaluate-send-contract', 'evaluate-propose']) expect(has(html, id), `${line} ${id}`).toBe(false);
+        }
+    });
+
+    it('a proposal to an unnamed animal: «Propuesta para Sin nombre»', () => {
+        const html = render(applicant({ status: { kind: 'proposed' }, outcomeAnimal: { id: 'nube', name: '', sex: null } }), { animal: null });
+        expect(text(html)).toContain(`Propuesta para ${es.homeModules.unnamed_animal}`);
+    });
+
+    it('also_applied for an animal the viewer cannot name: «También pidió otro animal»', () => {
+        const html = render(applicant({ status: { kind: 'also_applied' }, outcomeAnimal: null }), { animal: null });
+        expect(has(html, 'applicant-status-line')).toBe(true);
+        expect(text(html)).toContain(E.status_also_applied_other);
+    });
+
+    it('no decided application ever shows neither a status line nor buttons', () => {
+        const decided: ApplicationStatus[] = [
+            { kind: 'declined', at: DECLINED_AT }, { kind: 'declined', at: null },
+            { kind: 'closed', reason: 'adopted_other' }, { kind: 'closed', reason: 'adopted_open_link' },
+            { kind: 'adopted' }, { kind: 'proposed' }, { kind: 'replaced' }, { kind: 'also_applied' },
+        ];
+        for (const status of decided) {
+            for (const animal of [LUNA, { ...LUNA, name: '' }, null]) {
+                for (const outcomeAnimal of [null, { id: 'x', name: '', sex: null }]) {
+                    const html = render(applicant({ status, outcomeAnimal }), { animal });
+                    const label = `${JSON.stringify(status)} animal=${animal?.name ?? 'null'} outcome=${outcomeAnimal ? 'unnamed' : 'null'}`;
+                    const buttons = ['evaluate-decline', 'evaluate-send-contract', 'evaluate-propose'].some(id => has(html, id));
+                    expect(has(html, 'applicant-status-line') || buttons, label).toBe(true);
+                    expect(html, label).not.toContain('{animal}');
+                }
+            }
+        }
+    });
+
+    it('the paging buttons are 44px tall, like the close', () => {
+        const html = render(applicant());
+        for (const label of [es.myAnimals.applicants_panel_prev, es.myAnimals.applicants_panel_next]) {
+            const button = html.split('<button').find(b => b.includes(label))!;
+            expect(button, label).toContain('min-h-11');
         }
     });
 

@@ -30,3 +30,11 @@ describe('evaluation copy', () => {
         });
     }
 });
+
+describe('«También pidió otro animal»: the also_applied line when the animal cannot be named', () => {
+    it('reads the same in each locale\'s words', () => {
+        expect(es.evaluation.status_also_applied_other).toBe('También pidió otro animal');
+        expect(en.evaluation.status_also_applied_other).toBe('Also applied for another animal');
+        expect(pt.evaluation.status_also_applied_other).toBe('Também pediu outro animal');
+    });
+});
