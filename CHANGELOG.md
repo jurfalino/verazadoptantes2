@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.4] - 2026-11-11
+
+### Fixed — check-up reminders never ran
+- «Seguimientos de adopción» showed ON in Admin → Config, but the daily reminder job (09:00) only ran when the
+  switch had been saved explicitly, which it never was — so no reminder ever went out. The job now reads the
+  switch like the app does. From the next morning, rescuers with a due check-up get one bell notice (plus the
+  daily email if they turned it on in Configuración).
+
+### Added — notification tracking (Jon: measure before changing notifications)
+- PostHog events: the bell is opened (`notification_bell_opened`), a notice is clicked in the bell or on
+  «Notificaciones» (`notification_clicked`, with its type), and a link in a notification email is clicked
+  (`notification_email_clicked`, with its type; also counted when the person has to sign in first). Only types,
+  ids and counts are sent — never names, titles or contents.
+- Opening a notification from its email marks it read in the bell.
+
 ## [2.59.3] - 2026-11-11
 
 ### Fixed — the enadopcion.org move (review of 2.59.2)
