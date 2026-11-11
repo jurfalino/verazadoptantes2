@@ -26,6 +26,7 @@ vi.mock('@/lib/applicationWrites', async (orig) => {
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async () => {}) }));
 
 const { loadHomeAnimals } = await import('./homeModulesData');
+const { countOpenByAnimal } = await import('@/lib/applicationCounts');
 const { healMissingApplications } = await import('@/lib/applicationWrites');
 const { runAfterResponse } = await import('@/lib/background');
 
@@ -74,5 +75,28 @@ describe('loadHomeAnimals — applications on the home', () => {
         const next = await loadHomeAnimals(state.db, OWNER);
         const luna = next.rows.find(r => r.id === 'luna');
         expect(luna && 'toEvaluate' in luna ? luna.toEvaluate : null).toBe(3);
+    });
+
+    it('the scheduled heal runs after the count reads, and is the request\'s ONE heal of the team (final review I4)', async () => {
+        const timeline: string[] = [];
+        const ranAt: number[] = [];
+        // Where the platform has no waitUntil the task runs at once: record when it was scheduled.
+        vi.mocked(runAfterResponse).mockImplementation(async (_name, task) => { ranAt.push(timeline.length); timeline.push('heal'); await task(); });
+        const realSelect = (state.db as { select: (...a: unknown[]) => unknown }).select.bind(state.db);
+        state.db = new Proxy(state.db as object, {
+            get(t, p, r) {
+                if (p === 'select') return (...a: unknown[]) => { timeline.push('select'); return realSelect(...a); };
+                return Reflect.get(t, p, r);
+            },
+        });
+        const d = await loadHomeAnimals(state.db, OWNER);
+        expect(ranAt).toHaveLength(1);
+        // The grouped counts (to evaluate, offers, general) were all issued before the heal was scheduled.
+        expect(timeline.slice(0, ranAt[0]).filter(x => x === 'select').length).toBeGreaterThanOrEqual(3);
+        const luna = d.rows.find(r => r.id === 'luna');
+        expect(luna && 'toEvaluate' in luna ? luna.toEvaluate : null).toBe(2); // the heal did not land before the read
+        // Same request: a later count of the same team does not heal again.
+        await countOpenByAnimal(state.db, [OWNER]);
+        expect(healMissingApplications).toHaveBeenCalledTimes(1);
     });
 });

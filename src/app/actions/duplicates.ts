@@ -1038,8 +1038,9 @@ export async function getPendingDuplicatesForUser(
         ownRowsP.catch(() => { /* awaited below — the outer catch logs it */ });
         const flagsP = loadOpenDuplicateFlags();
         // The team's applicants still to evaluate: a plain possible duplicate on one of them is not a second
-        // to-do (Q6). A failed read counts every row, as before.
-        const toEvaluateP: Promise<Set<string>> = toEvaluateAdopterIds(db, teamList, Math.floor(Date.now() / 1000)).catch((e) => {
+        // to-do (Q6). A failed read counts every row, as before. The home (needs_viewer) reads without the
+        // heal write on its path — loadHomeAnimals heals after the response; /my-adopters heals first.
+        const toEvaluateP: Promise<Set<string>> = toEvaluateAdopterIds(db, teamList, Math.floor(Date.now() / 1000), { heal: !onlyNeedsViewer }).catch((e) => {
             logger.warn('getPendingDuplicatesForUser: to-evaluate applicants read failed, counting every pair', {
                 actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
             });

@@ -122,6 +122,16 @@ describe('countToEvaluateByAnimal', () => {
         expect(calls.run).toBe(1);
     });
 
+    it('toEvaluateAdopterIds with { heal: false } writes nothing (the home feed); by default it heals (final review I4)', async () => {
+        const quiet = spied(state.db);
+        await toEvaluateAdopterIds(quiet.db, [OWNER, MATE], NOW, { heal: false });
+        expect(quiet.calls.run).toBe(0);
+        state.req = new Headers(); // a new request: the memo starts over
+        const healing = spied(state.db);
+        await toEvaluateAdopterIds(healing.db, [OWNER, MATE], NOW);
+        expect(healing.calls.run).toBe(1);
+    });
+
     it('fails closed on an empty team', async () => {
         expect((await countToEvaluateByAnimal(state.db, [], NOW)).size).toBe(0);
         expect(await countGeneralToEvaluate(state.db, [])).toBe(0);

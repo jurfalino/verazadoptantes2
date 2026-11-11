@@ -208,6 +208,16 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(pairOf(after.pairs, 'cand-newer-mine').needsViewer).toBe(true);
     });
 
+    it('the home feed (needs_viewer) writes no heal on its path; /my-adopters (all) heals first (final review I4)', async () => {
+        // A form whose application row is missing (submitted to the old build): only a heal writes it.
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES ('f-heal', ?, 'Ana', NULL, 's-new', 1)`).run(STRANGER);
+        const rows = () => Number(sqlite.prepare(`SELECT COUNT(*) AS n FROM applications WHERE submission_id = 'f-heal'`).get()!.n);
+        await as(STRANGER, () => getPendingDuplicatesForUser(1, 4, false, undefined, 'needs_viewer'));
+        expect(rows()).toBe(0);
+        await feed(STRANGER);
+        expect(rows()).toBe(1);
+    });
+
     it('a RECEIVED merge request on a side in evaluation still counts: only a plain possible duplicate is deferred (Q6)', async () => {
         await mergePendingDedupPair('cand-older-mine'); // STRANGER asks OWNER (o-new is OWNER's)
         sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES ('f-o', ?, 'Carla', NULL, 'o-new', 1)`).run(OWNER);

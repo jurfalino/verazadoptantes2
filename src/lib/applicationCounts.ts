@@ -22,16 +22,19 @@ type Db = any;
 /**
  * Heals the team's missing application rows at most once per request (src/lib/requestMemo.ts): the
  * home and /my-adopters ask several counts of the same team in one load, and each heal is a write.
+ * The home's after-response heal (loadHomeAnimals) goes through it too.
  */
-function healOnce(db: Db, team: readonly string[]): Promise<number> {
+export function healApplicationsOnce(db: Db, team: readonly string[]): Promise<number> {
     const key = normalizeTeamScope(team).slice().sort().join(',');
     return perRequest(`healApplications:${key}`, () => healMissingApplications(db, team));
 }
 
+const healOnce = healApplicationsOnce;
+
 /**
- * `heal: false` — the homepage: it reads without the heal WRITE on its path and schedules
- * `healMissingApplications` after the response instead (loadHomeAnimals), so the next load counts
- * any healed row. Every other caller heals first (once per team per request).
+ * `heal: false` — the homepage (its animals card and its adopters card's feed): it reads without the heal
+ * WRITE on its path; loadHomeAnimals schedules the heal after its reads and the response instead, so the
+ * next load counts any healed row. Every other caller heals first (once per team per request).
  */
 export type CountOpts = { heal?: boolean };
 
@@ -115,10 +118,10 @@ export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string
  * plain duplicate pair waits inside the evaluation (Q6). Only applications someone can still finish: an
  * adopted animal's (`takesContract`) and a deleted animal's (the scope) are out.
  */
-export async function toEvaluateAdopterIds(db: Db, team: readonly string[], nowSec: number): Promise<Set<string>> {
+export async function toEvaluateAdopterIds(db: Db, team: readonly string[], nowSec: number, opts: CountOpts = {}): Promise<Set<string>> {
     const scope = teamApplicationsWhere(team, 'any');
     if (!scope) return new Set();
-    await healOnce(db, team);
+    if (opts.heal !== false) await healOnce(db, team);
     const rows = await db.select({ adopterId: formSubmissions.linkedAdopterId })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))

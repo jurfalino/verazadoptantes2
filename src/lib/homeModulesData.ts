@@ -150,7 +150,7 @@ export async function loadHomePosts(db: Db, userEmail: string, memberEmails: str
 
 export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAnimalsData> {
     const log = { userEmail, op: 'loadHomeAnimals' };
-    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { createOwnerTeamResolver, listApplicantIdsForAnimal }, { animalPrimaryFirst }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal }, { normalizeTeamScope }, { runAfterResponse }, { healMissingApplications }] = await Promise.all([
+    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { createOwnerTeamResolver, listApplicantIdsForAnimal }, { animalPrimaryFirst }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal, healApplicationsOnce }, { normalizeTeamScope }, { runAfterResponse }] = await Promise.all([
         import('@/lib/myAnimalsScope'),
         import('@/lib/animalFollowupsDue'),
         import('@/app/actions/_applicants'),
@@ -158,7 +158,6 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
         import('@/lib/applicationCounts'),
         import('@/lib/applicantScope'),
         import('@/lib/background'),
-        import('@/lib/applicationWrites'),
     ]);
     const [{ scopeEmails, adoptedWhere, availableWhere, placedWhere, allWhere }, followupCtx] = await Promise.all([
         myAnimalsScope(userEmail),
@@ -190,14 +189,15 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
     // animal page and «Con solicitudes por evaluar» scope them. The viewer's own team (the owner
     // of most animals) is counted from the start, beside the «Todos» select; only an owner whose
     // team differs waits for the animals to be known. No heal write on this path: the missing
-    // application rows are healed after the response (runAfterResponse), for the next load.
+    // application rows are healed once the reads are done, after the response (runAfterResponse), through
+    // the per-request memo (healApplicationsOnce) — one heal per team per request — for the next load.
     const nowSec = Math.floor(Date.now() / 1000);
     type Counts = { toEvaluate: Map<string, number>; offer: Map<string, number> };
     const noCounts: Counts = { toEvaluate: new Map(), offer: new Map() };
     const ownerKey = (email: string | null) => (email ?? '').trim().toLowerCase();
     const teamKey = (team: readonly string[]) => normalizeTeamScope(team).slice().sort().join(',');
     const noHeal = { heal: false };
-    const heals: Promise<void>[] = [];
+    const toHeal = new Map<string, readonly string[]>();
     const perTeam = new Map<string, Promise<Counts>>();
     const startTeam = (key: string, team: readonly string[]) => {
         if (perTeam.has(key)) return;
@@ -207,7 +207,7 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
             offerCountsByAnimal(db, team)
                 .catch((e: unknown) => { logger.warn('loadHomeAnimals: D1 fallback hit (offers)', { ...log, team: key, error: errMsg(e) }); return new Map<string, number>(); }),
         ]).then(([toEvaluate, offer]) => ({ toEvaluate, offer })));
-        heals.push(runAfterResponse('loadHomeAnimals: heal missing applications', () => healMissingApplications(db, team), { ...log, team: key }));
+        toHeal.set(key, team);
     };
     const viewer = ownerKey(userEmail);
     const viewerKey = teamKey(scopeEmails);
@@ -234,6 +234,9 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
     const [available, adopted, total, due, recent, countsOf, general] = await Promise.all([
         countOf(availableWhere), countOf(adoptedWhere), countOf(allWhere), dueP, recentP, countsP, generalP,
     ]);
+    // The reads are done: heal each team's missing application rows after the response.
+    const heals = [...toHeal].map(([key, team]) => runAfterResponse('loadHomeAnimals: heal missing applications',
+        () => healApplicationsOnce(db, team), { ...log, team: key }));
     const offers = recent.filter(a => countsOf(a).offer > 0);
     // «Sin animal elegido» first, then the animals with the most waiting (then by name).
     const withApplications = recent.filter(a => countsOf(a).toEvaluate > 0)
