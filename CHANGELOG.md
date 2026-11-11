@@ -2,6 +2,26 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.0] - 2026-11-11
+
+### Added — «Evaluar solicitudes»: every form is a person to evaluate (Jon)
+- A form received for an animal is now an application to evaluate. Mis animales shows «Luna · 3 solicitudes
+  por evaluar» on the home and in a new «Solicitudes» tab; forms that name no animal are one «Sin animal
+  elegido» row. Tapping opens the candidates one by one («← Anterior / Siguiente →», a «3 / 25» counter
+  past 8) with their answers, the semáforo and «N respuestas sin observaciones».
+- Each evaluation ends with «Enviar contrato», «No avanzar» (a regular observation: rating 1–5 and a reason
+  required) or, for a form without an animal, «Proponer un animal». A teammate's outcome is respected: a
+  second «No avanzar» or a contract to someone already turned down is refused with a clear message.
+- A possible duplicate is shown inside the evaluation with the same side-by-side «Qué coincide y qué no»
+  card, and is not counted twice in «esperan tu respuesta» while the evaluation is open.
+- When an animal is adopted, the other candidates close on their own, and the home offers «Luna fue
+  adoptada · avisá a N candidatos» with a ready message to send by WhatsApp or email (the rescuer sends it).
+- A form for an animal already adopted becomes a general application; merging two profiles keeps one
+  application per person per animal (undo puts them back). Fostered animals can receive contracts; signing
+  ends the foster, and an adoption by someone else in the meantime wins (the signature is refused).
+- Deleting an animal with candidates warns how many are lost (the people's profiles are not deleted).
+- Rating stars in «No avanzar» and the other large star pickers are now 44px tap targets.
+
 ## [2.58.56] - 2026-11-11
 
 ### Changed — analytics library updated
