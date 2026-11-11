@@ -22,6 +22,7 @@ import {
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
     followupsEnabled,
 } from '../../../src/domain/followups';
+import { notificationKillSwitchKey, notificationTypeEnabled } from '../../../src/domain/notificationKillSwitch';
 import { dedupKey, notificationBody, bellNotice, buildFollowupEmail, type FollowupEmailItem, type BellItem } from './copy';
 import { log, type AxiomEnv } from './log';
 
@@ -113,7 +114,7 @@ export default {
                 log(env, 'info', { message: 'skipped', skipped: 'ENABLE_FOLLOWUPS off' }, ctx);
                 return;
             }
-            if (flagMap.get('NOTIF_ENABLED_follow_up_due') === 'false') {
+            if (!notificationTypeEnabled(flagMap.get(notificationKillSwitchKey('follow_up_due')))) {
                 log(env, 'info', { message: 'skipped', skipped: 'kill switch' }, ctx);
                 return;
             }

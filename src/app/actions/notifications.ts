@@ -20,7 +20,7 @@
  */
 
 import { getDb } from '@/lib/db';
-import { notifications } from '@/db/schema';
+import { appConfig, notifications } from '@/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { displayNameFor } from '@/lib/userDisplay';
@@ -28,6 +28,7 @@ import { runAfterResponse } from '@/lib/background';
 import { sendNotificationEmail } from '@/lib/notificationEmail';
 import { renderNotification, type NotificationTemplate } from '@/domain/notificationTemplates';
 import type { NotificationType } from '@/domain/constants';
+import { notificationKillSwitchKey, notificationTypeEnabled } from '@/domain/notificationKillSwitch';
 
 /**
  * Create a notification for a user.
@@ -65,20 +66,17 @@ export async function createNotification(data: {
 
         const type = data.type || 'contract_result';
 
-        // Check global kill switch using cached Edge implementation
+        // The per-type kill switch (/admin/notifications): no row = on, only 'false' turns it off.
+        // A failed read fails open, logged.
         try {
-            const { getFeatureFlag } = await import('@/config/features');
-            // Cast to any to bypass strict type checking for dynamic keys
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const isEnabled = await getFeatureFlag(`NOTIF_ENABLED_${type}` as any) !== false;
-            
-            if (!isEnabled) {
-                logger.info('Notification suppressed by admin config', { type });
+            const row = await db.select({ value: appConfig.value }).from(appConfig)
+                .where(eq(appConfig.key, notificationKillSwitchKey(type))).get() as { value: string | null } | undefined;
+            if (!notificationTypeEnabled(row?.value)) {
+                logger.info('Notification suppressed by admin config', { type, userId: data.userId });
                 return null;
             }
-        } catch {
-            // Fail open if config fails to fetch
-            logger.warn('Failed to evaluate notification kill switch, defaulting to sending', { type });
+        } catch (e) {
+            logger.warn('createNotification: kill switch unreadable, sending', { type, userId: data.userId, error: e instanceof Error ? e.message : String(e) });
         }
 
         const id = data.id || crypto.randomUUID();
