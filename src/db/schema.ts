@@ -873,6 +873,20 @@ export const notifications = sqliteTable("notifications", {
     typeIdx: index("idx_notif_type").on(table.type, table.createdAt),
 }));
 
+// «Te escribió» on the pair (2026-11-11, migration 0108): one row per message sent
+// with «Escribirle a …» on a merge request. Shown in the open pair in «Pendientes de
+// revisar» to everyone who sees that pair; the body is never logged.
+export const pairMessages = sqliteTable("pair_messages", {
+    id: text("id").primaryKey(),
+    requestId: text("request_id").notNull(), // merge_requests.id
+    senderEmail: text("sender_email").notNull(),
+    senderName: text("sender_name"), // display name at send time
+    body: text("body").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    requestIdx: index("idx_pair_messages_request").on(table.requestId, table.createdAt),
+}));
+
 // User-submitted error reports from /auth-error (v2.14.9-14). The page hides
 // the real reason behind "Ocurrió un error inesperado" and includes a
 // "Report this problem" form — real apps have those, so the form makes the

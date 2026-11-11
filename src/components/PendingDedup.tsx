@@ -404,6 +404,11 @@ export default function PendingDedup({ home }: {
         const result = await sendPairMessage(r.id, text);
         if (result.success) {
             setWriteTo(null);
+            // The message is on the pair now: show it under «Mensajes» without a reload (the next load reads it back).
+            const sent = { id: `sent-${Date.now()}`, senderName: '', mine: true, body: text.trim(), createdAt: Math.floor(Date.now() / 1000) };
+            setPairs(prev => prev?.map(p => (p.candidateId === pair.candidateId && p.request
+                ? { ...p, request: { ...p.request, messages: [...p.request.messages, sent] } }
+                : p)) ?? prev);
             toast.success(fill(t('myAdopters.pending_d_write_sent') || 'Mensaje enviado a {name}', { name: r.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario') }));
         } else {
             // The box stays open with the text, so nothing typed is lost.

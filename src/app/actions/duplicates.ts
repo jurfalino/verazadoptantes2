@@ -1,6 +1,7 @@
 'use server';
 
-import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandidates, auditLog, mergeRequests, pendingPairHidden } from '@/db/schema';
+import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandidates, auditLog, mergeRequests, pairMessages, pendingPairHidden } from '@/db/schema';
+import { pairMessageViews, type PairMessageView } from '@/domain/pairMessages';
 import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
@@ -510,7 +511,39 @@ function requestView(
         canMessage: !!r.ownerEmail && (direction === 'sent' || teamKeys.has(normEmail(r.ownerEmail))),
         declinedAt: declined && r.resolvedAt ? Math.floor(r.resolvedAt.getTime() / 1000) : null,
         declinedByName: decliner && normEmail(decliner) !== normEmail(actorEmail) ? nameOf(decliner) : null,
+        // Filled after the page is built (loadPairMessages): one query per request on the page.
+        messages: [],
     };
+}
+
+/** The most messages one pair shows (oldest first). */
+const MAX_PAIR_MESSAGES = 100;
+
+/**
+ * «Mensajes (N)» on each pair's request (2026-11-11): one bounded query per
+ * request on the page, no IN-array. A failed read shows none, logged (never
+ * the text).
+ */
+async function loadPairMessages(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, pairs: PendingDedupPair[], viewer: string): Promise<void> {
+    await Promise.all(pairs.map(async (p) => {
+        if (!p.request) return;
+        const requestId = p.request.id;
+        const rows = await db.select({
+            id: pairMessages.id, senderEmail: pairMessages.senderEmail, senderName: pairMessages.senderName,
+            body: pairMessages.body, createdAt: pairMessages.createdAt,
+        }).from(pairMessages)
+            .where(eq(pairMessages.requestId, requestId))
+            .orderBy(asc(pairMessages.createdAt))
+            .limit(MAX_PAIR_MESSAGES)
+            .catch((e: unknown) => {
+                logger.warn('getPendingDuplicatesForUser: pair messages D1 fallback hit', { actorEmail: viewer, requestId, error: e instanceof Error ? e.message : String(e) });
+                return [];
+            });
+        p.request.messages = pairMessageViews(rows.map((r: { id: string; senderEmail: string; senderName: string | null; body: string; createdAt: Date | null }) => ({
+            id: r.id, senderEmail: r.senderEmail, senderName: r.senderName, body: r.body,
+            createdAt: r.createdAt ? Math.floor(r.createdAt.getTime() / 1000) : 0,
+        })), viewer);
+    }));
 }
 
 /** A side's contact as the card shows it to this viewer (masked typed list, else the visible text). */
@@ -634,6 +667,8 @@ export interface PendingDedupPair {
         declinedByName: string | null;
         /** The profile the requester chose to keep (the request's survivor, D24): «Se conserva» on the row. */
         keepId: string;
+        /** «Escribirle» messages on this request, oldest first (names only, never an address). */
+        messages: PairMessageView[];
     };
 }
 
@@ -1540,6 +1575,8 @@ export async function getPendingDuplicatesForUser(
                 request: request ? requestView(request, viewer, teamKeys, names) : null,
             });
         }
+
+        await loadPairMessages(db, pairs, viewer);
 
         // Final fix P2: each side's homes, as on search cards (one batched read per call: every side gets
         // its chips, the first HOUSEHOLD_LINE_CARDS sides in the order shown their list; never throws).

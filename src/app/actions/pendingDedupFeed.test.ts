@@ -122,13 +122,30 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         const p = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine');
         expect(p.request).toEqual({
             id: requestId(), status: 'pending', direction: 'sent', createdAt: expect.any(Number), counterpartName: 'stranger', toAdmins: false,
-            dispute: false, canMessage: true, declinedAt: null, declinedByName: null, keepId: 'o-old',
+            dispute: false, canMessage: true, declinedAt: null, declinedByName: null, keepId: 'o-old', messages: [],
         });
         expect(p.request!.createdAt).toBeLessThan(Date.now() / 1000 + 5); // epoch seconds, not ms
         expect(p.request!.createdAt).toBeGreaterThan(Date.now() / 1000 - 60);
         // The asked owner sees it as received, from OWNER by name.
         expect(pairOf((await feed(STRANGER)).pairs, 'cand-newer-mine').request)
             .toMatchObject({ direction: 'received', counterpartName: 'Olga Dueña', toAdmins: false });
+    });
+
+    it('«Mensajes (N)»: every viewer of the pair gets the messages, oldest first, names only, theirs marked', async () => {
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toMatchObject({ success: true, outcome: 'requested' });
+        const rid = requestId();
+        const add = sqlite.prepare(`INSERT INTO pair_messages (id, request_id, sender_email, sender_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
+        add.run('m2', rid, STRANGER, null, 'Sí, coincide.', 2000);
+        add.run('m1', rid, OWNER, 'Olga Dueña', 'Hola, ¿es la misma?', 1000);
+        add.run('other', 'another-request', OWNER, 'Olga Dueña', 'No es de este par', 1500);
+        const mine = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine').request!.messages;
+        expect(mine).toEqual([
+            { id: 'm1', senderName: 'Olga Dueña', mine: true, body: 'Hola, ¿es la misma?', createdAt: 1000 },
+            { id: 'm2', senderName: 'stranger', mine: false, body: 'Sí, coincide.', createdAt: 2000 },
+        ]);
+        expect(JSON.stringify(mine)).not.toContain('@');
+        const theirs = pairOf((await feed(STRANGER)).pairs, 'cand-newer-mine').request!.messages;
+        expect(theirs.map(m => [m.id, m.mine])).toEqual([['m1', false], ['m2', true]]);
     });
 
     it("a teammate of the asked owner sees the request though they created neither profile (D16)", async () => {

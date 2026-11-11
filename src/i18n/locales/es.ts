@@ -1957,6 +1957,11 @@ export const es = {
         pending_d_action_flip: 'Conservar el mío',
         pending_d_action_hide: 'Quitar de la lista',
         pending_d_action_write: 'Escribirle a {name}',
+        // «Mensajes (N)» on the open pair; «· N mensajes» on the closed row (2026-11-11).
+        pending_d_messages_title: 'Mensajes ({n})',
+        pending_d_messages_count_one: '1 mensaje',
+        pending_d_messages_count_many: '{n} mensajes',
+        pending_d_message_you: 'Vos',
         pending_d_action_combine_theirs: 'Unir conservando el de {name}',
         pending_d_action_accept_now: 'Aceptar ahora',
         pending_d_confirm_title: '¿Unir perfiles?',

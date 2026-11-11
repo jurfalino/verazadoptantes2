@@ -248,6 +248,39 @@ function KeepSwitch({ pair, keep, onKeep, t, formatShortDate }: {
     );
 }
 
+/** «1 mensaje» / «N mensajes». */
+function messageCountLabel(n: number, t: T): string {
+    return n === 1
+        ? (t('myAdopters.pending_d_messages_count_one') || '1 mensaje')
+        : fill(t('myAdopters.pending_d_messages_count_many') || '{n} mensajes', { n: String(n) });
+}
+
+/**
+ * «Mensajes (N)» (approved 2026-11-11): the «Escribirle a …» messages on this
+ * request, oldest first; the viewer's own on the right in the accent tint.
+ * Replies still go through «Escribirle a …»: no chat box.
+ */
+function PairMessages({ messages, t, age }: { messages: NonNullable<PendingDedupPair['request']>['messages']; t: T; age: (epochS: number) => string }) {
+    return (
+        <div data-testid="pair-messages" className="mt-4 pt-3 border-t border-[var(--border-default)] flex flex-col gap-2">
+            <h4 className={`text-[13px] font-bold text-[var(--accent)]`}>
+                {fill(t('myAdopters.pending_d_messages_title') || 'Mensajes ({n})', { n: String(messages.length) })}
+            </h4>
+            {messages.map(m => (
+                <div key={m.id} data-testid="pair-message" data-mine={m.mine ? 'true' : 'false'}
+                    className={`max-w-[92%] rounded-xl border px-3 py-2 text-[13px] ${T_PRIMARY} ${m.mine
+                        ? 'self-end bg-[var(--accent-badge-bg)] border-[var(--border-accent)]'
+                        : 'self-start bg-[var(--surface-card)] border-[var(--border-default)]'}`}>
+                    <span className={`block text-[12px] ${T_MUTED}`}>
+                        {m.mine ? (t('myAdopters.pending_d_message_you') || 'Vos') : m.senderName} · {age(m.createdAt)}
+                    </span>
+                    <span className="block whitespace-pre-wrap break-words">{m.body}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
 export default function PairRow({ pair, open, highlight = false, onToggle, keep, onKeep, busy, locked, isAdmin, t, formatShortDate, age, onAction, onRequestAccess }: {
     pair: PendingDedupPair;
     open: boolean;
@@ -286,6 +319,8 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
     const otherOwner = foreignSide(pair);
     const theirsName = r?.counterpartName || (otherOwner ? ownerName(otherOwner, t) : '');
     const explain = open ? explanation(pair, keep, isAdmin, t) : null;
+    const messages = r?.messages ?? [];
+    const messageCount = messages.length;
     const showScore = isAdmin && typeof pair.adminScore === 'number';
 
     const write = r?.canMessage && (
@@ -305,6 +340,8 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
                 <span data-testid={r ? 'dedup-request-status' : undefined}
                     className={`block text-[13px] ${group === 'received' ? 'font-bold text-[var(--status-warning-text)]' : group === 'declined' ? 'text-[var(--status-error-text)]' : T_MUTED}`}>
                     {stateLine(pair, t, age)}
+                    {/* «· 1 mensaje»: a new message shows without opening the pair (2026-11-11). */}
+                    {!open && messageCount > 0 && ` · ${messageCountLabel(messageCount, t)}`}
                 </span>
                 {!open && summary && <span className={`block text-[12px] mt-0.5 ${T_MUTED}`}>{summary}</span>}
             </span>
@@ -414,6 +451,7 @@ export default function PairRow({ pair, open, highlight = false, onToggle, keep,
                             )}
                         </>}
                     </div>
+                    {messageCount > 0 && <PairMessages messages={messages} t={t} age={age} />}
                 </div>
             )}
         </div>

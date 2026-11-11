@@ -1951,6 +1951,11 @@ export const en = {
         pending_d_action_flip: 'Keep mine',
         pending_d_action_hide: 'Remove from list',
         pending_d_action_write: 'Write to {name}',
+        // «Mensajes (N)» on the open pair; «· N mensajes» on the closed row (2026-11-11).
+        pending_d_messages_title: 'Messages ({n})',
+        pending_d_messages_count_one: '1 message',
+        pending_d_messages_count_many: '{n} messages',
+        pending_d_message_you: 'You',
         pending_d_action_combine_theirs: 'Join keeping {name}’s',
         pending_d_action_accept_now: 'Accept now',
         pending_d_confirm_title: 'Join profiles?',
