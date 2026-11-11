@@ -2135,7 +2135,6 @@ export const pt = {
         days_left: 'faltam {days} dias para registrar',
         last_day: 'último dia para registrar',
         register_late: 'Registrar mesmo assim',
-        toggle_only_mine: 'Lembrar apenas dos animais que eu cadastrei',
         delivery_title: 'Como receber os lembretes',
         delivery_hint: 'O sininho do app sempre avisa. Além disso, você pode recebê-los por e-mail.',
         toggle_email: 'Receber lembretes também por e-mail',

@@ -38,14 +38,33 @@ const bellOnlyByRecipient = () => Object.fromEntries(vi.mocked(sendNotificationE
 
 describe('notifyOrgMembers — team copies', () => {
     it('a form for a teammate\'s animal: every copy in the bell, only the animal owner\'s may be emailed', async () => {
-        await notifyOrgMembers({ actorEmail: ANA, type: 'form_submission', title: 't', body: 'b', teamCopy: { emailTo: BEA } });
+        await notifyOrgMembers({ actorEmail: ANA, type: 'form_submission', title: 't', body: 'b', teamCopy: { emailTo: BEA, animalOwner: BEA } });
         expect(sqlite.prepare("SELECT user_id FROM notifications ORDER BY user_id").all().map(r => r.user_id)).toEqual([BEA, CAL]);
         expect(bellOnlyByRecipient()).toEqual({ [BEA]: false, [CAL]: true });
     });
 
     it('a contract (the owner is the actor): every team copy bell only', async () => {
-        await notifyOrgMembers({ actorEmail: ANA, type: 'contract_result', title: 't', body: 'b', teamCopy: { emailTo: ANA } });
+        await notifyOrgMembers({ actorEmail: ANA, type: 'contract_result', title: 't', body: 'b', teamCopy: { emailTo: ANA, animalOwner: ANA } });
         expect(bellOnlyByRecipient()).toEqual({ [BEA]: true, [CAL]: true });
+    });
+
+    it('«Mis animales»: no copy (not even the bell) unless the member added the animal', async () => {
+        sqlite.prepare(`INSERT INTO user (id, email) VALUES ('ub', ?), ('uc', ?)`).run(BEA, CAL);
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, animals_scope) VALUES ('ub', 'mine'), ('uc', 'mine')`).run();
+        await notifyOrgMembers({ actorEmail: ANA, type: 'form_submission', title: 't', body: 'b', teamCopy: { emailTo: BEA, animalOwner: BEA } });
+        expect(sqlite.prepare("SELECT user_id FROM notifications").all().map(r => r.user_id)).toEqual([BEA]);
+        sqlite.prepare('DELETE FROM notifications').run();
+        // A form for no animal of the team: nobody with «Mis animales» hears.
+        await notifyOrgMembers({ actorEmail: ANA, type: 'form_submission', title: 't', body: 'b', teamCopy: { emailTo: ANA, animalOwner: null } });
+        expect(sqlite.prepare("SELECT user_id FROM notifications").all()).toEqual([]);
+    });
+
+    it('an unreadable choice counts as the whole team, logged', async () => {
+        sqlite.prepare('DROP TABLE user_profiles').run();
+        await notifyOrgMembers({ actorEmail: ANA, type: 'form_submission', title: 't', body: 'b', teamCopy: { emailTo: BEA, animalOwner: BEA } });
+        expect(sqlite.prepare("SELECT user_id FROM notifications ORDER BY user_id").all().map(r => r.user_id)).toEqual([BEA, CAL]);
+        const { logger } = await import('@/lib/logger');
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('animals scope unreadable'), expect.objectContaining({ type: 'form_submission' }));
     });
 
     it('without teamCopy nothing changes: each copy follows its row', async () => {

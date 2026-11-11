@@ -29,7 +29,7 @@ import { sendNotificationEmail } from '@/lib/notificationEmail';
 import { renderNotification, type NotificationTemplate } from '@/domain/notificationTemplates';
 import type { NotificationType } from '@/domain/constants';
 import { notificationKillSwitchKey, notificationTypeEnabled } from '@/domain/notificationKillSwitch';
-import { teamCopyDelivery } from '@/domain/animalNotices';
+import { teamCopyDelivery, type AnimalsScope, type TeamCopyDelivery } from '@/domain/animalNotices';
 
 /**
  * Create a notification for a user.
@@ -480,7 +480,10 @@ export async function notifyAdmins(opts: {
  * With `orgId`, only that organization's members (getMemberEmailsOfOrg): an
  * event about one group (member_joined) never reaches the actor's other groups.
  * With `teamCopy` (forms and contracts, «Avisos» 2026-11-11): every copy is bell
- * only except the one to `teamCopy.emailTo` (src/domain/animalNotices.ts).
+ * only except the one to `teamCopy.emailTo`, and a member who chose «Mis
+ * animales» gets no copy unless they added the animal (src/domain/animalNotices.ts).
+ * A choice that can't be read counts as the whole team (an extra notice, never
+ * a missed one), logged.
  */
 export async function notifyOrgMembers(opts: {
     actorEmail: string;
@@ -493,8 +496,8 @@ export async function notifyOrgMembers(opts: {
     icon?: string;
     metadata?: Record<string, unknown>;
     template?: NotificationTemplate;
-    /** A team copy of a form or contract: only the copy to `emailTo` may be emailed. */
-    teamCopy?: { emailTo: string | null };
+    /** A team copy of a form or contract: only the copy to `emailTo` may be emailed; `animalOwner` null = no animal of the team. */
+    teamCopy?: { emailTo: string | null; animalOwner: string | null };
 }): Promise<void> {
     try {
         const { getOrgMemberEmailsFor, getMemberEmailsOfOrg } = await import('@/lib/orgMembership');
@@ -504,7 +507,29 @@ export async function notifyOrgMembers(opts: {
         const recipients = emails.filter((e: string) => e !== opts.actorEmail);
         if (recipients.length === 0) return;
 
-        await Promise.all(recipients.map((email: string) =>
+        // Forms and contracts: each member's «Formularios, contratos y controles de:» choice.
+        const delivery = new Map<string, TeamCopyDelivery>();
+        if (opts.teamCopy) {
+            const teamCopy = opts.teamCopy;
+            const { getAnimalsScopeForEmail } = await import('@/lib/animalsScope');
+            const db = await getDb();
+            await Promise.all(recipients.map(async (email: string) => {
+                let scope: AnimalsScope = 'team';
+                try {
+                    if (!db) throw new Error('Database not available');
+                    scope = await getAnimalsScopeForEmail(db, email);
+                } catch (e) {
+                    logger.warn('notifyOrgMembers: animals scope unreadable, the whole team assumed', { type: opts.type, recipient: email, error: e instanceof Error ? e.message : String(e) });
+                }
+                delivery.set(email, teamCopyDelivery({ recipient: email, emailTo: teamCopy.emailTo, animalOwner: teamCopy.animalOwner, scope }));
+            }));
+        }
+        const told = recipients.filter((email: string) => delivery.get(email) !== 'skip');
+        if (told.length < recipients.length) {
+            logger.info('notifyOrgMembers: «Mis animales» members skipped', { type: opts.type, recipients: recipients.length, kept: told.length });
+        }
+
+        await Promise.all(told.map((email: string) =>
             createNotification({
                 userId: email,
                 type: opts.type,
@@ -514,11 +539,11 @@ export async function notifyOrgMembers(opts: {
                 icon: opts.icon,
                 metadata: opts.metadata,
                 template: opts.template,
-                ...(opts.teamCopy && teamCopyDelivery({ recipient: email, emailTo: opts.teamCopy.emailTo }) === 'bell' ? { bellOnly: true } : {}),
+                ...(delivery.get(email) === 'bell' ? { bellOnly: true } : {}),
             })
         ));
 
-        logger.info('Org member notifications sent', { type: opts.type, count: recipients.length });
+        logger.info('Org member notifications sent', { type: opts.type, count: told.length });
     } catch (error) {
         logger.warn('notifyOrgMembers failed (non-critical)', { type: opts.type, orgId: opts.orgId, error: error instanceof Error ? error.message : String(error) });
     }

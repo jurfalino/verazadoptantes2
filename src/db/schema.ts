@@ -774,6 +774,9 @@ export const userProfiles = sqliteTable("user_profiles", {
     // «Avisame de cambios hechos por:» (src/domain/teamChangeAudience.ts):
     // NULL/'outside' = other rescuers only (default), 'team' = also my team. Bell and email.
     profileChangesFrom: text("profile_changes_from"),
+    // «Formularios, contratos y controles de:» (src/domain/animalNotices.ts): NULL/'team' = the
+    // whole team's animals (default), 'mine' = only the animals I added. Bell and email. Migration 0107.
+    animalsScope: text("animals_scope"),
     // Mis adoptantes: the filters this person pinned onto the main screen — JSON array of
     // FilterKey (src/domain/adopterListView.ts), at most PIN_MAX. NULL = the defaults.
     adopterListPins: text("adopter_list_pins"),

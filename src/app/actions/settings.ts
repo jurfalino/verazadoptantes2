@@ -363,7 +363,6 @@ const followupSettingsSchema = z.object({
     fosterIntervalDays: z.number().int().min(7).max(120).optional(),
     messages: z.record(z.string().max(40), z.string().max(1000)).optional(),
     emailReminders: z.boolean().optional(),
-    onlyMyAnimals: z.boolean().optional(),
 }).nullable();
 
 /** Keep only known subtypes, so an unknown key can never reach the DB. */

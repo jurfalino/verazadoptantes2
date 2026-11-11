@@ -2136,7 +2136,6 @@ export const es = {
         days_left: 'te quedan {days} días para registrarlo',
         last_day: 'último día para registrarlo',
         register_late: 'Registrar igual',
-        toggle_only_mine: 'Recordarme solo los animales que cargué yo',
         delivery_title: 'Cómo recibir los recordatorios',
         delivery_hint: 'La campanita de la app avisa siempre. Además, podés recibirlos por e-mail.',
         toggle_email: 'Recibir recordatorios también por e-mail',

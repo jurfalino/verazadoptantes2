@@ -104,7 +104,7 @@ export default function AnimalTimeline({ animalId, items, animalSex, userNameMap
     missed?: TimelineMissed[];
     onAddEvent?: () => void;
     /** How the reminder for an upcoming slot will actually be delivered. */
-    reminder?: { email: boolean; toYou: boolean };
+    reminder?: { email: boolean; toYou: boolean; canEmail?: boolean };
 }) {
     const { formatShortDate } = useDateFormat();
     const { t } = useLanguage();
@@ -241,7 +241,8 @@ export default function AnimalTimeline({ animalId, items, animalSex, userNameMap
                                                         {reminder?.email
                                                             ? (t('followups.reminder_channel_both') || 'El aviso llega a la campanita y a tu correo.')
                                                             : (t('followups.reminder_channel_bell') || 'El aviso llega a la campanita de la app.')}
-                                                        {!reminder?.email && (
+                                                        {/* Only whoever added the animal can get it by email («Avisos», 2026-11-11). */}
+                                                        {!reminder?.email && reminder?.canEmail !== false && (
                                                             <> <Link href="/settings#followups" className="font-semibold text-teal-700 hover:underline">
                                                                 {t('followups.reminder_enable_email') || 'Recibirlo también por correo'}
                                                             </Link></>

@@ -23,6 +23,7 @@ import {
     followupsEnabled,
 } from '../../../src/domain/followups';
 import { notificationKillSwitchKey, notificationTypeEnabled } from '../../../src/domain/notificationKillSwitch';
+import { followupDelivery, parseAnimalsScope, type AnimalsScope } from '../../../src/domain/animalNotices';
 import { dedupKey, notificationBody, bellNotice, buildFollowupEmail, type FollowupEmailItem, type BellItem } from './copy';
 import { log, type AxiomEnv } from './log';
 
@@ -162,15 +163,19 @@ export default {
             }
             const everyEmail = Array.from(new Set([...owners, ...[...recipientsByOwner.values()].flat()]));
             const settingsByEmail = new Map<string, FollowupSettings | null>();
+            // «Formularios, contratos y controles de:» (Configuración → Avisos), 'team' when unreadable.
+            const scopeByEmail = new Map<string, AnimalsScope>();
             for (const email of everyEmail) {
                 try {
                     const row = await env.DB.prepare(
-                        `SELECT up.followup_settings AS s FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
-                    ).bind(email).first<{ s: string | null }>();
+                        `SELECT up.followup_settings AS s, up.animals_scope AS scope FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
+                    ).bind(email).first<{ s: string | null; scope: string | null }>();
                     settingsByEmail.set(email, parseFollowupSettings(row?.s));
+                    scopeByEmail.set(email, parseAnimalsScope(row?.scope));
                 } catch (e) {
                     log(env, 'warn', { warn: 'settings fallback', email, error: String(e) }, ctx);
                     settingsByEmail.set(email, null);
+                    scopeByEmail.set(email, 'team');
                 }
             }
 
@@ -223,12 +228,14 @@ export default {
                         }).filter(s => s.status === 'due'); // NEVER missed — storm guard #1
                         summary.due += slots.length;
 
-                        // v2.55.20: a member who chose «solo los animales que
-                        // cargué yo» is dropped from OTHER people's animals
-                        // (the owner always keeps their own). Visibility is
-                        // unaffected — this is purely about being pinged.
-                        const recipients = (recipientsByOwner.get(p.added_by) ?? [p.added_by])
-                            .filter(r => r === p.added_by || settingsByEmail.get(r)?.onlyMyAnimals !== true);
+                        // «Avisos» (2026-11-11, src/domain/animalNotices.ts followupDelivery): a teammate
+                        // gets the bell only, or nothing with «Mis animales»; the digest email is for
+                        // whoever added the animal, when they switched it on. Visibility is unaffected.
+                        const delivery = new Map((recipientsByOwner.get(p.added_by) ?? [p.added_by]).map(r => [r, followupDelivery({
+                            recipient: r, owner: p.added_by, scope: scopeByEmail.get(r) ?? 'team',
+                            emailReminders: settingsByEmail.get(r)?.emailReminders === true,
+                        })] as const));
+                        const recipients = [...delivery.keys()].filter(r => delivery.get(r) !== 'skip');
                         for (const s of slots) {
                             for (const recipient of recipients) {
                                 const key = dedupKey(p.id, s.key, recipient);
@@ -254,11 +261,11 @@ export default {
                                 bellQueue.set(recipient, bell);
                                 summary.notified++;
 
-                                // v2.55.19/21: opt-in email — the RECIPIENT's own setting
-                                // decides. Queued here (inside the post-insert branch) so
+                                // v2.55.19/21: opt-in email — the owner's own setting
+                                // decides (followupDelivery). Queued here (inside the post-insert branch) so
                                 // the digest covers exactly the slots that were newly
                                 // notified, then sent once per recipient after the scan.
-                                if (resendKey && settingsByEmail.get(recipient)?.emailReminders === true) {
+                                if (resendKey && delivery.get(recipient) === 'bell_and_email') {
                                     const queue = emailQueue.get(recipient) || [];
                                     queue.push({
                                         animalName: p.name,

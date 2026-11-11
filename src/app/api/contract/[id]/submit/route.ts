@@ -460,7 +460,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         icon: '📝',
                         metadata: { adopterId, adopterName: fullName, animalName: animal.animalName },
                         // Bell only («Avisos», Jon 2026-11-11): the email is the animal owner's copy above.
-                        teamCopy: { emailTo: rescuerEmail },
+                        // Nothing for a member who chose «Mis animales» (the owner is the actor, excluded).
+                        teamCopy: { emailTo: rescuerEmail, animalOwner: rescuerEmail },
                     });
                 }, { adopterId, animalId, rescuerEmail });
             }

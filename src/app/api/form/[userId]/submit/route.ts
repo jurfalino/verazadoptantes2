@@ -358,8 +358,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // Who may get this form by email («Avisos», Jon 2026-11-11): whoever added the animal when
             // it is the team's, else the link owner. Every other copy is bell only. A failed team
             // lookup falls back to the link owner, logged.
-            const { animalNoticeEmailTo, teamCopyDelivery } = await import('@/domain/animalNotices');
+            const { animalNoticeEmailTo } = await import('@/domain/animalNotices');
             let emailTo = rescuerEmail;
+            let teamAnimalOwner: string | null = null;
             try {
                 const [{ getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
                     import('@/lib/orgMembership'), import('@/lib/applicantScope'),
@@ -367,10 +368,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 const animalInTeam = !!selectedAnimalId && !!teammateVisibleAnimal(
                     { id: selectedAnimalId, name: selectedAnimalName, owner: selectedAnimalOwner }, await getTeamEmails(rescuerEmail));
                 emailTo = animalNoticeEmailTo({ linkOwner: rescuerEmail, animalOwner: selectedAnimalOwner, animalInTeam });
+                teamAnimalOwner = animalInTeam ? selectedAnimalOwner : null;
             } catch (e) {
                 logger.warn('Form submit: email recipient falls back to the link owner', { submissionId, selectedAnimalId, error: e instanceof Error ? e.message : String(e) });
             }
-            const ownerBellOnly = teamCopyDelivery({ recipient: rescuerEmail, emailTo }) === 'bell';
+            // The link owner's own copy (not a team copy: «Mis animales» doesn't apply) is emailed only when it's theirs to answer.
+            const ownerBellOnly = emailTo.trim().toLowerCase() !== rescuerEmail.trim().toLowerCase();
 
             // When the submission targets a specific animal the title reads
             // "Juana aplicó para Luna", with the match count appended
@@ -459,8 +462,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         submissionId, submitterName: name,
                         selectedAnimalId: animal?.id ?? null, selectedAnimalName: animal?.name ?? null,
                     },
-                    // Bell only, except the copy to the animal's owner when a teammate added it.
-                    teamCopy: { emailTo },
+                    // Bell only, except the copy to the animal's owner when a teammate added it; nothing
+                    // for a member who chose «Mis animales» unless it is their animal.
+                    teamCopy: { emailTo, animalOwner: teamAnimalOwner },
                 });
             }, { submissionId, rescuerEmail, selectedAnimalId });
         } catch (searchErr) {

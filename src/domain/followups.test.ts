@@ -172,12 +172,14 @@ describe('mergeSchedule / mergeFosterRule / settings parse', () => {
 });
 
 describe('v2.55.20 preferences', () => {
-    it('parses onlyMyAnimals + emailReminders, ignoring non-true values', () => {
-        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":true,"emailReminders":true}'))
-            .toEqual({ version: 1, onlyMyAnimals: true, emailReminders: true });
+    it('parses emailReminders, ignoring non-true values', () => {
+        expect(parseFollowupSettings('{"version":1,"emailReminders":true}')).toEqual({ version: 1, emailReminders: true });
         // Only a literal `true` opts in — "false"/1/"yes" must not enable it.
-        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":"true","emailReminders":1}'))
-            .toEqual({ version: 1 });
+        expect(parseFollowupSettings('{"version":1,"emailReminders":1}')).toEqual({ version: 1 });
+    });
+
+    it('onlyMyAnimals is gone: «Formularios, contratos y controles de:» (user_profiles.animals_scope) replaced it', () => {
+        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":true}')).toEqual({ version: 1 });
     });
 
     it('the scan bound still covers the longest DEFAULT slot (worker guard invariant)', () => {
