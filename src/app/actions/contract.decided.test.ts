@@ -1,6 +1,6 @@
 /**
- * Final review I3 — «Enviar contrato» from a stale panel: an applicant whose applications for this animal
- * are all decided (declined, closed…) gets no contract, and nothing is written — not even the retirement of
+ * Final review I3 — «Enviar contrato» from a stale panel: an applicant the team turned down («No avanzar»)
+ * for this animal, with no open application left, gets no contract, and nothing is written — not even the retirement of
  * another applicant's live link. A profile with no application keeps today's full-access path.
  * Real SQL on the real schema (migratedDb).
  */
@@ -68,6 +68,12 @@ describe('createContractInvitation on an applicant already decided', () => {
         form(sqlite, 's-luna-2', { adopter: 'ana', animal: 'luna' });
         application(sqlite, 'app-s-luna-2', 's-luna-2', 'luna');
         expect(await createContractInvitation('luna', 'ana')).toMatchObject({ success: true });
+    });
+
+    it('a candidate closed by an adoption (the animal came back later) can still be sent a contract — only «No avanzar» refuses', async () => {
+        sqlite.prepare(`UPDATE applications SET state = 'closed', close_reason = 'adopted_other', closed_at = ? WHERE id = 'app-s-luna'`).run(NOW);
+        expect(await createContractInvitation('luna', 'ana')).toMatchObject({ success: true });
+        expect(invitesFor('ana')).toHaveLength(1);
     });
 
     it('a profile with no application at all keeps the full-access path', async () => {

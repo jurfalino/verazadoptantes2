@@ -32,6 +32,8 @@ export interface InvitationAccess extends InvitationAccessDecision {
     submissionIds: string[];
     /** An applicant with at least one OPEN application for this animal. False when every one is decided — or when there is none. */
     hasOpenApplication: boolean;
+    /** At least one of those applications ended in «No avanzar». */
+    hasDeclinedApplication: boolean;
 }
 
 /**
@@ -90,5 +92,6 @@ export async function resolveInvitationAccess(
         submitted,
         submissionIds: [...new Set(submissions.map(s => s.id))],
         hasOpenApplication: submissions.some(s => s.state === APPLICATION_STATES.OPEN),
+        hasDeclinedApplication: submissions.some(s => s.state === APPLICATION_STATES.DECLINED),
     };
 }

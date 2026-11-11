@@ -30,9 +30,9 @@ export interface CreateInvitationResult {
     token?: string;
     url?: string;
     /** `'not_allowed'` when the adopter is neither an applicant for this animal
-     *  nor a profile the caller fully sees; `'already_decided'` when every one of
-     *  their applications for this animal already has an outcome (a teammate's
-     *  «No avanzar» while this panel was open); otherwise a free-text failure. */
+     *  nor a profile the caller fully sees; `'already_decided'` when the team turned
+     *  them down for this animal and none of their applications is still open
+     *  (a teammate's «No avanzar» while this panel was open); otherwise a free-text failure. */
     error?: string;
     errorId?: string;
 }
@@ -91,10 +91,11 @@ export async function createContractInvitation(
             });
             return { success: false, error: 'not_allowed', errorId };
         }
-        // An applicant whose applications for this animal are all decided (declined, closed…) gets no contract:
-        // the panel that offered the button was read before the outcome. Refused BEFORE the retirement below,
-        // so another applicant's live link survives. A profile with no application keeps the full-access path.
-        if (access.via === 'applicant' && !access.hasOpenApplication) {
+        // An applicant the team turned down («No avanzar») for this animal, with no open application left, gets
+        // no contract: the panel that offered the button was read before the decline. Refused BEFORE the
+        // retirement below, so another applicant's live link survives. Candidates closed by an adoption stay
+        // sendable (the animal may have come back), and a profile with no application keeps the full-access path.
+        if (access.via === 'applicant' && !access.hasOpenApplication && access.hasDeclinedApplication) {
             logger.info('createContractInvitation: refused — the application already has an outcome', { animalId, adopterId, createdBy: userEmail });
             return { success: false, error: 'already_decided' };
         }
