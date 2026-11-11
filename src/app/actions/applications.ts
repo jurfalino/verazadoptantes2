@@ -138,15 +138,22 @@ export async function declineApplication(applicationId: string, input: { text: s
         const auth = await loadAuthorizedApplication(db, applicationId, viewer);
         if (!auth) return fail('not_found');
         const { app, submission, animal } = auth;
-        if (app.state !== APPLICATION_STATES.OPEN) return fail('already_decided');
+        const recordId = declineRecordId(applicationId);
+        const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
+        if (app.state !== APPLICATION_STATES.OPEN) {
+            // This viewer's own decline already landed (a retry after a timeout the client saw): it worked —
+            // never «No se guardó tu observación». Anyone else's outcome: already decided.
+            if (await isDeclinedWith(db, applicationId, recordId) && norm(await declineRecordAuthor(db, recordId)) === norm(viewer)) {
+                return { ok: true, recordId };
+            }
+            return fail('already_decided');
+        }
         const adopterId = submission.linkedAdopterId;
         if (!adopterId || !(await liveAdopterExists(db, adopterId))) return fail('not_allowed');
 
         // 0. Another rescuer's observation already sits on the pre-seeded id: theirs is the decision. Nothing of
         //    this call is written; their decline is finished (CAS) so the application never stays open behind it.
-        const recordId = declineRecordId(applicationId);
         const author = await declineRecordAuthor(db, recordId);
-        const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
         if (author !== undefined && norm(author) !== norm(viewer)) {
             const finishedBy = author || viewer;
             const nowSec = Math.floor(Date.now() / 1000);

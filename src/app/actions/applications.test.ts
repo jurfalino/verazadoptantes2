@@ -83,10 +83,15 @@ describe('declineApplication («No avanzar»)', () => {
     });
 
     it('declineApplication twice → one adopter_events row, state declined once', async () => {
-        // A double tap after the first landed: the second is told it is already decided.
+        // A retry after the first landed (the client saw a timeout): the same viewer is told it worked —
+        // never «No se guardó tu observación»; a teammate after it is told it is already decided.
         expect(await declineApplication('app-s-luna', DECLINE)).toMatchObject({ ok: true });
-        expect(await declineApplication('app-s-luna', DECLINE)).toEqual({ ok: false, error: 'already_decided' });
+        expect(await declineApplication('app-s-luna', DECLINE)).toEqual({ ok: true, recordId: 'decline-app-s-luna' });
+        session.user = MATE;
+        expect(await declineApplication('app-s-luna', { ...DECLINE, rating: 1 })).toEqual({ ok: false, error: 'already_decided' });
+        session.user = OWNER;
         expect(events('decline-app-s-luna')).toHaveLength(1);
+        expect(events('decline-app-s-luna')[0]).toMatchObject({ rating: 4, recorded_by: OWNER });
         const closedAt = appRow('app-s-luna').closed_at;
 
         // A network retry after the observation landed but the application did not
