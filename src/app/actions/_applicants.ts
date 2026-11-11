@@ -285,18 +285,26 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
         let requestCount = 0;
         let flags: AdopterFlags | null = null;
         let adopterContext: ApplicantAdopterContext | null = null;
+        // The profile the form sits on, when it is LIVE: a soft-deleted or missing one reads as unlinked (no
+        // to-do — `isToDo`), as the counts' `openOnProfile` reads it (applicationCounts.ts).
+        let profileId: string | null = null;
 
+        type LinkedRecord = { rating: number | null; recordType: string | null; date: Date | number | null; addedBy: string | null; identityVerified: number | null; deliveredToHome: number | null; verifiedAddress: string | null };
+        let records: LinkedRecord[] = [];
+        let flagRows: Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }> = [];
         if (row.linkedAdopterId) {
-            const [adopter, records, flagRows] = await Promise.all([
+            let adopter: { name: string; addedBy: string | null; source: string | null; country: string | null; deletedAt: unknown } | undefined;
+            [adopter, records, flagRows] = await Promise.all([
                 db.select({
                     name: adopters.name,
                     addedBy: adopters.addedBy,
                     source: adopters.source,
                     country: adopters.country,
+                    deletedAt: adopters.deletedAt,
                 })
                     .from(adopters)
                     .where(eq(adopters.id, row.linkedAdopterId))
-                    .get() as Promise<{ name: string; addedBy: string | null; source: string | null; country: string | null } | undefined>,
+                    .get() as Promise<{ name: string; addedBy: string | null; source: string | null; country: string | null; deletedAt: unknown } | undefined>,
                 db.select({ rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy, identityVerified: adoptions.identityVerified, deliveredToHome: adoptions.deliveredToHome, verifiedAddress: adoptions.verifiedAddress })
                     .from(adoptions)
                     .where(eq(adoptions.adopterId, row.linkedAdopterId))
@@ -306,7 +314,8 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
                     .where(eq(adopterFlags.adopterId, row.linkedAdopterId))
                     .all() as Promise<Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }>>,
             ]);
-            if (adopter) {
+            if (adopter && !adopter.deletedAt) {
+                profileId = row.linkedAdopterId;
                 adopterName = adopter.name;
                 adopterContext = {
                     addedBy: adopter.addedBy,
@@ -315,6 +324,8 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
                     country: adopter.country,
                 };
             }
+        }
+        if (profileId) {
             adopterRating = computeAvgRating(records);
             for (const r of records) {
                 if (r.recordType === 'adoption') adoptionCount++;
@@ -325,20 +336,20 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
             // surfaces flag pills, not the system-duplicate badge). If we ever
             // surface it, add a third parallel query above.
             // The period alerts are filled in below, once per list (P2), and only when read.
-            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0, records), ...NO_PERIOD_ALERTS };
-            recordsByAdopter.set(row.linkedAdopterId, records);
+            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: profileId!, ...f })), 0, records), ...NO_PERIOD_ALERTS };
+            recordsByAdopter.set(profileId, records);
         }
 
         // Every invitation of this animal + adopter: the status (contract sent / retired link) reads them.
         let invitations: InvitationLike[] = [];
-        if (row.animalId && row.linkedAdopterId) {
+        if (row.animalId && profileId) {
             invitations = await db.select({
                 createdAt: contractInvitations.createdAt,
                 expiresAt: contractInvitations.expiresAt,
                 usedAt: contractInvitations.usedAt,
             })
                 .from(contractInvitations)
-                .where(and(eq(contractInvitations.animalId, row.animalId), eq(contractInvitations.adopterId, row.linkedAdopterId)))
+                .where(and(eq(contractInvitations.animalId, row.animalId), eq(contractInvitations.adopterId, profileId)))
                 .all() as InvitationLike[];
         }
         const status = applicationStatus(
@@ -397,7 +408,7 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
             askedAnimal,
             outcomeAnimal,
             submissionId: row.id,
-            adopterId: row.linkedAdopterId,
+            adopterId: profileId,
             adopterName,
             adopterRating,
             appliedAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,

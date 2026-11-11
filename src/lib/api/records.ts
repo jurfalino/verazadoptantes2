@@ -347,7 +347,13 @@ export async function voidApiRecord(db: Db, recordId: string, opts: { keyId: str
                 .where(and(eq(adopters.id, currentProfileId), isNull(adopters.deletedAt)))
                 .returning({ id: adopters.id });
             profileVoided = gone.length > 0;
-            if (profileVoided) await closeRequestsForDeletedAdopter(db, currentProfileId, opts.actor);
+            if (profileVoided) {
+                await closeRequestsForDeletedAdopter(db, currentProfileId, opts.actor);
+                // As the rescuer's own delete (deleteOwnAdopter): no form stays linked to a deleted profile. Today none
+                // can be — a linked form is «other data» (profileHasOtherData) and keeps the profile — so this only guards
+                // that rule changing.
+                await db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, currentProfileId));
+            }
         }
     }
 

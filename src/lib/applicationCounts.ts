@@ -46,11 +46,16 @@ const liveLink = (nowSec: number) => and(
     or(isNull(contractInvitations.expiresAt), gt(contractInvitations.expiresAt, nowSec)),
 );
 
-/** Open and on a profile — `isToDo` before the link check (a query that left-joins `liveLink` adds «no match»). */
+/**
+ * Open and on a LIVE profile — `isToDo` before the link check (a query that left-joins `liveLink` adds «no
+ * match»). A soft-deleted or missing profile is no profile: nobody can decline or send a contract to it, and
+ * the panel lists it unlinked (enrichApplicantRows). EXISTS, not a join: one select per count.
+ */
 const openOnProfile = (scope: unknown) => and(
     scope as never,
     eq(applications.state, APPLICATION_STATES.OPEN),
     isNotNull(formSubmissions.linkedAdopterId),
+    sql`EXISTS (SELECT 1 FROM adopters ad WHERE ad.id = ${formSubmissions.linkedAdopterId} AND ad.deleted_at IS NULL)`,
 );
 const noLiveLink = isNull(contractInvitations.token);
 

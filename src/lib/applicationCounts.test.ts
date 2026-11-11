@@ -196,6 +196,23 @@ describe('I1 — an application nobody can finish defers no pair (Q6)', () => {
     });
 });
 
+describe('I2 — an application on a deleted profile is no to-do (home = tab = panel)', () => {
+    it('a soft-deleted (or missing) applicant profile counts nowhere, and the panel agrees', async () => {
+        for (const id of ['d1', 'd2']) sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, deleted_at) VALUES (?, ?, '5', ?, ?)`).run(id, id, OWNER, NOW);
+        form('fd1', OWNER, 'd1', 'luna'); app('fd1', 'luna');   // soft-deleted profile (admin «Papelera»)
+        form('fd2', OWNER, 'gone', 'luna'); app('fd2', 'luna'); // dangling id: the profile row is gone
+        form('hd1', MATE, 'd2', null); app('hd1', null);        // a general one on a soft-deleted profile
+        const listed = (await loadApplicantsForAnimal(state.db, { id: 'luna', adopterId: null }, teamOf('luna'), OWNER)).filter(isToDo);
+        expect(listed.map(a => a.submissionId)).not.toContain('fd1');
+        expect(listed.map(a => a.submissionId)).not.toContain('fd2');
+        expect(listed).toHaveLength(4);
+        expect((await countToEvaluateByAnimal(state.db, teamOf('luna'), NOW)).get('luna')).toBe(4);
+        expect(await countGeneralToEvaluate(state.db, [OWNER, MATE])).toBe(1);
+        const ids = await toEvaluateAdopterIds(state.db, [OWNER, MATE], NOW);
+        for (const id of ['d1', 'd2', 'gone']) expect(ids.has(id), id).toBe(false);
+    });
+});
+
 describe('offerCountsByAnimal', () => {
     it('counts candidates closed by another adoption whose offer is not done', async () => {
         form('c1', OWNER, 'a7', 'luna'); app('c1', 'luna', { state: 'closed', closeReason: 'adopted_other' });
