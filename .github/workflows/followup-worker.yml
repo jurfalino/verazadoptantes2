@@ -6,6 +6,8 @@ on:
     paths:
       - 'workers/followup-cron/**'
       - 'src/domain/followups.ts'
+      # Bundled by copy.ts (digest email link tagging).
+      - 'src/domain/notificationTracking.ts'
   workflow_dispatch:
     inputs:
       target:

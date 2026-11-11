@@ -40,8 +40,9 @@ describe('buildFollowupEmail — one adaptive template', () => {
         const mail = buildFollowupEmail([item('Luna')], 'https://app.test/my-animals');
         expect(mail.subject).toBe(notificationTitle('Luna'));
         expect(mail.html).toContain('Control del primer mes');
-        // CTA goes to THAT animal, not the list.
-        expect(mail.html).toContain('https://app.test/my-animals/a1#next-action');
+        // CTA goes to THAT animal, not the list — tagged as a digest-email click.
+        expect(mail.html).toContain('href="https://app.test/my-animals/a1?ch=email&amp;kind=follow_up_digest#next-action"');
+        expect(mail.text).toContain('https://app.test/my-animals/a1?ch=email&kind=follow_up_digest#next-action');
         expect(mail.html).toContain('Ver en BuenAdoptante');
         expect(mail.text).toContain('Seguimiento pendiente: Luna');
     });
@@ -50,9 +51,11 @@ describe('buildFollowupEmail — one adaptive template', () => {
         const mail = buildFollowupEmail([item('Luna', 1), item('Rocco', 2), item('Milo', 3)], 'https://app.test/my-animals');
         expect(mail.subject).toBe('3 seguimientos pendientes');
         for (const name of ['Luna', 'Rocco', 'Milo']) expect(mail.html).toContain(name);
-        // Each row keeps its own deep link…
-        expect(mail.html).toContain('https://app.test/my-animals/a2#next-action');
-        // …and the button points at the triage board.
+        // Each row keeps its own deep link (tagged)…
+        expect(mail.html).toContain('href="https://app.test/my-animals/a2?ch=email&amp;kind=follow_up_digest#next-action"');
+        expect(mail.text).toContain('https://app.test/my-animals/a2?ch=email&kind=follow_up_digest#next-action');
+        // …and the button points at the triage board (tagged).
+        expect(mail.html).toContain('href="https://app.test/my-animals?ch=email&amp;kind=follow_up_digest"');
         expect(mail.html).toContain('Ver mis animales');
         expect(mail.text).toContain('- Rocco —');
     });

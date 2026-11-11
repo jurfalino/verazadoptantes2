@@ -276,6 +276,24 @@ describe('buildNotificationEmail', () => {
         expect(m.subject).toBe('Hola');
         expect(m.html).not.toContain('Staging');
     });
+    it('tags the main link with the notification id, channel and type — never settings or unsubscribe', () => {
+        const m = buildNotificationEmail(
+            { title: 't', body: 'b', url: '/my-animals?view=pendientes#top', notificationId: 'n-42', type: 'merge_request', undoUrl: '/a?undoRename=h' },
+            { ...links, unsubscribeUrl: 'https://u/x' }, prod,
+        );
+        const tagged = 'https://staging.buenadoptante.org/my-animals?view=pendientes&amp;n=n-42&amp;ch=email&amp;kind=merge_request#top';
+        expect(m.html).toContain(`href="${tagged}"`);
+        expect(m.text).toContain('https://staging.buenadoptante.org/my-animals?view=pendientes&n=n-42&ch=email&kind=merge_request#top');
+        // The undo (opens a confirmation), settings and the signed unsubscribe link stay untouched.
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/a?undoRename=h"');
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/settings"');
+        expect(m.html).toContain('href="https://u/x"');
+    });
+    it('without a notification id the link is untagged', () => {
+        const m = buildNotificationEmail({ title: 't', body: 'b', url: '/a' }, links, prod);
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/a"');
+        expect(m.html).not.toContain('ch=email');
+    });
     it('en and pt chrome', () => {
         const en = buildNotificationEmail({ title: 't', body: 'b', url: null }, { ...links, unsubscribeUrl: 'https://u/x' }, { locale: 'en', staging: false });
         expect(en.html).toContain('View on BuenAdoptante');
@@ -298,6 +316,12 @@ describe('profile_renamed email: a second «Deshacer» button (households as pro
         expect(msg.subject).toBe('[Staging] Jonathan U cambió el nombre de Pedro Paez a P. Paez');
         expect(msg.html).toMatch(/Ver en BuenAdoptante<\/a><a href="[^"]*\/adopter\/pedro\?undoRename=h-1"[^>]*>Deshacer<\/a>/);
         expect(msg.text).toMatch(/Deshacer: \S*\/adopter\/pedro\?undoRename=h-1/);
+    });
+    it('the sent email\'s main link carries this notification\'s id', async () => {
+        const id = addNotif('profile_renamed');
+        await sendNotificationEmail({ id, userId: EMAIL, type: 'profile_renamed', title: 'T', body: 'B', url: '/adopter/pedro', metadata });
+        const msg = send.mock.calls[0][0] as { html: string; text: string };
+        expect(msg.text).toContain(`/adopter/pedro?n=${id}&ch=email&kind=profile_renamed`);
     });
     it('no undo in the metadata (or another type) → one button only', async () => {
         const id = addNotif('profile_renamed');

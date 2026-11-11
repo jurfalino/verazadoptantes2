@@ -107,7 +107,7 @@ export async function sendNotificationEmail(n: {
     const text = localizedNotification({ title: n.title, body: n.body, metadata: n.metadata }, locale);
     // A rename notice carries «Deshacer» (metadata.undo): a second button that opens the confirmation on the profile.
     const undoUrl = n.type === 'profile_renamed' ? renameUndoPath(n.metadata) : null;
-    const message = buildNotificationEmail({ title: text.title, body: text.body, url: n.url ?? null, undoUrl }, { appBaseUrl: base, unsubscribeUrl: unsub },
+    const message = buildNotificationEmail({ title: text.title, body: text.body, url: n.url ?? null, undoUrl, notificationId: n.id, type: n.type }, { appBaseUrl: base, unsubscribeUrl: unsub },
         { locale, staging: isStagingEnvironment() });
     // Only «Escribirle» messages carry a reply-to: the sender chose to be reachable.
     const replyTo = replyToFor(n.type, n.metadata);
