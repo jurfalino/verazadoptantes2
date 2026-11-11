@@ -92,6 +92,7 @@ describe('emailThrottleKey', () => {
 
 describe('isInAppOnly', () => {
     it('member_removed is a notice in the app only, never emailed (F6, Jon)', () => expect(isInAppOnly('member_removed')).toBe(true));
+    it('adopter_login_blocked is an admin-queue notice in the bell only, never emailed (notifications cleanup Phase 1)', () => expect(isInAppOnly('adopter_login_blocked')).toBe(true));
     it('every other type keeps its email twin', () => {
         for (const t of ['member_joined', 'merge_request', 'form_submission', 'some_unknown_type']) expect(isInAppOnly(t), t).toBe(false);
     });

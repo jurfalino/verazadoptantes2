@@ -25,6 +25,7 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     pii_access_revoked: { adopterName: 'Carla' },
     pii_access_request: { requesterName: 'Ana', adopterName: 'Carla', kind: 'direct' },
     deletion_request: { requesterName: 'Ana' },
+    adopter_login_blocked: { email: 'blocked@example.com', matchName: 'Pedro Paez', reason: 'low_rating' },
     adopter_flagged: { reporterName: 'Ana', reason: 'dangerous' },
     duplicate_flagged: { reporterName: 'Ana', nameA: 'María García López', nameB: 'Jonatan Urfalino' },
     inaccuracy_reported: { reporterName: 'Ana', adopterName: 'Carla Gómez', details: 'El teléfono ya no es suyo.' },

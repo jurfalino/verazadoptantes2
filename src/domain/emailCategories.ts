@@ -70,8 +70,12 @@ export function categoryForType(type: string): EmailCategory {
     return Object.prototype.hasOwnProperty.call(TYPE_TO_CATEGORY, type) ? TYPE_TO_CATEGORY[type] : 'other';
 }
 
-/** Notices shown in the app only, never emailed (F6, Jon: being removed from a group is an in-app notice, no email). */
-const IN_APP_ONLY_TYPES: ReadonlySet<string> = new Set(['member_removed']);
+/**
+ * Notices shown in the app only, never emailed. F6, Jon: being removed from a group is an in-app
+ * notice, no email. Admin-queue items are bell only (notifications cleanup Phase 1):
+ * `adopter_login_blocked` also has its list at /admin/blocked-logins.
+ */
+const IN_APP_ONLY_TYPES: ReadonlySet<string> = new Set(['member_removed', 'adopter_login_blocked']);
 
 export function isInAppOnly(type: string): boolean {
     return IN_APP_ONLY_TYPES.has(type);

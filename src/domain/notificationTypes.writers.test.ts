@@ -3,7 +3,7 @@
  * round 2, item 3): the bell and /notificaciones label and draw a type from that
  * list (NotificationTypeIcon.test checks each has an es/en/pt label and an icon),
  * so a writer whose type is missing there shows a raw key and a generic bell —
- * as `adopter_login_blocked` (blockedLoginRecorder) did.
+ * as `adopter_login_blocked` (blockedLoginRecorder, then a raw insert) did.
  *
  * The scan reads the writers' source: the `type:` of every createNotification /
  * notifyAdmins / notifyOrgMembers / notifyApprovers call and raw
@@ -103,7 +103,7 @@ describe('notification writers', () => {
     it('the scan sees every kind of writer (it can\'t pass by finding nothing)', () => {
         expect(sites).toBeGreaterThan(30);
         for (const t of [
-            'adopter_login_blocked', // raw insert(notifications)
+            'adopter_login_blocked', // createNotification in a fan-out (blockedLoginRecorder)
             'household_linked', // householdNotices send(…, type)
             'profile_renamed', // profileIdentity sendTo(…, type)
             'pii_access_denied', // a ternary type

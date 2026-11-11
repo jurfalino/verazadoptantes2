@@ -42,6 +42,12 @@ export interface NotificationTemplateParams {
     /** `kind`: 'contribution' (auto-fired after adding a detail) or 'direct'. */
     pii_access_request: { requesterName: string; adopterName?: string; kind: string };
     deletion_request: { requesterName: string };
+    /**
+     * Admins only (bell only, never emailed): someone whose sign-in matched a blocked adopter profile.
+     * `email`: the address that tried (admin-only, as before); `matchName`: the matched profile's name
+     * (or its id when unnamed); `reason`: the gate's trigger codes, as admins read them today.
+     */
+    adopter_login_blocked: { email: string; matchName?: string; reason: string };
     /** `reason` is the FLAG_REASONS code (admins read it as is today). */
     adopter_flagged: { reporterName: string; reason: string };
     /** To whoever added each profile when someone flags them as one person; a missing name reads «un perfil». */
@@ -366,6 +372,12 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
                     : `${p.requesterName} solicitou acesso aos dados de contato ${p.adopterName ? `de ${a}` : 'do adotante'}.`,
             };
         },
+    },
+    adopter_login_blocked: {
+        required: ['email', 'reason'],
+        es: p => ({ title: `Intento de login bloqueado: ${p.email}`, body: p.matchName?.trim() ? `Coincide con perfil: ${p.matchName.trim()}. Motivo: ${p.reason}` : `Motivo: ${p.reason}` }),
+        en: p => ({ title: `Blocked sign-in attempt: ${p.email}`, body: p.matchName?.trim() ? `Matches profile: ${p.matchName.trim()}. Reason: ${p.reason}` : `Reason: ${p.reason}` }),
+        pt: p => ({ title: `Tentativa de login bloqueada: ${p.email}`, body: p.matchName?.trim() ? `Coincide com o perfil: ${p.matchName.trim()}. Motivo: ${p.reason}` : `Motivo: ${p.reason}` }),
     },
     deletion_request: {
         required: ['requesterName'],
