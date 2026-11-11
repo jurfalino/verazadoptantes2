@@ -59,9 +59,13 @@ export async function getGeneralApplications(): Promise<ApplicantSummary[]> {
 
 /**
  * The «¿Es la misma persona?» cards inside the evaluation: the open pairs of
- * the profile auto-created from this form, as /form-results shows them (same
- * cards, same masking). A form linked to an existing profile, or with none,
- * has nothing to answer here.
+ * the profile this form sits on, as /form-results shows them (same cards, same
+ * masking) — the profile auto-created from it, or the existing one it was
+ * linked to. Both kinds defer their plain pairs while the application is to
+ * evaluate (Q6, toEvaluateAdopterIds), so both show them here. Only an
+ * auto-created profile answers «Sí» by linking the form (formResultsView
+ * canLinkMatches); on an existing profile the cards are the compare, read-only.
+ * A form with no profile has none.
  */
 export async function getApplicationDuplicates(applicationId: string): Promise<{
     ok: true;
@@ -83,7 +87,7 @@ export async function getApplicationDuplicates(applicationId: string): Promise<{
 
         const kind = formLinkKind({ linkedAdopterId: submission.linkedAdopterId, autoAdopterId: submission.autoAdopterId });
         let matches: FormMatchCardData['match'][] = [];
-        if (kind === 'new_profile' && submission.linkedAdopterId) {
+        if (kind !== 'unlinked' && submission.linkedAdopterId) {
             const { loadOpenPairs } = await import('@/lib/openPairs');
             const pairs = await loadOpenPairs(db, submission.linkedAdopterId, viewer, { limit: 20 });
             matches = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList }));

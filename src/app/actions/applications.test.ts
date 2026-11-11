@@ -353,8 +353,20 @@ describe('getApplicationDuplicates (a possible duplicate inside the evaluation)'
         expect(cards.find(c => c.match.id === 'carla')!.profile.isMine).toBe(false);
     });
 
-    it('a form already linked to an existing profile has no cards to answer', async () => {
-        sqlite.prepare("UPDATE form_submissions SET linked_adopter_id = 'carla' WHERE id = 's-luna'").run();
-        expect(await getApplicationDuplicates('app-s-luna')).toMatchObject({ ok: true, cards: [], canLink: false, willMerge: false });
+    it('a form linked to an existing profile lists THAT profile\'s open pairs (Q6 defers them), read-only — never a form re-link (final review M4)', async () => {
+        adopter(sqlite, 'existente', 'Ana Pérez', OWNER);
+        sqlite.prepare("UPDATE form_submissions SET linked_adopter_id = 'existente', auto_adopter_id = NULL WHERE id = 's-luna'").run();
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at)
+            VALUES ('dc-4', 'existente', 'carla', '["phone"]', '{}', 80, 'high', 'pending', 1)`).run();
+        const res = await getApplicationDuplicates('app-s-luna');
+        expect(res).toMatchObject({ ok: true, canLink: false, willMerge: false });
+        const cards = (res as { cards: Array<{ match: Record<string, unknown> }> }).cards;
+        expect(cards.map(c => c.match.id)).toEqual(['carla']);
+        expect(cards[0].match).toMatchObject({ candidateId: 'dc-4' });
+    });
+
+    it('a form with no profile has no cards', async () => {
+        sqlite.prepare("UPDATE form_submissions SET linked_adopter_id = NULL, auto_adopter_id = NULL WHERE id = 's-luna'").run();
+        expect(await getApplicationDuplicates('app-s-luna')).toMatchObject({ ok: true, cards: [], canLink: false });
     });
 });
