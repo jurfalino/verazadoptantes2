@@ -121,6 +121,17 @@ describe('fostered animals take contracts', () => {
         expect(rows[0]).toMatchObject({ id: 'p9', adopter_id: 'b', record_type: 'adoption' });
     });
 
+    it('a contract issued to an applicant clears every bell notice of their form, for everyone; another applicant\'s stays', async () => {
+        const notice = (id: string, userId: string, submissionId: string) => sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, read, metadata) VALUES (?, ?, 'form_submission', 't', 'b', 0, ?)`)
+            .run(id, userId, JSON.stringify({ submissionId }));
+        notice('n-sa-owner', OWNER, 'sa');
+        notice('n-sa-mate', mocks.MATE, 'sa');
+        notice('n-sc', OWNER, 'sc');
+        expect(await createContractInvitation('an1', 'a')).toMatchObject({ success: true });
+        const unread = sqlite.prepare('SELECT id FROM notifications WHERE read = 0 ORDER BY id').all().map(r => r.id);
+        expect(unread).toEqual(['n-sc']);
+    });
+
     it('createContractInvitation accepts a fostered animal and refuses an adopted one', async () => {
         const ok = await createContractInvitation('an1', 'a');
         expect(ok).toMatchObject({ success: true });

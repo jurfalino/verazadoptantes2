@@ -38,3 +38,11 @@ describe('«También pidió otro animal»: the also_applied line when the animal
         expect(pt.evaluation.status_also_applied_other).toBe('Também pediu outro animal');
     });
 });
+
+describe('«Con solicitudes por evaluar» with nothing in it', () => {
+    it('says so in each locale', () => {
+        expect(es.evaluation.tab_empty).toBe('No hay solicitudes por evaluar');
+        expect(en.evaluation.tab_empty).toBe('No applications to review');
+        expect(pt.evaluation.tab_empty).toBe('Nenhuma candidatura para avaliar');
+    });
+});

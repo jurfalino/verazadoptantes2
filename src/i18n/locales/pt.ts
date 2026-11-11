@@ -5,6 +5,7 @@ export const pt = {
         general_title: 'Sem animal escolhido',
         general_body: 'Formulários gerais, e quem pediu um animal que já foi adotado.',
         tab: 'Com candidaturas para avaliar',
+        tab_empty: 'Nenhuma candidatura para avaliar',
         more_one: 'Mais 1 animal com candidaturas',
         more_many: 'Mais {n} animais com candidaturas',
         offer_row_one_f: '{animal} foi adotada · avise 1 candidato',

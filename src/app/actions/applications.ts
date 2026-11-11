@@ -151,6 +151,9 @@ export async function declineApplication(applicationId: string, input: { text: s
         if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
         // 3. The application ends, only if it is still open (a concurrent decision wins).
         if (!(await markDeclined(db, applicationId, saved.id, viewer, nowSec))) return fail('already_decided');
+        // 4. Answered once: its bell notices read, for everyone (best-effort, logged).
+        const { clearFormNotices } = await import('@/lib/formNotices');
+        await clearFormNotices(db, submission.id, { op: 'declineApplication', applicationId, viewer });
 
         logger.info('declineApplication: declined', { applicationId, viewer, recordId: saved.id, animalId: app.animalId });
         return { ok: true, recordId: saved.id };
@@ -193,6 +196,9 @@ export async function proposeAnimal(applicationId: string, animalId: string): Pr
         if (!auth) return fail('not_found');
         const res = await proposeAuthorized(db, viewer, auth, animalId);
         if (!res.ok) return fail(res.error);
+        // The general application is answered: its form's bell notices read, for everyone (best-effort, logged).
+        const { clearFormNotices } = await import('@/lib/formNotices');
+        await clearFormNotices(db, auth.submission.id, { op: 'proposeAnimal', applicationId, animalId, viewer });
         logger.info('proposeAnimal: proposed', { applicationId, animalId, viewer, proposedApplicationId: res.applicationId });
         return res;
     } catch (e) {

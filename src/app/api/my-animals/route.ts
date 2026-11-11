@@ -93,6 +93,8 @@ export async function GET(request: NextRequest) {
         const nowSec = Math.floor(Date.now() / 1000);
         const errMsg = (e: unknown) => e instanceof Error ? e.message : String(e);
         type AppCounts = { toEvaluate: Map<string, number>; offer: Map<string, number> };
+        /** A count fell back (logged): a «0» would read as «nothing to evaluate», so the tab's numbers are left out. */
+        let countsFailed = false;
         const teamCounts = new Map<string, Promise<AppCounts>>();
         const countsOfTeam = (team: string[]): Promise<AppCounts> => {
             const key = normalizeTeamScope(team).slice().sort().join(',');
@@ -100,10 +102,12 @@ export async function GET(request: NextRequest) {
             if (!hit) {
                 hit = Promise.all([
                     countToEvaluateByAnimal(db, team, nowSec).catch((e: unknown) => {
+                        countsFailed = true;
                         logger.warn('my-animals: D1 fallback hit (to evaluate)', { userEmail, view, team: key, error: errMsg(e) });
                         return new Map<string, number>();
                     }),
                     offerCountsByAnimal(db, team).catch((e: unknown) => {
+                        countsFailed = true;
                         logger.warn('my-animals: D1 fallback hit (offers)', { userEmail, view, team: key, error: errMsg(e) });
                         return new Map<string, number>();
                     }),
@@ -127,6 +131,7 @@ export async function GET(request: NextRequest) {
         const tabList = !idParam && view !== 'all';
         const generalP: Promise<number> = tabList
             ? countGeneralToEvaluate(db, scopeEmails).catch((e: unknown) => {
+                countsFailed = true;
                 logger.warn('my-animals: D1 fallback hit (general)', { userEmail, view, error: errMsg(e) });
                 return 0;
             })
@@ -142,6 +147,7 @@ export async function GET(request: NextRequest) {
                     return new Set(rows.filter(r => countsOf(r).toEvaluate > 0).map(r => r.id)).size;
                 })
                 .catch((e: unknown) => {
+                    countsFailed = true;
                     logger.warn('my-animals: D1 fallback hit (solicitudes count)', { userEmail, view, error: errMsg(e) });
                     return null;
                 })
@@ -164,7 +170,12 @@ export async function GET(request: NextRequest) {
             // «Con solicitudes por evaluar»: the «Todos» animals with applications to evaluate, most
             // waiting first (then newest, as the SQL order; sort is stable).
             const all = await db.select().from(adoptions).where(allWhere).orderBy(sql`${adoptions.date} DESC`).all();
-            const countsOf = await applicationCountsOf(all);
+            const [countsOf] = await Promise.all([applicationCountsOf(all), generalP]);
+            // Without its counts this tab can't list anything: an error (with its id), never «nothing to evaluate».
+            if (countsFailed) {
+                const errorId = logger.error('API my-animals: solicitudes counts unavailable', new Error('application counts fell back'), { userEmail, view });
+                return NextResponse.json({ error: 'Failed to load applications', errorId }, { status: 500 });
+            }
             results = all.filter((a: CountedRow) => countsOf(a).toEvaluate > 0)
                 .sort((a: CountedRow, b: CountedRow) => countsOf(b).toEvaluate - countsOf(a).toEvaluate);
         } else if (view === 'todos') {
@@ -333,8 +344,11 @@ export async function GET(request: NextRequest) {
             headers['x-pending-count'] = String(pending);
             // «Con solicitudes por evaluar»: its cards — the animals waiting plus «Sin animal elegido».
             const [waiting, general] = await Promise.all([view === 'solicitudes' ? deduped.length : waitingP, generalP]);
-            if (waiting != null) headers['x-solicitudes-count'] = String(waiting + (general > 0 ? 1 : 0));
-            headers['x-general-to-evaluate'] = String(general);
+            // A count that fell back is left out: the page keeps the number it had.
+            if (!countsFailed && waiting != null) {
+                headers['x-solicitudes-count'] = String(waiting + (general > 0 ? 1 : 0));
+                headers['x-general-to-evaluate'] = String(general);
+            }
         }
         return NextResponse.json(listed, { headers });
     } catch (error) {

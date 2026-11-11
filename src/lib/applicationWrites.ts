@@ -7,6 +7,7 @@ import { planAdoptionClose, planMergeDedupe, submissionApplication, type Adoptio
 import { APPLICATION_AUTO_ACTOR, APPLICATION_ORIGINS, APPLICATION_STATES, type ApplicationState } from '@/domain/constants';
 import { applicantScopeWhere, normalizeTeamScope } from '@/lib/applicantScope';
 import { logger } from '@/lib/logger';
+import { clearFormNotices } from '@/lib/formNotices';
 import { getTeamEmails } from '@/lib/orgMembership';
 import { and, eq, sql } from 'drizzle-orm';
 import { createOwnerTeamResolver } from '@/app/actions/_applicants';
@@ -107,11 +108,12 @@ export async function closeApplicationsOnAdoption(db: Db, input: {
         if (!where) return 0;
         await healMissingApplications(db, team, animalId);
         const open = await db
-            .select({ id: applications.id, adopterId: formSubmissions.linkedAdopterId })
+            .select({ id: applications.id, adopterId: formSubmissions.linkedAdopterId, submissionId: applications.submissionId })
             .from(applications)
             .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
             .where(and(where, eq(applications.state, APPLICATION_STATES.OPEN)));
         const byId = new Map(open.map((r: { id: string; adopterId: string | null }) => [r.id, r.adopterId] as const));
+        const submissionOf = new Map<string, string>(open.map((r: { id: string; submissionId: string }) => [r.id, r.submissionId] as const));
         let closed = 0;
         for (const step of planAdoptionClose(open, adopterId, via)) {
             const won = await db.update(applications)
@@ -124,7 +126,10 @@ export async function closeApplicationsOnAdoption(db: Db, input: {
                 })
                 .where(and(eq(applications.id, step.id), eq(applications.state, APPLICATION_STATES.OPEN)))
                 .returning({ id: applications.id });
-            if (!won.length || step.state !== APPLICATION_STATES.CLOSED) continue;
+            if (!won.length) continue;
+            // Decided (closed or adopted): its form's bell notices read, for everyone (best-effort, logged).
+            await clearFormNotices(db, submissionOf.get(step.id) ?? '', { op: 'closeApplicationsOnAdoption', animalId, applicationId: step.id });
+            if (step.state !== APPLICATION_STATES.CLOSED) continue;
             closed++;
             const candidate = byId.get(step.id);
             if (!candidate) continue;

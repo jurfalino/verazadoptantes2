@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 import * as mocks from '@/test-utils/actionMocks';
 import {
-    asyncDb, seedEvaluation, snapshot, adopter, animal, placement, form, application, invitation, NOW, DAY, type Sqlite,
+    asyncDb, seedEvaluation, snapshot, adopter, animal, placement, form, application, invitation, formNotice, unreadNotices, NOW, DAY, type Sqlite,
 } from '@/test-utils/applicationFixtures';
 
 const { session, OWNER, MATE, STRANGER } = mocks;
@@ -160,6 +160,30 @@ describe('declineApplication («No avanzar»)', () => {
         const before = snapshot(sqlite);
         expect(await declineApplication('app-s-orphan', DECLINE)).toEqual({ ok: false, error: 'not_allowed' });
         expect(snapshot(sqlite)).toEqual(before);
+    });
+});
+
+describe('an outcome clears the form\'s bell notices, for everyone («answer once, cleared everywhere»)', () => {
+    beforeEach(() => {
+        formNotice(sqlite, 'n-luna-owner', OWNER, 's-luna');
+        formNotice(sqlite, 'n-luna-mate', MATE, 's-luna');
+        formNotice(sqlite, 'n-gen-owner', OWNER, 's-gen');
+        formNotice(sqlite, 'n-gen-mate', MATE, 's-gen');
+    });
+
+    it('after «No avanzar», every notice for that form is read; another form\'s stays unread', async () => {
+        expect(await declineApplication('app-s-luna', DECLINE)).toMatchObject({ ok: true });
+        expect(unreadNotices(sqlite)).toEqual(['n-gen-mate', 'n-gen-owner']);
+    });
+
+    it('after «Proponer un animal», every notice for the general form is read; another form\'s stays unread', async () => {
+        expect(await proposeAnimal('app-s-gen', 'luna')).toMatchObject({ ok: true });
+        expect(unreadNotices(sqlite)).toEqual(['n-luna-mate', 'n-luna-owner']);
+    });
+
+    it('a refused outcome clears nothing', async () => {
+        expect(await declineApplication('app-s-luna', { ...DECLINE, rating: 0 })).toMatchObject({ ok: false });
+        expect(unreadNotices(sqlite)).toHaveLength(4);
     });
 });
 

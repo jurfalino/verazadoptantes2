@@ -94,3 +94,14 @@ export function snapshot(sqlite: Sqlite) {
         notifications: t('SELECT * FROM notifications ORDER BY id'),
     };
 }
+
+/** A bell notice about a form (`metadata.submissionId`), unread — the owner's and each teammate's copy look alike. */
+export function formNotice(sqlite: Sqlite, id: string, userId: string, submissionId: string, type = 'form_submission') {
+    sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, url, read, metadata, created_at) VALUES (?, ?, ?, 't', 'b', ?, 0, ?, ?)`)
+        .run(id, userId, type, `/my-animals?view=solicitudes&solicitud=app-${submissionId}`, JSON.stringify({ submissionId }), NOW - DAY);
+}
+
+/** The ids of the unread notices, sorted. */
+export function unreadNotices(sqlite: Sqlite): string[] {
+    return (sqlite.prepare('SELECT id FROM notifications WHERE read = 0 ORDER BY id').all() as Array<{ id: string }>).map(r => r.id);
+}

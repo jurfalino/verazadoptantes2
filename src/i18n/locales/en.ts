@@ -5,6 +5,7 @@ export const en = {
         general_title: 'No animal chosen',
         general_body: 'General forms, and people who asked for an animal that was already adopted.',
         tab: 'With applications to review',
+        tab_empty: 'No applications to review',
         more_one: '1 more animal with applications',
         more_many: '{n} more animals with applications',
         offer_row_one_f: '{animal} was adopted · tell 1 applicant',

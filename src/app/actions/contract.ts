@@ -122,6 +122,12 @@ export async function createContractInvitation(
         // its by-token fetch resolves); the persisted column is the backstop.
         const url = validLocale ? `${base}/c/${token}?lang=${validLocale}` : `${base}/c/${token}`;
 
+        // A contract sent answers their application(s): the forms' bell notices read, for everyone (best-effort, logged).
+        const { clearFormNotices } = await import('@/lib/formNotices');
+        for (const submissionId of access.submissionIds) {
+            await clearFormNotices(db, submissionId, { op: 'createContractInvitation', animalId, adopterId, createdBy: userEmail });
+        }
+
         logger.info('Contract invitation created', { animalId, adopterId, createdBy: userEmail, via: access.via });
         return { success: true, token, url };
     } catch (e) {

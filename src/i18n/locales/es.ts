@@ -5,6 +5,7 @@ export const es = {
         general_title: 'Sin animal elegido',
         general_body: 'Formularios generales, y los que pidieron un animal que ya fue adoptado.',
         tab: 'Con solicitudes por evaluar',
+        tab_empty: 'No hay solicitudes por evaluar',
         more_one: '1 animal más con solicitudes',
         more_many: '{n} animales más con solicitudes',
         offer_row_one_f: '{animal} fue adoptada · avisá a 1 candidato',

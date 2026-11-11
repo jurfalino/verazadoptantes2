@@ -111,6 +111,8 @@ export default function MyAnimalsPage() {
     const [solicitudesCount, setSolicitudesCount] = useState<number | null>(null);
     /** «Sin animal elegido»: the team's general applications to evaluate (x-general-to-evaluate). */
     const [generalToEvaluate, setGeneralToEvaluate] = useState(0);
+    /** The tab's list failed (its errorId): «Con solicitudes por evaluar» then says so instead of «nothing to evaluate». */
+    const [listError, setListError] = useState<{ view: string; errorId: string } | null>(null);
     const counts: MyAnimalsTabCounts | null = tabCounts ? {
         ...tabCounts,
         ...(pendingCount != null ? { pending: pendingCount } : {}),
@@ -138,6 +140,7 @@ export default function MyAnimalsPage() {
                     const unique = Array.from(new Map(data.map(a => [a.id, a])).values());
                     setAnimals(unique);
                     setLoadedView(view);
+                    setListError(null);
                     const pending = res.headers.get('x-pending-count');
                     if (pending != null) setPendingCount(Number(pending));
                     const solicitudes = res.headers.get('x-solicitudes-count');
@@ -146,10 +149,14 @@ export default function MyAnimalsPage() {
                     if (general != null) setGeneralToEvaluate(Number(general));
                 } else {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
-                    toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', body.errorId);
+                    const errorId = body.errorId ?? resolveErrorId(new Error(`my-animals list: ${res.status}`), 'MyAnimalsPage');
+                    setListError({ view, errorId });
+                    toast.error(t('errors.generic') || 'Error', body.error || 'Failed to load animals.', errorId);
                 }
             } catch (e) {
-                toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', resolveErrorId(e, 'page'));
+                const errorId = resolveErrorId(e, 'page');
+                setListError({ view, errorId });
+                toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', errorId);
             } finally {
                 if (!silent) setLoading(false);
             }
@@ -207,7 +214,7 @@ export default function MyAnimalsPage() {
                 if (openedLink.current !== key) return;
                 if (!res.ok || !Array.isArray(body)) {
                     const err = (body && !Array.isArray(body) ? body : {}) as { error?: string; errorId?: string };
-                    toast.error(t('errors.generic') || 'Error', err.error || 'Failed to load animals.',
+                    toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'),
                         err.errorId ?? resolveErrorId(new Error(`my-animals deep link: ${res.status}`), 'MyAnimalsPage'));
                     return;
                 }
@@ -215,7 +222,7 @@ export default function MyAnimalsPage() {
                 // Not the team's (or gone): nothing to open — say so in the console, drop the link.
                 else { console.warn('my-animals: deep-linked animal not found', { animalId: linkAnimal, applicationId }); closePanel(); }
             } catch (e) {
-                if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', 'Failed to load animals.', resolveErrorId(e, 'MyAnimalsPage'));
+                if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'), resolveErrorId(e, 'MyAnimalsPage'));
             }
         })();
         // The list re-reads in place; `openedLink` keeps one link from opening twice.
@@ -456,10 +463,17 @@ export default function MyAnimalsPage() {
                     </p>
                 )}
 
-                {filteredAnimals.length === 0 && !showGeneral ? (
+                {view === 'solicitudes' && listError?.view === view ? (
+                    // Its list (or a count it is built from) failed: say so, never «nothing to evaluate».
+                    <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm" data-testid="solicitudes-error">
+                        <p className="text-sm text-stone-600">
+                            {t('homeModules.load_failed')} <span className="text-xs text-stone-500">({t('homeModules.error_code')}: {listError.errorId})</span>
+                        </p>
+                    </div>
+                ) : filteredAnimals.length === 0 && !showGeneral ? (
                     view === 'solicitudes' ? (
                         <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm" data-testid="solicitudes-empty">
-                            <h3 className="text-xl font-semibold text-stone-900">{t('notifications.no_unread')}</h3>
+                            <h3 className="text-xl font-semibold text-stone-900">{t('evaluation.tab_empty')}</h3>
                         </div>
                     ) : (
                     <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm">
@@ -660,7 +674,7 @@ export default function MyAnimalsPage() {
                                     {!!animal.dueFollowups && (
                                         <Link
                                             href={`/my-animals/${animal.id}#next-action`}
-                                            className="flex items-start gap-1.5 w-full px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                                            className="flex items-center gap-1.5 w-full min-h-11 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
                                             data-testid={`due-badge-${animal.id}`}
                                         >
                                             {followupBadgeLabel(t, animal.dueFollowups, animal.dueTop, Date.now())}

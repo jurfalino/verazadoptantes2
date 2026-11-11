@@ -28,7 +28,14 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
     getTeamEmails: async (e: string | null | undefined) => (e ? [e.trim().toLowerCase()] : []),
 }));
 
+vi.mock('@/lib/applicationCounts', async (orig) => {
+    const real = await orig<typeof import('@/lib/applicationCounts')>();
+    return { ...real, countToEvaluateByAnimal: vi.fn(real.countToEvaluateByAnimal), countGeneralToEvaluate: vi.fn(real.countGeneralToEvaluate) };
+});
+
 const { GET } = await import('./route');
+const counts = await import('@/lib/applicationCounts');
+const realCounts = await vi.importActual<typeof import('@/lib/applicationCounts')>('@/lib/applicationCounts');
 
 let sqlite: Sqlite;
 
@@ -41,6 +48,8 @@ let sqlite: Sqlite;
  * plus 1 general application to evaluate («Sin animal elegido»). STRANGER's sol has one too (another team's).
  */
 beforeEach(() => {
+    vi.mocked(counts.countToEvaluateByAnimal).mockImplementation(realCounts.countToEvaluateByAnimal);
+    vi.mocked(counts.countGeneralToEvaluate).mockImplementation(realCounts.countGeneralToEvaluate);
     const m = migratedDb();
     state.db = asyncDb(m.db as object);
     state.req = new Headers();
@@ -117,6 +126,24 @@ describe('GET /api/my-animals — «Con solicitudes por evaluar»', () => {
         expect(rows.map(r => r.id).sort()).toEqual(['luna', 'plain', 'tito']);
         expect(rows[0].id).toBe('luna');
         expect(solicitudes).toBe('4');
+    });
+
+    it('a failed count never reads as «none»: the tab headers are left out (the page keeps its count) and the tab itself is an error', async () => {
+        for (const fn of [counts.countToEvaluateByAnimal, counts.countGeneralToEvaluate] as const) {
+            vi.mocked(fn).mockRejectedValue(new Error('D1 down'));
+            for (const view of ['available', 'todos']) {
+                const { solicitudes, general } = await list(view);
+                expect({ view, solicitudes, general }).toEqual({ view, solicitudes: null, general: null });
+            }
+            state.req = new Headers();
+            const res = await GET(new NextRequest('http://localhost/api/my-animals?view=solicitudes'));
+            expect(res.status).toBe(500);
+            expect(await res.json()).toMatchObject({ errorId: expect.any(String) });
+            vi.mocked(counts.countToEvaluateByAnimal).mockImplementation(realCounts.countToEvaluateByAnimal);
+            vi.mocked(counts.countGeneralToEvaluate).mockImplementation(realCounts.countGeneralToEvaluate);
+        }
+        // Back to normal once the counts read again.
+        expect((await list('available')).solicitudes).toBe('3');
     });
 
     it('another team never sees these', async () => {

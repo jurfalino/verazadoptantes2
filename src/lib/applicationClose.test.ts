@@ -95,6 +95,20 @@ describe('an adoption closes the other candidates', () => {
         expect(app('app-s2').state).toBe('closed');
     });
 
+    it('the adoption clears every bell notice of the forms it decided (closed and adopted), for everyone; another form\'s stays', async () => {
+        const notice = (id: string, userId: string, submissionId: string) => sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, read, metadata) VALUES (?, ?, 'form_submission', 't', 'b', 0, ?)`)
+            .run(id, userId, JSON.stringify({ submissionId }));
+        notice('n-s1', OWNER, 's1');
+        notice('n-s2', OWNER, 's2');
+        notice('n-s3-mate', MATE, 's3');
+        notice('n-s3-owner', OWNER, 's3');
+        candidate('s4', null, OWNER, null); // a general form: not this animal's
+        notice('n-s4', OWNER, 's4');
+        await adopt('ad1');
+        const unread = sqlite.prepare('SELECT id FROM notifications WHERE read = 0 ORDER BY id').all().map(r => r.id);
+        expect(unread).toEqual(['n-s4']);
+    });
+
     it('a FOSTER placement closes nothing', async () => {
         const res = await updateRecord(state.db, { id: 'an1', recordType: 'foster', adopterId: 'ad1' }, existing(), OWNER, { cas: true });
         expect(res.lost).toBe(false);
