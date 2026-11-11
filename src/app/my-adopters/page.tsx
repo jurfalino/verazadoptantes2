@@ -15,6 +15,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { timeAgo, timeAgoSeconds } from '@/lib/timeAgo';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import PendingDedup from '@/components/PendingDedup';
+import { AdopterListSkeleton } from '@/components/skeletons/ListSkeletons';
 import AdopterListToolbar from '@/components/myAdopters/AdopterListToolbar';
 import AdopterFiltersPanel from '@/components/myAdopters/AdopterFiltersPanel';
 import { getAdopterListPins, saveAdopterListPins } from '@/app/actions/settings';
@@ -592,14 +593,6 @@ export default function MyAdoptersPage() {
                                 </div>
                             )), [visible, openForm, t]);
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
-                <div className="text-stone-500">{t('common.loading')}</div>
-            </div>
-        );
-    }
-
     const onlyFilter = view.selected.size === 1 && !view.q.trim() ? [...view.selected][0] : null;
     // A computer sorts with the column headers: one tap sorts (`first`), a second reverses (`second`).
     // `firstDir`: which way `first` runs — A–Z and «peor primero» go up, «más nuevos» goes down.
@@ -634,7 +627,9 @@ export default function MyAdoptersPage() {
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                         </Link>
                         <h1 className="text-2xl font-semibold text-stone-900">{t('dashboard.my_adopters')}</h1>
-                        <span className="text-sm text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">{adopters.length}</span>
+                        {loading
+                            ? <span aria-hidden="true" className="h-5 w-8 rounded-full bg-stone-100 animate-pulse" />
+                            : <span className="text-sm text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">{adopters.length}</span>}
                     </div>
                     <div className="flex items-center gap-2">
                         {sheetImportEnabled && (
@@ -660,7 +655,7 @@ export default function MyAdoptersPage() {
                     "🔍 Posible duplicado" pill and the notifications link there). */}
                 <PendingDedup />
 
-                {adopters.length > 0 && (
+                {!loading && adopters.length > 0 && (
                     <AdopterListToolbar view={view} onView={setView} pins={pins} counts={counts}
                         total={adopters.length} shown={visible.length} onOpenPanel={() => setFiltersOpen(true)} t={t} />
                 )}
@@ -669,7 +664,11 @@ export default function MyAdoptersPage() {
                         shown={visible.length} onClose={() => setFiltersOpen(false)} t={t} />
                 )}
 
-                {adopters.length === 0 ? (
+                {/* While the list loads: its skeleton, under the real header and the
+                    duplicates section (which loads alongside instead of after). */}
+                {loading ? (
+                    <AdopterListSkeleton />
+                ) : adopters.length === 0 ? (
                     <div className="bg-white rounded-2xl p-12 text-center border border-stone-200 shadow-sm">
                         <div className="w-14 h-14 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
                             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>

@@ -20,6 +20,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { myAnimalsTabCount, type MyAnimalsTabCounts } from '@/lib/myAnimalsTabCount';
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
+import { AnimalGridSkeleton, AnimalSearchSkeleton } from '@/components/skeletons/ListSkeletons';
 
 interface AnimalImage {
     id: string;
@@ -189,13 +190,6 @@ export default function MyAnimalsPage() {
             }));
     })();
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
-                <div className="text-stone-500">{t('common.loading')}</div>
-            </div>
-        );
-    }
 
     if (error) {
         return (
@@ -299,7 +293,8 @@ export default function MyAnimalsPage() {
                     )}
                 </div>
 
-                {/* Search & Filters */}
+                {/* Search & Filters. First load: its placeholder, since most rescuers have animals. */}
+                {animals.length === 0 && loading && <AnimalSearchSkeleton />}
                 {animals.length > 0 && (
                     <div className="flex flex-col sm:flex-row gap-3 mb-6">
                         {/* Text search */}
@@ -354,7 +349,11 @@ export default function MyAnimalsPage() {
                     </p>
                 )}
 
-                {filteredAnimals.length === 0 ? (
+                {/* Loading (first visit or a tab switch): card skeletons in the list's place;
+                    the header, hint, tabs and search stay put. */}
+                {loading ? (
+                    <AnimalGridSkeleton />
+                ) : filteredAnimals.length === 0 ? (
                     <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm">
                         <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-stone-500">
                             <span className="text-3xl">🐾</span>

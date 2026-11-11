@@ -558,12 +558,7 @@ export default function PendingDedup({ home }: {
 
     // Not loaded yet: hold the header's place (it used to pop in seconds after the list and push it
     // down ~90px under a finger). If nothing turns out to be pending, the placeholder goes.
-    if (pairs === null) return (
-        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse">
-            <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
-            <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
-        </section>
-    );
+    if (pairs === null) return <PendingDedupPlaceholder />;
     // A pair just combined keeps the section on screen (D52), even the last one.
     // `total` counts what waits on the viewer; the section stays while anything is listed (a sent request too).
     if (total === 0 && pairs.length === 0 && merged.length === 0) return null;
@@ -677,6 +672,20 @@ export default function PendingDedup({ home }: {
             )}
 
             {dialogs}
+        </section>
+    );
+}
+
+/**
+ * The section's place while it loads. Also painted by /my-adopters/loading.tsx
+ * (before the page's code arrives), so the hand-off to the real component
+ * keeps this block exactly where it was.
+ */
+export function PendingDedupPlaceholder() {
+    return (
+        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse">
+            <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
+            <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
         </section>
     );
 }
