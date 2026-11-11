@@ -10,6 +10,10 @@ const EXACT_ORIGINS = [
 const EXACT_PROD_ORIGINS = [
     'https://adoptions.pages.dev',           // production contract-app
     'https://adoptions-staging.pages.dev',   // staging contract-app
+    // The public site's own domain (Jon 2026-11-11); the pages.dev names above 301 there once switched on.
+    'https://enadopcion.org',
+    'https://www.enadopcion.org',
+    'https://staging.enadopcion.org',
 ];
 
 /** Suffix patterns: any origin ending with these is allowed */
