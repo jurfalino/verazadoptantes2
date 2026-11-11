@@ -134,9 +134,10 @@ describe('evaluation actions — access', () => {
     });
 
     it('getGeneralApplications lists only the viewer\'s team\'s general applications', async () => {
-        expect((await getGeneralApplications()).map(a => a.applicationId)).toEqual(['app-s-gen']);
+        const res = await getGeneralApplications();
+        expect(res.ok && res.applicants.map(a => a.applicationId)).toEqual(['app-s-gen']);
         session.user = STRANGER;
-        expect(await getGeneralApplications()).toEqual([]);
+        expect(await getGeneralApplications()).toEqual({ ok: true, applicants: [] });
     });
 
     it('signed out → unauthorized for every action, [] for the list, nothing written', async () => {
@@ -145,7 +146,7 @@ describe('evaluation actions — access', () => {
         for (const call of [...Object.values(calls), () => getAdoptionOffer('luna'), () => markOfferDone('luna')]) {
             expect(await call()).toEqual({ ok: false, error: 'unauthorized' });
         }
-        expect(await getGeneralApplications()).toEqual([]);
+        expect(await getGeneralApplications()).toEqual({ ok: true, applicants: [] });
         expect(snapshot(sqlite)).toEqual(before);
     });
 

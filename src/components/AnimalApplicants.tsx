@@ -19,6 +19,7 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { createContractInvitation } from '@/app/actions/contract';
 import { getApplicantsForAnimal } from '@/app/actions/applicants';
+import { applicantsOrThrow } from '@/lib/applicantsLoad';
 import { zarazTrack } from '@/lib/zaraz';
 import ApplicantDetailPanel, { sendOutcome } from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
@@ -279,7 +280,8 @@ export default function AnimalApplicants({
                 setShareUrl({ url: result.url, adopterName: applicant.adopterName });
             } else if (next === 'refresh') {
                 // Decided meanwhile (a teammate): re-read, so the row shows its outcome instead of the button.
-                const fresh = await getApplicantsForAnimal(animalId);
+                // A failed re-read throws with its errorId (the catch below toasts it).
+                const fresh = applicantsOrThrow(await getApplicantsForAnimal(animalId), 'AnimalApplicants: re-read');
                 if (fresh.length > 0) setApplicants(fresh);
             } else {
                 const message = next === 'not_allowed'
@@ -384,8 +386,8 @@ export default function AnimalApplicants({
                     animal={{ id: animalId, name: animalName, sex: animalSex }}
                     onClose={() => setPanelIndex(null)}
                     onOutcome={async () => {
-                        // getApplicantsForAnimal fails closed to [] (logged server-side): keep the list, close the panel.
-                        const fresh = await getApplicantsForAnimal(animalId);
+                        // A refusal is an empty list (close the panel); a failure throws with its errorId (the panel toasts it).
+                        const fresh = applicantsOrThrow(await getApplicantsForAnimal(animalId), 'AnimalApplicants: re-read');
                         if (fresh.length === 0) return null;
                         setApplicants(fresh);
                         return fresh;

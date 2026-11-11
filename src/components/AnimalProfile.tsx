@@ -44,9 +44,11 @@ function placeholderFor(species: string | null): string {
     return '/placeholders/paw.png';
 }
 
-export default function AnimalProfile({ profile, applicants, userId }: {
+export default function AnimalProfile({ profile, applicants, applicantsErrorId = null, userId }: {
     profile: AnimalProfileData;
     applicants: ApplicantSummary[];
+    /** The applicants read failed (logged with this id): say so where the list would be, never an empty silence. */
+    applicantsErrorId?: string | null;
     /** session user id (ShareFormMenu links). */
     userId: string;
 }) {
@@ -342,6 +344,11 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             <DueNowBlock slots={dueSlots} placementId={activePlacement?.id} onRegister={registerSlot} anchorId="next-action" className="mt-4" />
 
             {/* applicants — only while the animal still needs a home */}
+            {seeking && applicantsErrorId && (
+                <p className="mt-4 text-sm text-stone-600" data-testid="animal-applicants-error">
+                    {t('homeModules.load_failed')} <span className="text-xs text-stone-500">({t('homeModules.error_code')}: {applicantsErrorId})</span>
+                </p>
+            )}
             {seeking && applicants.length > 0 && (
                 <div className="mt-4 bg-white rounded-2xl border border-stone-200 shadow-sm p-3" id="applicants">
                     <AnimalApplicants animalId={animal.id} animalName={animal.name || 'Animal'} animalSex={animal.sex ?? null} applicants={applicants} />

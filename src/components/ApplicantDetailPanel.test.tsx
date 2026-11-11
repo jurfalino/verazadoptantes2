@@ -28,7 +28,7 @@ vi.mock('@/components/LocationMap', () => ({ default: () => null }));
 vi.mock('@/components/FormAnswersPanel', async (orig) => ({ ...(await orig<typeof import('@/components/FormAnswersPanel')>()), default: () => null }));
 vi.mock('@/components/FormPhotos', () => ({ default: () => null }));
 vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn() }));
-vi.mock('@/app/actions/applicants', () => ({ getApplicantsForAnimal: vi.fn(async () => []) }));
+vi.mock('@/app/actions/applicants', () => ({ getApplicantsForAnimal: vi.fn(async () => ({ ok: true, applicants: [] })) }));
 vi.mock('@/app/actions/formSubmission', () => ({ linkFormToExistingAdopter: vi.fn() }));
 vi.mock('@/app/actions/duplicates', () => ({ dismissDuplicateCandidate: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));

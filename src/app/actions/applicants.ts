@@ -25,6 +25,7 @@ import type { AdopterFlags } from '@/types/adopter';
 import type { HousemateAlertSummary } from '@/domain/households';
 import type { ApplicationOrigin } from '@/domain/constants';
 import type { ApplicationStatus } from '@/domain/applications';
+import type { ApplicantsLoad } from '@/lib/applicantsLoad';
 
 export interface ApplicantSubmissionPayload {
     email: string | null;
@@ -97,15 +98,16 @@ export interface ApplicantSummary {
  * viewer's, so every viewer of the animal sees the same list — and the
  * /my-animals card count uses the same scope (src/lib/applicantScope.ts).
  */
-export async function getApplicantsForAnimal(animalId: string): Promise<ApplicantSummary[]> {
+export async function getApplicantsForAnimal(animalId: string): Promise<ApplicantsLoad> {
+    const none: ApplicantsLoad = { ok: true, applicants: [] };
     let userEmail: string | null | undefined;
     try {
         const session = await auth();
         userEmail = session?.user?.email;
-        if (!userEmail) return [];
+        if (!userEmail) return none;
 
         const db = await getDb();
-        if (!db) return [];
+        if (!db) throw new Error('Database unavailable');
 
         const { adoptions } = await import('@/db/schema');
         const { eq } = await import('drizzle-orm');
@@ -114,19 +116,18 @@ export async function getApplicantsForAnimal(animalId: string): Promise<Applican
             .from(adoptions)
             .where(eq(adoptions.id, animalId))
             .get();
-        if (!animal) return [];
+        // Unknown, deleted or not the viewer's team's: nothing to list (never a hint it exists).
+        if (!animal) return none;
 
         const { isOwnerOrgMateOrAdmin, loadApplicantsForAnimal } = await import('./_applicants');
-        if (!(await isOwnerOrgMateOrAdmin(userEmail, animal.addedBy))) return [];
+        if (!(await isOwnerOrgMateOrAdmin(userEmail, animal.addedBy))) return none;
 
         const { getTeamEmails } = await import('@/lib/orgMembership');
         const teamEmails = await getTeamEmails(animal.addedBy);
-        return await loadApplicantsForAnimal(db, { id: animalId, adopterId: animal.adopterId ?? null }, teamEmails, userEmail);
+        return { ok: true, applicants: await loadApplicantsForAnimal(db, { id: animalId, adopterId: animal.adopterId ?? null }, teamEmails, userEmail) };
     } catch (e) {
-        logger.warn('getApplicantsForAnimal failed', {
-            animalId, userEmail,
-            error: e instanceof Error ? e.message : String(e),
-        });
-        return [];
+        // A failure is not «no applicants»: the panel shows it with this id (never closes silently).
+        const errorId = logger.error('getApplicantsForAnimal failed', e, { animalId, userEmail });
+        return { ok: false, errorId };
     }
 }

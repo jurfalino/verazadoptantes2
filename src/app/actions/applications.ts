@@ -18,9 +18,9 @@ import { logger } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { APPLICATION_STATES, RECORD_TYPES } from '@/domain/constants';
 import { formLinkKind, formResultsView } from '@/domain/formLink';
-import type { ApplicantSummary } from './applicants';
 import type { FormMatchCardData } from '@/lib/formMatchCards';
 import type { ProposalAnimal, OfferCandidate } from './_applications';
+import type { ApplicantsLoad } from '@/lib/applicantsLoad';
 
 export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'already_candidate' | 'animal_adopted' | 'failed';
 export type Fail = { ok: false; error: ApplicationActionError; errorId?: string };
@@ -42,18 +42,18 @@ async function requireDb() {
     return db;
 }
 
-/** The viewer's team's general applications («Sin animal elegido»), in panel order; [] signed out. */
-export async function getGeneralApplications(): Promise<ApplicantSummary[]> {
+/** The viewer's team's general applications («Sin animal elegido»), in panel order; empty signed out; a failure carries its errorId. */
+export async function getGeneralApplications(): Promise<ApplicantsLoad> {
     let viewer: string | null = null;
     try {
         viewer = await sessionViewer();
-        if (!viewer) return [];
+        if (!viewer) return { ok: true, applicants: [] };
         const db = await requireDb();
         const [{ getTeamEmails }, { loadGeneralApplications }] = await Promise.all([import('@/lib/orgMembership'), import('./_applicants')]);
-        return await loadGeneralApplications(db, await getTeamEmails(viewer), viewer);
+        return { ok: true, applicants: await loadGeneralApplications(db, await getTeamEmails(viewer), viewer) };
     } catch (e) {
-        logger.error('getGeneralApplications failed', e, { viewer });
-        return [];
+        const errorId = logger.error('getGeneralApplications failed', e, { viewer });
+        return { ok: false, errorId };
     }
 }
 

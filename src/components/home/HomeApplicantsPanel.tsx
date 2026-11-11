@@ -23,6 +23,9 @@ import { getGeneralApplications } from '@/app/actions/applications';
 import { nextToEvaluateIndex } from '@/domain/applications';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
+import { applicantsOrThrow, type ApplicantsLoad } from '@/lib/applicantsLoad';
+
+export { applicantsOrThrow };
 
 /** Which list the row opens: one animal's candidates, or the general applications. */
 export type HomeApplicantsTarget = { animal: { id: string; name: string; sex: string | null } } | 'general';
@@ -35,13 +38,15 @@ type Loaded = { kind: 'loading' } | { kind: 'ok'; list: ApplicantSummary[]; inde
  *   one to evaluate (else the first), the rest still there to compare;
  * - `empty`: everything was decided meanwhile (another tab, a teammate) — close quietly, the card re-reads;
  * - `stale`: an older tab (the page reloads itself) — close;
- * - `error`: say so, with the errorId.
- * Both loaders fail closed to [] after logging on the server, so a failed read also lands on `empty`.
+ * - `error`: say so, with the errorId — the server's when a loader failed (it logged it), else the client's.
+ * A refusal (signed out, not the team's) is an empty list; a failure never is.
  */
-export async function readPanel(read: () => Promise<ApplicantSummary[]>, applicationId: string | null = null):
+export async function readPanel(read: () => Promise<ApplicantsLoad>, applicationId: string | null = null):
     Promise<{ kind: 'ok'; list: ApplicantSummary[]; index: number } | { kind: 'empty' } | { kind: 'stale' } | { kind: 'error'; errorId: string }> {
     try {
-        const list = await read();
+        const res = await read();
+        if (!res.ok) return { kind: 'error', errorId: res.errorId };
+        const list = res.applicants;
         if (list.length === 0) return { kind: 'empty' };
         const linked = applicationId ? list.findIndex(a => a.applicationId === applicationId) : -1;
         if (linked !== -1) return { kind: 'ok', list, index: linked };
@@ -69,7 +74,7 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged, applic
     const animal = target === 'general' ? null : target.animal;
     const animalId = animal?.id ?? null;
 
-    // Both reads fail closed to [] (logged on the server).
+    // A refusal reads as an empty list; a failure carries the server's errorId (ApplicantsLoad).
     const read = useCallback(
         () => (animalId ? getApplicantsForAnimal(animalId) : getGeneralApplications()),
         [animalId],
@@ -88,7 +93,8 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged, applic
 
     const onOutcome = useCallback(async () => {
         onChanged();
-        const fresh = await read();
+        // A failed re-read throws with its errorId: the panel toasts it rather than closing silently.
+        const fresh = applicantsOrThrow(await read(), 'HomeApplicantsPanel: re-read');
         return fresh.length > 0 ? fresh : null;
     }, [read, onChanged]);
 
