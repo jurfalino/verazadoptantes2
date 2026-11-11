@@ -28,6 +28,10 @@ describe('ApplicationOutcomeLine (a «Solicitud» on the profile)', () => {
     it('closed through the open link', () => {
         expect(text(render({ kind: 'closed', reason: 'adopted_open_link' }))).toBe('Cerrada: Luna fue adoptada');
     });
+    it('closed because the animal was deleted (never «adoptada por otra persona»)', () => {
+        expect(text(render({ kind: 'closed', reason: 'animal_deleted' }))).toBe('Cerrada: Luna se eliminó');
+        expect(text(render({ kind: 'closed', reason: 'animal_deleted' }, null))).toBe('Cerrada: el animal se eliminó');
+    });
     it('declined shows the date, no rating', () => {
         expect(text(render({ kind: 'declined', at: 1 }))).toBe('No avanzó · 10 nov');
     });

@@ -93,7 +93,8 @@ export const APPLICATION_ORIGINS = { FORM: 'form', PROPOSED: 'proposed', ADOPTED
 export type ApplicationOrigin = typeof APPLICATION_ORIGINS[keyof typeof APPLICATION_ORIGINS];
 
 /** Why a `closed` application closed. */
-export const APPLICATION_CLOSE_REASONS = { ADOPTED_OTHER: 'adopted_other', ADOPTED_OPEN_LINK: 'adopted_open_link' } as const;
+/** ANIMAL_DELETED: the animal was deleted (softDeleteAnimal) — nobody can evaluate for it any more. */
+export const APPLICATION_CLOSE_REASONS = { ADOPTED_OTHER: 'adopted_other', ADOPTED_OPEN_LINK: 'adopted_open_link', ANIMAL_DELETED: 'animal_deleted' } as const;
 export type ApplicationCloseReason = typeof APPLICATION_CLOSE_REASONS[keyof typeof APPLICATION_CLOSE_REASONS];
 
 /** «No avanzar»: the editable first line and the required reason (spec: neither may be blank). The dialog caps its fields at these; the action refuses longer. */

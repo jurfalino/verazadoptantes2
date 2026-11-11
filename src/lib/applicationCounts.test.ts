@@ -158,6 +158,44 @@ describe('toEvaluateAdopterIds', () => {
     });
 });
 
+describe('I1 — an application nobody can finish defers no pair (Q6)', () => {
+    it('a soft-deleted animal: its open applications leave toEvaluateAdopterIds and every count', async () => {
+        // Set directly (an old build, a failed close): the SQL filter must hold on its own.
+        sqlite.prepare(`UPDATE animals SET deleted_at = ? WHERE id = 'luna'`).run(NOW);
+        expect([...(await toEvaluateAdopterIds(state.db, [OWNER, MATE], NOW))].sort()).toEqual(['a1']); // a1's general application stays
+        expect((await countToEvaluateByAnimal(state.db, teamOf('luna'), NOW)).has('luna')).toBe(false);
+        expect((await countOpenByAnimal(state.db, teamOf('luna'))).has('luna')).toBe(false);
+    });
+
+    it('an adopted animal whose close did not land: its open applications leave toEvaluateAdopterIds (takesContract in SQL)', async () => {
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, created_at) VALUES ('p-luna', 'luna', 'a2', 'adoption', 1000, 1000)`).run();
+        expect([...(await toEvaluateAdopterIds(state.db, [OWNER, MATE], NOW))].sort()).toEqual(['a1']);
+    });
+
+    it('a fostered animal still takes a contract: its applicants stay to evaluate', async () => {
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, created_at) VALUES ('p-luna', 'luna', 'a2', 'foster', 1000, 1000)`).run();
+        expect([...(await toEvaluateAdopterIds(state.db, [OWNER, MATE], NOW))].sort()).toEqual(['a1', 'a3', 'a4', 'a9']);
+    });
+
+    it('softDeleteAnimal closes the animal\'s open applications (animal_deleted), leaving decided ones as they are', async () => {
+        const { softDeleteAnimal } = await import('@/app/actions/_recordWrite');
+        expect(await softDeleteAnimal(state.db, 'luna', OWNER)).toBe(true);
+        const rows = (sqlite as unknown as { prepare: (s: string) => { all: () => Array<{ id: string; state: string; close_reason: string | null; closed_by: string | null; closed_at: number | null }> } })
+            .prepare(`SELECT id, state, close_reason, closed_by, closed_at FROM applications WHERE animal_id = 'luna' ORDER BY id`).all();
+        const by = new Map(rows.map(r => [r.id, r]));
+        for (const id of ['app-f1', 'app-f2', 'app-f3', 'app-f4', 'app-f5', 'app-f6', 'app-f7', 'app-f10']) {
+            expect(by.get(id), id).toMatchObject({ state: 'closed', close_reason: 'animal_deleted', closed_by: OWNER });
+            expect(by.get(id)!.closed_at).toEqual(expect.any(Number));
+        }
+        expect(by.get('app-f8')).toMatchObject({ state: 'replaced', close_reason: null });
+        expect(by.get('app-f9')).toMatchObject({ state: 'declined', close_reason: null });
+        // Brisa (another animal) is untouched; no offer is spawned by a delete.
+        expect((sqlite as unknown as { prepare: (s: string) => { get: () => { state: string } } }).prepare(`SELECT state FROM applications WHERE id = 'app-g1'`).get().state).toBe('open');
+        sqlite.prepare(`UPDATE animals SET deleted_at = NULL WHERE id = 'luna'`).run(); // even restored, nothing is an offer
+        expect((await offerCountsByAnimal(state.db, teamOf('luna'))).has('luna')).toBe(false);
+    });
+});
+
 describe('offerCountsByAnimal', () => {
     it('counts candidates closed by another adoption whose offer is not done', async () => {
         form('c1', OWNER, 'a7', 'luna'); app('c1', 'luna', { state: 'closed', closeReason: 'adopted_other' });

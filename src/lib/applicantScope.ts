@@ -93,7 +93,8 @@ function animalOwnerInTeam(scope: readonly string[]): SQL | undefined {
  * an animal's application belongs to a team when the form link AND the
  * animal's OWNER are both in it (so a forged `?animal=` row, or an animal
  * whose owner left the team, is nobody's to evaluate), a general one when the
- * form link is; «replaced» never counts.
+ * form link is; «replaced» never counts, nor does an application of a
+ * soft-deleted animal.
  *   'animals' → only applications of an animal (grouped per animal);
  *   'any'     → those plus the general ones.
  * Callers MUST innerJoin form_submissions AND `leftJoin(animals, eq(animals.id, applications.animalId))`.
@@ -105,7 +106,8 @@ export function teamApplicationsWhere(teamEmails: ReadonlyArray<string | null | 
     const linkInTeam = linkOwnerInTeam(scope);
     const ownerInTeam = animalOwnerInTeam(scope);
     if (!linkInTeam || !ownerInTeam) return null;
-    const ofAnimal = and(isNotNull(applications.animalId), ownerInTeam);
+    // A soft-deleted animal's applications are nobody's to evaluate (its page refuses every action).
+    const ofAnimal = and(isNotNull(applications.animalId), isNull(animals.deletedAt), ownerInTeam);
     const target = animalScope === 'animals' ? ofAnimal : or(isNull(applications.animalId), ofAnimal);
     return and(target, linkInTeam, notReplaced) ?? null;
 }

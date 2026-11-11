@@ -4,7 +4,7 @@
 
 import { adopterHistory, applications, formSubmissions } from '@/db/schema';
 import { planAdoptionClose, planMergeDedupe, submissionApplication, type AdoptionVia, type MergeApp } from '@/domain/applications';
-import { APPLICATION_AUTO_ACTOR, APPLICATION_ORIGINS, APPLICATION_STATES, type ApplicationState } from '@/domain/constants';
+import { APPLICATION_AUTO_ACTOR, APPLICATION_CLOSE_REASONS, APPLICATION_ORIGINS, APPLICATION_STATES, type ApplicationState } from '@/domain/constants';
 import { applicantScopeWhere, normalizeTeamScope } from '@/lib/applicantScope';
 import { logger } from '@/lib/logger';
 import { clearFormNotices } from '@/lib/formNotices';
@@ -147,6 +147,32 @@ export async function closeApplicationsOnAdoption(db: Db, input: {
         return closed;
     } catch (e) {
         logger.error('closeApplicationsOnAdoption failed', e, { animalId, adopterId, via });
+        return 0;
+    }
+}
+
+/**
+ * An animal was deleted (softDeleteAnimal): its open applications end as «closed / animal_deleted» — its page
+ * refuses every action, so they could never leave the to-do list otherwise. Only OPEN rows (a concurrent
+ * decision wins); each one's form notices read. A restore does not reopen them.
+ *
+ * Never throws: the delete has already landed (and the scope already hides a deleted animal's applications),
+ * so a failure is logged and answered with 0. Returns how many were closed.
+ */
+export async function closeApplicationsOnAnimalDelete(db: Db, animalId: string, actor: string, nowSec: number): Promise<number> {
+    try {
+        const closed = await db.update(applications)
+            .set({ state: APPLICATION_STATES.CLOSED, closeReason: APPLICATION_CLOSE_REASONS.ANIMAL_DELETED, closedAt: nowSec, closedBy: actor })
+            .where(and(eq(applications.animalId, animalId), eq(applications.state, APPLICATION_STATES.OPEN)))
+            .returning({ id: applications.id, submissionId: applications.submissionId }) as Array<{ id: string; submissionId: string }>;
+        for (const row of closed) {
+            await clearFormNotices(db, row.submissionId, { op: 'closeApplicationsOnAnimalDelete', animalId, applicationId: row.id, actor });
+        }
+        return closed.length;
+    } catch (e) {
+        logger.warn('closeApplicationsOnAnimalDelete: D1 fallback hit (applications stay open; the scope hides them)', {
+            animalId, actor, error: e instanceof Error ? e.message : String(e),
+        });
         return 0;
     }
 }

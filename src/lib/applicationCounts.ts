@@ -8,9 +8,9 @@
  * Not a `'use server'` module: callers authorize and pass the team in.
  */
 
-import { and, count, eq, isNotNull, isNull, or, gt } from 'drizzle-orm';
+import { and, count, eq, isNotNull, isNull, or, gt, sql } from 'drizzle-orm';
 import { animals, applications, formSubmissions, contractInvitations } from '@/db/schema';
-import { APPLICATION_STATES, APPLICATION_CLOSE_REASONS } from '@/domain/constants';
+import { APPLICATION_STATES, APPLICATION_CLOSE_REASONS, RECORD_TYPES } from '@/domain/constants';
 import { generalScopeWhere, teamApplicationsWhere } from '@/lib/applicantScope';
 import { healMissingApplications } from '@/lib/applicationWrites';
 import { normalizeTeamScope } from '@/lib/applicantScope';
@@ -53,6 +53,12 @@ const openOnProfile = (scope: unknown) => and(
     isNotNull(formSubmissions.linkedAdopterId),
 );
 const noLiveLink = isNull(contractInvitations.token);
+
+/**
+ * `takesContract` in SQL: the application's animal has no active ADOPTION (a general application has no
+ * animal, so it always passes). The home and the tab apply the same rule in JS on the animal row.
+ */
+const animalTakesContract = sql`NOT EXISTS (SELECT 1 FROM placements p WHERE p.animal_id = ${applications.animalId} AND p.ended_at IS NULL AND p.record_type = ${RECORD_TYPES.ADOPTION})`;
 
 /** Open applications on a profile with NO live link, per animal (the animals whose owner's team is `ownerTeam`). */
 export async function countToEvaluateByAnimal(db: Db, ownerTeam: readonly string[], nowSec: number, opts: CountOpts = {}): Promise<Map<string, number>> {
@@ -99,7 +105,11 @@ export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string
     return row?.n ?? 0;
 }
 
-/** Linked adopter ids of the team's applications still to evaluate (animal + general). */
+/**
+ * Linked adopter ids of the team's applications still to evaluate (animal + general) — the profiles whose
+ * plain duplicate pair waits inside the evaluation (Q6). Only applications someone can still finish: an
+ * adopted animal's (`takesContract`) and a deleted animal's (the scope) are out.
+ */
 export async function toEvaluateAdopterIds(db: Db, team: readonly string[], nowSec: number): Promise<Set<string>> {
     const scope = teamApplicationsWhere(team, 'any');
     if (!scope) return new Set();
@@ -109,7 +119,7 @@ export async function toEvaluateAdopterIds(db: Db, team: readonly string[], nowS
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
         .leftJoin(animals, animalOf)
         .leftJoin(contractInvitations, liveLink(nowSec))
-        .where(and(openOnProfile(scope), noLiveLink))
+        .where(and(openOnProfile(scope), noLiveLink, animalTakesContract))
         .groupBy(formSubmissions.linkedAdopterId)
         .all() as Array<{ adopterId: string | null }>;
     return new Set(rows.flatMap(r => (r.adopterId ? [r.adopterId] : [])));

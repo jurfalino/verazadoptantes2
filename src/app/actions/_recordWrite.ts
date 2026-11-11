@@ -13,7 +13,7 @@ import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { canonField } from '@/domain/fieldCollab';
 import { RECORD_TYPES } from '@/domain/constants';
 import type { AdoptionVia } from '@/domain/applications';
-import { closeApplicationsOnAdoption } from '@/lib/applicationWrites';
+import { closeApplicationsOnAdoption, closeApplicationsOnAnimalDelete } from '@/lib/applicationWrites';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
 const EVENT_TYPES = ['observation', 'adoption_request', 'follow_up', 'returned_pet'];
@@ -499,7 +499,8 @@ export async function softDeleteAnimal(db: Db, id: string, actor: string): Promi
     // hidden — a later restore shows an accurate, ended history.
     await db.update(placements).set({ endedAt: now as any })
         .where(and(eq(placements.animalId, id), isNull(placements.endedAt)));
-    void actor;
+    // Nobody can evaluate for a deleted animal: its open applications close (logged, never throws).
+    await closeApplicationsOnAnimalDelete(db, id, actor, Math.floor(now.getTime() / 1000));
     return true;
 }
 

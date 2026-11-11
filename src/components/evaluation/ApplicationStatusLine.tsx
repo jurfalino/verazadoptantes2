@@ -46,7 +46,9 @@ export function statusLineText(
             return status.at != null ? line.replace('{date}', formatDate(status.at)) : line.replace(/\s*·\s*\{date\}/, '').replace('{date}', '');
         }
         case 'closed': {
-            const reasonKey = status.reason === APPLICATION_CLOSE_REASONS.ADOPTED_OPEN_LINK ? 'evaluation.closed_open_link' : 'evaluation.closed_other';
+            const reasonKey = status.reason === APPLICATION_CLOSE_REASONS.ADOPTED_OPEN_LINK ? 'evaluation.closed_open_link'
+                : status.reason === APPLICATION_CLOSE_REASONS.ANIMAL_DELETED ? 'evaluation.closed_animal_deleted'
+                    : 'evaluation.closed_other';
             const reason = ctx.animal ? animalLine(t, reasonKey, { name: nameOf(ctx.animal), sex: ctx.animal.sex }) : t(`${reasonKey}_hidden`);
             return t('evaluation.status_closed').replace('{reason}', reason);
         }
