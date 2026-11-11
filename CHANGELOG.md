@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.1] - 2026-11-11
+
+### Fixed — the delete warning (review of 2.59.0)
+- «Es el único registro de {animal}…»: if the candidate count can't be read, the dialog still warns that open
+  applications are lost (without a number) instead of saying nothing. Only the record's team (or an admin)
+  gets the delete preview at all.
+- The warning reads «Luna tiene 3 candidatos» — it counts every open candidate, including those with a
+  contract sent, not only the ones still to evaluate.
+
 ## [2.59.0] - 2026-11-11
 
 ### Added — «Evaluar solicitudes»: every form is a person to evaluate (Jon)
