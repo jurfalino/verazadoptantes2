@@ -344,3 +344,14 @@ export function computeFollowups(input: ComputeFollowupsInput): ProjectedFollowu
 
     return visible.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
 }
+
+/**
+ * «Seguimientos de adopción» (ENABLE_FOLLOWUPS) as stored in app_config, read the way the app's
+ * getFeatureFlag reads it: no row = the code default (ON); a row is on only when 'true' or '1'.
+ * The reminder cron Worker used `=== 'true'`, so with no row saved (prod until 2026-11-11) the
+ * admin page showed the switch ON while the daily reminders silently skipped.
+ */
+export function followupsEnabled(stored: string | undefined): boolean {
+    if (stored === undefined) return true;
+    return stored === 'true' || stored === '1';
+}

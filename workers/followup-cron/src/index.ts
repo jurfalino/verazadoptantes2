@@ -20,6 +20,7 @@ import {
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     FOLLOWUPS_EPOCH,
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
+    followupsEnabled,
 } from '../../../src/domain/followups';
 import { dedupKey, notificationBody, bellNotice, buildFollowupEmail, type FollowupEmailItem, type BellItem } from './copy';
 import { log, type AxiomEnv } from './log';
@@ -108,7 +109,7 @@ export default {
             const resendKey = env.RESEND_API_KEY || flagMap.get('RESEND_API_KEY') || '';
             const emailFrom = env.EMAIL_FROM || flagMap.get('EMAIL_FROM') || 'BuenAdoptante <noreply@buenadoptante.org>';
             const baseUrl = (env.APP_BASE_URL || 'https://buenadoptante.org').replace(/\/$/, '');
-            if (flagMap.get('ENABLE_FOLLOWUPS') !== 'true') {
+            if (!followupsEnabled(flagMap.get('ENABLE_FOLLOWUPS'))) {
                 log(env, 'info', { message: 'skipped', skipped: 'ENABLE_FOLLOWUPS off' }, ctx);
                 return;
             }

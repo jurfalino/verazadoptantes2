@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
+import { followupsEnabled,
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     getMessageTemplate, addDays, DEFAULT_SCHEDULE, DEFAULT_MESSAGES,
     type RecordedFollowup, type ComputeFollowupsInput,
@@ -240,5 +240,18 @@ describe('computeFollowups — pre-launch placements (retroactive "missed")', ()
         const slots = compute({ placementStartedAt: OLD, now: NOW });
         expect(slots.length).toBeGreaterThan(0);
         expect(slots.every(s => s.status === 'missed')).toBe(true);
+    });
+});
+
+describe('followupsEnabled — the daily reminder job reads «Seguimientos de adopción» like the app does', () => {
+    it('nothing saved = ON (the app\'s default; prod had no row and the job skipped every day)', () => {
+        expect(followupsEnabled(undefined)).toBe(true);
+    });
+    it('a saved value follows the app: "true"/"1" on, anything else off', () => {
+        expect(followupsEnabled('true')).toBe(true);
+        expect(followupsEnabled('1')).toBe(true);
+        expect(followupsEnabled('false')).toBe(false);
+        expect(followupsEnabled('0')).toBe(false);
+        expect(followupsEnabled('')).toBe(false);
     });
 });
