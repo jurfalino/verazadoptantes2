@@ -355,25 +355,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             const { createNotification } = await import('@/app/actions/notifications');
             const matchCount = matches.length;
 
-            // Who may get this form by email («Avisos», Jon 2026-11-11): whoever added the animal when
-            // it is the team's, else the link owner. Every other copy is bell only. A failed team
-            // lookup falls back to the link owner, logged.
-            const { animalNoticeEmailTo } = await import('@/domain/animalNotices');
-            let emailTo = rescuerEmail;
-            let teamAnimalOwner: string | null = null;
-            try {
-                const [{ getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
-                    import('@/lib/orgMembership'), import('@/lib/applicantScope'),
-                ]);
-                const animalInTeam = !!selectedAnimalId && !!teammateVisibleAnimal(
-                    { id: selectedAnimalId, name: selectedAnimalName, owner: selectedAnimalOwner }, await getTeamEmails(rescuerEmail));
-                emailTo = animalNoticeEmailTo({ linkOwner: rescuerEmail, animalOwner: selectedAnimalOwner, animalInTeam });
-                teamAnimalOwner = animalInTeam ? selectedAnimalOwner : null;
-            } catch (e) {
-                logger.warn('Form submit: email recipient falls back to the link owner', { submissionId, selectedAnimalId, error: e instanceof Error ? e.message : String(e) });
+            // Who gets which copy («Avisos», Jon 2026-11-11; src/domain/animalNotices.ts formNoticeRecipients):
+            // a teammate who added the animal gets their own emailable copy right here (not via the
+            // background fan-out); the link owner's copy is then bell only. A failed team lookup
+            // falls back to emailing the link owner, logged.
+            const { formNoticeRecipients } = await import('@/domain/animalNotices');
+            const animalOwnerEmail = (selectedAnimalOwner ?? '').trim();
+            let ownerInTeam: boolean | null = false;
+            if (selectedAnimalId && animalOwnerEmail && animalOwnerEmail.toLowerCase() !== rescuerEmail.trim().toLowerCase()) {
+                try {
+                    const { isOrgMateStrict } = await import('@/lib/orgMembership');
+                    ownerInTeam = await isOrgMateStrict(rescuerEmail, animalOwnerEmail);
+                } catch (e) {
+                    ownerInTeam = null;
+                    logger.warn('Form submit: team lookup failed, the email goes to the link owner', { submissionId, selectedAnimalId, rescuerEmail, error: e instanceof Error ? e.message : String(e) });
+                }
             }
-            // The link owner's own copy (not a team copy: «Mis animales» doesn't apply) is emailed only when it's theirs to answer.
-            const ownerBellOnly = emailTo.trim().toLowerCase() !== rescuerEmail.trim().toLowerCase();
+            const recipients = formNoticeRecipients({ linkOwner: rescuerEmail, animalOwner: selectedAnimalOwner, ownerInTeam });
+            const ownerBellOnly = recipients.linkOwnerBellOnly;
 
             // When the submission targets a specific animal the title reads
             // "Juana aplicó para Luna", with the match count appended
@@ -429,6 +428,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
             logger.info('Form fuzzy search completed', { submissionId, matchCount });
 
+            // The animal's owner (a teammate of the link owner): their own copy, emailed per their
+            // «Llega un formulario…» row. «Mis animales» doesn't apply: it is their animal.
+            if (recipients.animalOwnerCopy) {
+                try {
+                    const { resolveDisplayName } = await import('@/app/actions/notifications');
+                    const sharedByName = await resolveDisplayName(rescuerEmail);
+                    await createNotification({
+                        userId: recipients.animalOwnerCopy,
+                        type: 'form_submission',
+                        ...notificationContent({
+                            key: 'form_submission_teammate',
+                            params: { ...titleParams, sharedByName, ...(selectedAnimalName ? { animalName: selectedAnimalName } : {}) },
+                        }),
+                        url: noticeUrl,
+                        icon: '📋',
+                        metadata: { submissionId, submitterName: name, selectedAnimalId, selectedAnimalName },
+                    });
+                } catch (e) {
+                    logger.error('Form submit: the animal owner\'s copy was not created', e, { submissionId, selectedAnimalId, rescuerEmail });
+                }
+            }
+
             // Fan-out to org members (after the response, kept alive — see src/lib/background.ts).
             // With an animal of THIS team, teammates get the owner's title
             // («Juana aplicó para Luna …») and the animal in metadata, like the
@@ -462,9 +483,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         submissionId, submitterName: name,
                         selectedAnimalId: animal?.id ?? null, selectedAnimalName: animal?.name ?? null,
                     },
-                    // Bell only, except the copy to the animal's owner when a teammate added it; nothing
-                    // for a member who chose «Mis animales» unless it is their animal.
-                    teamCopy: { emailTo, animalOwner: teamAnimalOwner },
+                    // Bell only (the animal owner's emailable copy was made above); nothing for a
+                    // member who chose «Mis animales» unless it is their animal.
+                    teamCopy: recipients.teamCopy,
+                    excludeEmails: recipients.excludeFromTeam,
                 });
             }, { submissionId, rescuerEmail, selectedAnimalId });
         } catch (searchErr) {

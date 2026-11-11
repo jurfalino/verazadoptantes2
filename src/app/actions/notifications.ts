@@ -498,13 +498,16 @@ export async function notifyOrgMembers(opts: {
     template?: NotificationTemplate;
     /** A team copy of a form or contract: only the copy to `emailTo` may be emailed; `animalOwner` null = no animal of the team. */
     teamCopy?: { emailTo: string | null; animalOwner: string | null };
+    /** Members who already got their own copy from the caller (compared case-insensitively). */
+    excludeEmails?: readonly string[];
 }): Promise<void> {
     try {
         const { getOrgMemberEmailsFor, getMemberEmailsOfOrg } = await import('@/lib/orgMembership');
         const emails = opts.orgId ? await getMemberEmailsOfOrg(opts.orgId) : await getOrgMemberEmailsFor(opts.actorEmail);
 
-        // Exclude the actor
-        const recipients = emails.filter((e: string) => e !== opts.actorEmail);
+        // Exclude the actor, and whoever the caller already notified
+        const excluded = new Set((opts.excludeEmails ?? []).map(e => e.trim().toLowerCase()));
+        const recipients = emails.filter((e: string) => e !== opts.actorEmail && !excluded.has(e.trim().toLowerCase()));
         if (recipients.length === 0) return;
 
         // Forms and contracts: each member's «Formularios, contratos y controles de:» choice.

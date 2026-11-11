@@ -4,16 +4,76 @@
  * there's no animal of the team.
  */
 import { describe, it, expect } from 'vitest';
-import { animalNoticeEmailTo, teamCopyDelivery, parseAnimalsScope, followupDelivery } from './animalNotices';
+import { formNoticeRecipients, teamCopyDelivery, parseAnimalsScope, followupDelivery } from './animalNotices';
 
-describe('animalNoticeEmailTo', () => {
-    it("a team animal: its owner (the link owner's teammate, or the link owner)", () => {
-        expect(animalNoticeEmailTo({ linkOwner: 'ana@x.org', animalOwner: 'bea@x.org', animalInTeam: true })).toBe('bea@x.org');
-        expect(animalNoticeEmailTo({ linkOwner: 'ana@x.org', animalOwner: 'ana@x.org', animalInTeam: true })).toBe('ana@x.org');
+type Member = { email: string; scope: 'mine' | 'team' };
+
+/** Who ends up with what: the route's two direct copies, then notifyOrgMembers over the team (minus the actor and `excludeFromTeam`). */
+function outcome(linkOwner: string, animalOwner: string | null, ownerInTeam: boolean | null, team: Member[]) {
+    const plan = formNoticeRecipients({ linkOwner, animalOwner, ownerInTeam });
+    const out: Record<string, string> = { [linkOwner.toLowerCase()]: plan.linkOwnerBellOnly ? 'bell' : 'bell_and_email' };
+    if (plan.animalOwnerCopy) out[plan.animalOwnerCopy.toLowerCase()] = 'bell_and_email';
+    const skip = new Set([linkOwner, ...plan.excludeFromTeam].map(e => e.trim().toLowerCase()));
+    for (const m of team) {
+        if (skip.has(m.email.trim().toLowerCase())) continue;
+        const d = teamCopyDelivery({ recipient: m.email, ...plan.teamCopy, scope: m.scope });
+        if (d !== 'skip') out[m.email.toLowerCase()] = d;
+    }
+    return out;
+}
+
+const ANA = 'ana@x.org';
+const BEA = 'bea@x.org';
+const CAL = 'cal@x.org';
+const team = (scope: 'mine' | 'team' = 'team', beaScope: 'mine' | 'team' = scope): Member[] =>
+    [{ email: ANA, scope }, { email: BEA, scope: beaScope }, { email: CAL, scope }];
+
+describe('formNoticeRecipients (a form arrives on ana\'s link)', () => {
+    it("ana's own animal: ana's copy may be emailed, the team's are bell only", () => {
+        expect(outcome(ANA, ANA, false, team())).toEqual({ [ANA]: 'bell_and_email', [BEA]: 'bell', [CAL]: 'bell' });
     });
-    it('no animal, or one outside the team (a forged link): the link owner', () => {
-        expect(animalNoticeEmailTo({ linkOwner: 'ana@x.org', animalOwner: null, animalInTeam: false })).toBe('ana@x.org');
-        expect(animalNoticeEmailTo({ linkOwner: 'ana@x.org', animalOwner: 'zoe@other.org', animalInTeam: false })).toBe('ana@x.org');
+
+    it("bea's animal: bea's own copy (made by the route) may be emailed; ana's and cal's are bell only", () => {
+        const plan = formNoticeRecipients({ linkOwner: ANA, animalOwner: BEA, ownerInTeam: true });
+        expect(plan).toEqual({ linkOwnerBellOnly: true, animalOwnerCopy: BEA, excludeFromTeam: [BEA], teamCopy: { emailTo: null, animalOwner: BEA } });
+        expect(outcome(ANA, BEA, true, team())).toEqual({ [ANA]: 'bell', [BEA]: 'bell_and_email', [CAL]: 'bell' });
+    });
+
+    it('no animal: ana may be emailed, the team gets the bell', () => {
+        expect(outcome(ANA, null, false, team())).toEqual({ [ANA]: 'bell_and_email', [BEA]: 'bell', [CAL]: 'bell' });
+    });
+
+    it("an animal outside ana's team (a forged ?animal=): treated as no animal, its owner hears nothing", () => {
+        const plan = formNoticeRecipients({ linkOwner: ANA, animalOwner: 'zoe@other.org', ownerInTeam: false });
+        expect(plan.animalOwnerCopy).toBeNull();
+        expect(plan.teamCopy).toEqual({ emailTo: ANA, animalOwner: null });
+        expect(outcome(ANA, 'zoe@other.org', false, team())).toEqual({ [ANA]: 'bell_and_email', [BEA]: 'bell', [CAL]: 'bell' });
+    });
+
+    it('the team lookup failed: ana is emailed, as before this branch; no direct copy to an owner we could not place', () => {
+        const plan = formNoticeRecipients({ linkOwner: ANA, animalOwner: BEA, ownerInTeam: null });
+        expect(plan.linkOwnerBellOnly).toBe(false);
+        expect(plan.animalOwnerCopy).toBeNull();
+        expect(plan.excludeFromTeam).toEqual([]);
+        // If the fan-out does reach bea, «Mis animales» still lets her animal through (bell).
+        expect(outcome(ANA, BEA, null, team('team', 'mine'))).toEqual({ [ANA]: 'bell_and_email', [BEA]: 'bell', [CAL]: 'bell' });
+    });
+
+    it('case and spaces never matter', () => {
+        expect(formNoticeRecipients({ linkOwner: 'Ana@X.org', animalOwner: ' ana@x.ORG ', ownerInTeam: false }))
+            .toMatchObject({ linkOwnerBellOnly: false, animalOwnerCopy: null });
+        const plan = formNoticeRecipients({ linkOwner: ANA, animalOwner: ' Bea@X.org ', ownerInTeam: true });
+        expect(plan.animalOwnerCopy).toBe('Bea@X.org');
+        expect(plan.excludeFromTeam).toEqual(['bea@x.org']);
+        // The fan-out lists bea in another case: still one copy, hers.
+        expect(outcome(ANA, ' Bea@X.org ', true, [{ email: 'BEA@x.org', scope: 'team' }, { email: CAL, scope: 'team' }]))
+            .toEqual({ [ANA]: 'bell', [BEA]: 'bell_and_email', [CAL]: 'bell' });
+    });
+
+    it("bea on «Mis animales» or «todo el equipo»: her animal reaches her either way; cal's «Mis animales» drops it", () => {
+        expect(outcome(ANA, BEA, true, team('team', 'mine'))).toEqual({ [ANA]: 'bell', [BEA]: 'bell_and_email', [CAL]: 'bell' });
+        expect(outcome(ANA, BEA, true, team('mine'))).toEqual({ [ANA]: 'bell', [BEA]: 'bell_and_email' });
+        expect(outcome(ANA, BEA, true, team('team'))).toEqual({ [ANA]: 'bell', [BEA]: 'bell_and_email', [CAL]: 'bell' });
     });
 });
 

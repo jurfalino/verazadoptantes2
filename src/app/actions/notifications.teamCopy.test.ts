@@ -67,6 +67,12 @@ describe('notifyOrgMembers — team copies', () => {
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('animals scope unreadable'), expect.objectContaining({ type: 'form_submission' }));
     });
 
+    it('excluded members (the route already wrote their copy) get no second one, whatever the case', async () => {
+        await notifyOrgMembers({ actorEmail: ANA, type: 'form_submission', title: 't', body: 'b', teamCopy: { emailTo: null, animalOwner: BEA }, excludeEmails: [' Bea@Example.COM'] });
+        expect(sqlite.prepare("SELECT user_id FROM notifications ORDER BY user_id").all().map(r => r.user_id)).toEqual([CAL]);
+        expect(bellOnlyByRecipient()).toEqual({ [CAL]: true });
+    });
+
     it('without teamCopy nothing changes: each copy follows its row', async () => {
         await notifyOrgMembers({ actorEmail: ANA, type: 'member_joined', title: 't', body: 'b' });
         expect(bellOnlyByRecipient()).toEqual({ [BEA]: false, [CAL]: false });

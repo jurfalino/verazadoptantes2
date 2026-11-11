@@ -10,9 +10,44 @@
 
 const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
 
-/** The one person a form or contract notice may be emailed to. */
-export function animalNoticeEmailTo(c: { linkOwner: string; animalOwner: string | null; animalInTeam: boolean }): string {
-    return c.animalInTeam && c.animalOwner ? c.animalOwner : c.linkOwner;
+/**
+ * Who gets which copy of a form that arrives on `linkOwner`'s link
+ * (src/app/api/form/[userId]/submit/route.ts). Emails compare case- and
+ * space-insensitively throughout.
+ * - `ownerInTeam`: whether `animalOwner` shares a group with the link owner;
+ *   null = the lookup failed.
+ * - The link owner always gets their own copy; it is bell only when a teammate
+ *   added the animal (the email is that teammate's).
+ * - `animalOwnerCopy`: that teammate's own copy, created by the route itself
+ *   (row-gated email, «Mis animales» doesn't apply: it is their animal), so it
+ *   never depends on the background team fan-out. `excludeFromTeam` keeps the
+ *   fan-out from sending a second copy.
+ * - A failed lookup falls back to emailing the link owner (the behaviour before
+ *   «Avisos»), with no direct copy to an owner we could not place; the fan-out
+ *   still lets that owner's animal through «Mis animales» if it reaches them.
+ * - An animal outside the team (a forged `?animal=`) counts as no animal.
+ */
+export type FormNoticeRecipients = {
+    linkOwnerBellOnly: boolean;
+    animalOwnerCopy: string | null;
+    excludeFromTeam: string[];
+    /** For notifyOrgMembers({ teamCopy }). */
+    teamCopy: { emailTo: string | null; animalOwner: string | null };
+};
+
+export function formNoticeRecipients(c: { linkOwner: string; animalOwner: string | null; ownerInTeam: boolean | null }): FormNoticeRecipients {
+    const owner = norm(c.animalOwner);
+    const linkOwner = c.linkOwner.trim();
+    if (owner && owner === norm(linkOwner)) {
+        return { linkOwnerBellOnly: false, animalOwnerCopy: null, excludeFromTeam: [], teamCopy: { emailTo: linkOwner, animalOwner: linkOwner } };
+    }
+    if (owner && c.ownerInTeam === true) {
+        return { linkOwnerBellOnly: true, animalOwnerCopy: (c.animalOwner ?? '').trim(), excludeFromTeam: [owner], teamCopy: { emailTo: null, animalOwner: owner } };
+    }
+    if (owner && c.ownerInTeam === null) {
+        return { linkOwnerBellOnly: false, animalOwnerCopy: null, excludeFromTeam: [], teamCopy: { emailTo: linkOwner, animalOwner: owner } };
+    }
+    return { linkOwnerBellOnly: false, animalOwnerCopy: null, excludeFromTeam: [], teamCopy: { emailTo: linkOwner, animalOwner: null } };
 }
 
 export type TeamCopyDelivery = 'skip' | 'bell' | 'bell_and_email';
