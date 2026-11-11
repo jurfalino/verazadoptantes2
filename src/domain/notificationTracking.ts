@@ -23,7 +23,8 @@ const PARAM_KIND = 'kind';
 const TRACKING_PARAMS = [PARAM_ID, PARAM_CHANNEL, PARAM_KIND];
 
 // Shapes accepted from a landing URL. Anything else is dropped, so a crafted
-// link (`?ch=email&kind=someone@x.com`) can't put text into an event.
+// link can't put an email, spaces or capitals into an event (shape check, not
+// an allowlist: `kind=juan_perez` still passes).
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 const KIND_SHAPE = /^[a-z0-9_]{1,64}$/;
 

@@ -92,7 +92,7 @@ describe('parseEmailLanding — reads the email params and cleans the address ba
         });
     });
 
-    it('a crafted link cannot smuggle text into analytics: malformed id or kind is dropped', () => {
+    it('a crafted link is shape-checked: a malformed id or kind is dropped', () => {
         const r = parseEmailLanding(loc('?ch=email&n=someone%40example.com&kind=Pedro%20Paez'));
         expect(r?.notificationId).toBeUndefined();
         expect(r?.kind).toBe(DEFAULT_EMAIL_KIND);
