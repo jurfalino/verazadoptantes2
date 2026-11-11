@@ -28,7 +28,7 @@ import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom, type NoticePrefKey, type NoticeSettings } from '@/app/actions/settings';
 import { handledAsStale } from '@/lib/errorMessage';
 import { announceFollowupEmail, onFollowupEmail } from '@/lib/followupEmailSync';
-import { NOTICE_GROUPS, NOTICE_ROWS, isNoticeEmailOn, type NoticeGroup, type NoticeRow } from '@/domain/noticeRows';
+import { NOTICE_GROUPS, visibleNoticeRows, isNoticeEmailOn, type NoticeGroup, type NoticeRow } from '@/domain/noticeRows';
 import { PROFILE_CHANGES_FROM, type ProfileChangesFrom } from '@/domain/teamChangeAudience';
 import { ANIMALS_SCOPES, type AnimalsScope } from '@/domain/animalNotices';
 
@@ -93,6 +93,7 @@ export default function EmailNotificationsSection() {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [state, setState] = useState<NoticeSettings | null>(null);
+    const [followupsOn, setFollowupsOn] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -104,6 +105,23 @@ export default function EmailNotificationsSection() {
                     message: e instanceof Error ? e.message : String(e),
                     stack: e instanceof Error ? e.stack : undefined,
                     source: 'EmailNotificationsSection.load',
+                    level: 'warn',
+                });
+            });
+        // «Toca un control de seguimiento» shows only while the public ENABLE_FOLLOWUPS flag is on,
+        // read the way FollowupSettingsSection reads it (only an explicit false hides it).
+        fetch('/api/config')
+            .then(async res => {
+                if (!res.ok) throw new Error(`/api/config ${res.status}`);
+                const cfg = await res.json() as { config?: Record<string, unknown> };
+                const flag = cfg.config?.ENABLE_FOLLOWUPS;
+                if (!cancelled) setFollowupsOn(!(flag === false || flag === 'false'));
+            })
+            .catch((e: unknown) => {
+                // The check-up row stays hidden, as «Seguimientos de adopción» does.
+                void reportClientError({
+                    message: e instanceof Error ? e.message : String(e),
+                    source: 'EmailNotificationsSection.config',
                     level: 'warn',
                 });
             });
@@ -202,7 +220,7 @@ export default function EmailNotificationsSection() {
                 <section key={group} data-testid={`notice-group-${group}`}>
                     {groupTitle(group)}
                     <ul className="mt-1">
-                        {NOTICE_ROWS.filter(r => r.group === group).map(row => (
+                        {visibleNoticeRows(followupsOn).filter(r => r.group === group).map(row => (
                             <li key={row.key} className={`${GRID} border-t border-[var(--border-default)] first:border-t-0 py-2`} data-testid={`email-pref-${row.key}`}>
                                 <div className="min-w-0">
                                     <p className="text-sm font-semibold text-stone-900 break-words">{t(`settings.notice_row_${row.key}`)}</p>

@@ -193,3 +193,8 @@ export function withNoticePrefs(raw: string | null | undefined, keys: readonly S
     for (const k of keys) next[k] = enabled;
     return JSON.stringify(next);
 }
+
+/** The rows Configuración → «Avisos» shows: the check-up row only while ENABLE_FOLLOWUPS is on. */
+export function visibleNoticeRows(followupsOn: boolean): readonly NoticeRow[] {
+    return followupsOn ? NOTICE_ROWS : NOTICE_ROWS.filter(r => r.email !== 'followups');
+}

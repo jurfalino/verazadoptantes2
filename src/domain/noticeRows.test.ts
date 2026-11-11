@@ -7,7 +7,7 @@ import { NOTIFICATION_TYPES } from './constants';
 import {
     NOTICE_ROWS, ALWAYS_EMAILED_TYPES, ADMIN_ONLY_TYPES, NOT_WRITTEN_TYPES,
     rowForType, parseNoticePrefs, withNoticePref, isNoticeEmailOn, noticeEmailVerdict,
-    noticeThrottleKey, unsubscribableRow, unsubscribeRows, withNoticePrefs, SWITCHABLE_ROW_KEYS,
+    noticeThrottleKey, unsubscribableRow, unsubscribeRows, withNoticePrefs, visibleNoticeRows, SWITCHABLE_ROW_KEYS,
 } from './noticeRows';
 
 const LIVE = NOTIFICATION_TYPES as readonly string[];
@@ -210,5 +210,16 @@ describe('withNoticePrefs', () => {
     it('switches several rows in one write, keeping the rest (migrated)', () => {
         expect(JSON.parse(withNoticePrefs('{"forms":false,"group":true}', ['duplicates', 'answers'], false)))
             .toEqual({ form: false, contract: false, group: true, duplicates: false, answers: false });
+    });
+});
+
+describe('visibleNoticeRows (Configuración → «Avisos»)', () => {
+    it('ENABLE_FOLLOWUPS off: no «Toca un control de seguimiento» row, every other row stays', () => {
+        const keys = visibleNoticeRows(false).map(r => r.key);
+        expect(keys).not.toContain('followups');
+        expect(keys).toHaveLength(NOTICE_ROWS.length - 1);
+    });
+    it('on: every row', () => {
+        expect(visibleNoticeRows(true).map(r => r.key)).toEqual(NOTICE_ROWS.map(r => r.key));
     });
 });
