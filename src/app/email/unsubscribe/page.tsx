@@ -1,13 +1,13 @@
 export const runtime = 'edge';
 
-import { EMAIL_CATEGORIES, type EmailCategory } from '@/domain/emailCategories';
+import { unsubscribableRow, type SwitchableRowKey } from '@/domain/noticeRows';
 import { resolveAuthSecret } from '@/lib/otp';
 import { logger } from '@/lib/logger';
 import { verifyUnsubscribe } from '@/lib/emailUnsubscribe';
 import { es } from '@/i18n/locales/es';
 
-/** The same names Configuración → «Avisos por email» shows (Spanish, like the emails). */
-const label = (category: EmailCategory): string => es.settings[`email_cat_${category}`];
+/** The same names Configuración → «Avisos» shows (Spanish, like the emails). */
+const label = (row: SwitchableRowKey): string => es.settings[`notice_row_${row}`];
 
 function first(v: string | string[] | undefined): string {
     return (Array.isArray(v) ? v[0] : v) ?? '';
@@ -26,7 +26,7 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
     const e = first(sp.e);
     const c = first(sp.c);
     const s = first(sp.s);
-    const category = EMAIL_CATEGORIES.find((x) => x === c);
+    const category = unsubscribableRow(c);
 
     const errorId = first(sp.error);
     if (errorId) {

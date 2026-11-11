@@ -56,6 +56,8 @@ export async function createNotification(data: {
      * sender created it first; src/lib/profileAdditionNotices.ts merges into it).
      */
     ifAbsent?: boolean;
+    /** This copy stays in the bell, never emailed (a team copy, the admins' copy of a report). */
+    bellOnly?: boolean;
 }): Promise<string | null> {
     try {
         const db = await getDb();
@@ -110,9 +112,9 @@ export async function createNotification(data: {
 
         logger.info('Notification created', { id, userId: data.userId, type });
 
-        // Email twin (per-category switches apply). Never affects the bell's result.
+        // Email twin («Avisos» rows apply). Never affects the bell's result.
         await runAfterResponse('notification.email', () => sendNotificationEmail({
-            id, userId: data.userId, type, title, body, url: data.url ?? null, metadata: metadata ?? null,
+            id, userId: data.userId, type, title, body, url: data.url ?? null, metadata: metadata ?? null, bellOnly: data.bellOnly,
         }), { type, notificationId: id });
 
         return id;
@@ -408,6 +410,8 @@ export async function notifyAdmins(opts: {
     template?: NotificationTemplate;
     /** People already told some other way (e.g. as an owner of a flagged profile): never sent this one. Normalized here. */
     skip?: readonly string[];
+    /** The admins' copy stays in the bell (an admin-queue copy of a user-facing type). */
+    bellOnly?: boolean;
 }): Promise<void> {
     try {
         const adminEmails = new Set<string>();
@@ -458,6 +462,7 @@ export async function notifyAdmins(opts: {
                 url: opts.url,
                 icon: opts.icon,
                 metadata: opts.metadata,
+                bellOnly: opts.bellOnly,
                 template: opts.template,
             })
         ));

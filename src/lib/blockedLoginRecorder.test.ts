@@ -86,11 +86,11 @@ describe('recordBlockedLogin — the admins\' notice', () => {
         expect(notices()[0]).toMatchObject({ url: '/adopter/p1', body: 'Coincide con perfil: p1. Motivo: low_rating' });
     });
 
-    it('never emailed: the email twin skips it as in-app only', async () => {
+    it('never emailed: the email twin skips it as admin-only', async () => {
         await recordBlockedLogin(BLOCKED, gate);
         const calls = vi.mocked(sendNotificationEmail).mock.results;
         expect(calls).toHaveLength(admins().length);
-        expect(await Promise.all(calls.map(c => c.value))).toEqual(admins().map(() => 'skipped_in_app_only'));
+        expect(await Promise.all(calls.map(c => c.value))).toEqual(admins().map(() => 'skipped_admin_only'));
         expect(sqlite.prepare("SELECT COUNT(*) AS n FROM notifications WHERE emailed_at IS NOT NULL").get()!.n).toBe(0);
     });
 

@@ -10,7 +10,7 @@
  *      so they see the alert in the NotificationBell. It goes through
  *      createNotification like every other notice: a template rendered in the
  *      reader's language and the NOTIF_ENABLED_adopter_login_blocked kill
- *      switch. It is never emailed (in-app only, src/domain/emailCategories.ts).
+ *      switch. It is never emailed (admin-only, src/domain/noticeRows.ts).
  *   3. An `info`-level log event for Axiom (surfaces in /admin metrics).
  *
  * Best-effort means: each side-effect catches its own error so a partial

@@ -20,7 +20,6 @@ import { runAfterResponse } from '@/lib/background';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { contactEntriesToBlob, deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
 import { historyKindForOwner, isPrivilegedOnProfile } from '@/lib/profilePrivilege';
-import { isRealActorEmail } from '@/lib/piiAccess';
 import { actorNameOf, teamsOf } from '@/lib/householdNotices';
 import { keepChangeRecipients } from '@/lib/teamChangeAudience';
 import type { NotificationType } from '@/domain/constants';
@@ -176,7 +175,7 @@ export async function undoRename(db: Db, historyId: string, actor: string): Prom
         // Someone renamed (or undid) in between.
         return { status: (await isUndone(db, state.adopterId, historyId)) ? 'already_undone' : 'superseded', adopterId: state.adopterId };
     }
-    await notifyRenameUndone(db, { adopterId: state.adopterId, actor, renamer: state.renamer, restored: res.to, reverted: res.from });
+    // The renamer is not notified («No te avisamos», Jon 2026-11-11): the undo is in the profile's history.
     return { status: 'undone', adopterId: state.adopterId, restored: res.to, reverted: res.from, ...(res.warningErrorId ? { warningErrorId: res.warningErrorId } : {}) };
 }
 
@@ -320,22 +319,3 @@ async function collapseRenameNotice(
     }
 }
 
-/** The renamer hears their change was undone (unless they undid it themselves). */
-export async function notifyRenameUndone(db: Db, n: { adopterId: string; actor: string; renamer: string | null; restored: string; reverted: string }): Promise<void> {
-    const ctx: Ctx = { op: 'notifyRenameUndone', adopterId: n.adopterId, actor: n.actor };
-    const renamer = n.renamer?.trim().toLowerCase() ?? '';
-    if (!isRealActorEmail(renamer) || renamer === n.actor.trim().toLowerCase()) {
-        logger.info('profileIdentity: rename undone — nobody else to tell', ctx);
-        return;
-    }
-    await runAfterResponse('profileIdentity.undone', async () => {
-        try {
-            const actorName = await actorNameOf(n.actor, ctx);
-            await sendTo(new Map([[renamer, n.adopterId]]), 'profile_rename_undone',
-                { key: 'profile_rename_undone', params: { actorName, restoredName: n.restored || undefined, revertedName: n.reverted || undefined } },
-                {}, '↩️', ctx);
-        } catch (e) {
-            logger.warn('profileIdentity: undo notice failed', { ...ctx, error: errMsg(e) });
-        }
-    }, ctx);
-}

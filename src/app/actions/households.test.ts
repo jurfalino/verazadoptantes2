@@ -374,16 +374,14 @@ describe('addHouseholdPerson — an existing profile («¿Es este perfil?» → 
         expect(noticesOfType('household_linked').map(n => n.userId).sort()).toEqual([ADMIN, OTHER].sort());
     });
 
-    it("the other household's teams get «también vive con» when they are nobody else's team", async () => {
+    it("the other household's teams are not told «también vive con» (Jon 2026-11-11: it is in the history)", async () => {
         // Marta lives with Rosa (both OTHER's); Rosa's household gains STRANGER-owned Luz.
         sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES ('luz', 'Luz Diaz', '5', ?, 1000, 1000)`).run(STRANGER);
         await as(OTHER, () => addHouseholdPerson({ anchorAdopterId: 'rosa', existingProfileId: 'marta' }));
         await as(OTHER, () => addHouseholdPerson({ anchorAdopterId: 'rosa', existingProfileId: 'luz' }));
         notify.create.length = 0;
         await as(OWNER, () => addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta' }));
-        const also = noticesOfType('household_also_lives_with');
-        expect(also.map(n => n.userId)).toEqual([STRANGER]);
-        expect(also[0]).toMatchObject({ template: { key: 'household_also_lives_with', params: expect.objectContaining({ personName: 'Marta Paez', hostName: 'Pedro Paez' }) } });
+        expect(noticesOfType('household_also_lives_with')).toEqual([]);
     });
 });
 
@@ -497,7 +495,7 @@ describe('removeHouseholdMembership — «No vive acá»', () => {
 });
 
 describe('updateHouseholdMembership — the relationship', () => {
-    it('anyone signed in: credited, history on the person, the household teams told', async () => {
+    it('anyone signed in: credited, history on the person, nobody notified (Jon 2026-11-11: it is in the history)', async () => {
         const added = await as(OWNER, () => addHouseholdPerson({ anchorAdopterId: 'pedro', existingProfileId: 'marta', relationship: 'sibling' }));
         if (!added.ok) throw new Error(added.error);
         notify.create.length = 0;
@@ -505,9 +503,7 @@ describe('updateHouseholdMembership — the relationship', () => {
         expect(await updateHouseholdMembership({ membershipId: added.membershipId, relationship: 'partner' })).toEqual({ ok: true });
         expect(membershipsIn('hh-pedro')[1]).toMatchObject({ relationship: 'partner', added_by: OWNER });
         expect(historyOf('marta').at(-1)).toMatchObject({ changed_by: STRANGER, kind: 'contribution', changes: { household_relationship_changed: { membershipId: added.membershipId, householdId: 'hh-pedro', from: 'sibling', to: 'partner' } } });
-        const notices = noticesOfType('household_relationship_changed');
-        expect(notices.map(n => n.userId).sort()).toEqual([MATE, OTHER, OWNER].sort());
-        expect(notices[0]).toMatchObject({ template: { key: 'household_relationship_changed', params: expect.objectContaining({ personName: 'Marta Paez', relationship: 'partner', relativeName: 'Pedro Paez' }) } });
+        expect(noticesOfType('household_relationship_changed')).toEqual([]);
         await expectNotApprover(STRANGER, 'marta');
     });
 

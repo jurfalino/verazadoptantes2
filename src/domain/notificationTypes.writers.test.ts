@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { NOTIFICATION_TYPES } from './constants';
+import { NOT_WRITTEN_TYPES } from './noticeRows';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -111,8 +112,11 @@ describe('notification writers', () => {
             'merge_request', // notifyAdmins + createNotification
             'contract_result', // createNotification's default
             'follow_up_due', // the follow-up cron Worker's SQL
-            'api_record', // an object built first, then passed to createNotification
         ]) expect(types, t).toContain(t);
+    });
+
+    it('«No te avisamos» (Jon 2026-11-11): the types the profile\'s history covers are no longer written', () => {
+        expect(NOT_WRITTEN_TYPES.filter(t => types.has(t))).toEqual([]);
     });
 
     it('every type written is in NOTIFICATION_TYPES (labelled and drawn)', () => {

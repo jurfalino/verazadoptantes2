@@ -237,7 +237,7 @@ describe('undoProfileRename — the owner team or an admin', () => {
         return historyOf('pedro')[0].id as string;
     }
 
-    it('the owner undoes: the name is back, the reverted name is kept as an alias, the restored one is no longer «Conocido/a como», the renamer is told', async () => {
+    it('the owner undoes: the name is back, the reverted name is kept as an alias, the restored one is no longer «Conocido/a como»; nobody is notified (it is in the history)', async () => {
         const historyId = await strangerRenames();
         expect(await as(OWNER, () => getRenameUndoOption(historyId))).toEqual({ status: 'can_undo', adopterId: 'pedro', from: 'Pedro Paez', to: 'P. Paez' });
         expect(await as(OWNER, () => undoProfileRename(historyId))).toMatchObject({ ok: true, name: 'Pedro Paez' });
@@ -251,8 +251,7 @@ describe('undoProfileRename — the owner team or an admin', () => {
         expect(undo).toMatchObject({ changed_by: OWNER, kind: 'edit' });
         expect(undo.changes.name_changed).toMatchObject({ from: 'P. Paez', to: 'Pedro Paez', undoOf: historyId });
 
-        const told = noticesOfType('profile_rename_undone');
-        expect(told.map(n => n.userId)).toEqual([STRANGER]);
+        expect(noticesOfType('profile_rename_undone')).toEqual([]);
         expect(noticesOfType('profile_renamed')).toHaveLength(0);
 
         // Once only.

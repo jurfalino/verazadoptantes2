@@ -100,6 +100,8 @@ export async function POST(req: NextRequest) {
                     url: '/admin/data-requests',
                     icon: '✏️',
                     metadata: { adopterId: profileId },
+                    // The admins' copy is an admin-queue item: the bell only («Avisos», Jon 2026-11-11).
+                    bellOnly: true,
                 });
             }, { adopterId: profileId, actor: requester });
         }

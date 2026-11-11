@@ -48,45 +48,58 @@ const location = (res: Response) => new URL(res.headers.get('location')!);
 const prefs = () => sqlite.prepare(`SELECT email_prefs AS p FROM user_profiles WHERE user_id = 'u1'`).get()?.p ?? null;
 
 describe('POST /api/email/unsubscribe', () => {
-    it('a valid signature turns the category off and redirects 303 to ?done=1', async () => {
-        const res = await post({ e: EMAIL, c: 'forms', s: await signUnsubscribe(EMAIL, 'forms', SECRET) });
+    it('a valid signature turns that «Avisos» row off and redirects 303 to ?done=1', async () => {
+        const res = await post({ e: EMAIL, c: 'form', s: await signUnsubscribe(EMAIL, 'form', SECRET) });
         expect(res.status).toBe(303);
         expect(location(res).pathname).toBe('/email/unsubscribe');
         expect(location(res).searchParams.get('done')).toBe('1');
-        expect(location(res).searchParams.get('c')).toBe('forms');
-        expect(JSON.parse(String(prefs()))).toEqual({ forms: false });
+        expect(location(res).searchParams.get('c')).toBe('form');
+        expect(JSON.parse(String(prefs()))).toEqual({ form: false });
+    });
+
+    it('keeps the other rows, and an old «Formularios y contratos» off, as they were', async () => {
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, email_prefs) VALUES ('u1', '{"forms":false,"group":true}')`).run();
+        await post({ e: EMAIL, c: 'duplicates', s: await signUnsubscribe(EMAIL, 'duplicates', SECRET) });
+        expect(JSON.parse(String(prefs()))).toEqual({ form: false, contract: false, group: true, duplicates: false });
+    });
+
+    it('an old category link (before «Avisos») is invalid and writes nothing', async () => {
+        const sig = await hashOtpCode(`unsub:v1:${EMAIL}:forms`, SECRET);
+        const res = await post({ e: EMAIL, c: 'forms', s: sig });
+        expect(location(res).searchParams.get('invalid')).toBe('1');
+        expect(prefs()).toBeNull();
     });
 
     it('works when the user row keeps capitals (link carries the lowercased email)', async () => {
         sqlite.prepare(`UPDATE user SET email = 'Rescuer@Example.com' WHERE id = 'u1'`).run();
-        const res = await post({ e: EMAIL, c: 'merges', s: await signUnsubscribe(EMAIL, 'merges', SECRET) });
+        const res = await post({ e: EMAIL, c: 'duplicates', s: await signUnsubscribe(EMAIL, 'duplicates', SECRET) });
         expect(location(res).searchParams.get('done')).toBe('1');
-        expect(JSON.parse(String(prefs()))).toEqual({ merges: false });
+        expect(JSON.parse(String(prefs()))).toEqual({ duplicates: false });
     });
 
     it('a bad signature redirects to ?invalid=1 and writes nothing', async () => {
-        const sig = await signUnsubscribe(EMAIL, 'forms', SECRET);
-        const res = await post({ e: EMAIL, c: 'forms', s: (sig[0] === '0' ? '1' : '0') + sig.slice(1) });
+        const sig = await signUnsubscribe(EMAIL, 'form', SECRET);
+        const res = await post({ e: EMAIL, c: 'form', s: (sig[0] === '0' ? '1' : '0') + sig.slice(1) });
         expect(res.status).toBe(303);
         expect(location(res).searchParams.get('invalid')).toBe('1');
         expect(prefs()).toBeNull();
     });
 
-    it('an always-on category is invalid even with a matching HMAC, and writes nothing', async () => {
-        const sig = await hashOtpCode(`unsub:v1:${EMAIL}:requests`, SECRET);
-        const res = await post({ e: EMAIL, c: 'requests', s: sig });
+    it('an always row («Siempre») is invalid even with a matching HMAC, and writes nothing', async () => {
+        const sig = await hashOtpCode(`unsub:v1:${EMAIL}:merge_request`, SECRET);
+        const res = await post({ e: EMAIL, c: 'merge_request', s: sig });
         expect(location(res).searchParams.get('invalid')).toBe('1');
         expect(prefs()).toBeNull();
     });
 
     it('a DB failure redirects to ?error=<errorId>, logged without the full email', async () => {
         sqlite.prepare('DROP TABLE user_profiles').run();
-        const res = await post({ e: EMAIL, c: 'forms', s: await signUnsubscribe(EMAIL, 'forms', SECRET) });
+        const res = await post({ e: EMAIL, c: 'form', s: await signUnsubscribe(EMAIL, 'form', SECRET) });
         expect(res.status).toBe(303);
         expect(location(res).searchParams.get('error')).toBe('err12345');
         expect(logs.error).toHaveLength(1);
         expect(logs.error[0][0]).toBe('email.unsubscribe: failed');
         expect(JSON.stringify(logs.error[0][1])).not.toContain(EMAIL);
-        expect(logs.error[0][1]).toMatchObject({ category: 'forms' });
+        expect(logs.error[0][1]).toMatchObject({ category: 'form' });
     });
 });

@@ -16,7 +16,6 @@
 import { and, count, eq, gte, isNotNull, isNull, ne, notLike, or } from 'drizzle-orm';
 import { activityForms, adopterEvents, adopterHistory, adopterImages, adopters, adoptions, apiRequests, formSubmissions, placements } from '@/db/schema';
 import { logger } from '@/lib/logger';
-import { runAfterResponse } from '@/lib/background';
 import { closeRequestsForDeletedAdopter } from '@/lib/mergeRequestClose';
 import { socialUrl, type SocialPlatform } from '@/lib/contactEntries';
 import { pickBestMatch, type ExactOutcome } from '@/domain/apiExactMatch';
@@ -27,7 +26,6 @@ import { addApiContacts, newContactFields, parseAddedContacts, removeApiContacts
 import { ApiError, recordProgress, type ApiCallContext } from './handler';
 import { profileUrl, recordUrl } from './profiles';
 import { importModeOn } from './keys';
-import { notificationContent } from '@/domain/notificationTemplates';
 import { historyKindFor } from '@/lib/profilePrivilege';
 import type { ProfileSummary, SavedActivity, SearchRequest } from './schemas';
 
@@ -170,14 +168,7 @@ export async function saveApiActivity(
     }
     logger.info('api: activity saved', { requestId: ctx.requestId, keyId: key.id, owner: key.ownerEmail, profileId, recordId, profileCreated, outcome: outcome.result, activityType, attachedAsBestMatch: !!best, contactsAdded: contactsAdded.map(c => c.field), hasForm: !!save.formContent });
 
-    // One notification per saved record (decision 10), like a form submission.
-    await notifyApiRecord(key, {
-        requestId: ctx.requestId, profileId, recordId, activityType,
-        personName: req.person.fullName!,
-        outcome: outcome.result === 'found' ? 'found' : best ? 'best_match' : outcome.result === 'ambiguous' ? 'ambiguous' : 'created',
-        rawOutcome: outcome.result,
-        contactsAdded: contactsAdded.map(c => c.field),
-    });
+    // No notice (Jon 2026-11-11, «No te avisamos»): the record and its history row say it.
 
     return {
         activityId: recordId,
@@ -192,48 +183,6 @@ export async function saveApiActivity(
 export interface VoidResult { recordId: string; profileId: string | null; profileVoided: boolean; alreadyVoided?: boolean; changedSince?: boolean }
 
 /** Did anyone or anything but the API put data on this profile? Then it stays. */
-/**
- * The owner's (and their team's) notice for a saved API record. Everything —
- * building the text included — runs inside runAfterResponse, which logs a
- * failure and never throws: the record is already saved, so a template that
- * can't render (a missing name, say) must never turn the call into a 500.
- * A key in import mode notifies nobody: thousands of historical records are not news.
- */
-export async function notifyApiRecord(
-    key: { name: string; ownerEmail: string; importMode?: number | null },
-    rec: {
-        requestId: string; profileId: string; recordId: string; activityType: string;
-        personName: string;
-        outcome: 'found' | 'best_match' | 'ambiguous' | 'created';
-        rawOutcome: string;
-        contactsAdded: string[];
-    },
-): Promise<void> {
-    if (importModeOn(key)) return;
-    const { requestId, profileId, recordId } = rec;
-    await runAfterResponse('api.notifyRecord', async () => {
-        const notification = {
-            type: 'api_record' as const,
-            ...notificationContent({
-                key: 'api_record',
-                params: {
-                    personName: rec.personName,
-                    context: rec.activityType,
-                    keyName: key.name,
-                    outcome: rec.outcome,
-                    ...(rec.contactsAdded.length ? { contactsAdded: rec.contactsAdded.join(',') } : {}),
-                },
-            }),
-            url: `/adopter/${profileId}?record=${encodeURIComponent(recordId)}`,
-            icon: rec.rawOutcome === 'ambiguous' ? '⚠️' : '🔌',
-            metadata: { requestId, keyName: key.name, profileId, recordId, outcome: rec.rawOutcome, context: rec.activityType, contactsAdded: rec.contactsAdded },
-        };
-        const { createNotification, notifyOrgMembers } = await import('@/app/actions/notifications');
-        await createNotification({ userId: key.ownerEmail, ...notification });
-        await notifyOrgMembers({ actorEmail: key.ownerEmail, ...notification });
-    }, { requestId, profileId, recordId, keyName: key.name });
-}
-
 async function profileHasOtherData(db: Db, profileId: string, recordId: string): Promise<boolean> {
     const [records, anyPlacement, forms, humanEdits] = await Promise.all([
         db.select({ n: count() }).from(adoptions).where(eq(adoptions.adopterId, profileId)).get(),

@@ -74,7 +74,8 @@ describe('sendNotificationEmail', () => {
         expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
         expect(send).toHaveBeenCalledTimes(2);
     });
-    it('a different throttleable category is not throttled by a recent email', async () => {
+    it('a different switchable row is not throttled by a recent email', async () => {
+        seedUser(JSON.stringify({ duplicates: true }));
         expect(await call(addNotif('form_submission'), 'form_submission')).toBe('sent');
         expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('sent');
         expect(send).toHaveBeenCalledTimes(2);
@@ -90,7 +91,7 @@ describe('sendNotificationEmail', () => {
     });
     it('the user row has capitals: prefs still apply (matched case-insensitively)', async () => {
         sqlite.prepare(`UPDATE user SET email = 'Rescuer@Example.com' WHERE id = 'u1'`).run();
-        seedUser(JSON.stringify({ forms: false }));
+        seedUser(JSON.stringify({ forms: false, duplicates: true }));
         expect(await call(addNotif('form_submission'), 'form_submission')).toBe('skipped_pref');
         expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('sent');
     });
@@ -108,11 +109,31 @@ describe('sendNotificationEmail', () => {
         // Still always-on: no unsubscribe link.
         expect(send.mock.calls[1][0].html).not.toContain('Dejar de recibir');
     });
-    it('an in-app-only type (member_removed, F6) -> skipped_in_app_only, nothing sent, emailed_at stays null', async () => {
-        const id = addNotif('member_removed');
-        expect(await call(id, 'member_removed')).toBe('skipped_in_app_only');
+    it('an admin-only type -> skipped_admin_only, nothing sent, emailed_at stays null', async () => {
+        const id = addNotif('adopter_flagged');
+        expect(await call(id, 'adopter_flagged')).toBe('skipped_admin_only');
         expect(send).not.toHaveBeenCalled();
         expect(emailedAt(id)).toBeNull();
+    });
+    it('a copy the caller made bell only -> skipped_bell_only, even on an always row', async () => {
+        const id = addNotif('form_submission');
+        expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'form_submission', title: 'T', body: 'B', bellOnly: true })).toBe('skipped_bell_only');
+        expect(await sendNotificationEmail({ id: addNotif('merge_request'), userId: EMAIL, type: 'merge_request', title: 'T', body: 'B', bellOnly: true })).toBe('skipped_bell_only');
+        expect(send).not.toHaveBeenCalled();
+    });
+    it('«Avisos» defaults: a switch-off row is not emailed until switched on (member_removed included)', async () => {
+        expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('skipped_pref');
+        expect(await call(addNotif('member_removed'), 'member_removed')).toBe('skipped_pref');
+        seedUser(JSON.stringify({ group: true }));
+        expect(await call(addNotif('member_removed'), 'member_removed')).toBe('sent');
+        expect(send.mock.calls[0][0].html).toContain('Dejar de recibir');
+    });
+    it('a signed contract is emailed only with possible duplicates; a check-up never through the twin', async () => {
+        const contract = (matchCount: number) => sendNotificationEmail({ id: addNotif('contract_result'), userId: EMAIL, type: 'contract_result', title: 'T', body: 'B', metadata: { matchCount } });
+        expect(await contract(0)).toBe('skipped_not_emailed');
+        expect(await contract(3)).toBe('sent');
+        expect(await call(addNotif('follow_up_due'), 'follow_up_due')).toBe('skipped_not_emailed');
+        expect(send).toHaveBeenCalledTimes(1);
     });
     it('ENABLE_NOTIFICATION_EMAIL off (app_config) -> skipped_disabled, checked before anything else', async () => {
         sqlite.prepare(`INSERT INTO app_config (key, value) VALUES ('ENABLE_NOTIFICATION_EMAIL', 'false')`).run();
@@ -192,10 +213,8 @@ describe('local runs never email (D53)', () => {
 describe('pair_message reply-to', () => {
     const callWith = (type: string, metadata: Record<string, unknown> | undefined) =>
         sendNotificationEmail({ id: addNotif(type), userId: EMAIL, type, title: 'T', body: 'B', url: '/x', metadata });
-    it('pair_message: reply_to is the sender (metadata.replyTo), category merges', async () => {
-        seedUser(JSON.stringify({ merges: false }));
-        expect(await callWith('pair_message', { replyTo: 'sender@example.com' })).toBe('skipped_pref');
-        sqlite.prepare('DELETE FROM user_profiles').run();
+    it('pair_message: always emailed, reply_to is the sender (metadata.replyTo)', async () => {
+        seedUser(JSON.stringify({ merges: false, duplicates: false, pair_message: false }));
         expect(await callWith('pair_message', { requestId: 'r', replyTo: 'sender@example.com' })).toBe('sent');
         expect(send.mock.calls[0][0]).toMatchObject({ to: EMAIL, replyTo: 'sender@example.com' });
     });
@@ -218,7 +237,7 @@ describe('recipient language (D38)', () => {
         sendNotificationEmail({ id: addNotif('contact_entry_added'), userId: EMAIL, type: 'contact_entry_added', ...stored, url: '/x', metadata });
 
     it('a pt recipient gets the pt subject and body', async () => {
-        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'pt')`).run();
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale, email_prefs) VALUES ('u1', 'pt', '{"contact":true}')`).run();
         expect(await callWith({ adopterId: 'a1', template })).toBe('sent');
         const sent = send.mock.calls[0][0];
         expect(sent.subject).toContain('Novo dado de contato');
@@ -226,13 +245,13 @@ describe('recipient language (D38)', () => {
         expect(sent.text).toContain('Ver no BuenAdoptante');
     });
     it('a notification without a template still emails its stored Spanish text', async () => {
-        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'en')`).run();
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale, email_prefs) VALUES ('u1', 'en', '{"contact":true}')`).run();
         expect(await callWith({ adopterId: 'a1' })).toBe('sent');
         expect(send.mock.calls[0][0].subject).toContain(stored.title);
         expect(send.mock.calls[0][0].text).toContain(stored.body);
     });
     it('an unknown template key falls back to the stored text, never the key', async () => {
-        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'en')`).run();
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale, email_prefs) VALUES ('u1', 'en', '{"contact":true}')`).run();
         await callWith({ template: { key: 'gone', params: {} } });
         expect(send.mock.calls[0][0].subject).toContain(stored.title);
         expect(send.mock.calls[0][0].subject).not.toContain('gone');
@@ -240,6 +259,7 @@ describe('recipient language (D38)', () => {
     it('a failed locale lookup still sends, in Spanish, and logs a warn', async () => {
         const { logger } = await import('@/lib/logger');
         const warn = vi.spyOn(logger, 'warn');
+        seedUser(JSON.stringify({ contact: true }));
         state.localeFails = true;
         const id = addNotif('contact_entry_added');
         expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'contact_entry_added', ...stored, url: '/x', metadata: { template } })).toBe('sent');
@@ -309,6 +329,8 @@ describe('profile_renamed email: a second «Deshacer» button (households as pro
         adopterId: 'pedro', profileId: 'pedro', undo: { historyId: 'h-1' },
         template: { key: 'profile_renamed', params: { actorName: 'Jonathan U', fromName: 'Pedro Paez', toName: 'P. Paez' } },
     };
+    // «Le cambian el nombre» is off by default: this person switched it on.
+    beforeEach(() => seedUser(JSON.stringify({ rename: true, household: true })));
     it('links «Deshacer» to the confirmation on the profile, next to «Ver en BuenAdoptante»', async () => {
         const id = addNotif('profile_renamed');
         expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'profile_renamed', title: 'T', body: 'B', url: '/adopter/pedro', metadata })).toBe('sent');

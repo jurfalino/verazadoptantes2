@@ -12,12 +12,12 @@
  *
  * - `notifyHouseholdPersonAdded`: the anchor's owner + editors when a person
  *   adds (D54 'household_contribution', the shared contribution path); the teams of the household's other profiles,
- *   including the person added ('household_linked', D45); the teams of any
- *   other household the person already lives in ('household_also_lives_with').
+ *   including the person added ('household_linked', D45). The teams of the
+ *   person's other households are not told (Jon 2026-11-11: it is in the history).
  * - `notifyHouseholdReaddDisputed`: a person put back where someone said
  *   they don't live (a correction exists), by hand or by a merge — the admins decide (D48).
- * - `notifyHouseholdRelationshipChanged` / `notifyHouseholdMemberRemoved`:
- *   the household's teams.
+ * - `notifyHouseholdMemberRemoved`: the household's teams. A relationship
+ *   change notifies nobody (Jon 2026-11-11: it is in the profile's history).
  *
  * D1: no `IN (array)` — one bounded query per profile / household, fanned out.
  */
@@ -29,10 +29,9 @@ import { runAfterResponse } from '@/lib/background';
 import { namesFor } from '@/lib/profileSummary';
 import { notifyApprovers } from '@/lib/contributionSideEffects';
 import { keepChangeRecipients } from '@/lib/teamChangeAudience';
-import { householdIdsOf, membershipsOf } from '@/lib/households';
+import { membershipsOf } from '@/lib/households';
 import { realOwner } from '@/domain/dedupPair';
 import { linkNoticeRecipients, personLabel } from '@/domain/householdLinks';
-import { MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
 import { notificationContent, type NotificationTemplate } from '@/domain/notificationTemplates';
 import type { NotificationType } from '@/domain/constants';
 
@@ -165,14 +164,8 @@ export async function notifyHouseholdPersonAdded(n: PersonAddedNotice): Promise<
         await send(linked, 'household_linked',
             { key: 'household_linked', params: { actorName, hostName: n.anchor.name, linkedName: n.person.name } },
             { hostId: n.anchor.id, linkedId: n.person.id, householdId: n.householdId }, n.actor, ctx);
-        if (!n.existingProfile) return;
-        const elsewhere = (await householdIdsOf(db, n.person.id)).filter(h => h !== n.householdId).slice(0, MAX_HOUSEHOLDS_PER_PROFILE);
-        if (elsewhere.length === 0) return;
-        const mates = (await Promise.all(elsewhere.map(h => memberIds(db, h)))).flat().filter(id => id !== n.person.id);
-        const also = await teamsOf(db, mates, n.actor, new Set([...skip, ...linked.keys()]), ctx);
-        await send(also, 'household_also_lives_with',
-            { key: 'household_also_lives_with', params: { actorName, personName: n.person.name, hostName: n.anchor.name } },
-            { hostId: n.anchor.id, personId: n.person.id, householdId: n.householdId }, n.actor, ctx);
+        // The teams of the person's OTHER households are not told («No te avisamos», Jon 2026-11-11):
+        // that the person also lives here is in the profile's history.
     }, ctx);
 }
 
@@ -196,22 +189,6 @@ export async function notifyHouseholdReaddDisputed(n: {
             metadata: { householdId: n.householdId, membershipId: n.membershipId, profileId: n.person.id },
         });
         logger.info('householdNotices: re-added after a correction, admins told', ctx);
-    }, ctx);
-}
-
-export async function notifyHouseholdRelationshipChanged(n: {
-    householdId: string; membershipId: string; person: { id: string; name: string }; relationship: string; relativeName: string | null; actor: string;
-}): Promise<void> {
-    const ctx: Ctx = { householdId: n.householdId, membershipId: n.membershipId, profileId: n.person.id, actor: n.actor };
-    await runAfterResponse('household.relationship_changed', async () => {
-        const db = await getDb();
-        if (!db) return;
-        const ids = await memberIds(db, n.householdId);
-        const recipients = await teamsOf(db, [n.person.id, ...ids], n.actor, new Set([norm(n.actor)]), ctx);
-        const actorName = await actorNameOf(n.actor, ctx);
-        await send(recipients, 'household_relationship_changed',
-            { key: 'household_relationship_changed', params: { actorName, personName: n.person.name, relationship: n.relationship, ...(n.relativeName ? { relativeName: n.relativeName } : {}) } },
-            { householdId: n.householdId, membershipId: n.membershipId, personId: n.person.id }, n.actor, ctx);
     }, ctx);
 }
 

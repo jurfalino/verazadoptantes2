@@ -1,7 +1,8 @@
 /**
- * Read / merge-write of a user's email notification switches
- * (`user_profiles.email_prefs`, JSON). NOT a 'use server' module: it is shared
- * by the settings actions and the unsubscribe route.
+ * Read / merge-write of a user's «Avisos» email switches
+ * (`user_profiles.email_prefs`, JSON, row key → boolean; src/domain/noticeRows.ts).
+ * NOT a 'use server' module: it is shared by the settings actions, the email
+ * twin and the unsubscribe route.
  *
  * `user_profiles.user_id` is the NextAuth `user.id`, not the email, so every
  * entry point resolves the id from the email first.
@@ -11,6 +12,7 @@ import type { EmailLocale } from '@/lib/email';
 import type { getDb } from '@/lib/db';
 import { userProfiles, users } from '@/db/schema';
 import { parseEmailPrefs, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
+import { parseNoticePrefs, withNoticePref, type NoticePrefs, type SwitchableRowKey } from '@/domain/noticeRows';
 
 type Db = Awaited<ReturnType<typeof getDb>>;
 
@@ -27,33 +29,58 @@ async function userIdForEmail(db: Db, email: string): Promise<string | null> {
 }
 
 /**
- * The recipient's account and switches: null when no `user` row has this
- * email (nobody to manage the switches or follow an unsubscribe link); prefs
- * are {} with no profile row or malformed JSON. One query.
+ * The recipient's account and «Avisos» switches: null when no `user` row has
+ * this email (nobody to manage the switches or follow an unsubscribe link);
+ * prefs are {} (the defaults) with no profile row or malformed JSON. One query.
  */
-export async function getEmailRecipient(db: Db, email: string): Promise<{ prefs: EmailPrefs } | null> {
+export async function getEmailRecipient(db: Db, email: string): Promise<{ prefs: NoticePrefs } | null> {
+    const row = await rawPrefsRow(db, email);
+    if (!row) return null;
+    return { prefs: parseNoticePrefs(row.prefs ?? null) };
+}
+
+async function rawPrefsRow(db: Db, email: string): Promise<{ id: string; prefs: string | null } | null> {
     const [row] = await db.select({ id: users.id, prefs: userProfiles.emailPrefs })
         .from(users)
         .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
         .where(emailMatches(email))
         .limit(1);
-    if (!row) return null;
-    return { prefs: parseEmailPrefs(row.prefs ?? null) };
+    return row ?? null;
 }
 
-/** The user's stored switches ({} when none, no profile row, no user row, or malformed JSON). */
-export async function getEmailPrefsForEmail(db: Db, email: string): Promise<EmailPrefs> {
+/** The user's «Avisos» switches ({} = the defaults: no profile row, no user row, or malformed JSON). */
+export async function getNoticePrefsForEmail(db: Db, email: string): Promise<NoticePrefs> {
     return (await getEmailRecipient(db, email))?.prefs ?? {};
 }
 
-/** Set one switch, keeping the others. Throws when the user row does not exist. */
+/** Switch one «Avisos» row, keeping the others (migrated). Throws when the user row does not exist. */
+export async function setNoticePrefForEmail(db: Db, email: string, key: SwitchableRowKey, enabled: boolean): Promise<void> {
+    const row = await rawPrefsRow(db, email);
+    if (!row) throw new Error('No user row for the email');
+    const value = withNoticePref(row.prefs, key, enabled);
+    await db.insert(userProfiles)
+        .values({ userId: row.id, emailPrefs: value })
+        .onConflictDoUpdate({ target: userProfiles.userId, set: { emailPrefs: value } });
+}
+
+/** @deprecated The old category switches, for the settings section until «Avisos» replaces it. */
+export async function getEmailPrefsForEmail(db: Db, email: string): Promise<EmailPrefs> {
+    const row = await rawPrefsRow(db, email);
+    return parseEmailPrefs(row?.prefs ?? null);
+}
+
+/** @deprecated Set one old category switch, keeping every other stored key. Throws when the user row does not exist. */
 export async function setEmailPrefForEmail(db: Db, email: string, category: EmailCategory, enabled: boolean): Promise<void> {
-    const userId = await userIdForEmail(db, email);
-    if (!userId) throw new Error('No user row for the email');
-    const current = await getEmailPrefsForEmail(db, email);
+    const row = await rawPrefsRow(db, email);
+    if (!row) throw new Error('No user row for the email');
+    let current: Record<string, unknown> = {};
+    try {
+        const parsed: unknown = row.prefs ? JSON.parse(row.prefs) : {};
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed as Record<string, unknown>;
+    } catch { /* malformed JSON: start from {} (the defaults) */ }
     const value = JSON.stringify({ ...current, [category]: enabled });
     await db.insert(userProfiles)
-        .values({ userId, emailPrefs: value })
+        .values({ userId: row.id, emailPrefs: value })
         .onConflictDoUpdate({ target: userProfiles.userId, set: { emailPrefs: value } });
 }
 
