@@ -95,9 +95,12 @@ function readTags(search: string): { notificationId: string | undefined; kind: s
 /**
  * Null unless the URL came from one of our emails (`ch=email`). A signed-out
  * click on a protected page is redirected by middleware to
- * `/?callbackUrl=<path+query>`: the tags are then read from (and stripped out
- * of) that same-site callback, so the click is counted once, before sign-in,
- * and the post-login landing carries no tags.
+ * `/?callbackUrl=<path+query>`: the tags are then read from that same-site
+ * callback and the click is counted before sign-in (viaLogin). `cleanedUrl` is
+ * the URL with the tags stripped from the callback; NotificationEmailLanding
+ * does not apply it in this case (HomeClient owns that URL), so the post-login
+ * landing still carries the tags and the per-tab sessionStorage key is what
+ * stops a second count.
  */
 export function parseEmailLanding(loc: { pathname: string; search: string; hash: string }): EmailLanding | null {
     const direct = readTags(loc.search);

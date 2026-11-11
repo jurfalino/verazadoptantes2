@@ -118,7 +118,7 @@ describe('parseEmailLanding — reads the email params and cleans the address ba
             viaLogin: true,
             cleanedUrl: `/?callbackUrl=${encodeURIComponent('/my-animals?view=pendientes#h')}&authRequired=true`,
         });
-        // after sign-in the person lands on the cleaned callback: no second event
+        // a path without our tags is not a landing
         expect(parseEmailLanding(loc('?view=pendientes', '#h', '/my-animals'))).toBeNull();
     });
 
