@@ -101,6 +101,12 @@ describe('parseEmailLanding — reads the email params and cleans the address ba
         expect(parseEmailLanding(loc(`?ch=email&n=${'a'.repeat(65)}`))?.notificationId).toBeUndefined();
     });
 
+    it('kind is an allowlist of real notification types: arbitrary text never reaches an event', () => {
+        expect(parseEmailLanding(loc('?ch=email&n=abc-1&kind=juan_perez'))?.kind).toBe(DEFAULT_EMAIL_KIND);
+        expect(parseEmailLanding(loc('?ch=email&n=abc-1&kind=form_submission'))?.kind).toBe('form_submission');
+        expect(parseEmailLanding(loc('?ch=email&kind=follow_up_digest'))?.kind).toBe(FOLLOWUP_DIGEST_KIND);
+    });
+
     it('round-trips with notificationEmailLink', () => {
         const tagged = new URL(notificationEmailLink('https://x.org/my-animals?view=pendientes#h', 'abc-1', 'follow_up_due'));
         expect(parseEmailLanding(tagged)).toEqual({

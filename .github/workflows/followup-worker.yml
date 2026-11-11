@@ -8,6 +8,7 @@ on:
       - 'src/domain/followups.ts'
       # Bundled by copy.ts (digest email link tagging).
       - 'src/domain/notificationTracking.ts'
+      - 'src/domain/constants.ts'
   workflow_dispatch:
     inputs:
       target:

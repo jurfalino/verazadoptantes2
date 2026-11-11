@@ -10,6 +10,7 @@
  * No `@/` imports: the follow-up cron Worker bundles this file by relative path
  * (workers/followup-cron/src/copy.ts), like src/domain/followups.ts.
  */
+import { NOTIFICATION_TYPES } from './constants';
 
 export const EMAIL_CHANNEL = 'email';
 /** `kind` of the follow-up cron's digest email (it has no single notification id). */
@@ -22,11 +23,11 @@ const PARAM_CHANNEL = 'ch';
 const PARAM_KIND = 'kind';
 const TRACKING_PARAMS = [PARAM_ID, PARAM_CHANNEL, PARAM_KIND];
 
-// Shapes accepted from a landing URL. Anything else is dropped, so a crafted
-// link can't put an email, spaces or capitals into an event (shape check, not
-// an allowlist: `kind=juan_perez` still passes).
+// What a landing URL may put into an event. `kind` is an allowlist (every
+// notification type + the digest), so a crafted link can't carry free text such
+// as a name; the id is shape-checked (no email, spaces or punctuation).
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
-const KIND_SHAPE = /^[a-z0-9_]{1,64}$/;
+const KNOWN_KINDS: ReadonlySet<string> = new Set<string>([...NOTIFICATION_TYPES, FOLLOWUP_DIGEST_KIND]);
 
 function paramKey(segment: string): string {
     const eq = segment.indexOf('=');
@@ -85,7 +86,7 @@ export function parseEmailLanding(loc: { pathname: string; search: string; hash:
     const kept = keepSegments(loc.search.replace(/^\?/, ''), TRACKING_PARAMS);
     return {
         notificationId: id && ID_SHAPE.test(id) ? id : undefined,
-        kind: kind && KIND_SHAPE.test(kind) ? kind : DEFAULT_EMAIL_KIND,
+        kind: kind && KNOWN_KINDS.has(kind) ? kind : DEFAULT_EMAIL_KIND,
         cleanedUrl: `${loc.pathname}${kept.length ? `?${kept.join('&')}` : ''}${loc.hash}`,
     };
 }
