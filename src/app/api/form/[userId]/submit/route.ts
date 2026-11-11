@@ -364,8 +364,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             let ownerInTeam: boolean | null = false;
             if (selectedAnimalId && animalOwnerEmail && animalOwnerEmail.toLowerCase() !== rescuerEmail.trim().toLowerCase()) {
                 try {
-                    const { isOrgMateStrict } = await import('@/lib/orgMembership');
-                    ownerInTeam = await isOrgMateStrict(rescuerEmail, animalOwnerEmail);
+                    const { sharesAnOrgStrict } = await import('@/lib/orgMembership');
+                    ownerInTeam = await sharesAnOrgStrict(rescuerEmail, animalOwnerEmail);
                 } catch (e) {
                     ownerInTeam = null;
                     logger.warn('Form submit: team lookup failed, the email goes to the link owner', { submissionId, selectedAnimalId, rescuerEmail, error: e instanceof Error ? e.message : String(e) });

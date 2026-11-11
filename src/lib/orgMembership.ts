@@ -67,6 +67,32 @@ export async function isOrgMateStrict(
     return hits.some(Boolean);
 }
 
+/**
+ * isOrgMateStrict, case-insensitive on both sides: member rows keep the session
+ * email as it was. Throws on DB errors. For who gets a form's email
+ * (src/domain/animalNotices.ts formNoticeRecipients), where a case mismatch
+ * must not read as «not in the team».
+ */
+export async function sharesAnOrgStrict(a: string | null | undefined, b: string | null | undefined): Promise<boolean> {
+    const x = normEmail(a);
+    const y = normEmail(b);
+    if (!x || !y || x === y) return false;
+    const db = await getDb();
+    if (!db) return false;
+    const orgs = await db.select({ orgId: orgMembers.orgId })
+        .from(orgMembers)
+        .where(sql`lower(trim(${orgMembers.userEmail})) = ${x}`);
+    const orgIds = [...new Set<string>(orgs.map((r: { orgId: string }) => r.orgId))];
+    // Per org, never inArray (D1).
+    const hits = await Promise.all(orgIds.map((orgId: string) =>
+        db.select({ userEmail: orgMembers.userEmail })
+            .from(orgMembers)
+            .where(eq(orgMembers.orgId, orgId))
+            .then((rows: { userEmail: string }[]) => rows.some(r => normEmail(r.userEmail) === y))
+    ));
+    return hits.some(Boolean);
+}
+
 export async function isOrgMate(
     viewerEmail: string | null | undefined,
     ownerEmail: string | null | undefined,
