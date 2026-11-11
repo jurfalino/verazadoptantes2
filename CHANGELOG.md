@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.56] - 2026-11-11
+
+### Changed — analytics library updated
+- PostHog's browser library 1.424.1 → 1.447.10 (it was 23 releases and ten weeks behind). Analytics, session
+  recordings and page views work as before, still through the app's own `/ingest` address.
+
 ## [2.58.55] - 2026-11-11
 
 ### Changed — the signed-out home shows «Para empezar» (Jon)
@@ -10,6 +16,12 @@ All notable changes to BuenAdoptante are documented here.
   its feature is on). A step opens the login box and continues there after signing in.
 - Replaces the three old action cards («Registrar adopción», «Reportar», «Importar») that guests still saw.
   The clean-homepage mode is unchanged.
+
+### Changed — the login code is in the email subject
+- The sign-in email's subject now starts with the code («417682 es tu código de BuenAdoptante»; English and
+  Portuguese too), so it reads from the phone notification and inbox without opening the email, and each
+  code arrives as its own Gmail conversation instead of stacking under one subject. (Gmail's «Copy code»
+  button is Gmail's call per sender; five variants were tested and none showed it.)
 
 ## [2.58.54] - 2026-11-10
 
