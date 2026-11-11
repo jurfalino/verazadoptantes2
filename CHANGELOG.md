@@ -2,6 +2,31 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.5] - 2026-11-11
+
+### Changed — «Avisos»: the bell shows everything, email only when someone waits on you (Jon)
+- Configuración → «Avisos» replaces «Avisos por email». One row per event, in rescuer words, with two columns:
+  «Campanita» (always on) and «Email». Email is «Siempre» for the three things that wait on you (a request to
+  merge two profiles, a request to see contact details, a message from another rescuer); every other row has
+  its own switch. Forms and contracts start ON, everything else OFF. A «No te avisamos» list says what only
+  goes to the profile's history.
+- «Formularios, contratos y controles de: Mis animales / Los animales de todo el equipo». It replaces
+  «Recordarme solo los animales que cargué yo» in «Seguimientos de adopción» and applies to the check-up job too.
+- Form and contract emails go only to the animal's owner (or the form link's owner when there's no animal).
+  Teammates get it in the bell. A contract is emailed only when it has possible duplicates.
+- Unsubscribe links in emails sent before «Avisos» still work and switch off the matching row.
+
+### Added — «Te escribió» messages live on the pair
+- Messages between rescuers about a possible duplicate now show inside the pair in «Pendientes de revisar»
+  («Mensajes (N)», oldest first), and the closed row says «· N mensaje(s)». Earlier messages are copied in.
+
+### Fixed — notifications cleanup
+- An answered contact-access request clears for every approver, not only the one who answered.
+- «Intento de login bloqueado» goes through the normal path (bell only, respects the off switch).
+- «Nuevo miembro» goes only to the group that was joined.
+- Four notices that were never sent are removed; four that only repeated the profile history stop being sent.
+- Notification email links now say which recipient clicked (PostHog `recipient_user_id`).
+
 ## [2.59.4] - 2026-11-11
 
 ### Fixed — check-up reminders never ran
