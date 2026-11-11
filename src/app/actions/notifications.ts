@@ -29,6 +29,7 @@ import { sendNotificationEmail } from '@/lib/notificationEmail';
 import { renderNotification, type NotificationTemplate } from '@/domain/notificationTemplates';
 import type { NotificationType } from '@/domain/constants';
 import { notificationKillSwitchKey, notificationTypeEnabled } from '@/domain/notificationKillSwitch';
+import { teamCopyDelivery } from '@/domain/animalNotices';
 
 /**
  * Create a notification for a user.
@@ -478,6 +479,8 @@ export async function notifyAdmins(opts: {
  * Uses getOrgMemberEmailsFor() — session-free, safe for public API routes.
  * With `orgId`, only that organization's members (getMemberEmailsOfOrg): an
  * event about one group (member_joined) never reaches the actor's other groups.
+ * With `teamCopy` (forms and contracts, «Avisos» 2026-11-11): every copy is bell
+ * only except the one to `teamCopy.emailTo` (src/domain/animalNotices.ts).
  */
 export async function notifyOrgMembers(opts: {
     actorEmail: string;
@@ -490,6 +493,8 @@ export async function notifyOrgMembers(opts: {
     icon?: string;
     metadata?: Record<string, unknown>;
     template?: NotificationTemplate;
+    /** A team copy of a form or contract: only the copy to `emailTo` may be emailed. */
+    teamCopy?: { emailTo: string | null };
 }): Promise<void> {
     try {
         const { getOrgMemberEmailsFor, getMemberEmailsOfOrg } = await import('@/lib/orgMembership');
@@ -509,6 +514,7 @@ export async function notifyOrgMembers(opts: {
                 icon: opts.icon,
                 metadata: opts.metadata,
                 template: opts.template,
+                ...(opts.teamCopy && teamCopyDelivery({ recipient: email, emailTo: opts.teamCopy.emailTo }) === 'bell' ? { bellOnly: true } : {}),
             })
         ));
 

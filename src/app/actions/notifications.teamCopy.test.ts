@@ -1,0 +1,55 @@
+/**
+ * notifyOrgMembers' team copies of forms and contracts («Avisos», Jon
+ * 2026-11-11): every copy reaches the bell; only the one to `teamCopy.emailTo`
+ * may be emailed. Real SQL; the email twin is observed.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { migratedDb } from '@/test-utils/migratedDb';
+
+const { state } = vi.hoisted(() => ({ state: { db: null as unknown } }));
+vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
+vi.mock('@/lib/background', () => ({ runAfterResponse: async (_l: string, fn: () => Promise<unknown>) => { await fn(); } }));
+vi.mock('@/lib/notificationEmail', () => ({ sendNotificationEmail: vi.fn(async () => 'skipped_local') }));
+vi.mock('@/lib/logger', () => ({
+    logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
+    generateErrorId: () => 'gen12345',
+}));
+
+import { notifyOrgMembers } from './notifications';
+import { sendNotificationEmail } from '@/lib/notificationEmail';
+
+type Sqlite = { prepare: (s: string) => { all: (...a: unknown[]) => Record<string, unknown>[]; run: (...a: unknown[]) => unknown } };
+let sqlite: Sqlite;
+const ANA = 'ana@example.com';
+const BEA = 'bea@example.com';
+const CAL = 'cal@example.com';
+
+beforeEach(() => {
+    const m = migratedDb();
+    state.db = m.db;
+    sqlite = m.sqlite as unknown as Sqlite;
+    vi.mocked(sendNotificationEmail).mockClear();
+    for (const [i, e] of [ANA, BEA, CAL].entries()) {
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email) VALUES (?, 'org-1', ?)`).run(`m${i}`, e);
+    }
+});
+
+const bellOnlyByRecipient = () => Object.fromEntries(vi.mocked(sendNotificationEmail).mock.calls.map(([n]) => [n.userId, n.bellOnly === true]));
+
+describe('notifyOrgMembers — team copies', () => {
+    it('a form for a teammate\'s animal: every copy in the bell, only the animal owner\'s may be emailed', async () => {
+        await notifyOrgMembers({ actorEmail: ANA, type: 'form_submission', title: 't', body: 'b', teamCopy: { emailTo: BEA } });
+        expect(sqlite.prepare("SELECT user_id FROM notifications ORDER BY user_id").all().map(r => r.user_id)).toEqual([BEA, CAL]);
+        expect(bellOnlyByRecipient()).toEqual({ [BEA]: false, [CAL]: true });
+    });
+
+    it('a contract (the owner is the actor): every team copy bell only', async () => {
+        await notifyOrgMembers({ actorEmail: ANA, type: 'contract_result', title: 't', body: 'b', teamCopy: { emailTo: ANA } });
+        expect(bellOnlyByRecipient()).toEqual({ [BEA]: true, [CAL]: true });
+    });
+
+    it('without teamCopy nothing changes: each copy follows its row', async () => {
+        await notifyOrgMembers({ actorEmail: ANA, type: 'member_joined', title: 't', body: 'b' });
+        expect(bellOnlyByRecipient()).toEqual({ [BEA]: false, [CAL]: false });
+    });
+});

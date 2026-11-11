@@ -355,6 +355,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             const { createNotification } = await import('@/app/actions/notifications');
             const matchCount = matches.length;
 
+            // Who may get this form by email («Avisos», Jon 2026-11-11): whoever added the animal when
+            // it is the team's, else the link owner. Every other copy is bell only. A failed team
+            // lookup falls back to the link owner, logged.
+            const { animalNoticeEmailTo, teamCopyDelivery } = await import('@/domain/animalNotices');
+            let emailTo = rescuerEmail;
+            try {
+                const [{ getTeamEmails }, { teammateVisibleAnimal }] = await Promise.all([
+                    import('@/lib/orgMembership'), import('@/lib/applicantScope'),
+                ]);
+                const animalInTeam = !!selectedAnimalId && !!teammateVisibleAnimal(
+                    { id: selectedAnimalId, name: selectedAnimalName, owner: selectedAnimalOwner }, await getTeamEmails(rescuerEmail));
+                emailTo = animalNoticeEmailTo({ linkOwner: rescuerEmail, animalOwner: selectedAnimalOwner, animalInTeam });
+            } catch (e) {
+                logger.warn('Form submit: email recipient falls back to the link owner', { submissionId, selectedAnimalId, error: e instanceof Error ? e.message : String(e) });
+            }
+            const ownerBellOnly = teamCopyDelivery({ recipient: rescuerEmail, emailTo }) === 'bell';
+
             // When the submission targets a specific animal the title reads
             // "Juana aplicó para Luna", with the match count appended
             // (src/domain/formNotification.ts — shared with the teammate copy).
@@ -372,6 +389,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     ...ownerContent,
                     url: noticeUrl,
                     icon: '⚠️',
+                    ...(ownerBellOnly ? { bellOnly: true } : {}),
                     metadata: {
                         submissionId,
                         matchCount,
@@ -395,6 +413,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     ...ownerContent,
                     url: noticeUrl,
                     icon: '📋',
+                    ...(ownerBellOnly ? { bellOnly: true } : {}),
                     metadata: {
                         submissionId,
                         matchCount: 0,
@@ -440,6 +459,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         submissionId, submitterName: name,
                         selectedAnimalId: animal?.id ?? null, selectedAnimalName: animal?.name ?? null,
                     },
+                    // Bell only, except the copy to the animal's owner when a teammate added it.
+                    teamCopy: { emailTo },
                 });
             }, { submissionId, rescuerEmail, selectedAnimalId });
         } catch (searchErr) {
