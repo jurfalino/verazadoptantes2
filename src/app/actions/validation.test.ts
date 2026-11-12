@@ -17,6 +17,14 @@ describe('createAdopterApiSchema — nameless', () => {
     it('accepts an empty name when object-form contactInfo has a contact', () => {
         expect(createAdopterApiSchema.safeParse({ name: '', contactInfo: { emails: ['x@y.com'] } }).success).toBe(true);
     });
+    it('a null name (the AI found none) is an empty name, not a rejected save (errorId 803973b9)', () => {
+        const r = createAdopterApiSchema.safeParse({ name: null, ...base });
+        expect(r.success).toBe(true);
+        if (r.success) expect(r.data.name).toBe('');
+    });
+    it('a null name with no contact is still rejected', () => {
+        expect(createAdopterApiSchema.safeParse({ name: null, contactEntries: JSON.stringify([]) }).success).toBe(false);
+    });
 });
 
 describe('saveAdopterSchema — nameless', () => {
