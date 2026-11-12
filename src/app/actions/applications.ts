@@ -187,8 +187,11 @@ export async function declineApplication(applicationId: string, input: { text: s
             animalId: app.animalId ?? undefined,
             animalName: animal?.name ?? null,
         };
-        // Insert-if-absent (review M2): never the edit branch over a record another call just wrote.
-        const saved = await saveRecordFor(record, undefined, { notifyOwnerTeam: true, insertOnly: true });
+        // Insert-if-absent (review M2): never the edit branch over a record another call just wrote. When this
+        // viewer's own observation already sits there (a retry after write 1 landed and write 3 did not), the
+        // retry edits it: a 1★ picked by mistake and corrected on retry must not silently stay (re-review m1).
+        const ownRetry = author !== undefined;
+        const saved = await saveRecordFor(record, undefined, { notifyOwnerTeam: true, insertOnly: !ownRetry });
         if (saved.existed) {
             // Written between step 0 and this insert: by another rescuer → theirs decides; by this viewer
             // (a concurrent double tap) → the same record, carry on and close with it.

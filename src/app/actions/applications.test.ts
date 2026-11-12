@@ -105,6 +105,17 @@ describe('declineApplication («No avanzar»)', () => {
         expect(closedAt).toEqual(expect.any(Number));
     });
 
+    it('a retry by the same rescuer with a corrected rating, after the observation landed but the application did not close → the observation carries the correction (re-review m1)', async () => {
+        // First attempt: 1★ by mistake; the observation lands, the close does not (timeout between write 1 and write 3).
+        expect(await declineApplication('app-s-luna', { ...DECLINE, rating: 1 })).toMatchObject({ ok: true });
+        sqlite.prepare("UPDATE applications SET state = 'open', decline_record_id = NULL, closed_at = NULL, closed_by = NULL WHERE id = 'app-s-luna'").run();
+        // The retry corrects it: 1★ is a ban, so the first value must never silently stay.
+        expect(await declineApplication('app-s-luna', { ...DECLINE, rating: 4, text: 'Texto corregido.' })).toEqual({ ok: true, recordId: 'decline-app-s-luna' });
+        expect(events('decline-app-s-luna')).toHaveLength(1);
+        expect(events('decline-app-s-luna')[0]).toMatchObject({ rating: 4, details: `Texto corregido.\n${DECLINE.reason}`, recorded_by: OWNER });
+        expect(appRow('app-s-luna')).toMatchObject({ state: 'declined', decline_record_id: 'decline-app-s-luna' });
+    });
+
     it('two concurrent taps → one observation, the application declined once', async () => {
         const results = await Promise.all([declineApplication('app-s-gen', DECLINE), declineApplication('app-s-gen', DECLINE)]);
         expect(results.filter(r => r.ok)).not.toHaveLength(0);

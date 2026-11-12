@@ -194,6 +194,12 @@ describe('noticeThrottleKey', () => {
     });
 });
 
+describe('noticeThrottleKey: signed contracts (Jon 2026-11-12, re-review I1)', () => {
+    it('a signed contract is never throttled: each one is an animal changing home, and a clear one must not swallow one with possible duplicates', () => {
+        expect(noticeThrottleKey('contract_result')).toBeNull();
+    });
+});
+
 describe('unsubscribableRow', () => {
     it('a switchable row', () => {
         expect(unsubscribableRow('form')).toBe('form');

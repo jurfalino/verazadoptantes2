@@ -148,9 +148,11 @@ export function noticeEmailVerdict(n: { type: string; metadata?: Record<string, 
  * Each one is its own question (merge_request), a person writing to a person
  * (pair_message), or the safeguard of an open edit (profile_renamed: its
  * «Deshacer» rides in that email, so a household notice minutes earlier must
- * not swallow it).
+ * not swallow it), or an animal changing home (contract_result: every signed
+ * contract is emailed, Jon 2026-11-12 — a clear one must not swallow one with
+ * possible duplicates minutes later).
  */
-const NEVER_THROTTLED_TYPES: readonly string[] = ['merge_request', 'pair_message', 'profile_renamed'];
+const NEVER_THROTTLED_TYPES: readonly string[] = ['merge_request', 'pair_message', 'profile_renamed', 'contract_result'];
 
 /**
  * What a recently emailed notification must share for this one to be throttled
