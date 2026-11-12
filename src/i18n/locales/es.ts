@@ -2763,7 +2763,7 @@ export const es = {
         identity_alias: 'La misma persona, con otro nombre',
         identity_relative: 'Un familiar o alguien que vive con esa persona',
         rating_title: 'Calificación',
-        rating_one_bans: '1★ (Peligroso) impide que esta persona adopte.',
+        rating_one_bans: '1★ (Peligroso): no se recomienda entregarle animales en adopción.',
         report_month: 'Cuándo pasó (opcional)',
         not_same_post: '¿No es el mismo post? Crear un perfil nuevo',
         saving_merging: 'Agregando datos…',

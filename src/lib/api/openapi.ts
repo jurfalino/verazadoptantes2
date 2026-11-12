@@ -97,7 +97,7 @@ La respuesta dice dos cosas por separado:
 | \`ratingLevel\` | \`ratingLabel\` | Qué significa |
 |---|---|---|
 | 0 | \`not_rated\` | Nadie la calificó todavía. No es ni bueno ni malo: nunca se infiere una calificación. |
-| 1 | \`dangerous\` | Peligroso. **En BuenAdoptante, 1★ impide adoptar.** |
+| 1 | \`dangerous\` | Peligroso. **En BuenAdoptante, 1★ quiere decir que no se recomienda entregarle animales en adopción.** |
 | 2 | \`poor\` | Malo. |
 | 3 | \`average\` | Regular. |
 | 4 | \`good\` | Bueno. |

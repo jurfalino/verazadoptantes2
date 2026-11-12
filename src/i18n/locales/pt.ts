@@ -2760,7 +2760,7 @@ export const pt = {
         identity_alias: 'A mesma pessoa, com outro nome',
         identity_relative: 'Um familiar ou alguém que mora com essa pessoa',
         rating_title: 'Avaliação',
-        rating_one_bans: '1★ (Perigoso) impede que esta pessoa adote.',
+        rating_one_bans: '1★ (Perigoso): não se recomenda entregar animais em adoção para esta pessoa.',
         report_month: 'Quando aconteceu (opcional)',
         not_same_post: 'Não é a mesma publicação? Criar um perfil novo',
         saving_merging: 'Adicionando os dados…',

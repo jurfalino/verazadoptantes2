@@ -2755,7 +2755,7 @@ export const en = {
         identity_alias: 'The same person, under another name',
         identity_relative: 'A relative or someone who lives with them',
         rating_title: 'Rating',
-        rating_one_bans: '1★ (Dangerous) stops this person from adopting.',
+        rating_one_bans: '1★ (Dangerous): do not place animals with this adopter.',
         report_month: 'When it happened (optional)',
         not_same_post: 'Not the same post? Create a new profile',
         saving_merging: 'Adding the details…',
