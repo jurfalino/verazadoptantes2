@@ -31,7 +31,7 @@ vi.mock('@/app/actions/notifications', () => ({
     resolveDisplayName: async (e: string) => (e.startsWith('ana') ? 'Ana Gómez' : e.startsWith('sur') ? 'Patitas Sur' : e),
 }));
 
-import { answerPairUnsure, clearPairUnsure, unsureAskersOf, tellUnsureAskers, REASK_AFTER_MS } from './pairUnsure';
+import { answerPairUnsure, clearPairUnsure, unsureAskersOf, tellUnsureAskers, sweepOrphanUnsure, REASK_AFTER_MS } from './pairUnsure';
 import { unansweredForContract, unansweredForSubmission } from './samePersonGate';
 
 type Sqlite = { prepare: (s: string) => { run: (...a: unknown[]) => unknown; get: (...a: unknown[]) => unknown; all: (...a: unknown[]) => unknown[] } };
@@ -179,6 +179,24 @@ describe('the answer reaches the asker', () => {
         notify.mockClear();
         await tellUnsureAskers(db(), ['ana@norte.org'], { a: 'laura', b: 'lmendez', actor: 'bea@norte.org', answer: 'different' });
         expect(notify).not.toHaveBeenCalled();
+    });
+    it('re-review: a pair dropped without an answer forgets its «No sé», so a re-detection starts unanswered', async () => {
+        pair('p-mate', 'laura', 'lm-mate');
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        await answerPairUnsure(db(), 'p-mate', 'ana@norte.org');
+        sqlite.prepare(`DELETE FROM duplicate_candidates WHERE id = 'p-sur'`).run(); // e.g. a Scan stopped pairing them
+        await sweepOrphanUnsure(db());
+        expect(unsureRows().map(r => r.pair_key)).toEqual(['laura|lm-mate']);
+        pair('p-again', 'lmendez', 'laura');
+        expect(await unansweredForSubmission(db(), sub('laura'), 'ana@norte.org')).toBe(1);
+    });
+    it('a failed ask does not hold the next one back', async () => {
+        notify.mockRejectedValueOnce(new Error('bell down'));
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        notify.mockClear();
+        await clearPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        expect(notify).toHaveBeenCalled();
     });
     it('a rescan that rebuilds the pair row keeps the answer (it is keyed by the pair, not the row)', async () => {
         await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');

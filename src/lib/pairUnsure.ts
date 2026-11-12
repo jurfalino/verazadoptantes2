@@ -17,7 +17,7 @@
  *
  * Not a 'use server' module: the actions in duplicates.ts read the session and call in.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { adopters, duplicateCandidates, formSubmissions, pairUnsure } from '@/db/schema';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -101,8 +101,7 @@ export async function answerPairUnsure(db: Db, candidateId: string, actor: strin
         .onConflictDoUpdate({ target: [pairUnsure.pairKey, pairUnsure.askerEmail], set: { withdrawn: 0, answeredAt: new Date() } });
     const askNow = asked === 'outside' && Date.now() - lastAsked > REASK_AFTER_MS;
     logger.info('answerPairUnsure: «No sé» recorded', { candidateId, actor, asked, askNow });
-    if (askNow) {
-        await askOtherSide(db, { candidateId, actor, mine: sides.mine, other: sides.other });
+    if (askNow && await askOtherSide(db, { candidateId, actor, mine: sides.mine, other: sides.other })) {
         await db.update(pairUnsure).set({ askedAt: new Date() })
             .where(and(eq(pairUnsure.pairKey, pair.key), eq(pairUnsure.askerEmail, me)));
     }
@@ -132,11 +131,12 @@ export async function clearPairUnsure(db: Db, candidateId: string, actor: string
     return { ok: true };
 }
 
-async function askOtherSide(db: Db, input: { candidateId: string; actor: string; mine: Side; other: Side }): Promise<void> {
+/** True when the question went out (so the once-a-day hold starts only then). */
+async function askOtherSide(db: Db, input: { candidateId: string; actor: string; mine: Side; other: Side }): Promise<boolean> {
     const { candidateId, actor, mine, other } = input;
     try {
         const owner = realOwner(other.addedBy);
-        if (!owner) return;
+        if (!owner) return false;
         const [{ createNotification, resolveDisplayName }, { notificationContent }] = await Promise.all([
             import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
         ]);
@@ -158,8 +158,10 @@ async function askOtherSide(db: Db, input: { candidateId: string; actor: string;
         await Promise.all(recipients.map(userId =>
             createNotification({ userId, type: 'same_person_question', ...content, url: '/my-adopters#pendientes', icon: ICON, metadata })));
         logger.info('answerPairUnsure: other side asked', { candidateId, actor, recipients: recipients.length });
+        return recipients.length > 0;
     } catch (e) {
         logger.warn('answerPairUnsure: other side not asked', { candidateId, actor, error: e instanceof Error ? e.message : String(e) });
+        return false;
     }
 }
 
@@ -218,5 +220,21 @@ export async function tellUnsureAskers(db: Db, askers: readonly string[], input:
         await db.delete(pairUnsure).where(eq(pairUnsure.pairKey, pairKey(a, b)));
     } catch (e) {
         logger.warn('tellUnsureAskers: «No sé» rows left behind', { ...ctx, a, b, actor, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
+/**
+ * Forget every «No sé» whose pair is no longer pending: a pair dropped without an answer (the admin Scan no
+ * longer pairs them, or they became housemates) must not count again if it is detected again later. Run by
+ * the Scan before it rebuilds (so a re-detected pair starts unanswered) and after its swap. One statement,
+ * no parameters. Never throws (logged).
+ */
+export async function sweepOrphanUnsure(db: Db, ctx: Record<string, unknown> = {}): Promise<void> {
+    try {
+        await db.run(sql`DELETE FROM pair_unsure WHERE NOT EXISTS (
+            SELECT 1 FROM duplicate_candidates c WHERE c.status = 'pending' AND pair_unsure.pair_key =
+                CASE WHEN c.adopter1_id < c.adopter2_id THEN c.adopter1_id || '|' || c.adopter2_id ELSE c.adopter2_id || '|' || c.adopter1_id END)`);
+    } catch (e) {
+        logger.warn('sweepOrphanUnsure: stale «No sé» answers left', { ...ctx, error: e instanceof Error ? e.message : String(e) });
     }
 }
