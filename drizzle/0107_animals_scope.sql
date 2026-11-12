@@ -4,7 +4,10 @@
 -- animals the person did not add. Read by src/lib/animalsScope.ts and the
 -- follow-up cron Worker. Replaces followup_settings.onlyMyAnimals («Recordarme
 -- solo los animales que cargué yo»): whoever had it on starts on 'mine'.
--- Additive and idempotent: the backfill only fills rows still NULL.
+-- Additive. NOT re-runnable as a whole: the ALTER fails if the column already
+-- exists (SQLite has no ADD COLUMN IF NOT EXISTS), so never hand-apply it ahead
+-- of `wrangler d1 migrations apply` — that run would then fail and skip the
+-- deploy. The backfill UPDATE alone is idempotent: it only fills rows still NULL.
 -- CASE, not `json_valid(...) AND json_extract(...)`: SQLite doesn't promise to
 -- test json_valid first, and json_extract raises on malformed JSON.
 ALTER TABLE user_profiles ADD COLUMN animals_scope TEXT;

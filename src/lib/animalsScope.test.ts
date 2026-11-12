@@ -37,7 +37,7 @@ describe('animals scope', () => {
         await expect(setAnimalsScopeForEmail(db as never, 'nobody@example.com', 'mine')).rejects.toThrow('No user row');
     });
 
-    it('migration 0107: «solo los animales que cargué yo» on -> «Mis animales»; nothing else changes; re-runnable', async () => {
+    it('migration 0107: «solo los animales que cargué yo» on -> «Mis animales»; nothing else changes; the backfill UPDATE is re-runnable (the ALTER is not)', async () => {
         const insert = sqlite.prepare(`INSERT INTO user_profiles (user_id, followup_settings, animals_scope) VALUES (?, ?, ?)`);
         insert.run('u1', '{"version":1,"onlyMyAnimals":true}', null);
         insert.run('u2', '{"version":1,"emailReminders":true}', null);
