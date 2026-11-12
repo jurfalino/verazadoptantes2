@@ -40,6 +40,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { sendPairMessage } from './pairMessages';
+import { pairKey } from '@/domain/dedupPair';
 
 type Sqlite = { prepare: (s: string) => { run: (...a: unknown[]) => unknown; all: (...a: unknown[]) => Record<string, unknown>[] }; exec: (s: string) => void };
 let sqlite: Sqlite;
@@ -75,7 +76,7 @@ describe('sendPairMessage', () => {
         expect(notify.create.map(n => n.userId).sort()).toEqual([MATE, OWNER]);
         const n = notify.create[0];
         expect(n).toMatchObject({
-            type: 'pair_message', body: 'Hola, es la misma persona', url: '/my-adopters#pendientes',
+            type: 'pair_message', body: 'Hola, es la misma persona', url: `/my-adopters?pair=${encodeURIComponent('o-new|r-old')}#pendientes`,
             title: 'stranger te escribió sobre «Carla Gómez»',
             metadata: { requestId: 'declined-1', replyTo: REQUESTER, fromName: 'stranger' },
             template: { key: 'pair_message', params: { fromName: 'stranger', profileName: 'Carla Gómez', message: 'Hola, es la misma persona' } },
@@ -87,6 +88,15 @@ describe('sendPairMessage', () => {
         expect(await sendPairMessage('pending-1', 'Hola')).toEqual({ success: true });
         expect(notify.create.map(n => n.userId)).toEqual([REQUESTER]);
         expect(notify.create[0].metadata).toMatchObject({ replyTo: MATE });
+    });
+
+    it('«Te escribió» opens the pair, as a «posible duplicado» notice does (?pair=, CX review I3)', async () => {
+        mocks.session.user = MATE;
+        expect(await sendPairMessage('pending-1', 'Hola')).toEqual({ success: true });
+        const url = new URL(String(notify.create[0].url), 'https://x.test');
+        expect(url.pathname).toBe('/my-adopters');
+        expect(url.searchParams.get('pair')).toBe(pairKey('r-old', 'o-new'));
+        expect(url.hash).toBe('#pendientes');
     });
 
     it('a stranger is refused and logged', async () => {

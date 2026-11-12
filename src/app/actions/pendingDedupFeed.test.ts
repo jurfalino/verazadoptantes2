@@ -762,6 +762,43 @@ describe('«Revisar» on a «posible duplicado» notice never lands on an empty 
     });
 });
 
+describe('«Te escribió» lands on the pair, for the requester too (CX review I3)', () => {
+    /** STRANGER asked OWNER's team about `n` pairs: requests STRANGER sent, so «No necesitan nada tuyo». */
+    const sentRequests = (n: number) => {
+        const adopter = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 100, 100)`);
+        const cand = sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES (?, ?, ?, '["phone"]', 80, 'high', 'pending', 1)`);
+        const req = sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, candidate_id, requester_email, owner_email, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`);
+        for (let i = 0; i < n; i++) {
+            adopter.run(`m-s-${i}`, `Sara Mía ${i}`, STRANGER);
+            adopter.run(`m-o-${i}`, `Sara Mia ${i}`, OWNER);
+            cand.run(`cand-m-${i}`, `m-o-${i}`, `m-s-${i}`);
+            // Request 0 is the oldest: sorted last among what the requester sent.
+            req.run(`mr-m-${i}`, `m-s-${i}`, `m-o-${i}`, `cand-m-${i}`, STRANGER, OWNER, i === 0 ? 1 : 1000 + i);
+        }
+    };
+
+    it('the owner\'s teammate writes; the requester\'s link opens that pair, even past the 20 «No necesitan nada tuyo» rows', async () => {
+        sentRequests(25);
+        const { createNotification } = await import('./notifications');
+        vi.mocked(createNotification).mockClear();
+        const { sendPairMessage } = await import('./pairMessages');
+        expect(await as(MATE, () => sendPairMessage('mr-m-0', 'Hola, ¿es la misma persona?'))).toEqual({ success: true });
+        const notice = vi.mocked(createNotification).mock.calls.map(c => c[0] as { userId: string; url: string }).find(n => n.userId === STRANGER)!;
+        const url = new URL(notice.url, 'https://x.test');
+        expect(url.hash).toBe('#pendientes');
+        const focus = url.searchParams.get('pair')!;
+        expect(focus).toBe(pairKey('m-s-0', 'm-o-0'));
+
+        // What PendingDedup asks for on that link (page 1 + ?pair=): the pair is on the page, focused (opened,
+        // scrolled to, outlined), in the requester's «Enviados» — not a needs-you row.
+        const r = await as(STRANGER, () => getPendingDuplicatesForUser(1, 10, false, focus));
+        expect(r.focusCandidateId).toBe('cand-m-0');
+        expect(pairOf(r.pairs, 'cand-m-0')).toMatchObject({ group: 'sent', needsViewer: false });
+        // Without the focus, the oldest sent request is past the cap.
+        expect((await feed(STRANGER)).pairs.map(p => p.candidateId)).not.toContain('cand-m-0');
+    });
+});
+
 describe('step 2 — the team acts as one (Jon 2026-11-05: teammates answer both ways)', () => {
     const OUTSIDER = 'outsider@example.com';
     it("a teammate of the loader gets the loader's pairs, with the same choices", async () => {

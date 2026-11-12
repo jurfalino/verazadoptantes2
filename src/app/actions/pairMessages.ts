@@ -20,6 +20,7 @@ import { logger, generateErrorId } from '@/lib/logger';
 import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMembership';
 import { createNotification, resolveDisplayName } from './notifications';
 import { notificationContent } from '@/domain/notificationTemplates';
+import { pairKey } from '@/domain/dedupPair';
 
 type ActionResult = { success: boolean; error?: string; errorId?: string };
 
@@ -86,9 +87,12 @@ export async function sendPairMessage(requestId: string, text: string): Promise<
         // 2. The notices. replyTo stays in metadata: the email twin's reply_to (the template rides
         //    beside it); messageId marks a notice whose text is already on the pair.
         const metadata = { requestId, messageId, replyTo: actor, fromName };
+        // The notice opens the pair itself (opened, scrolled to and outlined — PendingDedup's ?pair=), as a
+        // «posible duplicado» notice does, wherever it sits in the reader's list (CX review I3).
+        const url = `/my-adopters?pair=${encodeURIComponent(pairKey(req.primaryId, req.secondaryId))}#pendientes`;
         try {
             const ids = await Promise.all(recipients.map(userId =>
-                createNotification({ userId, type: 'pair_message', ...content, url: '/my-adopters#pendientes', icon: '✉️', metadata })));
+                createNotification({ userId, type: 'pair_message', ...content, url, icon: '✉️', metadata })));
             const notSent = ids.filter(id => !id).length;
             if (notSent) logger.warn('sendPairMessage: message saved, some notices not sent', { requestId, actor, messageId, notSent, recipientCount: recipients.length });
         } catch (e) {

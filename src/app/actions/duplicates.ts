@@ -1427,11 +1427,15 @@ export async function getPendingDuplicatesForUser(
         // a handful, capped) follows on EVERY page, so it's never buried 7 pages in (UX review
         // 2026-11-10). `total` = the paged rows, so the pager and «N esperan tu respuesta» agree.
         const waiting = eligible.filter(c => needs.has(c.candidateId));
-        const others = onlyNeedsViewer ? [] : eligible.filter(c => !needs.has(c.candidateId)).slice(0, MAX_OTHERS_SHOWN);
+        const allOthers = onlyNeedsViewer ? [] : eligible.filter(c => !needs.has(c.candidateId));
+        const others = allOthers.slice(0, MAX_OTHERS_SHOWN);
         const total = waiting.length;
         const focusIndex = focusPair ? waiting.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
         if (focusIndex >= 0) page = Math.floor(focusIndex / pageSize) + 1;
-        const focusOther = focusPair && focusIndex < 0 ? others.find(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : undefined;
+        // A focused pair that doesn't wait on the viewer (a request they sent, linked from «Te escribió») is
+        // shown even past the cap: the link must land on it (CX review I3).
+        const focusOther = focusPair && focusIndex < 0 ? allOthers.find(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : undefined;
+        if (focusOther && !others.includes(focusOther)) others.push(focusOther);
         const focusCandidateId = focusIndex >= 0 ? waiting[focusIndex].candidateId : focusOther?.candidateId;
         const start = Math.max(0, (page - 1) * pageSize);
         const pageCandidates = [...waiting.slice(start, start + pageSize), ...others];
