@@ -110,14 +110,25 @@ export interface FollowupSettings {
 }
 
 /**
- * The settings with «Recibir recordatorios también por e-mail» switched — the
- * same value Configuración → Avisos shows as «Toca un control de seguimiento».
+ * The settings with the check-up email («Toca un control de seguimiento» in
+ * Configuración → Avisos) switched.
  * Everything else is kept; settings that end up as the bare defaults are null.
  */
 export function withEmailReminders(settings: FollowupSettings | null, on: boolean): FollowupSettings | null {
     const { emailReminders: _was, ...rest } = settings ?? { version: 1 as const };
     const next: FollowupSettings = on ? { ...rest, emailReminders: true } : rest;
     return Object.keys(next).length === 1 && next.version === 1 ? null : next;
+}
+
+/**
+ * What «Guardar» in «Seguimientos de adopción» stores: the schedule it sent, with
+ * the check-up email as STORED. That switch lives only in Configuración → Avisos
+ * («Toca un control de seguimiento», CX review I5), so whatever the screen sent
+ * for it (an old tab still sends its own copy) is ignored, and «Restaurar» (null)
+ * keeps it.
+ */
+export function withStoredEmailReminders(input: FollowupSettings | null, stored: FollowupSettings | null): FollowupSettings | null {
+    return withEmailReminders(input, stored?.emailReminders === true);
 }
 
 /** Tolerant parse: garbage/legacy JSON → null (defaults). Never throws. */

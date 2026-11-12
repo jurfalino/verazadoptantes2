@@ -38,10 +38,10 @@ Manual deploy (if CI is down):
 
 ## Email delivery (v2.55.19, opt-in)
 
-When the person who added the animal has «Recibir recordatorios también por
-e-mail» enabled in Configuración → Seguimientos, or «Toca un control de
-seguimiento» in Avisos (both are `followup_settings.emailReminders`), the Worker
-also emails them. Teammates' copies are bell only (since 2026-11-11). Bells stay per-slot (each is individually actionable); email
+When the person who added the animal has «Toca un control de seguimiento» on in
+Configuración → Avisos (`followup_settings.emailReminders`; since 2026-11-12 the
+only place it is switched — Seguimientos links there), the Worker also emails
+them. The footer links to `/settings#avisos`. Teammates' copies are bell only (since 2026-11-11). Bells stay per-slot (each is individually actionable); email
 is **digested**: one message per recipient per run, listing every reminder that
 fired. Items are queued only for slots that actually inserted a notification, so
 the digest inherits the same once-ever (placement, slot, recipient) dedup, and a

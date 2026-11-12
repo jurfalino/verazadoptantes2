@@ -14,7 +14,15 @@ vi.mock('@/lib/teamChangeAudience', async (orig) => {
     } };
 });
 
-import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom } from './settings';
+// saveFollowupSettings uses the raw D1 binding: a D1-shaped shim over the same sqlite.
+vi.mock('@/lib/requestContext', () => ({
+    getRequestContext: () => ({ env: { DB: { prepare: (q: string) => ({ bind: (...a: unknown[]) => ({
+        first: async () => sqlite.prepare(q).get(...a) ?? null,
+        run: async () => sqlite.prepare(q).run(...a),
+    }) }) } } }),
+}));
+
+import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom, saveFollowupSettings } from './settings';
 
 type Sqlite = { prepare: (s: string) => { get: (...a: unknown[]) => Record<string, unknown> | undefined; run: (...a: unknown[]) => unknown } };
 let sqlite: Sqlite;
@@ -138,5 +146,25 @@ describe('«Avisame de cambios hechos por:» (saveProfileChangesFrom)', () => {
         expect(await saveProfileChangesFrom('team')).toMatchObject({ success: false, errorId: expect.any(String) });
         session.user = 'ghost@example.com';
         expect(await saveProfileChangesFrom('team')).toMatchObject({ success: false, errorId: expect.any(String) });
+    });
+});
+
+describe('«Guardar» in Seguimientos keeps the check-up email (one place: Avisos, CX review I5)', () => {
+    const schedule = { version: 1 as const, checkins: [{ offsetDays: 10 }], fosterIntervalDays: 21 };
+    it('switched on in Avisos, then a schedule saved with a stale false: still on, schedule saved', async () => {
+        expect(await saveEmailPref('followups', true)).toEqual({ success: true });
+        expect(await saveFollowupSettings({ ...schedule, emailReminders: false })).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual({ ...schedule, emailReminders: true });
+        expect((await getEmailPrefs())?.followupEmail).toBe(true);
+    });
+    it('off in Avisos: a screen sending true does not switch it on', async () => {
+        expect(await saveFollowupSettings({ ...schedule, emailReminders: true })).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual(schedule);
+        expect((await getEmailPrefs())?.followupEmail).toBe(false);
+    });
+    it('«Restaurar» (null) keeps it on', async () => {
+        await saveEmailPref('followups', true);
+        expect(await saveFollowupSettings(null)).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual({ version: 1, emailReminders: true });
     });
 });

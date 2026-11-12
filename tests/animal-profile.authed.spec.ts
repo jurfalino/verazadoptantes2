@@ -215,8 +215,8 @@ test.describe('Animal detail page', () => {
         await page.getByTestId('explain-checkin_180d').click();
         await expect(body).toBeVisible();
         await expect(body).toContainText(/remind you on|Te avisamos el/);
-        // Email is off by default → the section offers the settings deep link.
-        await expect(body.getByRole('link')).toHaveAttribute('href', '/settings#followups');
+        // Email is off by default → the section offers the settings deep link (the switch lives in «Avisos»).
+        await expect(body.getByRole('link')).toHaveAttribute('href', '/settings#avisos');
     });
 
     test('photos: add, choose the main one, remove — staged until Guardar', async ({ page }) => {

@@ -284,6 +284,12 @@ describe('buildNotificationEmail', () => {
         expect(m.html).toContain('Dejar de recibir estos avisos');
         expect(m.text).toContain('https://u/x');
     });
+    it('the footer\'s «Configurar avisos» opens the «Avisos» card (CX review M2)', () => {
+        const m = buildNotificationEmail({ title: 't', body: 'b', url: null }, links, prod);
+        expect(m.html).toContain('<a href="https://staging.buenadoptante.org/settings#avisos" style="color:#78716c;">Configurar avisos</a>');
+        expect(m.text).toContain('Configurar avisos: https://staging.buenadoptante.org/settings#avisos');
+        expect(buildNotificationEmail({ title: 't', body: 'b', url: null }, links, { locale: 'en', staging: false }).html).toContain('>Notification settings</a>');
+    });
     it('staging: subject prefix and banner, in the recipient language', () => {
         const m = buildNotificationEmail({ title: 'Hola', body: 'b', url: null }, links, { locale: 'es', staging: true });
         expect(m.subject).toBe('[Staging] Hola');
@@ -306,7 +312,7 @@ describe('buildNotificationEmail', () => {
         expect(m.text).toContain('https://staging.buenadoptante.org/my-animals?view=pendientes&n=n-42&ch=email&kind=merge_request#top');
         // The undo (opens a confirmation), settings and the signed unsubscribe link stay untouched.
         expect(m.html).toContain('href="https://staging.buenadoptante.org/a?undoRename=h"');
-        expect(m.html).toContain('href="https://staging.buenadoptante.org/settings"');
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/settings#avisos"');
         expect(m.html).toContain('href="https://u/x"');
     });
     it('the main link names the recipient (u = their user id) so a click says whose email it was', () => {

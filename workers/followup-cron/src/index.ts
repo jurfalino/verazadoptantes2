@@ -309,7 +309,7 @@ export default {
             for (const [recipient, queueItems] of emailQueue) {
                 if (queueItems.length === 0) continue;
                 try {
-                    const mail = buildFollowupEmail(queueItems, `${baseUrl}/my-animals`, userIdByEmail.get(recipient));
+                    const mail = buildFollowupEmail(queueItems, `${baseUrl}/my-animals`, userIdByEmail.get(recipient), `${baseUrl}/settings#avisos`);
                     const res = await fetch('https://api.resend.com/emails', {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },

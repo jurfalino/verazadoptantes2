@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { followupsEnabled, withEmailReminders,
+import { followupsEnabled, withEmailReminders, withStoredEmailReminders,
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     getMessageTemplate, addDays, DEFAULT_SCHEDULE, DEFAULT_MESSAGES,
     type RecordedFollowup, type ComputeFollowupsInput,
@@ -268,5 +268,20 @@ describe('withEmailReminders («Toca un control de seguimiento» in Avisos)', ()
         expect(withEmailReminders(null, true)).toEqual({ version: 1, emailReminders: true });
         expect(withEmailReminders(null, false)).toBeNull();
         expect(withEmailReminders({ version: 1, emailReminders: true }, false)).toBeNull();
+    });
+});
+
+describe('withStoredEmailReminders («Guardar» in Seguimientos never touches the check-up email)', () => {
+    const schedule = { version: 1 as const, checkins: [{ offsetDays: 10 }], fosterIntervalDays: 21 };
+    it('keeps the stored switch whatever the screen sent (an old tab still sends its own copy)', () => {
+        expect(withStoredEmailReminders({ ...schedule, emailReminders: false }, { version: 1, emailReminders: true })).toEqual({ ...schedule, emailReminders: true });
+        expect(withStoredEmailReminders({ ...schedule, emailReminders: true }, { version: 1 })).toEqual(schedule);
+        expect(withStoredEmailReminders({ ...schedule, emailReminders: true }, null)).toEqual(schedule);
+        expect(withStoredEmailReminders(schedule, { version: 1, emailReminders: true })).toEqual({ ...schedule, emailReminders: true });
+    });
+    it('«Restaurar» (null) keeps the switch on; with it off, the bare defaults', () => {
+        expect(withStoredEmailReminders(null, { ...schedule, emailReminders: true })).toEqual({ version: 1, emailReminders: true });
+        expect(withStoredEmailReminders(null, schedule)).toBeNull();
+        expect(withStoredEmailReminders(null, null)).toBeNull();
     });
 });

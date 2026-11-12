@@ -344,7 +344,7 @@ export async function updateUserName(name: string): Promise<{ success: boolean; 
 // ── Follow-up schedule + message templates (v2.55.16, animal-timeline PR3) ──
 
 import { z } from 'zod';
-import { parseFollowupSettings, FOLLOWUP_SUBTYPES, type FollowupSettings, type FollowupSubtype } from '@/domain/followups';
+import { parseFollowupSettings, withStoredEmailReminders, FOLLOWUP_SUBTYPES, type FollowupSettings, type FollowupSubtype } from '@/domain/followups';
 
 /**
  * v2.56.11: `messages` is a record with a STRING key, not `z.enum`. In zod v4 an
@@ -425,14 +425,21 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
         const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
-        const user = await env.DB.prepare(`SELECT id FROM user WHERE email = ? LIMIT 1`)
-            .bind(userEmail).first<{ id: string }>();
+        const user = await env.DB.prepare(
+            `SELECT u.id AS id, up.followup_settings AS settings
+             FROM user u LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.email = ? LIMIT 1`
+        ).bind(userEmail).first<{ id: string; settings: string | null }>();
         if (!user?.id) throw new Error('No user row for the session email');
 
-        const value = parsed.data === null ? null : JSON.stringify({
+        const sent: FollowupSettings | null = parsed.data === null ? null : {
             ...parsed.data,
             ...(parsed.data.messages ? { messages: pickKnownMessages(parsed.data.messages as Record<string, string>) } : {}),
-        });
+        } as FollowupSettings;
+        // The check-up email is switched only in Avisos: «Guardar» here keeps the stored value (CX review I5).
+        // Read-then-write, as setFollowupEmailForEmail: a switch in Avisos in the same instant can still lose.
+        const next = withStoredEmailReminders(sent, parseFollowupSettings(user.settings ?? null));
+        const value = next ? JSON.stringify(next) : null;
 
         // Single atomic upsert — the profile row may not exist yet.
         await env.DB.prepare(
@@ -440,7 +447,7 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
              ON CONFLICT(user_id) DO UPDATE SET followup_settings = excluded.followup_settings`
         ).bind(user.id, value).run();
 
-        logAudit({ userEmail, action: 'followup_settings_saved', details: { reset: parsed.data === null } });
+        logAudit({ userEmail, action: 'followup_settings_saved', details: { reset: parsed.data === null, emailRemindersKept: next?.emailReminders === true } });
         return { success: true };
     } catch (error) {
         const errorId = logger.error('saveFollowupSettings failed', error, { userEmail });

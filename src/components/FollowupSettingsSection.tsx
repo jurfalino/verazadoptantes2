@@ -6,6 +6,10 @@
  * the per-subtype WhatsApp/Telegram message templates. Staged: edits live in
  * local state and apply only on Guardar; «Restaurar» stages the defaults.
  * Renders only when the public ENABLE_FOLLOWUPS flag is on.
+ *
+ * The check-up email is not switched here: one place, Configuración → Avisos
+ * («Toca un control de seguimiento», CX review I5). «Guardar» keeps whatever is
+ * stored for it (saveFollowupSettings → withStoredEmailReminders).
  */
 
 import { useEffect, useState } from 'react';
@@ -13,7 +17,6 @@ import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { getFollowupSettings, saveFollowupSettings } from '@/app/actions/settings';
-import { announceFollowupEmail, onFollowupEmail } from '@/lib/followupEmailSync';
 import {
     DEFAULT_SCHEDULE, DEFAULT_FOSTER_RULE, DEFAULT_MESSAGES, FOLLOWUP_SUBTYPES,
     mergeSchedule, type FollowupSettings, type FollowupSubtype,
@@ -26,8 +29,6 @@ type Draft = {
     foster: boolean;
     fosterIntervalDays: number;
     messages: Record<FollowupSubtype, string>;
-    /** v2.55.19: opt-in email delivery of the reminders (bell always fires). */
-    emailReminders: boolean;
 };
 
 function draftFrom(settings: FollowupSettings | null): Draft {
@@ -41,13 +42,12 @@ function draftFrom(settings: FollowupSettings | null): Draft {
         foster: !disabled.has('foster_checkin'),
         fosterIntervalDays: settings?.fosterIntervalDays ?? DEFAULT_FOSTER_RULE.intervalDays,
         messages: { ...DEFAULT_MESSAGES, ...(settings?.messages || {}) },
-        emailReminders: settings?.emailReminders === true,
     };
 }
 
 function isDefaultDraft(d: Draft): boolean {
     const defOffsets = DEFAULT_SCHEDULE.filter(e => e.kind === 'checkin').map(e => e.offsetDays);
-    return d.vaccines && d.neuter && d.foster && !d.emailReminders
+    return d.vaccines && d.neuter && d.foster
         && d.fosterIntervalDays === DEFAULT_FOSTER_RULE.intervalDays
         && JSON.stringify([...d.checkins.map(c => c.offsetDays)].sort((a, b) => a - b)) === JSON.stringify(defOffsets)
         && FOLLOWUP_SUBTYPES.every(st => d.messages[st] === DEFAULT_MESSAGES[st]);
@@ -68,7 +68,6 @@ function settingsFrom(d: Draft): FollowupSettings {
         ...(disabledKeys.length ? { disabledKeys } : {}),
         fosterIntervalDays: Math.max(7, Math.min(120, Math.round(d.fosterIntervalDays) || DEFAULT_FOSTER_RULE.intervalDays)),
         ...(Object.keys(messages).length ? { messages } : {}),
-        ...(d.emailReminders ? { emailReminders: true } : {}),
     };
 }
 
@@ -97,10 +96,6 @@ export default function FollowupSettingsSection() {
         load();
     }, []);
 
-    // «Toca un control de seguimiento» in Avisos is the same stored switch: follow it, so «Guardar»
-    // here never writes back a stale value.
-    useEffect(() => onFollowupEmail(on => setDraft(d => d ? { ...d, emailReminders: on } : d)), []);
-
     if (!enabled || !draft) return null;
 
     const set = (patch: Partial<Draft>) => setDraft(d => d ? { ...d, ...patch } : d);
@@ -111,7 +106,6 @@ export default function FollowupSettingsSection() {
             const payload = isDefaultDraft(draft) ? null : settingsFrom(draft);
             const res = await saveFollowupSettings(payload);
             if (res?.success) {
-                announceFollowupEmail(draft.emailReminders);
                 toast.success(t('settings.saved') || 'Guardado');
             } else {
                 // The action assigns an errorId to every failure; extractErrorId
@@ -192,18 +186,12 @@ export default function FollowupSettingsSection() {
 
             {/* delivery channel */}
             <h3 className="text-sm font-bold text-stone-900 mt-6">{t('followups.delivery_title') || 'Cómo recibir los recordatorios'}</h3>
-            <p className="text-xs text-stone-500 mt-1 mb-2 max-w-prose">{t('followups.delivery_hint') || 'La campanita de la app avisa siempre. Además, podés recibirlos por e-mail.'}</p>
-            <label className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
-                <input
-                    type="checkbox"
-                    checked={draft.emailReminders}
-                    onChange={e => set({ emailReminders: e.target.checked })}
-                    className="w-4 h-4 rounded accent-teal-600"
-                    data-testid="followup-email-toggle"
-                />
-                {t('followups.toggle_email') || 'Recibir recordatorios también por e-mail'}
-            </label>
-            {/* «Recordarme solo los animales que cargué yo» moved to Avisos as «Formularios, contratos y controles de:» (2026-11-11). */}
+            {/* One place for the check-up email (CX review I5): «Toca un control de seguimiento» in Avisos. */}
+            <p className="text-xs text-stone-500 mt-1 max-w-prose" data-testid="followup-delivery-note">
+                {t('followups.delivery_note_before')}
+                <a href="#avisos" className="font-semibold text-teal-700 hover:underline">{t('followups.delivery_note_link')}</a>
+                {t('followups.delivery_note_after')}
+            </p>
 
             {/* message templates */}
             <h3 className="text-sm font-bold text-stone-900 mt-6">{t('followups.messages_title') || 'Mensajes de seguimiento'}</h3>

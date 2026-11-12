@@ -241,9 +241,9 @@ export default function AnimalTimeline({ animalId, items, animalSex, userNameMap
                                                         {reminder?.email
                                                             ? (t('followups.reminder_channel_both') || 'El aviso llega a la campanita y a tu correo.')
                                                             : (t('followups.reminder_channel_bell') || 'El aviso llega a la campanita de la app.')}
-                                                        {/* Only whoever added the animal can get it by email («Avisos», 2026-11-11). */}
+                                                        {/* Only whoever added the animal can get it by email; the switch is in Avisos («Toca un control de seguimiento»). */}
                                                         {!reminder?.email && reminder?.canEmail !== false && (
-                                                            <> <Link href="/settings#followups" className="font-semibold text-teal-700 hover:underline">
+                                                            <> <Link href="/settings#avisos" className="font-semibold text-teal-700 hover:underline">
                                                                 {t('followups.reminder_enable_email') || 'Recibirlo también por correo'}
                                                             </Link></>
                                                         )}

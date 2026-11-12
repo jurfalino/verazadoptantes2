@@ -74,6 +74,21 @@ describe('buildFollowupEmail — one adaptive template', () => {
         expect(mail.html).not.toContain(`A${EMAIL_DIGEST_MAX_ITEMS + 1}<`);
     });
 
+    it('the footer points at Configuración → Avisos, linked to /settings#avisos (CX review I5)', () => {
+        const mail = buildFollowupEmail([item('Luna', 1), item('Rocco', 2)], 'https://app.test/my-animals', 'user-7', 'https://app.test/settings#avisos');
+        expect(mail.html).toContain('<a href="https://app.test/settings#avisos"');
+        expect(mail.html).toContain('Configuración → Avisos');
+        expect(mail.html).not.toContain('Seguimientos');
+        expect(mail.text).toContain('Configuración → Avisos: https://app.test/settings#avisos');
+        expect(mail.text).not.toContain('Seguimientos');
+    });
+
+    it('without a settings link the footer still names Avisos', () => {
+        const mail = buildFollowupEmail([item('Luna')], 'https://app.test/my-animals');
+        expect(mail.html).toContain('Configuración → Avisos');
+        expect(mail.html).not.toContain('Configuración → Seguimientos');
+    });
+
     it('escapes names and bodies (no HTML injection from user data)', () => {
         const mail = buildFollowupEmail([{ animalName: '<img src=x>', body: 'a & b', url: 'https://app.test/x' }]);
         expect(mail.html).not.toContain('<img src=x>');

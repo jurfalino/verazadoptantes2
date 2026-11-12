@@ -7,9 +7,9 @@
  * copies reach it — the intro says so), and «Email»: «Siempre» for the rows
  * someone waits on, a switch for the others.
  *
- * - «Toca un control de seguimiento» switches followup_settings.emailReminders,
- *   the same value «Seguimientos de adopción» shows (kept in step on screen by
- *   src/lib/followupEmailSync.ts).
+ * - «Toca un control de seguimiento» switches followup_settings.emailReminders:
+ *   the only place it is switched (CX review I5; «Seguimientos de adopción»
+ *   links here and its «Guardar» keeps the stored value).
  * - Under the first group, «Formularios, contratos y controles de:»
  *   (src/domain/animalNotices.ts), one hint per option (CX review I1).
  * - Under «Cambios en tus perfiles», «Avisame de cambios hechos por:» (bell AND
@@ -28,7 +28,6 @@ import { useShowToast } from '@/components/ui/Toast';
 import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom, type NoticePrefKey, type NoticeSettings } from '@/app/actions/settings';
 import { handledAsStale } from '@/lib/errorMessage';
-import { announceFollowupEmail, onFollowupEmail } from '@/lib/followupEmailSync';
 import { NOTICE_GROUPS, visibleNoticeRows, isNoticeEmailOn, type NoticeGroup, type NoticeRow } from '@/domain/noticeRows';
 import { PROFILE_CHANGES_FROM, type ProfileChangesFrom } from '@/domain/teamChangeAudience';
 import { ANIMALS_SCOPES, type AnimalsScope } from '@/domain/animalNotices';
@@ -160,9 +159,7 @@ export default function EmailNotificationsSection() {
                     level: 'warn',
                 });
             });
-        // «Seguimientos de adopción» saved the same switch.
-        const off = onFollowupEmail(on => setState(s => s && { ...s, followupEmail: on }));
-        return () => { cancelled = true; off(); };
+        return () => { cancelled = true; };
     }, []);
 
     useScrollToHashOnce(SECTION_ID, !!state);
@@ -175,13 +172,12 @@ export default function EmailNotificationsSection() {
         before: Partial<NoticeSettings>,
         save: () => Promise<{ success: boolean; errorId?: string }>,
         source: string,
-        onSaved?: () => void,
     ) => {
         setState(s => s && { ...s, ...patch });
         let errorId: string | undefined;
         try {
             const res = await save();
-            if (res?.success) { onSaved?.(); return; }
+            if (res?.success) return;
             errorId = res?.errorId || resolveErrorId(res, source);
         } catch (e) {
             if (handledAsStale(e)) {
@@ -201,7 +197,7 @@ export default function EmailNotificationsSection() {
         if (row.email === 'followups') {
             const enabled = !state.followupEmail;
             void persist({ followupEmail: enabled }, { followupEmail: state.followupEmail }, savePref('followups', enabled),
-                'EmailNotificationsSection.followups', () => announceFollowupEmail(enabled));
+                'EmailNotificationsSection.followups');
             return;
         }
         const enabled = !isNoticeEmailOn(state.prefs, row.key);
