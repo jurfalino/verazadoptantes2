@@ -2,6 +2,14 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.7] - 2026-11-12
+
+### Fixed — importing Instagram posts
+- A post that names nobody (a phone, no name) saved with «No se pudo guardar»; it now saves as a profile
+  without a name (also shipped to production as hotfix 2.58.57).
+- The Instagram reader (scraper 2.5.0, deployed separately on Fly) opens the post instead of stopping at its
+  link preview: the full caption instead of the first line, and full-size photos instead of the cropped preview.
+
 ## [2.59.6] - 2026-11-12
 
 ### Changed — after the senior EM + CX review of everything waiting for production (Jon: "fix them")
