@@ -51,6 +51,16 @@ export function formNoticeRecipients(c: { linkOwner: string; animalOwner: string
 }
 
 /**
+ * The animal owner a form's notices are planned for: the owner of the APPLICATION's animal. A form for an
+ * animal that is already adopted (or gone) became a general application — the link owner's to evaluate under
+ * «Sin animal elegido» — so it has no animal owner and the link owner is emailed (review M9).
+ * `applicationAnimalId` is submissionApplication(...).animalId.
+ */
+export function formNoticeAnimalOwner(applicationAnimalId: string | null, selectedAnimalOwner: string | null): string | null {
+    return applicationAnimalId ? selectedAnimalOwner : null;
+}
+
+/**
  * The plan once the animal owner's own copy was attempted: if it wasn't saved, fall back to the
  * «team lookup failed» shape — the link owner is emailed and the owner still gets the fan-out's
  * bell copy — so a failed insert can never leave the form without an email.

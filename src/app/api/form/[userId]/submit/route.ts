@@ -359,8 +359,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
             // a teammate who added the animal gets their own emailable copy right here (not via the
             // background fan-out); the link owner's copy is then bell only. A failed team lookup
             // falls back to emailing the link owner, logged.
-            const { formNoticeRecipients, afterOwnerCopy } = await import('@/domain/animalNotices');
-            const animalOwnerEmail = (selectedAnimalOwner ?? '').trim();
+            const [{ formNoticeRecipients, afterOwnerCopy, formNoticeAnimalOwner }, { submissionApplication }] = await Promise.all([
+                import('@/domain/animalNotices'),
+                import('@/domain/applications'),
+            ]);
+            // The APPLICATION's animal decides: a form for an already adopted animal became a general
+            // application, the link owner's to evaluate — no animal owner, the link owner is emailed (review M9).
+            const noticeAnimalOwner = formNoticeAnimalOwner(submissionApplication(selectedAnimalId, selectedAnimalRow).animalId, selectedAnimalOwner);
+            const animalOwnerEmail = (noticeAnimalOwner ?? '').trim();
             let ownerInTeam: boolean | null = false;
             if (selectedAnimalId && animalOwnerEmail && animalOwnerEmail.toLowerCase() !== rescuerEmail.trim().toLowerCase()) {
                 try {
@@ -371,7 +377,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     logger.warn('Form submit: team lookup failed, the email goes to the link owner', { submissionId, selectedAnimalId, rescuerEmail, error: e instanceof Error ? e.message : String(e) });
                 }
             }
-            const planned = formNoticeRecipients({ linkOwner: rescuerEmail, animalOwner: selectedAnimalOwner, ownerInTeam });
+            const planned = formNoticeRecipients({ linkOwner: rescuerEmail, animalOwner: noticeAnimalOwner, ownerInTeam });
 
             // When the submission targets a specific animal the title reads
             // "Juana aplicó para Luna", with the match count appended
@@ -407,7 +413,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     logger.error('Form submit: the animal owner\'s copy was not created, the email goes to the link owner', e, { submissionId, selectedAnimalId, rescuerEmail });
                 }
             }
-            const recipients = afterOwnerCopy({ linkOwner: rescuerEmail, animalOwner: selectedAnimalOwner, ownerInTeam }, ownerCopySaved);
+            const recipients = afterOwnerCopy({ linkOwner: rescuerEmail, animalOwner: noticeAnimalOwner, ownerInTeam }, ownerCopySaved);
             const ownerBellOnly = recipients.linkOwnerBellOnly;
 
             if (matchCount > 0) {

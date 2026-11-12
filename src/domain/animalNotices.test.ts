@@ -4,7 +4,8 @@
  * there's no animal of the team.
  */
 import { describe, it, expect } from 'vitest';
-import { afterOwnerCopy, formNoticeRecipients, teamCopyDelivery, parseAnimalsScope, followupDelivery } from './animalNotices';
+import { afterOwnerCopy, formNoticeRecipients, formNoticeAnimalOwner, teamCopyDelivery, parseAnimalsScope, followupDelivery } from './animalNotices';
+import { submissionApplication } from './applications';
 
 type Member = { email: string; scope: 'mine' | 'team' };
 
@@ -131,5 +132,30 @@ describe('afterOwnerCopy — the animal owner\'s copy failed to save: nobody may
         expect(r.animalOwnerCopy).toBeNull();
         expect(r.excludeFromTeam).toEqual([]);
         expect(r.teamCopy.emailTo).toBe('ana@x.org');
+    });
+});
+
+describe('formNoticeAnimalOwner — a form for an adopted animal is a general application, the link owner\'s (review M9)', () => {
+    const ADOPTED = { recordType: 'adoption', adopterId: 'someone' };
+    const AVAILABLE = { recordType: 'available', adopterId: null };
+    const ownerFor = (animal: { recordType: string | null; adopterId: string | null } | null | undefined) =>
+        formNoticeAnimalOwner(submissionApplication('luna', animal).animalId, BEA);
+
+    it('the application names the animal: its owner', () => {
+        expect(ownerFor(AVAILABLE)).toBe(BEA);
+        expect(ownerFor(undefined)).toBe(BEA); // the animal lookup failed: the asked animal stands (as the application does)
+    });
+    it('the application became general (adopted, or no such animal): nobody\'s animal', () => {
+        expect(ownerFor(ADOPTED)).toBeNull();
+        expect(ownerFor(null)).toBeNull();
+        expect(formNoticeAnimalOwner(null, null)).toBeNull();
+    });
+    it('so for an adopted teammate\'s animal the link owner gets the email; the teammate gets the bell only', () => {
+        const animalOwner = ownerFor(ADOPTED);
+        expect(outcome(ANA, animalOwner, true, team())).toEqual({ [ANA]: 'bell_and_email', [BEA]: 'bell', [CAL]: 'bell' });
+        // «Lo mío»: a general form on someone else's link is not theirs — no copy.
+        expect(outcome(ANA, animalOwner, true, team('mine'))).toEqual({ [ANA]: 'bell_and_email' });
+        // Before: the teammate who added the adopted animal got the email, the link owner the bell only.
+        expect(outcome(ANA, BEA, true, team())).toMatchObject({ [ANA]: 'bell', [BEA]: 'bell_and_email' });
     });
 });
