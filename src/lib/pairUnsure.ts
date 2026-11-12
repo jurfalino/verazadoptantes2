@@ -17,7 +17,7 @@
  *
  * Not a 'use server' module: the actions in duplicates.ts read the session and call in.
  */
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { adopters, animals, applications, duplicateCandidates, formSubmissions, pairUnsure } from '@/db/schema';
 import { APPLICATION_ORIGINS } from '@/domain/constants';
 import type { getDb } from '@/lib/db';
@@ -206,11 +206,12 @@ async function askOtherSide(db: Db, input: { candidateId: string; actor: string;
  * Before a pair is settled as two people: who has a standing «No sé» on it. Never throws — an unreadable
  * table just tells nobody (logged).
  */
-export async function unsureAskersOf(db: Db, a: string, b: string, ctx: Record<string, unknown> = {}): Promise<string[]> {
+export async function unsureAskersOf(db: Db, a: string, b: string, ctx: Record<string, unknown> = {}, opts: { untoldOnly?: boolean } = {}): Promise<string[]> {
     if (!a || !b || a === b) return [];
     try {
+        // untoldOnly: skip askers already told «es la misma persona» (a join request came first).
         const rows = await db.select({ askerEmail: pairUnsure.askerEmail }).from(pairUnsure)
-            .where(and(eq(pairUnsure.pairKey, pairKey(a, b)), eq(pairUnsure.withdrawn, 0))).all() as Array<{ askerEmail: string }>;
+            .where(and(eq(pairUnsure.pairKey, pairKey(a, b)), eq(pairUnsure.withdrawn, 0), ...(opts.untoldOnly ? [isNull(pairUnsure.sameBy)] : []))).all() as Array<{ askerEmail: string }>;
         return [...new Set(rows.map(r => r.askerEmail))];
     } catch (e) {
         logger.warn('unsureAskersOf: «No sé» askers unreadable, nobody told', { ...ctx, a, b, error: e instanceof Error ? e.message : String(e) });
@@ -224,9 +225,13 @@ export async function unsureAskersOf(db: Db, a: string, b: string, ctx: Record<s
  * clearPairNotices (this type is not a pair-notice type, so it is never cleared with the pair). Never throws.
  */
 export async function tellUnsureAskers(db: Db, askers: readonly string[], input: {
-    a: string; b: string; actor: string; answer: 'different' | 'household'; ctx?: Record<string, unknown>;
+    a: string; b: string; actor: string; answer: 'different' | 'household' | 'same'; ctx?: Record<string, unknown>;
+    /** false: keep the «No sé» rows (a join request: the pair is still open and her «No sé» keeps counting). */
+    forget?: boolean;
+    /** «same»: the profile the notice opens (the survivor of a join); else the other side's profile. */
+    openId?: string;
 }): Promise<void> {
-    const { a, b, actor, answer, ctx = {} } = input;
+    const { a, b, actor, answer, ctx = {}, forget = true, openId } = input;
     for (const asker of askers) {
         try {
             if (await isOwnerOrOrgMate(actor, asker)) continue;
@@ -243,8 +248,10 @@ export async function tellUnsureAskers(db: Db, askers: readonly string[], input:
                 key: 'same_person_answered',
                 params: { answererName, answer, ...(mine.name ? { applicantName: mine.name } : {}), ...(other.name ? { profileName: other.name } : {}) },
             });
+            // «Es la misma persona»: open the profile to check (its rating, alerts); otherwise her own.
+            const opens = answer === 'same' ? (openId ?? other.id) : mine.id;
             await createNotification({
-                userId: asker, type: 'same_person_answered', ...content, url: `/adopter/${encodeURIComponent(mine.id)}`, icon: ICON,
+                userId: asker, type: 'same_person_answered', ...content, url: `/adopter/${encodeURIComponent(opens)}`, icon: ICON,
                 metadata: { askerSideId: mine.id, otherSideId: other.id },
             });
             logger.info('tellUnsureAskers: asker told', { ...ctx, a, b, actor, asker, answer });
@@ -252,11 +259,38 @@ export async function tellUnsureAskers(db: Db, askers: readonly string[], input:
             logger.warn('tellUnsureAskers: asker not told', { ...ctx, a, b, actor, asker, error: e instanceof Error ? e.message : String(e) });
         }
     }
-    if (!a || !b || a === b) return;
+    if (!a || !b || a === b || !forget) return;
     try {
         await db.delete(pairUnsure).where(eq(pairUnsure.pairKey, pairKey(a, b)));
     } catch (e) {
         logger.warn('tellUnsureAskers: «No sé» rows left behind', { ...ctx, a, b, actor, error: e instanceof Error ? e.message : String(e) });
+    }
+}
+
+/**
+ * The other side answered «Sí» by asking to join (createMergeRequest): tell each «No sé» asker outside the
+ * actor's group, once — their «No sé» keeps counting (Jon 2026-11-12: inform, never block) and their card
+ * shows who answered (`same_by`). The actor's group's question about the pair is answered: out of their bell.
+ * Never throws (logged).
+ */
+export async function recordSameAnswer(db: Db, a: string, b: string, actor: string, ctx: Record<string, unknown> = {}): Promise<void> {
+    if (!a || !b || a === b) return;
+    try {
+        const askers = await unsureAskersOf(db, a, b, ctx, { untoldOnly: true });
+        const outside: string[] = [];
+        for (const asker of askers) if (!(await isOwnerOrOrgMate(actor, asker))) outside.push(asker);
+        if (outside.length) {
+            await tellUnsureAskers(db, outside, { a, b, actor, answer: 'same', forget: false, ctx });
+            for (const asker of outside) {
+                await db.update(pairUnsure).set({ sameBy: normEmail(actor) })
+                    .where(and(eq(pairUnsure.pairKey, pairKey(a, b)), eq(pairUnsure.askerEmail, asker)));
+            }
+        }
+        for (const member of await getOrgMemberEmailsFor(actor)) {
+            await clearPairNotices(db, a, b, { types: ['same_person_question'], userId: member, ctx: { ...ctx, op: 'recordSameAnswer', actor } });
+        }
+    } catch (e) {
+        logger.warn('recordSameAnswer: «No sé» askers not told', { ...ctx, a, b, actor, error: e instanceof Error ? e.message : String(e) });
     }
 }
 

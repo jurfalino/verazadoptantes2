@@ -6,6 +6,8 @@
 -- '|'), not by duplicate_candidates.id, because the admin Scan rebuilds those
 -- rows with new ids. withdrawn = 1 after «Cambiar mi respuesta»; asked_at is
 -- when the other side was last asked (so toggling doesn't email them again).
+-- same_by: who on the other side answered «Sí» (a join request or a join) —
+-- the asker was told; their «No sé» keeps counting (inform, never block).
 -- Additive, no backfill.
 CREATE TABLE IF NOT EXISTS pair_unsure (
   pair_key TEXT NOT NULL,
@@ -13,5 +15,6 @@ CREATE TABLE IF NOT EXISTS pair_unsure (
   answered_at INTEGER DEFAULT (strftime('%s', 'now')),
   asked_at INTEGER,
   withdrawn INTEGER NOT NULL DEFAULT 0,
+  same_by TEXT,
   PRIMARY KEY (pair_key, asker_email)
 );

@@ -2526,6 +2526,7 @@ export const en = {
         unsure_answered_by: '{name} answered “I don\'t know”.',
         unsure_change_mate: 'Change the answer',
         unsure_will_ask: 'If you don\'t know, we\'ll ask {name}.',
+        unsure_same_answer: '{name} answered that it is the same person. Check their profile before sending the contract.',
         gate_hint_contract_many: 'To send the contract, answer the {n} “Is it the same person?” questions.',
         gate_hint_propose_many: 'To propose an animal, answer the {n} “Is it the same person?” questions.',
         gate_checking: 'Checking whether it\'s the same person…',

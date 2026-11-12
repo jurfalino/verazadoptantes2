@@ -42,17 +42,22 @@ export async function viewerTeam(viewer: string): Promise<Set<string>> {
  * «No sé» is theirs, never the viewer's answer. A failed read answers nothing (the panel and the server
  * read the same, so they stay in step), logged.
  */
-async function loadTeamUnsure(db: Db, keys: readonly string[], team: ReadonlySet<string>, viewer: string): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
+async function loadTeamUnsure(db: Db, keys: readonly string[], team: ReadonlySet<string>, viewer: string): Promise<Map<string, { by: string; sameBy: string | null }>> {
+    const out = new Map<string, { by: string; sameBy: string | null }>();
     const unique = [...new Set(keys)];
     if (unique.length === 0) return out;
     try {
-        const rows = await db.select({ pairKey: pairUnsure.pairKey, askerEmail: pairUnsure.askerEmail }).from(pairUnsure)
+        const rows = await db.select({ pairKey: pairUnsure.pairKey, askerEmail: pairUnsure.askerEmail, sameBy: pairUnsure.sameBy }).from(pairUnsure)
             .where(and(eq(pairUnsure.withdrawn, 0), or(...unique.map(k => eq(pairUnsure.pairKey, k)))!))
-            .all() as Array<{ pairKey: string; askerEmail: string }>;
-        for (const r of rows) if (team.has(normEmail(r.askerEmail)) && !out.has(r.pairKey)) out.set(r.pairKey, r.askerEmail);
+            .all() as Array<{ pairKey: string; askerEmail: string; sameBy: string | null }>;
+        for (const r of rows) {
+            if (!team.has(normEmail(r.askerEmail))) continue;
+            const seen = out.get(r.pairKey);
+            if (!seen) out.set(r.pairKey, { by: r.askerEmail, sameBy: r.sameBy ?? null });
+            else if (!seen.sameBy && r.sameBy) seen.sameBy = r.sameBy;
+        }
     } catch (e) {
-        logger.warn('loadOpenPairs: «No sé» answers unreadable, none counted', { viewer, error: e instanceof Error ? e.message : String(e) });
+        logger.warn('loadOpenPairs: «No sé» answers unreadable, none counted', { viewer, pairKeys: unique.length, error: e instanceof Error ? e.message : String(e) });
     }
     return out;
 }
@@ -134,7 +139,8 @@ export async function loadOpenPairs(
                 confidence: c.confidence,
                 confidencePercent: storedScoreToPercent(c.score),
                 onViewerList: onViewerList(otherId),
-                unsureBy: unsure.get(pairKey(c.adopter1Id, c.adopter2Id)) ?? null,
+                unsureBy: unsure.get(pairKey(c.adopter1Id, c.adopter2Id))?.by ?? null,
+                unsureSameBy: unsure.get(pairKey(c.adopter1Id, c.adopter2Id))?.sameBy ?? null,
                 otherSide: mayAnswerPair(team, ownerMap.get(otherId)) ? 'team' as const : realOwner(ownerMap.get(otherId)) ? 'outside' as const : 'none' as const,
             };
         })

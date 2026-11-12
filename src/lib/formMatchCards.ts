@@ -28,6 +28,8 @@ export type FormMatch = {
     unsureBy?: string | null;
     /** A teammate (not the viewer) answered «No sé»: their name. Absent when it was the viewer. */
     unsureByName?: string | null;
+    /** The other side's rescuer who answered «Sí» after the «No sé»: their name. */
+    unsureSameByName?: string | null;
     /** Who «No sé» asks: another rescuer, the viewer's own group (nobody is told), or nobody (no real owner). */
     otherSide?: 'team' | 'outside' | 'none';
 };

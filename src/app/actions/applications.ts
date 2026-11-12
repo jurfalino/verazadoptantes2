@@ -96,11 +96,13 @@ export async function getApplicationDuplicates(applicationId: string): Promise<{
             const pairs = await loadOpenPairs(db, submission.linkedAdopterId, viewer, { limit: 20 });
             // A teammate's «No sé» is shown under their name, never as «Respondiste» (UX review).
             const others = [...new Set(pairs.map(p => p.unsureBy).filter((e): e is string => !!e && e.trim().toLowerCase() !== (viewer ?? '').trim().toLowerCase()))];
-            const names = others.length ? await (await import('./notifications')).resolveDisplayNames(others) : new Map<string, string>();
+            const sameBys = [...new Set(pairs.map(p => p.unsureSameBy).filter((e): e is string => !!e))];
+            const names = others.length || sameBys.length ? await (await import('./notifications')).resolveDisplayNames([...others, ...sameBys]) : new Map<string, string>();
             matches = pairs.map(p => {
                 const by = p.unsureBy ?? null;
                 const byName = by && others.includes(by) ? names.get(by.trim().toLowerCase()) ?? null : null;
-                return { id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList, unsureBy: by, ...(byName ? { unsureByName: byName } : {}), ...(p.otherSide ? { otherSide: p.otherSide } : {}) };
+                const sameByName = p.unsureSameBy ? names.get(p.unsureSameBy.trim().toLowerCase()) ?? null : null;
+                return { id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList, unsureBy: by, ...(byName ? { unsureByName: byName } : {}), ...(sameByName ? { unsureSameByName: sameByName } : {}), ...(p.otherSide ? { otherSide: p.otherSide } : {}) };
             });
         }
         const { loadFormMatchCards } = await import('@/lib/formMatchCards');

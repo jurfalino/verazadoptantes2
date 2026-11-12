@@ -65,7 +65,7 @@ export interface FormResultMatchCardProps {
      * already answered «No sé» (`byName`: a teammate's name, when it wasn't the viewer); `otherSide` / `ownerName`:
      * who that asks. `onUnsureChange` reports the new state.
      */
-    unsure?: { offer: boolean; by: string | null; byName?: string | null; otherSide?: 'team' | 'outside' | 'none'; ownerName?: string | null };
+    unsure?: { offer: boolean; by: string | null; byName?: string | null; sameByName?: string | null; otherSide?: 'team' | 'outside' | 'none'; ownerName?: string | null };
     onUnsureChange?: (answered: boolean) => void;
 }
 
@@ -137,7 +137,10 @@ export default function FormResultMatchCard({
             setLinking(false);
         }
     };
-    const unsureLine = unsure?.otherSide === 'outside'
+    // The other rescue answered «Sí» since (Jon 2026-11-12: inform, never block): say so where she decides.
+    const unsureLine = unsure?.sameByName
+        ? t('samePerson.unsure_same_answer').replace('{name}', unsure.sameByName)
+        : unsure?.otherSide === 'outside'
         ? t('samePerson.unsure_asked_other').replace('{name}', unsure.ownerName || t('myAdopters.pending_dedup_created_by_anonymous'))
         : unsure?.otherSide === 'team' ? t('samePerson.unsure_asked_team') : t('samePerson.unsure_asked_none');
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;

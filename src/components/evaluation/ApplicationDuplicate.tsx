@@ -70,7 +70,7 @@ export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDis
                             canAnswer={match.canAnswer}
                             onDismiss={() => onDismiss(match.id)}
                             onLinked={onLinked}
-                            unsure={{ offer: true, by: match.unsureBy ?? null, byName: match.unsureByName ?? null, otherSide: match.otherSide, ownerName: addedByName }}
+                            unsure={{ offer: true, by: match.unsureBy ?? null, byName: match.unsureByName ?? null, sameByName: match.unsureSameByName ?? null, otherSide: match.otherSide, ownerName: addedByName }}
                             onUnsureChange={(answered) => onUnsureChange?.(match.id, answered)}
                         />
                     </div>

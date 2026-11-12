@@ -31,7 +31,8 @@ vi.mock('@/app/actions/notifications', () => ({
     resolveDisplayName: async (e: string) => (e.startsWith('ana') ? 'Ana Gómez' : e.startsWith('sur') ? 'Patitas Sur' : e),
 }));
 
-import { answerPairUnsure, clearPairUnsure, unsureAskersOf, tellUnsureAskers, sweepOrphanUnsure, REASK_AFTER_MS } from './pairUnsure';
+import { answerPairUnsure, clearPairUnsure, unsureAskersOf, tellUnsureAskers, sweepOrphanUnsure, recordSameAnswer, REASK_AFTER_MS } from './pairUnsure';
+import { loadOpenPairs } from './openPairs';
 import { unansweredForContract, unansweredForSubmission } from './samePersonGate';
 
 type Sqlite = { prepare: (s: string) => { run: (...a: unknown[]) => unknown; get: (...a: unknown[]) => unknown; all: (...a: unknown[]) => unknown[] } };
@@ -197,6 +198,20 @@ describe('the answer reaches the asker', () => {
         expect(n.body).toBe('El formulario de Laura Méndez no es de la persona de su perfil «L. Méndez». Los perfiles siguen separados.');
         expect(unsureRows()).toEqual([]);
         expect(await unsureAskersOf(db(), 'laura', 'lmendez')).toEqual([]); // a second settle tells nobody
+    });
+    it('Jon 2026-11-12: the other side\'s «Sí» informs, never blocks — her contract stays unlocked and her card names who answered', async () => {
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        notify.mockClear();
+        await recordSameAnswer(db(), 'lmendez', 'laura', 'sur@sur.org');
+        expect(notify).toHaveBeenCalledTimes(1);
+        expect(notify.mock.calls[0][0]).toMatchObject({ userId: 'ana@norte.org', type: 'same_person_answered', title: 'Patitas Sur respondió: es la misma persona' });
+        expect(notify.mock.calls[0][0].body).toBe('El formulario de Laura Méndez es de la persona de su perfil «L. Méndez». Revisá ese perfil y, si ya enviaste el contrato o entregaste el animal, tenelo en cuenta.');
+        expect(await unansweredForSubmission(db(), sub('laura'), 'ana@norte.org')).toBe(0);
+        const [p] = await loadOpenPairs(db(), 'laura', 'ana@norte.org', { limit: 20 });
+        expect(p).toMatchObject({ unsureBy: 'ana@norte.org', unsureSameBy: 'sur@sur.org' });
+        notify.mockClear();
+        await recordSameAnswer(db(), 'lmendez', 'laura', 'sol@sur.org'); // told once
+        expect(notify).not.toHaveBeenCalled();
     });
     it('tells nobody when the asker\'s own group settled it', async () => {
         await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');

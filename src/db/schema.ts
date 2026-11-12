@@ -532,6 +532,8 @@ export const pairUnsure = sqliteTable("pair_unsure", {
     answeredAt: integer("answered_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     askedAt: integer("asked_at", { mode: "timestamp" }),
     withdrawn: integer("withdrawn").notNull().default(0),
+    /** Who on the other side answered «Sí» (a join request or a join): the asker was told. */
+    sameBy: text("same_by"),
 }, (table) => ({
     pk: primaryKey({ columns: [table.pairKey, table.askerEmail] }),
 }));

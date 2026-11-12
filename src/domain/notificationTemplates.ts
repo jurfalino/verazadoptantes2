@@ -637,16 +637,22 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
     same_person_answered: {
         required: ['answererName', 'answer'],
         es: p => ({
-            title: `${p.answererName} respondió: es otra persona`,
-            body: `El formulario de ${plainName(p.applicantName, 'es')} no es de la persona de su perfil «${plainName(p.profileName, 'es')}»${p.answer === 'household' ? ': es alguien de su hogar' : ''}. Los perfiles siguen separados.`,
+            title: p.answer === 'same' ? `${p.answererName} respondió: es la misma persona` : `${p.answererName} respondió: es otra persona`,
+            body: p.answer === 'same'
+                ? `El formulario de ${plainName(p.applicantName, 'es')} es de la persona de su perfil «${plainName(p.profileName, 'es')}». Revisá ese perfil y, si ya enviaste el contrato o entregaste el animal, tenelo en cuenta.`
+                : `El formulario de ${plainName(p.applicantName, 'es')} no es de la persona de su perfil «${plainName(p.profileName, 'es')}»${p.answer === 'household' ? ': es alguien de su hogar' : ''}. Los perfiles siguen separados.`,
         }),
         en: p => ({
-            title: `${p.answererName} answered: it's another person`,
-            body: `The form from ${plainName(p.applicantName, 'en')} is not from the person in their profile “${plainName(p.profileName, 'en')}”${p.answer === 'household' ? ': it\'s someone in their household' : ''}. The profiles stay separate.`,
+            title: p.answer === 'same' ? `${p.answererName} answered: it's the same person` : `${p.answererName} answered: it's another person`,
+            body: p.answer === 'same'
+                ? `The form from ${plainName(p.applicantName, 'en')} is from the person in their profile “${plainName(p.profileName, 'en')}”. Check that profile and, if you already sent the contract or handed over the animal, keep it in mind.`
+                : `The form from ${plainName(p.applicantName, 'en')} is not from the person in their profile “${plainName(p.profileName, 'en')}”${p.answer === 'household' ? ': it\'s someone in their household' : ''}. The profiles stay separate.`,
         }),
         pt: p => ({
-            title: `${p.answererName} respondeu: é outra pessoa`,
-            body: `O formulário de ${plainName(p.applicantName, 'pt')} não é da pessoa do perfil «${plainName(p.profileName, 'pt')}»${p.answer === 'household' ? ': é alguém do lar' : ''}. Os perfis continuam separados.`,
+            title: p.answer === 'same' ? `${p.answererName} respondeu: é a mesma pessoa` : `${p.answererName} respondeu: é outra pessoa`,
+            body: p.answer === 'same'
+                ? `O formulário de ${plainName(p.applicantName, 'pt')} é da pessoa do perfil «${plainName(p.profileName, 'pt')}». Revise esse perfil e, se você já enviou o contrato ou entregou o animal, leve isso em conta.`
+                : `O formulário de ${plainName(p.applicantName, 'pt')} não é da pessoa do perfil «${plainName(p.profileName, 'pt')}»${p.answer === 'household' ? ': é alguém do lar' : ''}. Os perfis continuam separados.`,
         }),
     },
     pair_message: {

@@ -2535,6 +2535,7 @@ export const es = {
         unsure_answered_by: '{name} respondió «No sé».',
         unsure_change_mate: 'Cambiar la respuesta',
         unsure_will_ask: 'Si no sabés, le preguntamos a {name}.',
+        unsure_same_answer: '{name} respondió que es la misma persona. Revisá su perfil antes de enviar el contrato.',
         gate_hint_contract_many: 'Para enviar el contrato, respondé las {n} preguntas «¿Es la misma persona?».',
         gate_hint_propose_many: 'Para proponer un animal, respondé las {n} preguntas «¿Es la misma persona?».',
         gate_checking: 'Revisando si es la misma persona…',

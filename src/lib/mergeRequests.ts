@@ -190,6 +190,9 @@ export async function createMergeRequest(db: Db, input: {
             requestId: id, actor: input.requesterEmail, error: e instanceof Error ? e.message : String(e),
         });
     }
+    // Asking to join is a «Sí»: whoever answered «No sé» on this pair hears it (never throws).
+    const { recordSameAnswer } = await import('@/lib/pairUnsure');
+    await recordSameAnswer(db, input.primaryId, input.secondaryId, input.requesterEmail, { op: 'createMergeRequest', requestId: id });
     return { id, created: true, requesterEmail: input.requesterEmail };
 }
 

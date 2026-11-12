@@ -622,3 +622,42 @@ describe('listMergeRequestsForAdmin', () => {
         expect(row.matchTypes).toEqual(['phone']);
     });
 });
+
+describe('«No sé» askers hear the other side\'s «Sí» (Jon 2026-11-12: inform, never block)', () => {
+    const unsure = () => sqlite.prepare(`SELECT asker_email, withdrawn, same_by FROM pair_unsure WHERE pair_key = 'o-new|r-old'`).all();
+    const told = () => notify.create.filter(n => n.type === 'same_person_answered');
+    beforeEach(() => {
+        // OWNER evaluated a form that created o-new and answered «No sé» on the pair with REQUESTER's r-old.
+        sqlite.prepare(`INSERT INTO pair_unsure (pair_key, asker_email, withdrawn) VALUES ('o-new|r-old', ?, 0)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, read, metadata) VALUES ('n-q', ?, 'same_person_question', 't', 'b', 0, ?)`)
+            .run(REQUESTER, JSON.stringify({ primaryId: 'r-old', secondaryId: 'o-new' }));
+    });
+
+    it('the other side asks to join → the asker is told «es la misma persona», her «No sé» still counts, their question leaves the bell', async () => {
+        await createMergeRequest(db(), detectedInput);
+        expect(told()).toHaveLength(1);
+        expect(told()[0]).toMatchObject({ userId: OWNER, title: 'stranger respondió: es la misma persona', url: '/adopter/r-old' });
+        expect(String(told()[0].body)).toContain('«Carla Gómez»');
+        expect(unsure()).toEqual([{ asker_email: OWNER, withdrawn: 0, same_by: REQUESTER }]);
+        expect((sqlite.prepare(`SELECT read FROM notifications WHERE id = 'n-q'`).get() as { read: number }).read).toBe(1);
+    });
+
+    it('the asker accepting it herself tells her nothing more', async () => {
+        const id = await pending();
+        await answerMergeRequest(db(), id, OWNER, 'accept');
+        expect(told()).toEqual([]);
+    });
+
+    it('a join by someone else (no request first) tells the asker, then forgets the pair', async () => {
+        expect(await mergeAdopters('r-old', 'o-new', ADMIN)).toMatchObject({ success: true });
+        expect(told().map(n => n.userId)).toEqual([OWNER]);
+        expect(told()[0]).toMatchObject({ url: '/adopter/r-old' });
+        expect(unsure()).toEqual([]);
+    });
+
+    it('told once: a request, then an admin\'s join, does not tell her twice', async () => {
+        await pending();
+        expect(await mergeAdopters('r-old', 'o-new', ADMIN)).toMatchObject({ success: true });
+        expect(told()).toEqual([]);
+    });
+});

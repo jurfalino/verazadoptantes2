@@ -108,6 +108,10 @@ export async function mergeAdopters(
             }
         }
 
+        // Who answered «No sé» on this pair and wasn't told yet (read before the merge settles the pair).
+        const { unsureAskersOf, tellUnsureAskers } = await import('@/lib/pairUnsure');
+        const unsureAskers = await unsureAskersOf(db, primaryId, secondaryId, { op: 'mergeAdopters', actor: actorEmail }, { untoldOnly: true });
+
         // 0. Claim the pair before moving anything: ONE statement soft-deletes
         // the secondary only while it AND the primary are still live. Two merges
         // of the same pair at once (two answers to two requests, an admin and a
@@ -450,6 +454,8 @@ export async function mergeAdopters(
         await clearPairNotices(db, primaryId, secondaryId, { types: PAIR_NOTICE_TYPES, ctx: { op: 'mergeAdopters', actor: actorEmail } });
         // The absorbed profile is gone: its other pairs' notices point at nothing either.
         await clearProfilePairNotices(db, secondaryId, { op: 'mergeAdopters', actor: actorEmail });
+        // Joined = «es la misma persona»: tell the «No sé» askers outside the actor's group, open the survivor (never throws).
+        await tellUnsureAskers(db, unsureAskers, { a: primaryId, b: secondaryId, actor: actorEmail, answer: 'same', openId: primaryId, ctx: { op: 'mergeAdopters' } });
 
         return {
             success: true,
