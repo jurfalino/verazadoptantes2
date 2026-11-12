@@ -32,7 +32,9 @@ export interface CreateInvitationResult {
     /** `'not_allowed'` when the adopter is neither an applicant for this animal
      *  nor a profile the caller fully sees; `'already_decided'` when the team turned
      *  them down for this animal and none of their applications is still open
-     *  (a teammate's «No avanzar» while this panel was open); otherwise a free-text failure. */
+     *  (a teammate's «No avanzar» while this panel was open); `'same_person_unanswered'` when a
+     *  possible duplicate of the profile the form created still waits for «¿Es la misma persona?»;
+     *  otherwise a free-text failure. */
     error?: string;
     errorId?: string;
 }
@@ -98,6 +100,20 @@ export async function createContractInvitation(
         if (access.via === 'applicant' && !access.hasOpenApplication && access.hasDeclinedApplication) {
             logger.info('createContractInvitation: refused — the application already has an outcome', { animalId, adopterId, createdBy: userEmail });
             return { success: false, error: 'already_decided' };
+        }
+        // «¿Es la misma persona?» first (Jon 2026-11-12): a profile a form created gets no contract while a
+        // possible duplicate the caller may answer has no answer («No sé» counts). The panel locks the button;
+        // this refuses the list's button and any stale tab. Refused BEFORE the retirement below.
+        try {
+            const { unansweredSamePersonPairs } = await import('@/lib/samePersonGate');
+            const waiting = await unansweredSamePersonPairs(db, adopterId, userEmail);
+            if (waiting > 0) {
+                logger.info('createContractInvitation: refused — «¿Es la misma persona?» unanswered', { animalId, adopterId, createdBy: userEmail, waiting });
+                return { success: false, error: 'same_person_unanswered' };
+            }
+        } catch (e) {
+            const errorId = logger.error('createContractInvitation: same-person check failed', e, { animalId, adopterId, createdBy: userEmail });
+            return { success: false, error: 'failed', errorId };
         }
 
         // Retire any prior unused invitations for this animal so only the

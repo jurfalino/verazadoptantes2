@@ -107,7 +107,9 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone 
                 toast.info(t('evaluation.propose_already').replace('{name}', name).replace('{animal}', animalName));
                 return;
             }
-            toast.error(t('errors.generic'), t('evaluation.propose_failed'), res.errorId ?? resolveErrorId(new Error(`proposeAnimal: ${res.error}`), 'ProposeAnimalSheet'));
+            // «¿Es la misma persona?» still waits (a «No sé» withdrawn since the panel read): say what to do.
+            const message = res.error === 'same_person_unanswered' ? t('samePerson.gate_refused') : t('evaluation.propose_failed');
+            toast.error(t('errors.generic'), message, res.errorId ?? resolveErrorId(new Error(`proposeAnimal: ${res.error}`), 'ProposeAnimalSheet'));
         } catch (e) {
             if (!handledAsStale(e)) toast.error(t('errors.generic'), t('evaluation.propose_failed'), resolveErrorId(e, 'ProposeAnimalSheet'));
         } finally {

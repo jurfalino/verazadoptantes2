@@ -12,7 +12,8 @@
  *   adopción» shows, so the two screens can't disagree). The cron Worker sends
  *   that email; the email twin never sends `follow_up_due`.
  *
- * Default on (Jon 2026-11-12): form, contract, «Le cambian el nombre» (its
+ * Default on (Jon 2026-11-12): «Te preguntan si es la misma persona» (someone
+ * answered «No sé» about one of your profiles while evaluating a form), form, contract, «Le cambian el nombre» (its
  * email carries «Deshacer», the safeguard of an open edit) and «Responden tu
  * pedido…» (the asker is waiting too). Every other switch defaults off.
  *
@@ -29,6 +30,7 @@ export type NoticeEmail = 'always' | 'on' | 'off' | 'followups';
 
 export const NOTICE_ROWS = [
     { key: 'merge_request', group: 'waiting', email: 'always', types: ['merge_request'] },
+    { key: 'same_person', group: 'waiting', email: 'on', types: ['same_person_question'] },
     { key: 'pii_request', group: 'waiting', email: 'always', types: ['pii_access_request'] },
     { key: 'pair_message', group: 'waiting', email: 'always', types: ['pair_message'] },
     { key: 'form', group: 'waiting', email: 'on', types: ['form_submission'] },
@@ -40,7 +42,7 @@ export const NOTICE_ROWS = [
     { key: 'household', group: 'profile_changes', email: 'off', types: ['household_contribution', 'household_linked', 'household_member_removed'] },
     { key: 'inaccuracy', group: 'profile_changes', email: 'off', types: ['inaccuracy_reported'] },
     { key: 'duplicates', group: 'profile_changes', email: 'off', types: ['duplicate_flagged', 'adopter_merged', 'merge_dispute_resolved', 'contract_attached', 'form_attached'] },
-    { key: 'answers', group: 'news', email: 'on', types: ['merge_request_resolved', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked'] },
+    { key: 'answers', group: 'news', email: 'on', types: ['merge_request_resolved', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked', 'same_person_answered'] },
     { key: 'transfer', group: 'news', email: 'off', types: ['ownership_transferred'] },
     { key: 'group', group: 'news', email: 'off', types: ['member_joined'] },
 ] as const satisfies readonly { key: string; group: NoticeGroup; email: NoticeEmail; types: readonly string[] }[];
@@ -145,14 +147,14 @@ export function noticeEmailVerdict(n: { type: string; metadata?: Record<string, 
 }
 
 /**
- * Each one is its own question (merge_request), a person writing to a person
+ * Each one is its own question (merge_request, same_person_question), a person writing to a person
  * (pair_message), or the safeguard of an open edit (profile_renamed: its
  * «Deshacer» rides in that email, so a household notice minutes earlier must
  * not swallow it), or an animal changing home (contract_result: every signed
  * contract is emailed, Jon 2026-11-12 — a clear one must not swallow one with
  * possible duplicates minutes later).
  */
-const NEVER_THROTTLED_TYPES: readonly string[] = ['merge_request', 'pair_message', 'profile_renamed', 'contract_result'];
+const NEVER_THROTTLED_TYPES: readonly string[] = ['merge_request', 'same_person_question', 'pair_message', 'profile_renamed', 'contract_result'];
 
 /**
  * What a recently emailed notification must share for this one to be throttled

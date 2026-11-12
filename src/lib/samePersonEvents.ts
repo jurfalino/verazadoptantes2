@@ -9,6 +9,6 @@ export type SamePersonSurface = 'pendientes' | 'form_results' | 'contract_result
  * other profile (their own data) vs another team's. Never names, ids or
  * contacts. Fire after a successful answer only — never from a catch.
  */
-export function trackSamePersonAnswer(surface: SamePersonSurface, answer: 'same' | 'different' | 'opened', own: boolean): void {
+export function trackSamePersonAnswer(surface: SamePersonSurface, answer: 'same' | 'different' | 'opened' | 'unsure' | 'unsure_undone', own: boolean): void {
     zarazTrack('same_person_answered', { surface, answer, own });
 }

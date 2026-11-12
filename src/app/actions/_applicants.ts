@@ -146,7 +146,7 @@ type ApplicationRow = {
     selfieUrl: string | null; photoKeys: string | null; latitude: string | null; longitude: string | null;
     intent: string | null; species: string | null; lifeStage: string | null;
     household: string | null; answersJson: string | null;
-    linkedAdopterId: string | null; createdAt: Date | null;
+    linkedAdopterId: string | null; autoAdopterId: string | null; createdAt: Date | null;
 };
 
 /** The application columns every list reads, joined to its form (the scope already drops «replaced» rows). */
@@ -178,6 +178,7 @@ async function selectApplicationRows(db: Db, where: unknown): Promise<Applicatio
         household: formSubmissions.household,
         answersJson: formSubmissions.answersJson,
         linkedAdopterId: formSubmissions.linkedAdopterId,
+        autoAdopterId: formSubmissions.autoAdopterId,
         createdAt: formSubmissions.createdAt,
     })
         .from(applications)
@@ -392,6 +393,7 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
             adopterId: profileId,
             adopterName,
             adopterRating,
+            profileFromThisForm: !!row.linkedAdopterId && row.linkedAdopterId === row.autoAdopterId,
             appliedAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,
             hasInvite: status.kind === 'contract_sent',
             // A foster holder's own application is not «Firmado»: only the adopter's adopted application is.

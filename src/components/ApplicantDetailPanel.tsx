@@ -79,11 +79,13 @@ export function indexAfterOutcome(statuses: readonly ApplicationStatus[], decide
 /**
  * What «Enviar contrato»'s answer leads to: `share` the link; `refresh` when the application already has an
  * outcome (a teammate decided while this panel was open — re-read the list, its status line says what
- * happened); otherwise an error toast (`not_allowed` has its own words).
+ * happened); `same_person` when «¿Es la misma persona?» still waits for an answer (Jon 2026-11-12); otherwise
+ * an error toast (`not_allowed` has its own words).
  */
-export function sendOutcome(result: CreateInvitationResult): 'share' | 'refresh' | 'not_allowed' | 'failed' {
+export function sendOutcome(result: CreateInvitationResult): 'share' | 'refresh' | 'not_allowed' | 'same_person' | 'failed' {
     if (result.success && result.url) return 'share';
     if (result.error === 'already_decided') return 'refresh';
+    if (result.error === 'same_person_unanswered') return 'same_person';
     return result.error === 'not_allowed' ? 'not_allowed' : 'failed';
 }
 
@@ -118,6 +120,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     const [copied, setCopied] = useState(false);
     const [dialog, setDialog] = useState<'decline' | 'propose' | null>(null);
     const [allAnswersOpen, setAllAnswersOpen] = useState(false);
+    // «¿Es la misma persona?» still to answer, per application (Jon 2026-11-12): null while reading.
+    const [samePersonGate, setSamePersonGate] = useState<{ applicationId: string; blocking: number | null } | null>(null);
     const allAnswersRef = useRef<HTMLDetailsElement>(null);
     const rootRef = useRef<HTMLDivElement>(null);
 
@@ -195,6 +199,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         requestAnimationFrame(() => allAnswersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     };
 
+    const goToQuestion = () => document.getElementById('applicant-duplicate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
     const handleSend = async () => {
         if (!animal || !applicant.adopterId || busy) return;
         setBusy(true);
@@ -207,6 +213,10 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                 onContractIssued?.(result.url, applicant);
             } else if (next === 'refresh') {
                 await afterChange('refresh');
+            } else if (next === 'same_person') {
+                // Someone withdrew a «No sé» (or a new pair appeared) since this panel read: say so, go to the question.
+                toast.error(t('errors.generic') || 'Error', t('samePerson.gate_refused'), resolveErrorId(new Error('createContractInvitation: same_person_unanswered'), 'ApplicantDetailPanel'));
+                goToQuestion();
             } else {
                 const message = next === 'not_allowed'
                     ? (t('errors.contract_invite_not_allowed') || 'Solo podés enviar el contrato a quien se postuló para este animal.')
@@ -268,27 +278,44 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     const deciding = applicant.status.kind === 'to_evaluate' || applicant.status.kind === 'contract_sent';
     const personName = adopterDisplayName({ name: applicant.adopterName }, t('adopter.nameless'));
 
+    // Giving an animal waits for «¿Es la misma persona?» (src/domain/samePersonGate.ts): locked while the
+    // section reads or while a pair has no answer. «No avanzar» never waits.
+    const samePersonBlocking = samePersonGate?.applicationId === applicant.applicationId ? samePersonGate.blocking : null;
+    const giveLocked = samePersonBlocking !== 0;
+    // The new profile's own standing says nothing yet: it was just created by this form (Jon 2026-11-12).
+    const freshFormProfile = !!applicant.profileFromThisForm && applicant.adopterRating == null;
+
     // How the evaluation ends. None once it has an outcome: the status line says it.
     const footer: React.ReactNode = !deciding ? null : !applicant.adopterId ? (
         <Link href={formHref} className={buttonClasses({ variant: 'primary', fullWidth: true })}>
             {t('myAnimals.applicants_view_form') || 'Ver formulario'}
         </Link>
     ) : (
+        <div className="space-y-2">
+        {giveLocked && samePersonBlocking != null && (
+            <p className="text-xs text-stone-600" data-testid="evaluate-same-person-hint">
+                {t(animal ? 'samePerson.gate_hint_contract' : 'samePerson.gate_hint_propose')}{' '}
+                <button type="button" onClick={goToQuestion} className="font-semibold text-teal-700 underline-offset-2 hover:underline">
+                    {t('samePerson.gate_go')} ↑
+                </button>
+            </p>
+        )}
         <div className="grid grid-cols-2 gap-2">
             <Button type="button" variant="secondary" onClick={() => setDialog('decline')} disabled={busy} data-testid="evaluate-decline" layoutClassName="w-full">
                 {t('evaluation.decline')}
             </Button>
             {animal ? (
-                <Button type="button" variant="primary" onClick={handleSend} loading={busy} data-testid="evaluate-send-contract" layoutClassName="w-full">
+                <Button type="button" variant="primary" onClick={handleSend} loading={busy} disabled={giveLocked} data-testid="evaluate-send-contract" layoutClassName="w-full">
                     {applicant.hasInvite
                         ? (t('myAnimals.applicants_resend') || 'Reenviar contrato')
                         : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
                 </Button>
             ) : (
-                <Button type="button" variant="primary" onClick={() => setDialog('propose')} data-testid="evaluate-propose" layoutClassName="w-full">
+                <Button type="button" variant="primary" onClick={() => setDialog('propose')} disabled={giveLocked} data-testid="evaluate-propose" layoutClassName="w-full">
                     {t('evaluation.propose')}
                 </Button>
             )}
+        </div>
         </div>
     );
 
@@ -398,6 +425,10 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                                 <RatingExplainer rating={applicant.adopterRating}>
                                     <RatingBadge rating={applicant.adopterRating} />
                                 </RatingExplainer>
+                            ) : freshFormProfile ? (
+                                <span className="text-xs text-stone-600 px-2 py-0.5 rounded-md bg-stone-100" data-testid="applicant-new-profile">
+                                    {t('myAnimals.applicants_panel_new_profile')}
+                                </span>
                             ) : (
                                 <RatingBadge rating={null} />
                             )}
@@ -427,7 +458,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                                         )}
                                         {housemate.hasAlerts && <AlertPill kind="housemate_alerts" wrap>{t('alerts.housemate_alerts')}</AlertPill>}
                                     </div>
-                                ) : applicant.alertsChecked ? (
+                                ) : applicant.alertsChecked && !freshFormProfile ? (
                                     <p className="text-xs text-stone-400 italic" data-testid="applicant-panel-no-alerts">{t('myAnimals.applicants_panel_no_flags') || 'Sin alertas'}</p>
                                 ) : null}
                                 {flagPills.length > 0 && <div className="flex flex-wrap gap-1">{flagPills}</div>}
@@ -459,6 +490,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                             submissionId={applicant.submissionId}
                             applicantSelfieUrl={applicant.submission.selfieUrl}
                             onLinked={() => { void afterChange('linked'); }}
+                            onBlockingChange={(blocking) => setSamePersonGate({ applicationId: applicant.applicationId, blocking })}
                         />
                     )}
 

@@ -1616,6 +1616,51 @@ export async function getPendingDuplicatesForUser(
 const PAIR_KEY_MAX = 200;
 
 /**
+ * «No sé» on a form's «¿Es la misma persona?» (Jon 2026-11-12): an answer that keeps the profiles
+ * separate and asks the other profile's people (src/lib/pairUnsure.ts). It unlocks «Enviar contrato».
+ * `asked` says who was asked, so the card can say so. Signed out → `not_authorized`.
+ */
+export async function answerSamePersonUnsure(candidateId: string): Promise<
+    { success: true; asked: 'outside' | 'team' | 'none' }
+    | { success: false; code: 'not_found' | 'already_resolved' | 'not_authorized' | 'failed'; errorId?: string }
+> {
+    let actorEmail: string | null = null;
+    try {
+        if (typeof candidateId !== 'string' || !candidateId || candidateId.length > 100) return { success: false, code: 'not_found' };
+        const { getUser } = await import('./_db');
+        try { actorEmail = await getUser(); } catch { return { success: false, code: 'not_authorized' }; }
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        const { answerPairUnsure } = await import('@/lib/pairUnsure');
+        const res = await answerPairUnsure(db, candidateId, actorEmail);
+        return res.ok ? { success: true, asked: res.asked } : { success: false, code: res.code };
+    } catch (e) {
+        const errorId = logger.error('answerSamePersonUnsure failed', e, { candidateId, actorEmail });
+        return { success: false, code: 'failed', errorId };
+    }
+}
+
+/** «Cambiar mi respuesta» after «No sé»: the pair is unanswered again (the contract waits again). */
+export async function undoSamePersonUnsure(candidateId: string): Promise<
+    { success: true } | { success: false; code: 'not_found' | 'already_resolved' | 'not_authorized' | 'failed'; errorId?: string }
+> {
+    let actorEmail: string | null = null;
+    try {
+        if (typeof candidateId !== 'string' || !candidateId || candidateId.length > 100) return { success: false, code: 'not_found' };
+        const { getUser } = await import('./_db');
+        try { actorEmail = await getUser(); } catch { return { success: false, code: 'not_authorized' }; }
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        const { clearPairUnsure } = await import('@/lib/pairUnsure');
+        const res = await clearPairUnsure(db, candidateId, actorEmail);
+        return res.ok ? { success: true } : { success: false, code: res.code };
+    } catch (e) {
+        const errorId = logger.error('undoSamePersonUnsure failed', e, { candidateId, actorEmail });
+        return { success: false, code: 'failed', errorId };
+    }
+}
+
+/**
  * «Quitar de la lista» (D27): take a pair off the viewer's own «Pendientes de
  * revisar» — offered on declined rows. Writes `pending_pair_hidden` for the
  * session's user only; nobody else's list changes, nothing about the pair
@@ -1726,6 +1771,8 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
             return { success: true };
         }
 
+        const { unsureAskersOf, tellUnsureAskers } = await import('@/lib/pairUnsure');
+        const askers = await unsureAskersOf(db, ids.a, ids.b, { op: 'dismissDuplicateCandidate', candidateId });
         await db.update(duplicateCandidates).set({
             status: 'dismissed',
             resolvedAt: new Date(),
@@ -1735,6 +1782,7 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
         logger.info('Duplicate candidate dismissed by user', { candidateId, user: actorEmail });
         const { clearPairNotices, PAIR_NOTICE_TYPES } = await import('@/lib/pairNotices');
         await clearPairNotices(db, ids.a, ids.b, { types: PAIR_NOTICE_TYPES, ctx: { op: 'dismissDuplicateCandidate', candidateId, actorEmail } });
+        await tellUnsureAskers(db, askers, { a: ids.a, b: ids.b, actor: actorEmail, answer: 'different', ctx: { op: 'dismissDuplicateCandidate', candidateId } });
         return { success: true };
     } catch (error) {
         logger.warn('dismissDuplicateCandidate failed', {

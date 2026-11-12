@@ -5,6 +5,7 @@ import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { logger } from '@/lib/logger';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
 import { mayAnswerPair } from '@/domain/pairAnswer';
+import { realOwner } from '@/domain/dedupPair';
 import { storedScoreToPercent } from '@/lib/scoring';
 import type { getDb } from '@/lib/db';
 import type { DuplicateCandidate } from '@/types/duplicates';
@@ -57,6 +58,7 @@ export async function loadOpenPairs(
         matchTypes: duplicateCandidates.matchTypes,
         score: duplicateCandidates.score,
         confidence: duplicateCandidates.confidence,
+        unsureBy: duplicateCandidates.unsureBy,
     })
         .from(duplicateCandidates)
         .where(and(
@@ -102,7 +104,7 @@ export async function loadOpenPairs(
 
     return candidates
         .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
-        .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
+        .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string; unsureBy: string | null }) => {
             const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
             return {
                 id: c.id,
@@ -113,6 +115,8 @@ export async function loadOpenPairs(
                 confidence: c.confidence,
                 confidencePercent: storedScoreToPercent(c.score),
                 onViewerList: onViewerList(otherId),
+                unsureBy: c.unsureBy ?? null,
+                otherSide: mayAnswerPair(team, ownerMap.get(otherId)) ? 'team' as const : realOwner(ownerMap.get(otherId)) ? 'outside' as const : 'none' as const,
             };
         })
         .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);

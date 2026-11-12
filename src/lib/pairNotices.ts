@@ -16,7 +16,8 @@ import { logger } from '@/lib/logger';
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 /** Every notice type about a pair (merge requests carry primaryId/secondaryId; flags adopterId/targetAdopterId). */
-export const PAIR_NOTICE_TYPES = ['merge_request', 'duplicate_flagged', 'merge_request_resolved'] as const;
+/** `same_person_question` («No sé» asked the other side) carries primaryId/secondaryId too: answering clears it. */
+export const PAIR_NOTICE_TYPES = ['merge_request', 'duplicate_flagged', 'merge_request_resolved', 'same_person_question'] as const;
 export type PairNoticeType = typeof PAIR_NOTICE_TYPES[number];
 
 // CASE, not `json_valid(...) AND …`: SQLite doesn't promise to test json_valid first, and json_extract raises on invalid JSON.

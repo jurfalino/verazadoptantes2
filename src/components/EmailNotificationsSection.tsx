@@ -34,7 +34,7 @@ import { ANIMALS_SCOPES, type AnimalsScope } from '@/domain/animalNotices';
 
 /** The rows that carry a second line (the others are the label alone, as approved). */
 const ROWS_WITH_DESC: ReadonlySet<string> = new Set([
-    'merge_request', 'pii_request', 'pair_message', 'form', 'contract', 'followups',
+    'merge_request', 'same_person', 'pii_request', 'pair_message', 'form', 'contract', 'followups',
     'content', 'rename', 'inaccuracy', 'duplicates', 'transfer', 'group',
 ]);
 

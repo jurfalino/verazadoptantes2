@@ -73,7 +73,7 @@ export const NOTIFICATION_TYPES = [
     'pii_access_request', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked',
     'contact_entry_added', 'follow_up_due', 'ownership_transferred', 'adopter_flagged', 'duplicate_flagged', 'inaccuracy_reported', 'deletion_request', 'member_joined', 'member_removed',
     'adopter_login_blocked',
-    'adopter_merged', 'merge_request', 'merge_request_resolved', 'merge_disputed', 'merge_dispute_resolved', 'pair_message',
+    'adopter_merged', 'merge_request', 'merge_request_resolved', 'merge_disputed', 'merge_dispute_resolved', 'pair_message', 'same_person_question', 'same_person_answered',
     'household_linked', 'household_contribution',
     'household_also_lives_with', 'household_relationship_changed', 'household_member_removed', 'household_member_disputed',
 ] as const;

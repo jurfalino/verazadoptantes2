@@ -50,6 +50,8 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     merge_disputed: { raiserName: 'María', ...sides },
     merge_dispute_resolved: { outcome: 'undone', ...sides },
     pair_message: { fromName: 'Jon', profileName: 'Julieta Paz', message: 'Hola' },
+    same_person_question: { askerName: 'Ana Gómez', applicantName: 'Laura Méndez', profileName: 'L. Méndez' },
+    same_person_answered: { answererName: 'Patitas Sur', applicantName: 'Laura Méndez', profileName: 'L. Méndez', answer: 'different' },
     household_linked: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_contribution: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' },
     household_also_lives_with: { actorName: 'Jon', personName: 'Marta Paez', hostName: 'Pedro Paez' },

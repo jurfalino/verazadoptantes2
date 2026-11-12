@@ -476,7 +476,17 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              the caller must pass isOwnerOrgMateOrAdmin on the animal's OWNER
 //                              (else []); lists only applications whose form link is in the owner's
 //                              team (applicantScopeWhere). Every failure fails closed to [] (logged).
-const EXPECTED_ACTIONS = 188;
+// 190 (Jon 2026-11-12, «¿Es la misma persona?» answered before an animal is given): two exports in
+// src/app/actions/duplicates.ts, imported by FormResultMatchCard. What a stranger can do with them:
+//   answerSamePersonUnsure(candidateId)  session required (signed out → not_authorized); the id is checked
+//                              for shape; the pair must be pending and the caller must be the loader of
+//                              either side or an org-mate (isOwnerOrOrgMate — the same rule as
+//                              dismissDuplicateCandidate), else not_authorized / not_found and nothing is
+//                              written. Writes only unsure_by = the caller's own email (compare-and-set, so
+//                              repeats notify nobody) and notifies the OTHER side's owner + their group,
+//                              with server-read names — never caller-supplied text.
+//   undoSamePersonUnsure(candidateId)   same gate; clears the two columns on that pair. Nothing else.
+const EXPECTED_ACTIONS = 190;
 
 let manifest;
 try {

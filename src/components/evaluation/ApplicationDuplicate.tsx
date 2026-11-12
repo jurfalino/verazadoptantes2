@@ -12,18 +12,23 @@
  *
  * Read lazily per shown applicant; nothing while loading or when there is no
  * pair. A failed read says so with its code.
+ *
+ * The answer is required before giving an animal (Jon 2026-11-12): «No sé» is
+ * offered too, and `onBlockingChange` tells the panel how many pairs still
+ * wait for an answer (src/domain/samePersonGate.ts) — null while reading.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import FormResultMatchCard from '@/components/FormResultMatchCard';
 import { getApplicationDuplicates } from '@/app/actions/applications';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
+import { blockingPairCount } from '@/domain/samePersonGate';
 
 type DuplicatesResult = Omit<Extract<Awaited<ReturnType<typeof getApplicationDuplicates>>, { ok: true }>, 'ok'>;
 
 /** The cards, as read. */
-export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDismiss, onLinked }: {
+export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDismiss, onLinked, onUnsureChange }: {
     result: DuplicatesResult;
     submissionId: string;
     applicantSelfieUrl: string | null;
@@ -31,11 +36,13 @@ export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDis
     onDismiss: (matchId: string) => void;
     /** «Sí, es la misma persona» went through: the panel re-reads. */
     onLinked: () => void;
+    /** «No sé» answered or withdrawn on a pair. */
+    onUnsureChange?: (matchId: string, answered: boolean) => void;
 }) {
     const { t } = useLanguage();
     if (result.cards.length === 0) return null;
     return (
-        <section data-testid="applicant-duplicate" className="space-y-3">
+        <section id="applicant-duplicate" data-testid="applicant-duplicate" className="space-y-3 scroll-mt-4">
             <h3 className="text-xs font-bold text-stone-500 uppercase tracking-wider">{t('samePerson.question')}</h3>
             {result.cards.map(({ match, profile }) => {
                 const { addedByName, isMine, ...cardProfile } = profile;
@@ -60,6 +67,8 @@ export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDis
                             canAnswer={match.canAnswer}
                             onDismiss={() => onDismiss(match.id)}
                             onLinked={onLinked}
+                            unsure={{ offer: true, by: match.unsureBy ?? null, otherSide: match.otherSide, ownerName: addedByName }}
+                            onUnsureChange={(answered) => onUnsureChange?.(match.id, answered)}
                         />
                     </div>
                 );
@@ -70,14 +79,25 @@ export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDis
 
 type Load = { applicationId: string } & ({ state: 'ok'; result: DuplicatesResult } | { state: 'failed'; errorId: string } | { state: 'hidden' });
 
-export function ApplicationDuplicate({ applicationId, submissionId, applicantSelfieUrl, onLinked }: {
+export function ApplicationDuplicate({ applicationId, submissionId, applicantSelfieUrl, onLinked, onBlockingChange }: {
     applicationId: string;
     submissionId: string;
     applicantSelfieUrl: string | null;
     onLinked: () => void;
+    /** How many pairs still wait for an answer before an animal is given; null while reading. */
+    onBlockingChange?: (blocking: number | null) => void;
 }) {
     const { t } = useLanguage();
     const [load, setLoad] = useState<Load | null>(null);
+
+    // The lock the panel's footer follows. A failed read locks nothing here: the server still refuses.
+    const current = load && load.applicationId === applicationId ? load : null;
+    const blocking = !current ? null
+        : current.state !== 'ok' ? 0
+        : blockingPairCount(current.result.cards.map(c => ({ viewerMayAnswer: c.match.canAnswer, unsureBy: c.match.unsureBy ?? null })), current.result.canLink);
+    const reportRef = useRef(onBlockingChange);
+    reportRef.current = onBlockingChange;
+    useEffect(() => { reportRef.current?.(blocking); }, [blocking]);
 
     useEffect(() => {
         let current = true; // paging away drops a late answer for the previous applicant
@@ -114,6 +134,10 @@ export function ApplicationDuplicate({ applicationId, submissionId, applicantSel
             submissionId={submissionId}
             applicantSelfieUrl={applicantSelfieUrl}
             onDismiss={(matchId) => setLoad({ applicationId, state: 'ok', result: { ...result, cards: result.cards.filter(c => c.match.id !== matchId) } })}
+            onUnsureChange={(matchId, answered) => setLoad({
+                applicationId, state: 'ok',
+                result: { ...result, cards: result.cards.map(c => (c.match.id === matchId ? { ...c, match: { ...c.match, unsureBy: answered ? 'me' : null } } : c)) },
+            })}
             onLinked={() => {
                 // The form now belongs to that profile: no pair left to answer here.
                 setLoad({ applicationId, state: 'hidden' });

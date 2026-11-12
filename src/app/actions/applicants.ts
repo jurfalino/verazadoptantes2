@@ -73,6 +73,8 @@ export interface ApplicantSummary {
     /** True only when the person's alerts (period + housemates) were actually read (P2):
      *  the panel says «Sin alertas en el perfil» only then. */
     alertsChecked: boolean;
+    /** The profile is the one this form created and still sits on (formLinkKind 'new_profile'). */
+    profileFromThisForm?: boolean;
     /** The housemate chips' answers («Conviviente con calificación N» / «con alertas»); none when that read failed. */
     housemateAlert: HousemateAlertSummary;
     adoptionCount: number;

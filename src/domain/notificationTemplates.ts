@@ -87,6 +87,14 @@ export interface NotificationTemplateParams {
     /** D50, both owners: `outcome` undone | kept. */
     merge_dispute_resolved: { outcome: string } & MergeSides;
     pair_message: { fromName: string; profileName?: string; message: string };
+    /**
+     * «No sé» on a form's «¿Es la misma persona?» (Jon 2026-11-12), to the other profile's owner and their
+     * team: `askerName` evaluates `applicantName` (the profile the form created) and doesn't know whether
+     * they are `profileName` (the recipient's profile).
+     */
+    same_person_question: { askerName: string; applicantName?: string; profileName?: string };
+    /** To whoever answered «No sé», once the other side says they are two people. `answer`: different | household. */
+    same_person_answered: { answererName: string; applicantName?: string; profileName?: string; answer: string };
     /** D45: someone recorded that the reader's profile `linkedName` lives with `hostName`. */
     household_linked: { actorName: string; hostName?: string; linkedName?: string };
     /**
@@ -608,6 +616,33 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
         pt: p => disputeOutcome(p, {
             undone: ['Um administrador separou dois perfis', `Revisou se era a mesma pessoa e desfez a união: ${KEPT_APART.pt(p)}`],
             kept: ['Um administrador manteve uma união', `Revisou se era a mesma pessoa e a união continua: ${KEEPS.pt(p)}.`],
+        }),
+    },
+    same_person_question: {
+        required: ['askerName'],
+        es: p => ({ title: `¿${plainName(p.applicantName, 'es')} es ${plainName(p.profileName, 'es')}?`, body: `${p.askerName} evalúa a ${plainName(p.applicantName, 'es')}, que pidió adoptar, y no sabe si es ${plainName(p.profileName, 'es')}, uno de tus perfiles. Respondé si es la misma persona.` }),
+        en: p => ({ title: `Is ${plainName(p.applicantName, 'en')} ${plainName(p.profileName, 'en')}?`, body: `${p.askerName} is evaluating ${plainName(p.applicantName, 'en')}, who asked to adopt, and doesn't know whether they are ${plainName(p.profileName, 'en')}, one of your profiles. Answer whether it is the same person.` }),
+        pt: p => ({ title: `${plainName(p.applicantName, 'pt')} é ${plainName(p.profileName, 'pt')}?`, body: `${p.askerName} está avaliando ${plainName(p.applicantName, 'pt')}, que pediu para adotar, e não sabe se é ${plainName(p.profileName, 'pt')}, um dos seus perfis. Responda se é a mesma pessoa.` }),
+    },
+    same_person_answered: {
+        required: ['answererName', 'answer'],
+        es: p => ({
+            title: `${p.answererName} respondió: es otra persona`,
+            body: p.answer === 'household'
+                ? `${plainName(p.applicantName, 'es')} no es ${plainName(p.profileName, 'es')}: es alguien de su hogar. Los perfiles siguen separados.`
+                : `${plainName(p.applicantName, 'es')} no es ${plainName(p.profileName, 'es')}. Los perfiles siguen separados.`,
+        }),
+        en: p => ({
+            title: `${p.answererName} answered: it's another person`,
+            body: p.answer === 'household'
+                ? `${plainName(p.applicantName, 'en')} is not ${plainName(p.profileName, 'en')}: it's someone in their household. The profiles stay separate.`
+                : `${plainName(p.applicantName, 'en')} is not ${plainName(p.profileName, 'en')}. The profiles stay separate.`,
+        }),
+        pt: p => ({
+            title: `${p.answererName} respondeu: é outra pessoa`,
+            body: p.answer === 'household'
+                ? `${plainName(p.applicantName, 'pt')} não é ${plainName(p.profileName, 'pt')}: é alguém do lar. Os perfis continuam separados.`
+                : `${plainName(p.applicantName, 'pt')} não é ${plainName(p.profileName, 'pt')}. Os perfis continuam separados.`,
         }),
     },
     pair_message: {

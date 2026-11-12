@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import type { OpenFlagKind } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
+import { answerSamePersonUnsure, undoSamePersonUnsure } from '@/app/actions/duplicates';
+import { handledAsStale } from '@/lib/errorMessage';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import { useShowToast } from '@/components/ui/Toast';
 import { useAnswerNotSamePerson } from '@/components/useAnswerNotSamePerson';
@@ -55,6 +57,12 @@ export interface FormResultMatchCardProps {
     onDismiss?: () => void;
     /** After «Sí, es la misma persona»: called instead of opening the profile (the applicant panel stays and re-reads). */
     onLinked?: () => void;
+    /**
+     * A form under evaluation (Jon 2026-11-12): the answer is required, so «No sé» is offered. `unsureBy`: who
+     * already answered «No sé»; `otherSide` / `ownerName`: who that asks. `onUnsureChange` reports the new state.
+     */
+    unsure?: { offer: boolean; by: string | null; otherSide?: 'team' | 'outside' | 'none'; ownerName?: string | null };
+    onUnsureChange?: (answered: boolean) => void;
 }
 
 export default function FormResultMatchCard({
@@ -71,6 +79,8 @@ export default function FormResultMatchCard({
     canAnswer = false,
     onDismiss,
     onLinked,
+    unsure,
+    onUnsureChange,
 }: FormResultMatchCardProps) {
     const { t } = useLanguage();
     const router = useRouter();
@@ -86,6 +96,38 @@ export default function FormResultMatchCard({
         : undefined;
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [linking, setLinking] = useState(false);
+    // «No sé» (Jon 2026-11-12): answered on this pair? Starts from the server's answer.
+    const [unsureAnswered, setUnsureAnswered] = useState(!!unsure?.by);
+    const offerUnsure = !!unsure?.offer && canLink && canAnswer && !!candidateId;
+    const setUnsure = async (answer: boolean) => {
+        if (!candidateId) return;
+        setLinking(true);
+        try {
+            const res = answer ? await answerSamePersonUnsure(candidateId) : await undoSamePersonUnsure(candidateId);
+            if (res.success) {
+                trackSamePersonAnswer('form_results', answer ? 'unsure' : 'unsure_undone', canAnswer);
+                setUnsureAnswered(answer);
+                onUnsureChange?.(answer);
+                return;
+            }
+            // Settled elsewhere since the panel loaded: re-read, as «No» does.
+            if (res.code === 'already_resolved' || res.code === 'not_found') {
+                toast.success(t('common.updated') || 'Actualizado', t('errors.dedup_already_resolved'));
+                router.refresh();
+                onDismiss?.();
+                return;
+            }
+            const message = res.code === 'not_authorized' ? t('errors.dedup_not_authorized') : t('errors.generic');
+            toast.error(t('errors.generic'), message, res.errorId ?? resolveErrorId(new Error(`${answer ? 'answerSamePersonUnsure' : 'undoSamePersonUnsure'}: ${res.code}`), 'FormResultMatchCard'));
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.generic'), resolveErrorId(e, 'FormResultMatchCard'));
+        } finally {
+            setLinking(false);
+        }
+    };
+    const unsureLine = unsure?.otherSide === 'outside'
+        ? t('samePerson.unsure_asked_other').replace('{name}', unsure.ownerName || t('myAdopters.pending_dedup_created_by_anonymous'))
+        : unsure?.otherSide === 'team' ? t('samePerson.unsure_asked_team') : t('samePerson.unsure_asked_none');
     const L = (key: string) => (t(`formResults.${key}`) || '').trim() || formResultsFallbacks[key] || key;
 
     const applicantEntries = [
@@ -206,7 +248,7 @@ export default function FormResultMatchCard({
                 person={profile}
                 thumbnail={profile.profileImageUrl ? proxyImageUrl(profile.profileImageUrl) : null}
                 compare={(
-                    <div id={`comparison-${profile.id}`}>
+                    <div id={`comparison-${profile.id}`} className="space-y-3">
                         <MatchCompare
                             adopterId={profile.id}
                             matchTypes={matchTypes}
@@ -217,12 +259,23 @@ export default function FormResultMatchCard({
                             bare
                             t={t}
                         />
+                        {offerUnsure && unsureAnswered && (
+                            <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm space-y-1" data-testid="match-unsure-answered">
+                                <p className="font-semibold text-stone-800">{t('samePerson.unsure_answered')}</p>
+                                <p className="text-stone-600 [overflow-wrap:anywhere]">{unsureLine}</p>
+                                <button type="button" onClick={() => { void setUnsure(false); }} disabled={linking}
+                                    className="text-sm font-semibold text-teal-700 underline-offset-2 hover:underline disabled:opacity-50" data-testid="match-unsure-undo">
+                                    {t('samePerson.unsure_change')}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
-                actions={{
+                actions={offerUnsure && unsureAnswered ? { busy: linking } : {
                     busy: linking,
                     onSame: canLink ? () => setConfirmOpen(true) : undefined,
                     onNotThis: notThis, notThisTestId: 'form-match-not-this',
+                    onUnsure: offerUnsure ? () => { void setUnsure(true); } : undefined,
                 }}
             />
 

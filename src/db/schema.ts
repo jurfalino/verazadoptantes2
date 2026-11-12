@@ -425,6 +425,10 @@ export const duplicateCandidates = sqliteTable("duplicate_candidates", {
     detectedAt: integer("detected_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     resolvedBy: text("resolved_by"),
+    // «No sé» on a form's «¿Es la misma persona?» (Jon 2026-11-12): who answered it and when.
+    // The pair stays pending; the other profile's owner was asked (migration 0109).
+    unsureBy: text("unsure_by"),
+    unsureAt: integer("unsure_at", { mode: "timestamp" }),
 }, (table) => ({
     pairIdx: index("idx_dup_candidates_pair").on(table.adopter1Id, table.adopter2Id),
     secondIdx: index("idx_dup_candidates_second").on(table.adopter2Id),

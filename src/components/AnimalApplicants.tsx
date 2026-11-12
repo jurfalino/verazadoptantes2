@@ -283,6 +283,11 @@ export default function AnimalApplicants({
                 // A failed re-read throws with its errorId (the catch below toasts it).
                 const fresh = applicantsOrThrow(await getApplicantsForAnimal(animalId), 'AnimalApplicants: re-read');
                 if (fresh.length > 0) setApplicants(fresh);
+            } else if (next === 'same_person') {
+                // «¿Es la misma persona?» first (Jon 2026-11-12): open this person's evaluation, where the question is.
+                toast.info(t('samePerson.question'), t('samePerson.gate_refused'));
+                const idx = applicants.findIndex(a => a.submissionId === applicant.submissionId);
+                if (idx !== -1) setPanelIndex(idx);
             } else {
                 const message = next === 'not_allowed'
                     ? (t('errors.contract_invite_not_allowed') || 'You can only send the contract to someone who applied for this animal.')

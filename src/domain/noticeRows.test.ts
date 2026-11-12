@@ -31,7 +31,7 @@ describe('every live type has exactly one home', () => {
 
     it('the rows, in the order of the approved screen', () => {
         expect(NOTICE_ROWS.map(r => [r.group, r.key])).toEqual([
-            ['waiting', 'merge_request'], ['waiting', 'pii_request'], ['waiting', 'pair_message'],
+            ['waiting', 'merge_request'], ['waiting', 'same_person'], ['waiting', 'pii_request'], ['waiting', 'pair_message'],
             ['waiting', 'form'], ['waiting', 'contract'], ['waiting', 'followups'],
             ['profile_changes', 'content'], ['profile_changes', 'contact'], ['profile_changes', 'rename'],
             ['profile_changes', 'household'], ['profile_changes', 'inaccuracy'], ['profile_changes', 'duplicates'],
@@ -40,7 +40,7 @@ describe('every live type has exactly one home', () => {
     });
 
     it.each([
-        ['merge_request', 'merge_request'], ['pii_access_request', 'pii_request'], ['pair_message', 'pair_message'],
+        ['merge_request', 'merge_request'], ['same_person_question', 'same_person'], ['pii_access_request', 'pii_request'], ['pair_message', 'pair_message'],
         ['form_submission', 'form'], ['contract_result', 'contract'], ['follow_up_due', 'followups'],
         ['profile_content_added', 'content'], ['contact_entry_added', 'contact'], ['profile_renamed', 'rename'],
         ['household_contribution', 'household'], ['household_linked', 'household'], ['household_member_removed', 'household'],
@@ -48,6 +48,7 @@ describe('every live type has exactly one home', () => {
         ['duplicate_flagged', 'duplicates'], ['adopter_merged', 'duplicates'], ['merge_dispute_resolved', 'duplicates'],
         ['contract_attached', 'duplicates'], ['form_attached', 'duplicates'],
         ['merge_request_resolved', 'answers'], ['pii_access_approved', 'answers'], ['pii_access_denied', 'answers'], ['pii_access_revoked', 'answers'],
+        ['same_person_answered', 'answers'],
         ['ownership_transferred', 'transfer'], ['member_joined', 'group'],
     ])('%s -> %s', (type, key) => {
         expect(rowForType(type)?.key).toBe(key);
@@ -63,18 +64,19 @@ describe('every live type has exactly one home', () => {
 describe('defaults', () => {
     // Jon 2026-11-12: «Le cambian el nombre» (its email carries «Deshacer») and «Responden tu pedido…»
     // (the asker is the one waiting) default on.
-    it('the three «Alguien espera tu respuesta» answers are always emailed; form, contract, rename and answers on; the rest off', () => {
+    // Jon 2026-11-12: «Te preguntan si es la misma persona» (someone answered «No sé») defaults on too.
+    it('the three «Alguien espera tu respuesta» answers are always emailed; same person, form, contract, rename and answers on; the rest off', () => {
         expect(Object.fromEntries(NOTICE_ROWS.map(r => [r.key, r.email]))).toEqual({
-            merge_request: 'always', pii_request: 'always', pair_message: 'always',
+            merge_request: 'always', same_person: 'on', pii_request: 'always', pair_message: 'always',
             form: 'on', contract: 'on', followups: 'followups',
             content: 'off', contact: 'off', rename: 'on', household: 'off', inaccuracy: 'off', duplicates: 'off',
             answers: 'on', transfer: 'off', group: 'off',
         });
     });
 
-    it('nothing stored: form, contract, rename and answers on, every other switch off', () => {
+    it('nothing stored: same person, form, contract, rename and answers on, every other switch off', () => {
         const prefs = parseNoticePrefs(null);
-        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['form', 'contract', 'rename', 'answers']);
+        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['same_person', 'form', 'contract', 'rename', 'answers']);
     });
 
     it('nothing stored: a rename and an answer to your request are emailed', () => {
@@ -108,7 +110,7 @@ describe('the old category switches', () => {
 
     it('every other old category is ignored: the new defaults apply', () => {
         const prefs = parseNoticePrefs('{"forms":true,"merges":true,"profile_changes":true,"contact_access":true,"other":true,"api":false,"requests":false}');
-        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['form', 'contract', 'rename', 'answers']);
+        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['same_person', 'form', 'contract', 'rename', 'answers']);
     });
 
     it('an old category stored false is ignored too: rename and answers still default on', () => {
@@ -183,7 +185,7 @@ describe('noticeEmailVerdict', () => {
 
 describe('noticeThrottleKey', () => {
     it('never throttled: a request to join, a message, a rename (its «Deshacer» rides in the email)', () => {
-        for (const t of ['merge_request', 'pair_message', 'profile_renamed']) expect(noticeThrottleKey(t)).toBeNull();
+        for (const t of ['merge_request', 'same_person_question', 'pair_message', 'profile_renamed']) expect(noticeThrottleKey(t)).toBeNull();
     });
     it('an always-emailed type throttles per type; a switchable row per row', () => {
         expect(noticeThrottleKey('pii_access_request')).toBe('type:pii_access_request');

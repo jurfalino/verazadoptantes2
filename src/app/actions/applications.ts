@@ -26,7 +26,7 @@ import type { ApplicantsLoad } from '@/lib/applicantsLoad';
  * `observation_saved_already_decided` («No avanzar» only): the observation WAS saved, but the application
  * already had another outcome by the time it was to close (review M1) — never «No se guardó tu observación».
  */
-export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'observation_saved_already_decided' | 'already_candidate' | 'animal_adopted' | 'failed';
+export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'observation_saved_already_decided' | 'already_candidate' | 'animal_adopted' | 'same_person_unanswered' | 'failed';
 export type Fail = { ok: false; error: ApplicationActionError; errorId?: string };
 
 const fail = (error: Exclude<ApplicationActionError, 'failed'>): Fail => ({ ok: false, error });
@@ -94,7 +94,7 @@ export async function getApplicationDuplicates(applicationId: string): Promise<{
         if (kind !== 'unlinked' && submission.linkedAdopterId) {
             const { loadOpenPairs } = await import('@/lib/openPairs');
             const pairs = await loadOpenPairs(db, submission.linkedAdopterId, viewer, { limit: 20 });
-            matches = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList }));
+            matches = pairs.map(p => ({ id: p.otherAdopterId, name: p.otherAdopterName, matchTypes: p.matchTypes, score: p.score, candidateId: p.id, canAnswer: p.onViewerList, unsureBy: p.unsureBy ?? null, ...(p.otherSide ? { otherSide: p.otherSide } : {}) }));
         }
         const { loadFormMatchCards } = await import('@/lib/formMatchCards');
         const cards = await loadFormMatchCards(db, viewer, matches, { submissionId: submission.id, typed: [submission.phone, submission.email] });
@@ -252,6 +252,15 @@ export async function proposeAnimal(applicationId: string, animalId: string): Pr
         const db = await requireDb();
         const auth = await loadAuthorizedApplication(db, applicationId, viewer);
         if (!auth) return fail('not_found');
+        // «¿Es la misma persona?» first (Jon 2026-11-12), the same lock as «Enviar contrato».
+        if (auth.submission.linkedAdopterId) {
+            const { unansweredSamePersonPairs } = await import('@/lib/samePersonGate');
+            const waiting = await unansweredSamePersonPairs(db, auth.submission.linkedAdopterId, viewer);
+            if (waiting > 0) {
+                logger.info('proposeAnimal: refused — «¿Es la misma persona?» unanswered', { applicationId, animalId, viewer, waiting });
+                return fail('same_person_unanswered');
+            }
+        }
         const res = await proposeAuthorized(db, viewer, auth, animalId);
         if (!res.ok) return fail(res.error);
         // The general application is answered: its form's bell notices read, for everyone (best-effort, logged).

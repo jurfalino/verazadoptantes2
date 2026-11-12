@@ -85,6 +85,8 @@ export type MatchCardActionsProps = {
     profileId: string;
     onSame?: () => void;
     onNotThis?: () => void;
+    /** «No sé» (Jon 2026-11-12): only where an answer is required (a form under evaluation). */
+    onUnsure?: () => void;
     busy?: boolean;
     newTab?: boolean;
     sameTestId?: string;
@@ -92,7 +94,7 @@ export type MatchCardActionsProps = {
     notThisTestId?: string;
 };
 
-export function MatchCardActions({ profileId, onSame, onNotThis, busy = false, newTab = false, sameTestId, viewTestId, notThisTestId }: MatchCardActionsProps) {
+export function MatchCardActions({ profileId, onSame, onNotThis, onUnsure, busy = false, newTab = false, sameTestId, viewTestId, notThisTestId }: MatchCardActionsProps) {
     const { t } = useLanguage();
     const layout = 'w-full sm:w-auto';
     return (
@@ -114,6 +116,11 @@ export function MatchCardActions({ profileId, onSame, onNotThis, busy = false, n
             {onNotThis && (
                 <Button type="button" variant="secondary" size="compact" onClick={onNotThis} disabled={busy} data-testid={notThisTestId} layoutClassName={`${layout} sm:ml-auto`}>
                     {t('samePerson.no')}
+                </Button>
+            )}
+            {onUnsure && (
+                <Button type="button" variant="secondary" size="compact" onClick={onUnsure} disabled={busy} data-testid="match-unsure" layoutClassName={layout}>
+                    {t('samePerson.unsure')}
                 </Button>
             )}
         </div>

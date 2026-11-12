@@ -25,7 +25,11 @@ export async function POST(request: Request) {
         if (!db) throw new Error('Database not available');
 
         if (candidateId) {
-            // Dismiss system-detected candidate
+            // Dismiss system-detected candidate. Whoever answered «No sé» on it hears the answer (best-effort).
+            const pair = await db.select({ a: duplicateCandidates.adopter1Id, b: duplicateCandidates.adopter2Id })
+                .from(duplicateCandidates).where(eq(duplicateCandidates.id, candidateId)).get();
+            const { unsureAskersOf, tellUnsureAskers } = await import('@/lib/pairUnsure');
+            const askers = pair ? await unsureAskersOf(db, pair.a, pair.b, { op: 'adminDismiss', candidateId }) : [];
             await db.update(duplicateCandidates).set({
                 status: 'dismissed',
                 resolvedAt: new Date(),
@@ -33,6 +37,7 @@ export async function POST(request: Request) {
             }).where(eq(duplicateCandidates.id, candidateId));
 
             logger.info('Duplicate candidate dismissed', { candidateId, user: session.user.email });
+            if (pair) await tellUnsureAskers(db, askers, { a: pair.a, b: pair.b, actor: session.user.email, answer: 'different', ctx: { op: 'adminDismiss', candidateId } });
         } else if (flagId) {
             // Dismiss user-flagged duplicate
             await db.delete(adopterFlags).where(eq(adopterFlags.id, flagId));
