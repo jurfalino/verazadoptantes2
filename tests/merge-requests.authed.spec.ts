@@ -221,6 +221,9 @@ test('/settings «Avisos»: «Siempre» where someone waits on you, a switch els
     }
     await expect(section.getByTestId('email-pref-api')).toHaveCount(0);
     await expect(section.getByTestId('animals-scope').getByRole('radio')).toHaveCount(2);
+    // One hint, the selected option's (CX review I1).
+    await expect(section.getByTestId('animals-scope-hint')).toHaveCount(1);
+    await expect(section.getByTestId('animals-scope-hint')).not.toBeEmpty();
     await expect(section.getByTestId('notices-not-sent')).toBeVisible();
 
     // The three-column matrix fits a phone: nothing scrolls sideways.
@@ -228,6 +231,13 @@ test('/settings «Avisos»: «Siempre» where someone waits on you, a switch els
     await expect(section).toBeVisible();
     expect(await section.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+
+    // The emails' «Configurar avisos» link (/settings#avisos) lands on the card, though it renders after load.
+    await page.goto('about:blank'); // a fresh load: same-page hash changes don't reload
+    await page.goto('/settings#avisos');
+    await expect(section).toBeVisible({ timeout: 30_000 });
+    await expect(section).toHaveAttribute('id', 'avisos');
+    await expect(section).toBeInViewport();
 });
 
 test('/settings «Avisame de cambios hechos por:» under «Cambios en tus perfiles»: two choices, saved, shown even with the email switches off', async ({ page }) => {

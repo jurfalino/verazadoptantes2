@@ -462,7 +462,7 @@ import { getAnimalsScopeForEmail, setAnimalsScopeForEmail } from '@/lib/animalsS
  * What saveEmailPref switches: a row's email («Avisos»), the check-up row
  * ('followups' = followup_settings.emailReminders, the same value «Seguimientos
  * de adopción» shows) or «Formularios, contratos y controles de:»
- * ('animals_mine': true = «Mis animales», false = «Los animales de todo el equipo»).
+ * ('animals_mine': true = «Lo mío: mis animales y mi formulario», false = «Todo el equipo»).
  */
 export type NoticePrefKey = SwitchableRowKey | 'followups' | 'animals_mine';
 

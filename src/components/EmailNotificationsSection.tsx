@@ -3,14 +3,15 @@
 /**
  * «Avisos» in /settings (approved by Jon 2026-11-11). One row per thing that can
  * happen (src/domain/noticeRows.ts) with two columns: «Campanita», always ✓
- * (the bell shows everything and has no switches), and «Email»: «Siempre» for
- * the rows someone waits on, a switch for the others.
+ * (the bell has no per-row switches; the two choices below decide which team
+ * copies reach it — the intro says so), and «Email»: «Siempre» for the rows
+ * someone waits on, a switch for the others.
  *
  * - «Toca un control de seguimiento» switches followup_settings.emailReminders,
  *   the same value «Seguimientos de adopción» shows (kept in step on screen by
  *   src/lib/followupEmailSync.ts).
- * - Under the first group, «Formularios, contratos y controles de:» (the one way
- *   to get fewer bell notices, src/domain/animalNotices.ts).
+ * - Under the first group, «Formularios, contratos y controles de:»
+ *   (src/domain/animalNotices.ts), one hint per option (CX review I1).
  * - Under «Cambios en tus perfiles», «Avisame de cambios hechos por:» (bell AND
  *   email, src/domain/teamChangeAudience.ts).
  * - At the bottom, what we don't notify («No te avisamos»).
@@ -37,6 +38,40 @@ const ROWS_WITH_DESC: ReadonlySet<string> = new Set([
     'merge_request', 'pii_request', 'pair_message', 'form', 'contract', 'followups',
     'content', 'rename', 'inaccuracy', 'duplicates', 'transfer', 'group',
 ]);
+
+/** The card's anchor: /settings#avisos. */
+const SECTION_ID = 'avisos';
+
+/**
+ * /settings#avisos lands on the card. It renders only once its settings load, so the browser's own
+ * fragment scroll found nothing to land on: scroll once it is on screen. «Seguimientos de adopción»
+ * above loads on its own and can push it down, so the scroll follows for a moment — until the person
+ * scrolls, taps or types.
+ */
+function useScrollToHashOnce(id: string, ready: boolean) {
+    useEffect(() => {
+        if (!ready || window.location.hash !== `#${id}`) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        const go = () => el.scrollIntoView({ block: 'start' });
+        const events = ['wheel', 'touchstart', 'keydown', 'mousedown'] as const;
+        let observer: ResizeObserver | null = null;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const stop = () => {
+            observer?.disconnect();
+            clearTimeout(timer);
+            events.forEach(e => window.removeEventListener(e, stop));
+        };
+        go();
+        if (typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver(go);
+            observer.observe(document.body);
+        }
+        timer = setTimeout(stop, 2000);
+        events.forEach(e => window.addEventListener(e, stop, { passive: true }));
+        return stop;
+    }, [id, ready]);
+}
 
 /** Label · Campanita · Email. The two narrow columns fit «Campanita» and a 44px switch at 390px. */
 const GRID = 'grid grid-cols-[minmax(0,1fr)_80px_56px] items-center gap-2';
@@ -130,6 +165,8 @@ export default function EmailNotificationsSection() {
         return () => { cancelled = true; off(); };
     }, []);
 
+    useScrollToHashOnce(SECTION_ID, !!state);
+
     if (!state) return null;
 
     /** Optimistic: `patch` now, `before` back on any failure (a stale tab: silently). */
@@ -206,7 +243,8 @@ export default function EmailNotificationsSection() {
     );
 
     return (
-        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 mt-6" data-testid="email-prefs-section">
+        // `id`: the target of /settings#avisos (the notice emails' footer, the check-up digest, Seguimientos).
+        <div id={SECTION_ID} className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 mt-6 scroll-mt-20" data-testid="email-prefs-section">
             <h2 className="text-base font-bold text-stone-900">{t('settings.notices_title')}</h2>
             <p className="text-xs text-stone-500 mt-1 mb-2 max-w-prose">{t('settings.notices_hint')}</p>
 
@@ -243,7 +281,7 @@ export default function EmailNotificationsSection() {
                             value={state.animalsScope}
                             optionLabel={v => t(`settings.animals_scope_${v}`)}
                             onChoose={chooseAnimals}
-                            hint={t('settings.animals_scope_hint')}
+                            hint={t(`settings.animals_scope_${state.animalsScope}_hint`)}
                             testId="animals-scope"
                         />
                     )}
