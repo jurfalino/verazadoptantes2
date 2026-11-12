@@ -23,7 +23,7 @@ import FormResultMatchCard from '@/components/FormResultMatchCard';
 import { getApplicationDuplicates } from '@/app/actions/applications';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
-import { blockingPairCount } from '@/domain/samePersonGate';
+import { blockingPairCount, pairBlocksGiving } from '@/domain/samePersonGate';
 
 type DuplicatesResult = Omit<Extract<Awaited<ReturnType<typeof getApplicationDuplicates>>, { ok: true }>, 'ok'>;
 
@@ -51,8 +51,11 @@ export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDis
                     : addedByName
                         ? t('myAdopters.pending_dedup_created_by').replace('{name}', addedByName)
                         : t('myAdopters.pending_dedup_created_by_anonymous');
+                // «Ir a la pregunta» lands on the first card still waiting for an answer (UX review).
+                const waiting = pairBlocksGiving({ viewerMayAnswer: match.canAnswer, unsureBy: match.unsureBy ?? null }, result.canLink);
                 return (
-                    <div key={match.id} className="space-y-1">
+                    <div key={match.id} className="space-y-1 scroll-mt-4 focus:outline-none" tabIndex={-1}
+                        data-same-person-waiting={waiting ? 'true' : undefined}>
                         <p className="text-xs text-stone-500 [overflow-wrap:anywhere]" data-testid="applicant-duplicate-owner">{owner}</p>
                         <FormResultMatchCard
                             applicant={result.applicant}
@@ -67,7 +70,7 @@ export function DuplicateCards({ result, submissionId, applicantSelfieUrl, onDis
                             canAnswer={match.canAnswer}
                             onDismiss={() => onDismiss(match.id)}
                             onLinked={onLinked}
-                            unsure={{ offer: true, by: match.unsureBy ?? null, otherSide: match.otherSide, ownerName: addedByName }}
+                            unsure={{ offer: true, by: match.unsureBy ?? null, byName: match.unsureByName ?? null, otherSide: match.otherSide, ownerName: addedByName }}
                             onUnsureChange={(answered) => onUnsureChange?.(match.id, answered)}
                         />
                     </div>
@@ -136,7 +139,7 @@ export function ApplicationDuplicate({ applicationId, submissionId, applicantSel
             onDismiss={(matchId) => setLoad({ applicationId, state: 'ok', result: { ...result, cards: result.cards.filter(c => c.match.id !== matchId) } })}
             onUnsureChange={(matchId, answered) => setLoad({
                 applicationId, state: 'ok',
-                result: { ...result, cards: result.cards.map(c => (c.match.id === matchId ? { ...c, match: { ...c.match, unsureBy: answered ? 'me' : null } } : c)) },
+                result: { ...result, cards: result.cards.map(c => (c.match.id === matchId ? { ...c, match: { ...c.match, unsureBy: answered ? 'me' : null, unsureByName: null } } : c)) },
             })}
             onLinked={() => {
                 // The form now belongs to that profile: no pair left to answer here.

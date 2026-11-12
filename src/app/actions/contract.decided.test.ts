@@ -82,3 +82,31 @@ describe('createContractInvitation on an applicant already decided', () => {
         expect(invitesFor('dora')).toHaveLength(1);
     });
 });
+
+describe('createContractInvitation waits for «¿Es la misma persona?» (Jon 2026-11-12; EM review)', () => {
+    const openPair = (id: string, other: string, owner = 'stranger@example.com') => {
+        adopter(sqlite, other, 'Ana P.', owner);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status) VALUES (?, 'ana', ?, '["phone"]', 80, 'high', 'pending')`).run(id, other);
+    };
+
+    it('an unanswered pair on the profile this form created → refused, nothing written, Carla\'s link survives', async () => {
+        openPair('p-1', 'ana-elsewhere');
+        const before = snapshot(sqlite);
+        const res = await createContractInvitation('luna', 'ana');
+        expect(res).toMatchObject({ success: false, error: 'same_person_unanswered' });
+        expect(invitesFor('ana')).toHaveLength(0);
+        expect(snapshot(sqlite)).toEqual(before);
+    });
+
+    it('«No sé» from the sender\'s group unlocks it', async () => {
+        openPair('p-1', 'ana-elsewhere');
+        sqlite.prepare(`INSERT INTO pair_unsure (pair_key, asker_email, withdrawn) VALUES ('ana|ana-elsewhere', ?, 0)`).run(OWNER);
+        expect(await createContractInvitation('luna', 'ana')).toMatchObject({ success: true });
+    });
+
+    it('a pair that is no longer pending never locks', async () => {
+        openPair('p-1', 'ana-elsewhere');
+        sqlite.prepare(`UPDATE duplicate_candidates SET status = 'dismissed' WHERE id = 'p-1'`).run();
+        expect(await createContractInvitation('luna', 'ana')).toMatchObject({ success: true });
+    });
+});

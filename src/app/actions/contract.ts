@@ -103,7 +103,9 @@ export async function createContractInvitation(
         }
         // «¿Es la misma persona?» first (Jon 2026-11-12): a profile a form created gets no contract while a
         // possible duplicate the caller may answer has no answer («No sé» counts). The panel locks the button;
-        // this refuses the list's button and any stale tab. Refused BEFORE the retirement below.
+        // this refuses the list's button and a panel read before the lock changed. (A tab from an older build
+        // is forwarded to its own deployment, which has no lock, until that build leaves the deploy map.)
+        // Refused BEFORE the retirement below.
         try {
             const { unansweredForContract } = await import('@/lib/samePersonGate');
             const waiting = await unansweredForContract(db, animalId, adopterId, userEmail);

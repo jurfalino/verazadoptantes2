@@ -17,13 +17,14 @@
  *
  * Not a 'use server' module: the actions in duplicates.ts read the session and call in.
  */
-import { and, eq, sql } from 'drizzle-orm';
-import { adopters, duplicateCandidates, formSubmissions, pairUnsure } from '@/db/schema';
+import { and, eq, ne, sql } from 'drizzle-orm';
+import { adopters, animals, applications, duplicateCandidates, formSubmissions, pairUnsure } from '@/db/schema';
+import { APPLICATION_ORIGINS } from '@/domain/constants';
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMembership';
 import { pairKey, realOwner } from '@/domain/dedupPair';
-import { clearPairNotices } from '@/lib/pairNotices';
+import { clearPairNotices, reopenPairNotices } from '@/lib/pairNotices';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -58,6 +59,18 @@ async function sidesFor(actor: string, a: Side, b: Side): Promise<{ mine: Side; 
     return teamA ? { mine: a, other: b, otherInTeam: teamB } : { mine: b, other: a, otherInTeam: teamA };
 }
 
+/**
+ * sidesFor, but where both profiles are the group's own, "mine" is the one a form created (the one the
+ * answer is required for) — whatever order the pair's ids sort in (EM review).
+ */
+async function answeringSides(db: Db, actor: string, a: Side, b: Side): Promise<{ mine: Side; other: Side; otherInTeam: boolean } | null> {
+    const sides = await sidesFor(actor, a, b);
+    if (!sides) return null;
+    if (await isFormCreated(db, sides.mine.id)) return sides;
+    if (sides.otherInTeam && await isFormCreated(db, sides.other.id)) return { mine: sides.other, other: sides.mine, otherInTeam: true };
+    return null;
+}
+
 /** A profile a form created and still sits on (formLinkKind 'new_profile'). */
 async function isFormCreated(db: Db, adopterId: string): Promise<boolean> {
     const row = await db.select({ id: formSubmissions.id }).from(formSubmissions)
@@ -89,9 +102,9 @@ export async function answerPairUnsure(db: Db, candidateId: string, actor: strin
     const pair = await loadPair(db, candidateId);
     if (!pair || pair.cand.confidence === 'low') return { ok: false, code: 'not_found' };
     if (pair.cand.status !== 'pending') return { ok: false, code: 'already_resolved' };
-    const sides = await sidesFor(actor, pair.a, pair.b);
     // Only where an answer is required: the actor's side is a profile a form created.
-    if (!sides || !(await isFormCreated(db, sides.mine.id))) return { ok: false, code: 'not_authorized' };
+    const sides = await answeringSides(db, actor, pair.a, pair.b);
+    if (!sides) return { ok: false, code: 'not_authorized' };
     const asked = askedOf(sides.otherInTeam, sides.other.addedBy);
     const me = normEmail(actor);
 
@@ -104,6 +117,9 @@ export async function answerPairUnsure(db: Db, candidateId: string, actor: strin
     if (askNow && await askOtherSide(db, { candidateId, actor, mine: sides.mine, other: sides.other })) {
         await db.update(pairUnsure).set({ askedAt: new Date() })
             .where(and(eq(pairUnsure.pairKey, pair.key), eq(pairUnsure.askerEmail, me)));
+    } else if (asked === 'outside' && !askNow && before.length > 0 && before.every(r => r.withdrawn)) {
+        // Undone and answered again within the day: the undo took the question out of their bell — put it back.
+        await reopenPairNotices(db, pair.cand.a, pair.cand.b, { types: ['same_person_question'], ctx: { op: 'answerPairUnsure', candidateId, actor } });
     }
     return { ok: true, asked };
 }
@@ -131,6 +147,24 @@ export async function clearPairUnsure(db: Db, candidateId: string, actor: string
     return { ok: true };
 }
 
+/** The animal the form that created `adopterId` asks for (its application, else the form's pick); null when none. Never throws. */
+async function animalAskedFor(db: Db, adopterId: string, ctx: Record<string, unknown>): Promise<string | null> {
+    try {
+        const row = await db.select({ appAnimal: applications.animalId, picked: formSubmissions.selectedAnimalId })
+            .from(formSubmissions)
+            .leftJoin(applications, and(eq(applications.submissionId, formSubmissions.id), ne(applications.origin, APPLICATION_ORIGINS.PROPOSED)))
+            .where(and(eq(formSubmissions.autoAdopterId, adopterId), eq(formSubmissions.linkedAdopterId, adopterId)))
+            .limit(1).get() as { appAnimal: string | null; picked: string | null } | undefined;
+        const animalId = row?.appAnimal ?? row?.picked;
+        if (!animalId) return null;
+        const animal = await db.select({ name: animals.name }).from(animals).where(eq(animals.id, animalId)).get() as { name: string | null } | undefined;
+        return animal?.name?.trim() || null;
+    } catch (e) {
+        logger.warn('answerPairUnsure: animal name unreadable, question sent without it', { ...ctx, adopterId, error: e instanceof Error ? e.message : String(e) });
+        return null;
+    }
+}
+
 /** True when the question went out (so the once-a-day hold starts only then). */
 async function askOtherSide(db: Db, input: { candidateId: string; actor: string; mine: Side; other: Side }): Promise<boolean> {
     const { candidateId, actor, mine, other } = input;
@@ -140,10 +174,13 @@ async function askOtherSide(db: Db, input: { candidateId: string; actor: string;
         const [{ createNotification, resolveDisplayName }, { notificationContent }] = await Promise.all([
             import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
         ]);
-        const askerName = await resolveDisplayName(actor);
+        const [askerName, animalName] = await Promise.all([resolveDisplayName(actor), animalAskedFor(db, mine.id, { candidateId, actor })]);
         const content = notificationContent({
             key: 'same_person_question',
-            params: { askerName, ...(mine.name ? { applicantName: mine.name } : {}), ...(other.name ? { profileName: other.name } : {}) },
+            params: {
+                askerName, ...(mine.name ? { applicantName: mine.name } : {}), ...(other.name ? { profileName: other.name } : {}),
+                ...(animalName ? { animalName } : {}),
+            },
         });
         // primaryId/secondaryId: clearPairNotices reads them, so settling the pair clears the question everywhere.
         const metadata = { candidateId, primaryId: other.id, secondaryId: mine.id };
@@ -156,7 +193,7 @@ async function askOtherSide(db: Db, input: { candidateId: string; actor: string;
             return true;
         });
         await Promise.all(recipients.map(userId =>
-            createNotification({ userId, type: 'same_person_question', ...content, url: '/my-adopters#pendientes', icon: ICON, metadata })));
+            createNotification({ userId, type: 'same_person_question', ...content, url: `/my-adopters?pair=${encodeURIComponent(pairKey(other.id, mine.id))}#pendientes`, icon: ICON, metadata })));
         logger.info('answerPairUnsure: other side asked', { candidateId, actor, recipients: recipients.length });
         return recipients.length > 0;
     } catch (e) {

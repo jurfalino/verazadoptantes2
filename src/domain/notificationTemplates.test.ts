@@ -50,7 +50,7 @@ const SAMPLES: { [K in NotificationTemplate['key']]: Extract<NotificationTemplat
     merge_disputed: { raiserName: 'María', ...sides },
     merge_dispute_resolved: { outcome: 'undone', ...sides },
     pair_message: { fromName: 'Jon', profileName: 'Julieta Paz', message: 'Hola' },
-    same_person_question: { askerName: 'Ana Gómez', applicantName: 'Laura Méndez', profileName: 'L. Méndez' },
+    same_person_question: { askerName: 'Ana Gómez', applicantName: 'Laura Méndez', profileName: 'L. Méndez', animalName: 'Toto' },
     same_person_answered: { answererName: 'Patitas Sur', applicantName: 'Laura Méndez', profileName: 'L. Méndez', answer: 'different' },
     household_linked: { actorName: 'Jon', hostName: 'Pedro Paez', linkedName: 'Jonathan Urfalino' },
     household_contribution: { actorName: 'Ana', adopterName: 'Pedro Paez', what: 'contact', entryType: 'phone' },
@@ -254,7 +254,8 @@ describe('Spanish without a name (final review M2)', () => {
             const params = { ...sample, [drop]: undefined };
             const out = renderNotification({ key, params }, 'es');
             if (!out) continue; // a required param: nothing renders
-            expect(`${out.title} ${out.body}`).not.toMatch(/\b(a|de) el\b/);
+            // (^|\s), not \b: JS \b treats «ú» as a boundary, so «Evalúa el» would read as «a el».
+            expect(`${out.title} ${out.body}`).not.toMatch(/(^|\s)(a|de) el\b/);
         }
     });
 

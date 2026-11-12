@@ -79,3 +79,23 @@ export async function clearPairNotices(db: Db, a: string, b: string, opts: {
         });
     }
 }
+
+/**
+ * The reverse of clearPairNotices for one question type: a «No sé» withdrawn and answered again the same
+ * day puts the existing question back as unread (no second notice or email). Best-effort, logged.
+ */
+export async function reopenPairNotices(db: Db, a: string, b: string, opts: {
+    types: readonly PairNoticeType[];
+    ctx?: Record<string, unknown>;
+}): Promise<void> {
+    if (!a || !b || a === b || opts.types.length === 0) return;
+    try {
+        await db.update(notifications)
+            .set({ read: 0 })
+            .where(and(eq(notifications.read, 1), or(...opts.types.map(t => eq(notifications.type, t)))!, aboutPair(a, b)));
+    } catch (e) {
+        logger.warn('reopenPairNotices: question left read', {
+            ...opts.ctx, primaryId: a, secondaryId: b, types: opts.types.join(','), error: e instanceof Error ? e.message : String(e),
+        });
+    }
+}

@@ -92,7 +92,7 @@ export interface NotificationTemplateParams {
      * team: `askerName` evaluates `applicantName` (the profile the form created) and doesn't know whether
      * they are `profileName` (the recipient's profile).
      */
-    same_person_question: { askerName: string; applicantName?: string; profileName?: string };
+    same_person_question: { askerName: string; applicantName?: string; profileName?: string; animalName?: string };
     /** To whoever answered «No sé», once the other side says they are two people. `answer`: different | household. */
     same_person_answered: { answererName: string; applicantName?: string; profileName?: string; answer: string };
     /** D45: someone recorded that the reader's profile `linkedName` lives with `hostName`. */
@@ -618,31 +618,35 @@ const TEMPLATES: { [K in NotificationTemplateKey]: TemplateDef<NotificationTempl
             kept: ['Um administrador manteve uma união', `Revisou se era a mesma pessoa e a união continua: ${KEEPS.pt(p)}.`],
         }),
     },
+    // Jon 2026-11-12 (UX review): asker-led — both names are often identical, so never «¿X es X?».
     same_person_question: {
         required: ['askerName'],
-        es: p => ({ title: `¿${plainName(p.applicantName, 'es')} es ${plainName(p.profileName, 'es')}?`, body: `${p.askerName} evalúa a ${plainName(p.applicantName, 'es')}, que pidió adoptar, y no sabe si es ${plainName(p.profileName, 'es')}, uno de tus perfiles. Respondé si es la misma persona.` }),
-        en: p => ({ title: `Is ${plainName(p.applicantName, 'en')} ${plainName(p.profileName, 'en')}?`, body: `${p.askerName} is evaluating ${plainName(p.applicantName, 'en')}, who asked to adopt, and doesn't know whether they are ${plainName(p.profileName, 'en')}, one of your profiles. Answer whether it is the same person.` }),
-        pt: p => ({ title: `${plainName(p.applicantName, 'pt')} é ${plainName(p.profileName, 'pt')}?`, body: `${p.askerName} está avaliando ${plainName(p.applicantName, 'pt')}, que pediu para adotar, e não sabe se é ${plainName(p.profileName, 'pt')}, um dos seus perfis. Responda se é a mesma pessoa.` }),
+        es: p => ({
+            title: `${p.askerName} te pregunta si es la misma persona`,
+            body: `Evalúa el formulario de ${plainName(p.applicantName, 'es')}${p.animalName ? ` para adoptar a ${p.animalName}` : ', que pidió adoptar,'} y no sabe si es la misma persona que tu perfil «${plainName(p.profileName, 'es')}». Respondé en «Pendientes de revisar».`,
+        }),
+        en: p => ({
+            title: `${p.askerName} asks whether it's the same person`,
+            body: `They're evaluating the form from ${plainName(p.applicantName, 'en')}${p.animalName ? ` to adopt ${p.animalName}` : ', who asked to adopt,'} and don't know whether it's the same person as your profile “${plainName(p.profileName, 'en')}”. Answer in “Pending review”.`,
+        }),
+        pt: p => ({
+            title: `${p.askerName} pergunta se é a mesma pessoa`,
+            body: `Está avaliando o formulário de ${plainName(p.applicantName, 'pt')}${p.animalName ? ` para adotar ${p.animalName}` : ', que pediu para adotar,'} e não sabe se é a mesma pessoa do seu perfil «${plainName(p.profileName, 'pt')}». Responda em «Pendentes de revisão».`,
+        }),
     },
     same_person_answered: {
         required: ['answererName', 'answer'],
         es: p => ({
             title: `${p.answererName} respondió: es otra persona`,
-            body: p.answer === 'household'
-                ? `${plainName(p.applicantName, 'es')} no es ${plainName(p.profileName, 'es')}: es alguien de su hogar. Los perfiles siguen separados.`
-                : `${plainName(p.applicantName, 'es')} no es ${plainName(p.profileName, 'es')}. Los perfiles siguen separados.`,
+            body: `El formulario de ${plainName(p.applicantName, 'es')} no es de la persona de su perfil «${plainName(p.profileName, 'es')}»${p.answer === 'household' ? ': es alguien de su hogar' : ''}. Los perfiles siguen separados.`,
         }),
         en: p => ({
             title: `${p.answererName} answered: it's another person`,
-            body: p.answer === 'household'
-                ? `${plainName(p.applicantName, 'en')} is not ${plainName(p.profileName, 'en')}: it's someone in their household. The profiles stay separate.`
-                : `${plainName(p.applicantName, 'en')} is not ${plainName(p.profileName, 'en')}. The profiles stay separate.`,
+            body: `The form from ${plainName(p.applicantName, 'en')} is not from the person in their profile “${plainName(p.profileName, 'en')}”${p.answer === 'household' ? ': it\'s someone in their household' : ''}. The profiles stay separate.`,
         }),
         pt: p => ({
             title: `${p.answererName} respondeu: é outra pessoa`,
-            body: p.answer === 'household'
-                ? `${plainName(p.applicantName, 'pt')} não é ${plainName(p.profileName, 'pt')}: é alguém do lar. Os perfis continuam separados.`
-                : `${plainName(p.applicantName, 'pt')} não é ${plainName(p.profileName, 'pt')}. Os perfis continuam separados.`,
+            body: `O formulário de ${plainName(p.applicantName, 'pt')} não é da pessoa do perfil «${plainName(p.profileName, 'pt')}»${p.answer === 'household' ? ': é alguém do lar' : ''}. Os perfis continuam separados.`,
         }),
     },
     pair_message: {

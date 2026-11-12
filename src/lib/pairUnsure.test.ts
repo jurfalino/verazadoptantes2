@@ -118,9 +118,33 @@ describe('«No sé»', () => {
         expect(notify.mock.calls.map(c => c[0].userId).sort()).toEqual(['sol@sur.org', 'sur@sur.org']);
         const n = notify.mock.calls[0][0];
         expect(n.type).toBe('same_person_question');
-        expect(n.title).toBe('¿Laura Méndez es L. Méndez?');
-        expect(n.body).toContain('Ana Gómez');
+        expect(n.title).toBe('Ana Gómez te pregunta si es la misma persona');
+        expect(n.body).toBe('Evalúa el formulario de Laura Méndez, que pidió adoptar, y no sabe si es la misma persona que tu perfil «L. Méndez». Respondé en «Pendientes de revisar».');
         expect(n.metadata).toMatchObject({ primaryId: 'lmendez', secondaryId: 'laura' });
+        // UX review: the link opens that pair in «Pendientes de revisar», not the top of the list.
+        expect((n as { url?: string }).url).toBe('/my-adopters?pair=laura%7Clmendez#pendientes');
+    });
+    it('UX review: names the animal the form asks for', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name) VALUES ('toto', 'Toto')`).run();
+        application('app-1', 'sub-laura', 'toto');
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        expect(notify.mock.calls[0][0].body).toBe('Evalúa el formulario de Laura Méndez para adoptar a Toto y no sabe si es la misma persona que tu perfil «L. Méndez». Respondé en «Pendientes de revisar».');
+    });
+    it('EM review: on two of the group\'s own profiles, «No sé» answers for the one the form created, whatever the id order', async () => {
+        adopter('aaa-mate', 'Laura M.', 'bea@norte.org'); // sorts before 'laura', so the form's profile is side b
+        pair('p-rev', 'aaa-mate', 'laura');
+        expect(await answerPairUnsure(db(), 'p-rev', 'ana@norte.org')).toEqual({ ok: true, asked: 'team' });
+        expect(await unansweredForSubmission(db(), sub('laura'), 'ana@norte.org')).toBe(1); // p-sur is still open
+    });
+    it('review: undo then «No sé» again the same day puts the question back in the other side\'s bell (no second email)', async () => {
+        sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, read, metadata) VALUES ('n-q', 'sur@sur.org', 'same_person_question', 't', 'b', 0, ?)`)
+            .run(JSON.stringify({ primaryId: 'lmendez', secondaryId: 'laura' }));
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        await clearPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        notify.mockClear();
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        expect(notify).not.toHaveBeenCalled();
+        expect((sqlite.prepare(`SELECT read FROM notifications WHERE id = 'n-q'`).get() as { read: number }).read).toBe(0);
     });
     it('review I3: a teammate\'s repeat or an off/on toggle does not ask again within a day', async () => {
         await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
@@ -170,7 +194,7 @@ describe('the answer reaches the asker', () => {
         expect(notify).toHaveBeenCalledTimes(1);
         const n = notify.mock.calls[0][0];
         expect(n).toMatchObject({ userId: 'ana@norte.org', type: 'same_person_answered', title: 'Patitas Sur respondió: es otra persona' });
-        expect(n.body).toBe('Laura Méndez no es L. Méndez. Los perfiles siguen separados.');
+        expect(n.body).toBe('El formulario de Laura Méndez no es de la persona de su perfil «L. Méndez». Los perfiles siguen separados.');
         expect(unsureRows()).toEqual([]);
         expect(await unsureAskersOf(db(), 'laura', 'lmendez')).toEqual([]); // a second settle tells nobody
     });

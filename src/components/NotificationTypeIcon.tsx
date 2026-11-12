@@ -23,7 +23,7 @@ export const NOTIFICATION_TYPE_ICON: Record<NotificationType, LucideIcon> = {
     adopter_flagged: Flag, duplicate_flagged: GitMerge, inaccuracy_reported: PencilLine, deletion_request: Trash2, member_joined: Users, member_removed: UserMinus, adopter_login_blocked: Ban,
     adopter_merged: GitMerge, merge_request: GitMerge, merge_request_resolved: GitMerge,
     merge_disputed: ShieldQuestion, merge_dispute_resolved: ShieldQuestion, pair_message: MessageSquare,
-    same_person_question: ShieldQuestion, same_person_answered: GitMerge,
+    same_person_question: ShieldQuestion, same_person_answered: ShieldQuestion,
     household_linked: Home, household_contribution: Home,
     household_also_lives_with: Home, household_relationship_changed: Home, household_member_removed: Home, household_member_disputed: ShieldQuestion,
 };

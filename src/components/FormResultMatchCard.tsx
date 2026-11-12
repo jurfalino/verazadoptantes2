@@ -4,7 +4,10 @@ import { useRouter } from 'next/navigation';
 import type { OpenFlagKind } from '@/domain/flags';
 import { useLanguage } from '@/context/LanguageContext';
 import { linkFormToExistingAdopter } from '@/app/actions/formSubmission';
-import { answerSamePersonUnsure, undoSamePersonUnsure } from '@/app/actions/duplicates';
+import { answerSamePersonUnsure, mergePendingDedupPair, undoSamePersonUnsure } from '@/app/actions/duplicates';
+import { needsIdentityChoice } from '@/domain/identityChoice';
+import { householdErrorCopy } from '@/lib/householdCopy';
+import IdentityChoice from '@/components/pendientes/IdentityChoice';
 import { handledAsStale } from '@/lib/errorMessage';
 import { HOUSEHOLD_NOT_CONVERTED } from '@/domain/households';
 import { useShowToast } from '@/components/ui/Toast';
@@ -59,9 +62,10 @@ export interface FormResultMatchCardProps {
     onLinked?: () => void;
     /**
      * A form under evaluation (Jon 2026-11-12): the answer is required, so «No sé» is offered. `unsureBy`: who
-     * already answered «No sé»; `otherSide` / `ownerName`: who that asks. `onUnsureChange` reports the new state.
+     * already answered «No sé» (`byName`: a teammate's name, when it wasn't the viewer); `otherSide` / `ownerName`:
+     * who that asks. `onUnsureChange` reports the new state.
      */
-    unsure?: { offer: boolean; by: string | null; otherSide?: 'team' | 'outside' | 'none'; ownerName?: string | null };
+    unsure?: { offer: boolean; by: string | null; byName?: string | null; otherSide?: 'team' | 'outside' | 'none'; ownerName?: string | null };
     onUnsureChange?: (answered: boolean) => void;
 }
 
@@ -95,9 +99,16 @@ export default function FormResultMatchCard({
         }
         : undefined;
     const [confirmOpen, setConfirmOpen] = useState(false);
+    // «No, es alguien de su hogar» (Jon 2026-11-12): the same question «Pendientes de revisar» asks after «Sí»,
+    // where the contact matched but the names differ (D35).
+    const [identityOpen, setIdentityOpen] = useState(false);
+    const asksIdentity = !!notThis && needsIdentityChoice({ matchTypes, nameA: applicant.name ?? '', nameB: profile.name ?? '' });
     const [linking, setLinking] = useState(false);
     // «No sé» (Jon 2026-11-12): answered on this pair? Starts from the server's answer.
     const [unsureAnswered, setUnsureAnswered] = useState(!!unsure?.by);
+    // Answered here, by the viewer (a teammate's earlier «No sé» reads under their name until then).
+    const [unsureMine, setUnsureMine] = useState(false);
+    const mateName = unsureAnswered && !unsureMine ? unsure?.byName ?? null : null;
     const offerUnsure = !!unsure?.offer && canLink && canAnswer && !!candidateId;
     const setUnsure = async (answer: boolean) => {
         if (!candidateId) return;
@@ -107,6 +118,7 @@ export default function FormResultMatchCard({
             if (res.success) {
                 trackSamePersonAnswer('form_results', answer ? 'unsure' : 'unsure_undone', canAnswer);
                 setUnsureAnswered(answer);
+                setUnsureMine(answer);
                 onUnsureChange?.(answer);
                 return;
             }
@@ -182,6 +194,32 @@ export default function FormResultMatchCard({
             if (result.error === 'not_a_match') router.refresh();
         } catch (e) {
             fail(resolveErrorId(e, 'FormResultMatchCard'), L('link_error'));
+        }
+    };
+
+    const handleHousehold = async () => {
+        if (!candidateId) return;
+        setLinking(true);
+        try {
+            const result = await mergePendingDedupPair(candidateId, { identity: 'household' });
+            setIdentityOpen(false);
+            if (result.success) {
+                trackSamePersonAnswer('form_results', 'different', canAnswer);
+                toast.success(t('myAdopters.pending_d_household_done') || 'Quedaron separados: lo agregamos a su hogar');
+                router.refresh();
+                onDismiss?.();
+                return;
+            }
+            if (result.error === 'household_refused') {
+                toast.warning(householdErrorCopy(t, result.reason).message, result.errorId ? `ID: ${result.errorId}` : undefined);
+                return;
+            }
+            toast.error(t('errors.generic'), result.error === HOUSEHOLD_NOT_CONVERTED ? t('errors.merge_household_not_converted') : t('errors.dedup_dismiss_failed'),
+                result.errorId ?? resolveErrorId(new Error(`mergePendingDedupPair(household): ${result.error}`), 'FormResultMatchCard'));
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('errors.dedup_dismiss_failed'), resolveErrorId(e, 'FormResultMatchCard'));
+        } finally {
+            setLinking(false);
         }
     };
 
@@ -261,11 +299,13 @@ export default function FormResultMatchCard({
                         />
                         {offerUnsure && unsureAnswered && (
                             <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm space-y-1" data-testid="match-unsure-answered">
-                                <p className="font-semibold text-stone-800">{t('samePerson.unsure_answered')}</p>
+                                <p className="font-semibold text-stone-800 [overflow-wrap:anywhere]">
+                                    {mateName ? t('samePerson.unsure_answered_by').replace('{name}', mateName) : t('samePerson.unsure_answered')}
+                                </p>
                                 <p className="text-stone-600 [overflow-wrap:anywhere]">{unsureLine}</p>
                                 <button type="button" onClick={() => { void setUnsure(false); }} disabled={linking}
-                                    className="text-sm font-semibold text-teal-700 underline-offset-2 hover:underline disabled:opacity-50" data-testid="match-unsure-undo">
-                                    {t('samePerson.unsure_change')}
+                                    className="min-h-11 text-sm font-semibold text-teal-700 underline-offset-2 hover:underline disabled:opacity-50 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" data-testid="match-unsure-undo">
+                                    {mateName ? t('samePerson.unsure_change_mate') : t('samePerson.unsure_change')}
                                 </button>
                             </div>
                         )}
@@ -273,11 +313,28 @@ export default function FormResultMatchCard({
                 )}
                 actions={offerUnsure && unsureAnswered ? { busy: linking } : {
                     busy: linking,
-                    onSame: canLink ? () => setConfirmOpen(true) : undefined,
+                    onSame: canLink ? () => (asksIdentity ? setIdentityOpen(true) : setConfirmOpen(true)) : undefined,
                     onNotThis: notThis, notThisTestId: 'form-match-not-this',
                     onUnsure: offerUnsure ? () => { void setUnsure(true); } : undefined,
                 }}
             />
+            {/* What «No sé» does, before it's tapped: it asks another rescue (UX review). */}
+            {offerUnsure && !unsureAnswered && unsure?.otherSide === 'outside' && unsure.ownerName && (
+                <p className="px-4 pb-3 -mt-1 text-xs text-stone-500 [overflow-wrap:anywhere]" data-testid="match-unsure-will-ask">
+                    {t('samePerson.unsure_will_ask').replace('{name}', unsure.ownerName)}
+                </p>
+            )}
+            {identityOpen && (
+                <IdentityChoice
+                    nameA={applicant.name || L('form_applicant')}
+                    nameB={profile.name}
+                    busy={linking}
+                    onSame={() => { setIdentityOpen(false); setConfirmOpen(true); }}
+                    onHousehold={() => { void handleHousehold(); }}
+                    onCancel={() => setIdentityOpen(false)}
+                    t={t}
+                />
+            )}
 
             <ConfirmDialog
                 open={confirmOpen}

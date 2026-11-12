@@ -311,6 +311,18 @@ describe('an outcome clears the form\'s bell notices, for everyone («answer onc
     });
 });
 
+describe('proposeAnimal waits for «¿Es la misma persona?» (Jon 2026-11-12; EM review)', () => {
+    it('an unanswered pair on the profile the general form created → refused, nothing written', async () => {
+        adopter(sqlite, 'beto-elsewhere', 'Beto G.', STRANGER);
+        sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status) VALUES ('p-beto', 'beto', 'beto-elsewhere', '["phone"]', 80, 'high', 'pending')`).run();
+        const before = snapshot(sqlite);
+        expect(await proposeAnimal('app-s-gen', 'luna')).toEqual({ ok: false, error: 'same_person_unanswered' });
+        expect(snapshot(sqlite)).toEqual(before);
+        sqlite.prepare(`INSERT INTO pair_unsure (pair_key, asker_email, withdrawn) VALUES ('beto|beto-elsewhere', ?, 0)`).run(OWNER);
+        expect(await proposeAnimal('app-s-gen', 'luna')).toMatchObject({ ok: true });
+    });
+});
+
 describe('proposeAnimal / getProposalAnimals («Proponer un animal»)', () => {
     beforeEach(() => {
         adopter(sqlite, 'fosterer', 'Hogar Tránsito', OWNER);

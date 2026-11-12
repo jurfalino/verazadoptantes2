@@ -23,6 +23,7 @@
 
 import { OpenProfileLink } from '@/components/OpenProfileLink';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowUp } from 'lucide-react';
 import { emailHandle } from '@/lib/userDisplay';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
 import { AdopterName } from '@/components/AdopterName';
@@ -199,7 +200,13 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         requestAnimationFrame(() => allAnswersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     };
 
-    const goToQuestion = () => document.getElementById('applicant-duplicate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // The first card still waiting for an answer (else the section), scrolled to and focused (UX review).
+    const goToQuestion = () => {
+        const section = document.getElementById('applicant-duplicate');
+        const target = section?.querySelector<HTMLElement>('[data-same-person-waiting="true"]') ?? section;
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target?.focus({ preventScroll: true });
+    };
 
     const handleSend = async () => {
         if (!animal || !applicant.adopterId || busy) return;
@@ -215,7 +222,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                 await afterChange('refresh');
             } else if (next === 'same_person') {
                 // Someone withdrew a «No sé» (or a new pair appeared) since this panel read: say so, go to the question.
-                toast.error(t('errors.generic') || 'Error', t('samePerson.gate_refused'), resolveErrorId(new Error('createContractInvitation: same_person_unanswered'), 'ApplicantDetailPanel'));
+                // Not a failure: the same calm notice as the applicants list (UX review).
+                toast.info(t('samePerson.gate_hint_contract'));
                 goToQuestion();
             } else {
                 const message = next === 'not_allowed'
@@ -292,11 +300,21 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         </Link>
     ) : (
         <div className="space-y-2">
+        {giveLocked && samePersonBlocking == null && (
+            // Still reading: say why the button waits (UX review).
+            <p id="evaluate-same-person-hint" className="text-xs text-stone-600" data-testid="evaluate-same-person-checking">
+                {t('samePerson.gate_checking')}
+            </p>
+        )}
         {giveLocked && samePersonBlocking != null && (
-            <p className="text-xs text-stone-600" data-testid="evaluate-same-person-hint">
-                {t(animal ? 'samePerson.gate_hint_contract' : 'samePerson.gate_hint_propose')}{' '}
-                <button type="button" onClick={goToQuestion} className="font-semibold text-teal-700 underline-offset-2 hover:underline">
-                    {t('samePerson.gate_go')} ↑
+            <p id="evaluate-same-person-hint" className="text-xs text-stone-600" data-testid="evaluate-same-person-hint">
+                {samePersonBlocking > 1
+                    ? t(animal ? 'samePerson.gate_hint_contract_many' : 'samePerson.gate_hint_propose_many').replace('{n}', String(samePersonBlocking))
+                    : t(animal ? 'samePerson.gate_hint_contract' : 'samePerson.gate_hint_propose')}{' '}
+                <button type="button" onClick={goToQuestion}
+                    className="inline-flex items-center gap-1 min-h-11 font-semibold text-teal-700 underline-offset-2 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
+                    {t('samePerson.gate_go')}
+                    <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
             </p>
         )}
@@ -305,13 +323,13 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                 {t('evaluation.decline')}
             </Button>
             {animal ? (
-                <Button type="button" variant="primary" onClick={handleSend} loading={busy} disabled={giveLocked} data-testid="evaluate-send-contract" layoutClassName="w-full">
+                <Button type="button" variant="primary" onClick={handleSend} loading={busy} disabled={giveLocked} aria-describedby={giveLocked ? 'evaluate-same-person-hint' : undefined} data-testid="evaluate-send-contract" layoutClassName="w-full">
                     {applicant.hasInvite
                         ? (t('myAnimals.applicants_resend') || 'Reenviar contrato')
                         : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
                 </Button>
             ) : (
-                <Button type="button" variant="primary" onClick={() => setDialog('propose')} disabled={giveLocked} data-testid="evaluate-propose" layoutClassName="w-full">
+                <Button type="button" variant="primary" onClick={() => setDialog('propose')} disabled={giveLocked} aria-describedby={giveLocked ? 'evaluate-same-person-hint' : undefined} data-testid="evaluate-propose" layoutClassName="w-full">
                     {t('evaluation.propose')}
                 </Button>
             )}

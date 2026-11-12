@@ -26,6 +26,8 @@ export type FormMatch = {
     id: string; name: string; matchTypes: string[]; score?: number; candidateId: string | null; canAnswer: boolean;
     /** Who answered «No sé» on this pair (it stays open); null/absent when nobody did. */
     unsureBy?: string | null;
+    /** A teammate (not the viewer) answered «No sé»: their name. Absent when it was the viewer. */
+    unsureByName?: string | null;
     /** Who «No sé» asks: another rescuer, the viewer's own group (nobody is told), or nobody (no real owner). */
     otherSide?: 'team' | 'outside' | 'none';
 };
