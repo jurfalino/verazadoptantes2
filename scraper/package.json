@@ -1,12 +1,13 @@
 {
     "name": "facebook-scraper",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "description": "Playwright-based Facebook post scraper microservice",
     "main": "dist/server.js",
     "scripts": {
         "build": "tsc",
         "start": "node dist/server.js",
-        "dev": "ts-node src/server.ts"
+        "dev": "ts-node src/server.ts",
+        "test": "tsc && node --test test/*.test.js"
     },
     "dependencies": {
         "cors": "^2.8.5",
