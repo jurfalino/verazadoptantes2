@@ -60,18 +60,36 @@ describe('every live type has exactly one home', () => {
 });
 
 describe('defaults', () => {
-    it('the three «Alguien espera tu respuesta» answers are always emailed; form and contract on; the rest off', () => {
+    // Jon 2026-11-12: «Le cambian el nombre» (its email carries «Deshacer») and «Responden tu pedido…»
+    // (the asker is the one waiting) default on.
+    it('the three «Alguien espera tu respuesta» answers are always emailed; form, contract, rename and answers on; the rest off', () => {
         expect(Object.fromEntries(NOTICE_ROWS.map(r => [r.key, r.email]))).toEqual({
             merge_request: 'always', pii_request: 'always', pair_message: 'always',
             form: 'on', contract: 'on', followups: 'followups',
-            content: 'off', contact: 'off', rename: 'off', household: 'off', inaccuracy: 'off', duplicates: 'off',
-            answers: 'off', transfer: 'off', group: 'off',
+            content: 'off', contact: 'off', rename: 'on', household: 'off', inaccuracy: 'off', duplicates: 'off',
+            answers: 'on', transfer: 'off', group: 'off',
         });
     });
 
-    it('nothing stored: form and contract on, every other switch off', () => {
+    it('nothing stored: form, contract, rename and answers on, every other switch off', () => {
         const prefs = parseNoticePrefs(null);
-        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['form', 'contract']);
+        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['form', 'contract', 'rename', 'answers']);
+    });
+
+    it('nothing stored: a rename and an answer to your request are emailed', () => {
+        const none = parseNoticePrefs(null);
+        expect(noticeEmailVerdict({ type: 'profile_renamed' }, none)).toBe('send');
+        for (const type of ['merge_request_resolved', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked']) {
+            expect(noticeEmailVerdict({ type }, none), type).toBe('send');
+        }
+    });
+
+    it('a stored false still wins over the new defaults', () => {
+        const prefs = parseNoticePrefs('{"rename":false,"answers":false}');
+        expect(isNoticeEmailOn(prefs, 'rename')).toBe(false);
+        expect(isNoticeEmailOn(prefs, 'answers')).toBe(false);
+        expect(noticeEmailVerdict({ type: 'profile_renamed' }, prefs)).toBe('pref_off');
+        expect(noticeEmailVerdict({ type: 'pii_access_approved' }, prefs)).toBe('pref_off');
     });
 
     it('the check-up row is not stored here (followup_settings.emailReminders is its switch)', () => {
@@ -89,7 +107,13 @@ describe('the old category switches', () => {
 
     it('every other old category is ignored: the new defaults apply', () => {
         const prefs = parseNoticePrefs('{"forms":true,"merges":true,"profile_changes":true,"contact_access":true,"other":true,"api":false,"requests":false}');
-        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['form', 'contract']);
+        expect(SWITCHABLE_ROW_KEYS.filter(k => isNoticeEmailOn(prefs, k))).toEqual(['form', 'contract', 'rename', 'answers']);
+    });
+
+    it('an old category stored false is ignored too: rename and answers still default on', () => {
+        const prefs = parseNoticePrefs('{"merges":false,"contact_access":false,"profile_changes":false}');
+        expect(isNoticeEmailOn(prefs, 'rename')).toBe(true);
+        expect(isNoticeEmailOn(prefs, 'answers')).toBe(true);
     });
 
     it('a row value stored since wins over the old category', () => {
@@ -203,6 +227,20 @@ describe('unsubscribeRows (what a link\'s `c` switches off)', () => {
         for (const k of ['merge_request', 'pii_request', 'pair_message', 'followups', 'requests', 'bogus', '', 'toString', '__proto__']) {
             expect(unsubscribeRows(k), k).toBeNull();
         }
+    });
+});
+
+describe('unsubscribing turns the default-on rows off', () => {
+    const offAfter = (c: string) => parseNoticePrefs(withNoticePrefs(null, unsubscribeRows(c)!, false));
+    it('«Le cambian el nombre»: its own link, and an old «profile_changes» link', () => {
+        expect(isNoticeEmailOn(offAfter('rename'), 'rename')).toBe(false);
+        expect(isNoticeEmailOn(offAfter('profile_changes'), 'rename')).toBe(false);
+    });
+    it('«Responden tu pedido…»: its own link, and old «merges» / «contact_access» links', () => {
+        for (const c of ['answers', 'merges', 'contact_access']) expect(isNoticeEmailOn(offAfter(c), 'answers'), c).toBe(false);
+    });
+    it('switching one off leaves the other on', () => {
+        expect(isNoticeEmailOn(offAfter('rename'), 'answers')).toBe(true);
     });
 });
 

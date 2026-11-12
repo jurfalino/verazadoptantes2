@@ -12,6 +12,10 @@
  *   adopción» shows, so the two screens can't disagree). The cron Worker sends
  *   that email; the email twin never sends `follow_up_due`.
  *
+ * Default on (Jon 2026-11-12): form, contract, «Le cambian el nombre» (its
+ * email carries «Deshacer», the safeguard of an open edit) and «Responden tu
+ * pedido…» (the asker is waiting too). Every other switch defaults off.
+ *
  * Outside the rows: `api_access` is always emailed; admin-only types are bell
  * only; four types are no longer written (the profile's history has them) but
  * keep their labels so old rows still render.
@@ -32,11 +36,11 @@ export const NOTICE_ROWS = [
     { key: 'followups', group: 'waiting', email: 'followups', types: ['follow_up_due'] },
     { key: 'content', group: 'profile_changes', email: 'off', types: ['profile_content_added'] },
     { key: 'contact', group: 'profile_changes', email: 'off', types: ['contact_entry_added'] },
-    { key: 'rename', group: 'profile_changes', email: 'off', types: ['profile_renamed'] },
+    { key: 'rename', group: 'profile_changes', email: 'on', types: ['profile_renamed'] },
     { key: 'household', group: 'profile_changes', email: 'off', types: ['household_contribution', 'household_linked', 'household_member_removed'] },
     { key: 'inaccuracy', group: 'profile_changes', email: 'off', types: ['inaccuracy_reported'] },
     { key: 'duplicates', group: 'profile_changes', email: 'off', types: ['duplicate_flagged', 'adopter_merged', 'merge_dispute_resolved', 'contract_attached', 'form_attached'] },
-    { key: 'answers', group: 'news', email: 'off', types: ['merge_request_resolved', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked'] },
+    { key: 'answers', group: 'news', email: 'on', types: ['merge_request_resolved', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked'] },
     { key: 'transfer', group: 'news', email: 'off', types: ['ownership_transferred'] },
     { key: 'group', group: 'news', email: 'off', types: ['member_joined', 'member_removed'] },
 ] as const satisfies readonly { key: string; group: NoticeGroup; email: NoticeEmail; types: readonly string[] }[];
