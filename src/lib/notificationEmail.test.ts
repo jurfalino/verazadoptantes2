@@ -121,12 +121,17 @@ describe('sendNotificationEmail', () => {
         expect(await sendNotificationEmail({ id: addNotif('merge_request'), userId: EMAIL, type: 'merge_request', title: 'T', body: 'B', bellOnly: true })).toBe('skipped_bell_only');
         expect(send).not.toHaveBeenCalled();
     });
-    it('«Avisos» defaults: a switch-off row is not emailed until switched on (member_removed included)', async () => {
+    it('«Avisos» defaults: a switch-off row is not emailed until switched on', async () => {
         expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('skipped_pref');
-        expect(await call(addNotif('member_removed'), 'member_removed')).toBe('skipped_pref');
+        expect(await call(addNotif('member_joined'), 'member_joined')).toBe('skipped_pref');
         seedUser(JSON.stringify({ group: true }));
-        expect(await call(addNotif('member_removed'), 'member_removed')).toBe('sent');
+        expect(await call(addNotif('member_joined'), 'member_joined')).toBe('sent');
         expect(send.mock.calls[0][0].html).toContain('Dejar de recibir');
+    });
+    it('member_removed is never emailed, even with «Tu grupo» on (decision F6)', async () => {
+        seedUser(JSON.stringify({ group: true }));
+        expect(await call(addNotif('member_removed'), 'member_removed')).toBe('skipped_not_emailed');
+        expect(send).not.toHaveBeenCalled();
     });
     it('every signed contract is emailed while its switch is on, duplicates or not (Jon 2026-11-12); a check-up never through the twin', async () => {
         const contract = (matchCount: number) => sendNotificationEmail({ id: addNotif('contract_result'), userId: EMAIL, type: 'contract_result', title: 'T', body: 'B', metadata: { matchCount } });

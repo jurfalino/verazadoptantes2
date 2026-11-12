@@ -3051,7 +3051,7 @@ export const pt = {
         notice_row_transfer: 'Passam um perfil para você',
         notice_row_transfer_desc: 'Um administrador transferiu para você.',
         notice_row_group: 'Seu grupo',
-        notice_row_group_desc: 'Alguém entra, ou tiram você do grupo.',
+        notice_row_group_desc: 'Alguém entra. Se tirarem você do grupo, só no sininho.',
         animals_scope_label: 'Formulários, contratos e controles de:',
         animals_scope_mine: 'O meu: meus animais e meu formulário',
         animals_scope_team: 'Toda a equipe',

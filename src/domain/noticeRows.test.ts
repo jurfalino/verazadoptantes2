@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { NOTIFICATION_TYPES } from './constants';
 import {
-    NOTICE_ROWS, ALWAYS_EMAILED_TYPES, ADMIN_ONLY_TYPES, NOT_WRITTEN_TYPES,
+    NOTICE_ROWS, ALWAYS_EMAILED_TYPES, ADMIN_ONLY_TYPES, NOT_WRITTEN_TYPES, BELL_ONLY_TYPES,
     rowForType, parseNoticePrefs, withNoticePref, isNoticeEmailOn, noticeEmailVerdict,
     noticeThrottleKey, unsubscribableRow, unsubscribeRows, withNoticePrefs, visibleNoticeRows, SWITCHABLE_ROW_KEYS,
 } from './noticeRows';
@@ -18,13 +18,14 @@ describe('every live type has exactly one home', () => {
             NOTICE_ROWS.filter(r => (r.types as readonly string[]).includes(type)).length,
             ALWAYS_EMAILED_TYPES.includes(type) ? 1 : 0,
             ADMIN_ONLY_TYPES.includes(type) ? 1 : 0,
+            BELL_ONLY_TYPES.includes(type) ? 1 : 0,
             NOT_WRITTEN_TYPES.includes(type) ? 1 : 0,
         ].reduce((a, b) => a + b, 0);
         expect(homes).toBe(1);
     });
 
     it('rows and lists name only live types', () => {
-        const named = [...NOTICE_ROWS.flatMap(r => r.types), ...ALWAYS_EMAILED_TYPES, ...ADMIN_ONLY_TYPES, ...NOT_WRITTEN_TYPES];
+        const named = [...NOTICE_ROWS.flatMap(r => r.types), ...ALWAYS_EMAILED_TYPES, ...ADMIN_ONLY_TYPES, ...BELL_ONLY_TYPES, ...NOT_WRITTEN_TYPES];
         expect(named.filter(t => !LIVE.includes(t))).toEqual([]);
     });
 
@@ -47,13 +48,13 @@ describe('every live type has exactly one home', () => {
         ['duplicate_flagged', 'duplicates'], ['adopter_merged', 'duplicates'], ['merge_dispute_resolved', 'duplicates'],
         ['contract_attached', 'duplicates'], ['form_attached', 'duplicates'],
         ['merge_request_resolved', 'answers'], ['pii_access_approved', 'answers'], ['pii_access_denied', 'answers'], ['pii_access_revoked', 'answers'],
-        ['ownership_transferred', 'transfer'], ['member_joined', 'group'], ['member_removed', 'group'],
+        ['ownership_transferred', 'transfer'], ['member_joined', 'group'],
     ])('%s -> %s', (type, key) => {
         expect(rowForType(type)?.key).toBe(key);
     });
 
-    it('admin-only, always-emailed and no longer written types have no row', () => {
-        for (const t of [...ADMIN_ONLY_TYPES, ...ALWAYS_EMAILED_TYPES, ...NOT_WRITTEN_TYPES, 'form_result', 'system']) {
+    it('admin-only, always-emailed, bell-only and no longer written types have no row', () => {
+        for (const t of [...ADMIN_ONLY_TYPES, ...ALWAYS_EMAILED_TYPES, ...BELL_ONLY_TYPES, ...NOT_WRITTEN_TYPES, 'form_result', 'system']) {
             expect(rowForType(t), t).toBeNull();
         }
     });
@@ -159,7 +160,14 @@ describe('noticeEmailVerdict', () => {
         expect(noticeEmailVerdict({ type: 'form_submission' }, none)).toBe('send');
         expect(noticeEmailVerdict({ type: 'adopter_merged' }, none)).toBe('pref_off');
         expect(noticeEmailVerdict({ type: 'adopter_merged' }, parseNoticePrefs('{"duplicates":true}'))).toBe('send');
-        expect(noticeEmailVerdict({ type: 'member_removed' }, parseNoticePrefs('{"group":true}'))).toBe('send');
+        expect(noticeEmailVerdict({ type: 'member_joined' }, parseNoticePrefs('{"group":true}'))).toBe('send');
+    });
+
+    it('being removed from the group is the bell only, even with «Tu grupo» on (decision F6: no email)', () => {
+        expect(BELL_ONLY_TYPES).toEqual(['member_removed']);
+        expect(noticeEmailVerdict({ type: 'member_removed' }, parseNoticePrefs('{"group":true}'))).toBe('not_emailed');
+        expect(noticeEmailVerdict({ type: 'member_removed' }, none)).toBe('not_emailed');
+        expect(rowForType('member_joined')?.types).toEqual(['member_joined']);
     });
 
     it('admin-only types are never emailed', () => {

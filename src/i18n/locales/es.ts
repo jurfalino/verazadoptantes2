@@ -3055,7 +3055,7 @@ export const es = {
         notice_row_transfer: 'Te pasan un perfil',
         notice_row_transfer_desc: 'Un administrador te lo transfirió.',
         notice_row_group: 'Tu grupo',
-        notice_row_group_desc: 'Alguien se suma, o te quitan del grupo.',
+        notice_row_group_desc: 'Alguien se suma. Si te quitan del grupo, solo en la campanita.',
         animals_scope_label: 'Formularios, contratos y controles de:',
         animals_scope_mine: 'Lo mío: mis animales y mi formulario',
         animals_scope_team: 'Todo el equipo',

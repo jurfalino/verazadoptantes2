@@ -16,8 +16,8 @@
  * email carries «Deshacer», the safeguard of an open edit) and «Responden tu
  * pedido…» (the asker is waiting too). Every other switch defaults off.
  *
- * Outside the rows: `api_access` is always emailed; admin-only types are bell
- * only; four types are no longer written (the profile's history has them) but
+ * Outside the rows: `api_access` is always emailed; admin-only types and
+ * `member_removed` are bell only; four types are no longer written (the profile's history has them) but
  * keep their labels so old rows still render.
  *
  * The switches live in `user_profiles.email_prefs` (JSON, row key → boolean).
@@ -42,7 +42,7 @@ export const NOTICE_ROWS = [
     { key: 'duplicates', group: 'profile_changes', email: 'off', types: ['duplicate_flagged', 'adopter_merged', 'merge_dispute_resolved', 'contract_attached', 'form_attached'] },
     { key: 'answers', group: 'news', email: 'on', types: ['merge_request_resolved', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked'] },
     { key: 'transfer', group: 'news', email: 'off', types: ['ownership_transferred'] },
-    { key: 'group', group: 'news', email: 'off', types: ['member_joined', 'member_removed'] },
+    { key: 'group', group: 'news', email: 'off', types: ['member_joined'] },
 ] as const satisfies readonly { key: string; group: NoticeGroup; email: NoticeEmail; types: readonly string[] }[];
 
 export type NoticeRow = typeof NOTICE_ROWS[number];
@@ -63,6 +63,12 @@ export const ALWAYS_EMAILED_TYPES: readonly string[] = ['api_access'];
 export const ADMIN_ONLY_TYPES: readonly string[] = [
     'merge_disputed', 'household_member_disputed', 'adopter_flagged', 'deletion_request', 'api_access_requested', 'adopter_login_blocked',
 ];
+
+/**
+ * Written to the bell, never emailed, with no row: being removed from a group
+ * (decision F6, «no email» — review M5).
+ */
+export const BELL_ONLY_TYPES: readonly string[] = ['member_removed'];
 
 /**
  * No longer written: the profile's history has the information. The types and

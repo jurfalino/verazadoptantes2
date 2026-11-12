@@ -3046,7 +3046,7 @@ export const en = {
         notice_row_transfer: 'A profile is handed to you',
         notice_row_transfer_desc: 'An administrator transferred it to you.',
         notice_row_group: 'Your group',
-        notice_row_group_desc: 'Someone joins, or you are removed from the group.',
+        notice_row_group_desc: 'Someone joins. If you are removed from the group, only in the bell.',
         animals_scope_label: 'Forms, contracts and check-ups for:',
         animals_scope_mine: 'Mine: my animals and my form',
         animals_scope_team: 'The whole team',
