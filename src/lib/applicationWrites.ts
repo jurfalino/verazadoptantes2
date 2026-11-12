@@ -10,7 +10,7 @@ import { logger } from '@/lib/logger';
 import { clearFormNotices } from '@/lib/formNotices';
 import { getTeamEmails } from '@/lib/orgMembership';
 import { and, eq, sql } from 'drizzle-orm';
-import { createOwnerTeamResolver } from '@/app/actions/_applicants';
+import { createOwnerTeamResolver } from '@/lib/ownerTeamResolver';
 import type { getDb } from '@/lib/db';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;

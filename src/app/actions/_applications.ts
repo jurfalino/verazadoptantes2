@@ -23,7 +23,8 @@ import { logger } from '@/lib/logger';
 import { myAnimalsScope } from '@/lib/myAnimalsScope';
 import { getTeamEmails } from '@/lib/orgMembership';
 import { animalPrimaryFirst } from '@/lib/showcase';
-import { canAccessFormSubmission, createOwnerTeamResolver, isOwnerOrgMateOrAdmin } from './_applicants';
+import { canAccessFormSubmission, isOwnerOrgMateOrAdmin } from './_applicants';
+import { createOwnerTeamResolver } from '@/lib/ownerTeamResolver';
 import type { getDb } from '@/lib/db';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;

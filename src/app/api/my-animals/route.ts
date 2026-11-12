@@ -84,8 +84,9 @@ export async function GET(request: NextRequest) {
         // (org-mates share one), each animal read from its owner's team, applications only while
         // the animal takes a contract. This page heals missing application rows first (once per team
         // per request, inside the counts). Never per animal, never per application.
-        const [{ createOwnerTeamResolver, listApplicantIdsForAnimal }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal }, { normalizeTeamScope }] = await Promise.all([
+        const [{ listApplicantIdsForAnimal }, { createOwnerTeamResolver }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal }, { normalizeTeamScope }] = await Promise.all([
             import('@/app/actions/_applicants'),
+            import('@/lib/ownerTeamResolver'),
             import('@/lib/applicationCounts'),
             import('@/lib/applicantScope'),
         ]);

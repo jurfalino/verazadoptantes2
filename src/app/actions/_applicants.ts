@@ -115,25 +115,6 @@ export async function formSubmissionAccessLookups(db: Db): Promise<Omit<FormSubm
 }
 
 /**
- * Memoised `getTeamEmails` per animal owner, for one request. /my-animals
- * shows many animals from a handful of owners (self + org-mates); resolving
- * each owner's team once keeps the org queries flat instead of per card.
- */
-export function createOwnerTeamResolver(): (ownerEmail: string | null | undefined) => Promise<string[]> {
-    const cache = new Map<string, Promise<string[]>>();
-    return (ownerEmail) => {
-        const key = (ownerEmail ?? '').trim().toLowerCase();
-        if (!key) return Promise.resolve([]);
-        let hit = cache.get(key);
-        if (!hit) {
-            hit = import('@/lib/orgMembership').then(m => m.getTeamEmails(key));
-            cache.set(key, hit);
-        }
-        return hit;
-    };
-}
-
-/**
  * Application + submission ids only — what the /my-animals card needs for its
  * count. One query per animal, same WHERE as the full list; «replaced» rows
  * (superseded by a merge) never count. Fails closed to [] (no query) when the

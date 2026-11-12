@@ -150,10 +150,11 @@ export async function loadHomePosts(db: Db, userEmail: string, memberEmails: str
 
 export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAnimalsData> {
     const log = { userEmail, op: 'loadHomeAnimals' };
-    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { createOwnerTeamResolver, listApplicantIdsForAnimal }, { animalPrimaryFirst }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal, healApplicationsOnce }, { normalizeTeamScope }, { runAfterResponse }] = await Promise.all([
+    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { listApplicantIdsForAnimal }, { createOwnerTeamResolver }, { animalPrimaryFirst }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal, healApplicationsOnce }, { normalizeTeamScope }, { runAfterResponse }] = await Promise.all([
         import('@/lib/myAnimalsScope'),
         import('@/lib/animalFollowupsDue'),
         import('@/app/actions/_applicants'),
+        import('@/lib/ownerTeamResolver'),
         import('@/lib/showcase'),
         import('@/lib/applicationCounts'),
         import('@/lib/applicantScope'),
