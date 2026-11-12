@@ -219,7 +219,8 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                     UserMenu so the data path doesn't disappear. */}
                 {appConfig.ENABLE_QUICK_ACCESS_STRIP !== 'false' && <QuickAccessStrip />}
 
-                {/* PWA Install CTA — shown to users who dismissed the floating banner */}
+                {/* «Instalá la app» (option C, Jon 2026-11-12) — signed in or out; hides itself
+                    in the installed app, where nothing can be installed, and for 30 days after «Ahora no». */}
                 <InstallCTA />
 
                 {/* Referral banner — logged-in users only */}
