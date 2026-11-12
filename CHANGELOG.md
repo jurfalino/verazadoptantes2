@@ -2,18 +2,43 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.6] - 2026-11-12
+
+### Changed — after the senior EM + CX review of everything waiting for production (Jon: "fix them")
+- Emailed by default: «Le cambian el nombre» (its «Deshacer» is the owner's safeguard) and «Responden tu
+  pedido de unir o de acceso» (the person who asked is waiting too).
+- Every signed contract is emailed to the animal's owner while «Un adoptante firma un contrato» is on —
+  personal link or open link, with or without possible duplicates (the email says when there are). None is
+  held back by the 10-minute email limit.
+- «Avisos» says what reaches the bell: «Lo que te corresponde aparece en la campanita, según lo que elijas
+  abajo». The choice is now «Lo mío: mis animales y mi formulario» / «Todo el equipo», each with its own hint;
+  the form row is «Llega un formulario» (to your link, or for an animal you added).
+- The check-up email has one switch, in «Avisos». «Seguimientos» points there; the reminder email and the
+  notice emails link straight to Configuración → Avisos.
+- Being removed from a group is bell-only again.
+
+### Fixed
+- «Te escribió» opens that pair, also for the person who asked to merge (whose pair sits under «No necesitan
+  nada tuyo»), and an older pair of theirs is no longer cut off the list.
+- «No avanzar»: when the application already had another outcome, it says the observation was saved (it was);
+  two rescuers at once can't overwrite each other's words; a retry by the same rescuer saves the correction.
+- A form for an animal that was already adopted is emailed to whoever shared the form link.
+- The public site's images and files skip the address check (only pages run it).
+
 ## [2.59.5] - 2026-11-11
 
 ### Changed — «Avisos»: the bell shows everything, email only when someone waits on you (Jon)
 - Configuración → «Avisos» replaces «Avisos por email». One row per event, in rescuer words, with two columns:
   «Campanita» (always on) and «Email». Email is «Siempre» for the three things that wait on you (a request to
   merge two profiles, a request to see contact details, a message from another rescuer); every other row has
-  its own switch. Forms and contracts start ON, everything else OFF. A «No te avisamos» list says what only
+  its own switch. Forms and contracts start ON, everything else OFF (changed in 2.59.6: name changes and
+  answers to your requests also start ON). A «No te avisamos» list says what only
   goes to the profile's history.
 - «Formularios, contratos y controles de: Mis animales / Los animales de todo el equipo». It replaces
   «Recordarme solo los animales que cargué yo» in «Seguimientos de adopción» and applies to the check-up job too.
 - Form and contract emails go only to the animal's owner (or the form link's owner when there's no animal).
-  Teammates get it in the bell. A contract is emailed only when it has possible duplicates.
+  Teammates get it in the bell. A contract is emailed only when it has possible duplicates (changed in
+  2.59.6: every signed contract is emailed).
 - Unsubscribe links in emails sent before «Avisos» still work and switch off the matching row.
 
 ### Added — «Te escribió» messages live on the pair
