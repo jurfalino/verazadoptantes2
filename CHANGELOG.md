@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.8] - 2026-11-12
+
+### Changed — «¿Es la misma persona?» on a form under evaluation (Jon 2026-11-12)
+- «Enviar contrato», «Reenviar contrato» and «Proponer un animal» wait until each possible match of a profile
+  this form created is answered. A line above the buttons says why, with «Ir a la pregunta». «No avanzar»
+  never waits. The server refuses too.
+- New answer «No sé»: it unlocks, keeps the profiles separate and asks the other profile's rescue (bell, plus
+  email by default — new «Avisos» row «Te preguntan si es la misma persona»), at most once a day. «Cambiar mi
+  respuesta» undoes it.
+- When the other rescue answers, the person who said «No sé» is told — «es otra persona» or «es la misma
+  persona». «Es la misma persona» never locks anything: it tells them to check that profile and any contract
+  already sent, and their evaluation card shows who answered.
+- «No, es alguien de su hogar» on the evaluation card, as in «Pendientes de revisar».
+- The top of the panel says «Perfil nuevo: lo creó este formulario» instead of «Sin calificación» / «Sin alertas».
+- Search: your group's profiles always show, whatever their country.
+- 1★ copy: «no se recomienda entregarle animales en adopción», not «impide que esta persona adopte».
+
 ## [2.59.7] - 2026-11-12
 
 ### Fixed — importing Instagram posts
