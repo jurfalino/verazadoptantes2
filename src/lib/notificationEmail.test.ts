@@ -128,10 +128,12 @@ describe('sendNotificationEmail', () => {
         expect(await call(addNotif('member_removed'), 'member_removed')).toBe('sent');
         expect(send.mock.calls[0][0].html).toContain('Dejar de recibir');
     });
-    it('a signed contract is emailed only with possible duplicates; a check-up never through the twin', async () => {
+    it('every signed contract is emailed while its switch is on, duplicates or not (Jon 2026-11-12); a check-up never through the twin', async () => {
         const contract = (matchCount: number) => sendNotificationEmail({ id: addNotif('contract_result'), userId: EMAIL, type: 'contract_result', title: 'T', body: 'B', metadata: { matchCount } });
-        expect(await contract(0)).toBe('skipped_not_emailed');
-        expect(await contract(3)).toBe('sent');
+        expect(await contract(0)).toBe('sent');
+        seedUser(JSON.stringify({ contract: false }));
+        expect(await contract(3)).toBe('skipped_pref');
+        expect(await contract(0)).toBe('skipped_pref');
         expect(await call(addNotif('follow_up_due'), 'follow_up_due')).toBe('skipped_not_emailed');
         expect(send).toHaveBeenCalledTimes(1);
     });

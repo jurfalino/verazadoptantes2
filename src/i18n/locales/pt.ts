@@ -3033,7 +3033,7 @@ export const pt = {
         notice_row_form: 'Chega um formulário',
         notice_row_form_desc: 'No seu link ou para um animal que você cadastrou. Se for para um animal de alguém da sua equipe, só no sininho.',
         notice_row_contract: 'Um adotante assina um contrato',
-        notice_row_contract_desc: 'Por e-mail, só se houver possíveis duplicados para revisar.',
+        notice_row_contract_desc: 'Quando um adotante assina. Se houver possíveis duplicados, o e-mail avisa.',
         notice_row_followups: 'Chega a hora de um controle de acompanhamento',
         notice_row_followups_desc: 'Um resumo por dia, às 9. Os controles são configurados em «Acompanhamentos de adoção».',
         notice_row_content: 'Adicionam um registro ou uma avaliação',

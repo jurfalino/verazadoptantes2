@@ -146,12 +146,13 @@ describe('noticeEmailVerdict', () => {
         }
     });
 
-    it('a contract is emailed only when it has possible duplicates', () => {
-        expect(noticeEmailVerdict({ type: 'contract_result', metadata: { matchCount: 2 } }, none)).toBe('send');
-        expect(noticeEmailVerdict({ type: 'contract_result', metadata: { matchCount: 0 } }, none)).toBe('not_emailed');
-        expect(noticeEmailVerdict({ type: 'contract_result', metadata: {} }, none)).toBe('not_emailed');
-        expect(noticeEmailVerdict({ type: 'contract_result' }, none)).toBe('not_emailed');
-        expect(noticeEmailVerdict({ type: 'contract_result', metadata: { matchCount: 2 } }, parseNoticePrefs('{"contract":false}'))).toBe('pref_off');
+    // Jon 2026-11-12: every signed contract (the rescuer sent it and is waiting), duplicates or not.
+    it('every signed contract follows the «Un adoptante firma un contrato» switch, with or without possible duplicates', () => {
+        const off = parseNoticePrefs('{"contract":false}');
+        for (const metadata of [{ matchCount: 2 }, { matchCount: 0 }, {}, undefined]) {
+            expect(noticeEmailVerdict({ type: 'contract_result', metadata }, none), JSON.stringify(metadata)).toBe('send');
+            expect(noticeEmailVerdict({ type: 'contract_result', metadata }, off), JSON.stringify(metadata)).toBe('pref_off');
+        }
     });
 
     it('a switchable row follows its switch', () => {

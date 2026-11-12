@@ -3028,7 +3028,7 @@ export const en = {
         notice_row_form: 'A form arrives',
         notice_row_form_desc: 'To your link or for an animal you added. If it is for an animal someone on your team added, only in the bell.',
         notice_row_contract: 'An adopter signs a contract',
-        notice_row_contract_desc: 'By email only if there are possible duplicates to review.',
+        notice_row_contract_desc: 'When an adopter signs. If there are possible duplicates, the email says so.',
         notice_row_followups: 'A follow-up check is due',
         notice_row_followups_desc: 'One summary a day, at 9. Check-ups are set up in «Adoption follow-ups».',
         notice_row_content: 'A record or a rating is added',

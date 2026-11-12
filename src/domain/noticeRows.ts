@@ -133,11 +133,7 @@ export function noticeEmailVerdict(n: { type: string; metadata?: Record<string, 
     if (ALWAYS_EMAILED_TYPES.includes(n.type)) return 'send';
     const row = rowForType(n.type);
     if (!row || row.email === 'followups') return 'not_emailed';
-    // A signed contract is emailed only when it has possible duplicates to review.
-    if (row.key === 'contract') {
-        const matches = n.metadata?.matchCount;
-        if (!(typeof matches === 'number' && matches > 0)) return 'not_emailed';
-    }
+    // Every signed contract follows its switch (Jon 2026-11-12); with possible duplicates its text says so.
     if (row.email === 'always') return 'send';
     return isNoticeEmailOn(prefs, row.key) ? 'send' : 'pref_off';
 }

@@ -50,7 +50,7 @@ export async function sendNotificationEmail(n: {
     //    so a runaway sender can be stopped without taking login down.
     if (!(await getFeatureFlag('ENABLE_NOTIFICATION_EMAIL'))) return 'skipped_disabled';
 
-    // Types with no email twin (check-ups have their own digest; a signed contract with nothing to review).
+    // Types with no email twin (check-ups have their own digest).
     if (noticeEmailVerdict({ type: n.type, metadata: n.metadata }, {}) === 'not_emailed') return 'skipped_not_emailed';
     const db = await getDb();
 

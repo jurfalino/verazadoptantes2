@@ -3036,7 +3036,7 @@ export const es = {
         notice_row_form: 'Llega un formulario',
         notice_row_form_desc: 'A tu enlace o para un animal que cargaste. Si es para un animal de alguien de tu equipo, solo en la campanita.',
         notice_row_contract: 'Un adoptante firma un contrato',
-        notice_row_contract_desc: 'Por email, solo si hay posibles duplicados para revisar.',
+        notice_row_contract_desc: 'Cuando un adoptante firma. Si hay posibles duplicados, el email lo marca.',
         notice_row_followups: 'Toca un control de seguimiento',
         notice_row_followups_desc: 'Un resumen por día, a las 9. Los controles se configuran en «Seguimientos de adopción».',
         notice_row_content: 'Agregan un registro o una calificación',
