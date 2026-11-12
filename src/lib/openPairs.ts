@@ -1,11 +1,10 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
-import { adopters, duplicateCandidates, mergeRequests, pendingPairHidden } from '@/db/schema';
-import { pairKey } from '@/domain/dedupPair';
+import { adopters, duplicateCandidates, mergeRequests, pairUnsure, pendingPairHidden } from '@/db/schema';
+import { pairKey, realOwner } from '@/domain/dedupPair';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { logger } from '@/lib/logger';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
 import { mayAnswerPair } from '@/domain/pairAnswer';
-import { realOwner } from '@/domain/dedupPair';
 import { storedScoreToPercent } from '@/lib/scoring';
 import type { getDb } from '@/lib/db';
 import type { DuplicateCandidate } from '@/types/duplicates';
@@ -39,6 +38,26 @@ export async function viewerTeam(viewer: string): Promise<Set<string>> {
 }
 
 /**
+ * Per pair key, who in the viewer's group answered «No sé» (pair_unsure, not withdrawn) — another group's
+ * «No sé» is theirs, never the viewer's answer. A failed read answers nothing (the panel and the server
+ * read the same, so they stay in step), logged.
+ */
+async function loadTeamUnsure(db: Db, keys: readonly string[], team: ReadonlySet<string>, viewer: string): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const unique = [...new Set(keys)];
+    if (unique.length === 0) return out;
+    try {
+        const rows = await db.select({ pairKey: pairUnsure.pairKey, askerEmail: pairUnsure.askerEmail }).from(pairUnsure)
+            .where(and(eq(pairUnsure.withdrawn, 0), or(...unique.map(k => eq(pairUnsure.pairKey, k)))!))
+            .all() as Array<{ pairKey: string; askerEmail: string }>;
+        for (const r of rows) if (team.has(normEmail(r.askerEmail)) && !out.has(r.pairKey)) out.set(r.pairKey, r.askerEmail);
+    } catch (e) {
+        logger.warn('loadOpenPairs: «No sé» answers unreadable, none counted', { viewer, error: e instanceof Error ? e.message : String(e) });
+    }
+    return out;
+}
+
+/**
  * A profile's open «same person?» questions — the ONE read behind the profile
  * bar, the form screen and the contract screen, so they can't disagree.
  * Pending pairs whose other side is alive and isn't a housemate, strongest
@@ -58,7 +77,6 @@ export async function loadOpenPairs(
         matchTypes: duplicateCandidates.matchTypes,
         score: duplicateCandidates.score,
         confidence: duplicateCandidates.confidence,
-        unsureBy: duplicateCandidates.unsureBy,
     })
         .from(duplicateCandidates)
         .where(and(
@@ -93,6 +111,7 @@ export async function loadOpenPairs(
         )
     ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
     loadHiddenPairKeys(db, viewer), viewerTeam(viewer)]);
+    const unsure = await loadTeamUnsure(db, candidates.map((c: { adopter1Id: string; adopter2Id: string }) => pairKey(c.adopter1Id, c.adopter2Id)), team, viewer);
     const nameMap = new Map<string, string>();
     const ownerMap = new Map<string, string | null>();
     for (const a of otherAdopters) {
@@ -104,7 +123,7 @@ export async function loadOpenPairs(
 
     return candidates
         .filter((c: { adopter1Id: string; adopter2Id: string }) => nameMap.has(c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id))
-        .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string; unsureBy: string | null }) => {
+        .map((c: { id: string; adopter1Id: string; adopter2Id: string; matchTypes: string; score: number; confidence: string }) => {
             const otherId = c.adopter1Id === adopterId ? c.adopter2Id : c.adopter1Id;
             return {
                 id: c.id,
@@ -115,7 +134,7 @@ export async function loadOpenPairs(
                 confidence: c.confidence,
                 confidencePercent: storedScoreToPercent(c.score),
                 onViewerList: onViewerList(otherId),
-                unsureBy: c.unsureBy ?? null,
+                unsureBy: unsure.get(pairKey(c.adopter1Id, c.adopter2Id)) ?? null,
                 otherSide: mayAnswerPair(team, ownerMap.get(otherId)) ? 'team' as const : realOwner(ownerMap.get(otherId)) ? 'outside' as const : 'none' as const,
             };
         })

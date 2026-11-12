@@ -425,10 +425,6 @@ export const duplicateCandidates = sqliteTable("duplicate_candidates", {
     detectedAt: integer("detected_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     resolvedBy: text("resolved_by"),
-    // «No sé» on a form's «¿Es la misma persona?» (Jon 2026-11-12): who answered it and when.
-    // The pair stays pending; the other profile's owner was asked (migration 0109).
-    unsureBy: text("unsure_by"),
-    unsureAt: integer("unsure_at", { mode: "timestamp" }),
 }, (table) => ({
     pairIdx: index("idx_dup_candidates_pair").on(table.adopter1Id, table.adopter2Id),
     secondIdx: index("idx_dup_candidates_second").on(table.adopter2Id),
@@ -523,6 +519,21 @@ export const pendingPairHidden = sqliteTable("pending_pair_hidden", {
     createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     pk: primaryKey({ columns: [table.viewerEmail, table.pairKey] }),
+}));
+
+// pair_unsure — «No sé» on a form's «¿Es la misma persona?» (Jon 2026-11-12, drizzle/0109). One row per
+// pair (pairKey: sorted ids, so it survives the Scan rebuilding duplicate_candidates) and per rescuer who
+// answered it. The pair stays pending; the answer counts for the asker's group only. `withdrawn` = 1 after
+// «Cambiar mi respuesta» (the row stays, so answering again doesn't ask the other side again at once);
+// `askedAt` = when the other side was last asked. Rows go once the pair is settled as two people.
+export const pairUnsure = sqliteTable("pair_unsure", {
+    pairKey: text("pair_key").notNull(),
+    askerEmail: text("asker_email").notNull(),
+    answeredAt: integer("answered_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    askedAt: integer("asked_at", { mode: "timestamp" }),
+    withdrawn: integer("withdrawn").notNull().default(0),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.pairKey, table.askerEmail] }),
 }));
 
 // household_links — a household member with their own profile (D44, drizzle/0094).

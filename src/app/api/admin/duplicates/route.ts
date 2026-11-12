@@ -735,10 +735,6 @@ export async function POST(request: Request) {
                     .values(candidateRows.slice(i, i + CANDIDATE_INSERT_CHUNK));
             }
 
-            // A «No sé» on a pending pair (Jon 2026-11-12) survives the rebuild (never throws, logged).
-            const { carryUnsureAnswers } = await import('@/lib/pairUnsure');
-            await carryUnsureAnswers(db, REBUILDING);
-
             // Swap the rebuilt set in. Both statements go through D1's atomic
             // `batch()` so the queue is never momentarily empty — the same
             // pattern `api/admin/users` uses for multi-table deletes.

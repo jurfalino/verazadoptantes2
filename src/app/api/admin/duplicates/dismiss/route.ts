@@ -37,7 +37,11 @@ export async function POST(request: Request) {
             }).where(eq(duplicateCandidates.id, candidateId));
 
             logger.info('Duplicate candidate dismissed', { candidateId, user: session.user.email });
-            if (pair) await tellUnsureAskers(db, askers, { a: pair.a, b: pair.b, actor: session.user.email, answer: 'different', ctx: { op: 'adminDismiss', candidateId } });
+            if (pair) {
+                const { clearPairNotices, PAIR_NOTICE_TYPES } = await import('@/lib/pairNotices');
+                await clearPairNotices(db, pair.a, pair.b, { types: PAIR_NOTICE_TYPES, ctx: { op: 'adminDismiss', candidateId } });
+                await tellUnsureAskers(db, askers, { a: pair.a, b: pair.b, actor: session.user.email, answer: 'different', ctx: { op: 'adminDismiss', candidateId } });
+            }
         } else if (flagId) {
             // Dismiss user-flagged duplicate
             await db.delete(adopterFlags).where(eq(adopterFlags.id, flagId));

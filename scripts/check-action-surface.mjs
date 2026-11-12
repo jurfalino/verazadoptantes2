@@ -478,14 +478,15 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              team (applicantScopeWhere). Every failure fails closed to [] (logged).
 // 190 (Jon 2026-11-12, «¿Es la misma persona?» answered before an animal is given): two exports in
 // src/app/actions/duplicates.ts, imported by FormResultMatchCard. What a stranger can do with them:
-//   answerSamePersonUnsure(candidateId)  session required (signed out → not_authorized); the id is checked
-//                              for shape; the pair must be pending and the caller must be the loader of
-//                              either side or an org-mate (isOwnerOrOrgMate — the same rule as
-//                              dismissDuplicateCandidate), else not_authorized / not_found and nothing is
-//                              written. Writes only unsure_by = the caller's own email (compare-and-set, so
-//                              repeats notify nobody) and notifies the OTHER side's owner + their group,
-//                              with server-read names — never caller-supplied text.
-//   undoSamePersonUnsure(candidateId)   same gate; clears the two columns on that pair. Nothing else.
+//   answerSamePersonUnsure(candidateId)  session required (signed out → not_authorized, logged); the id is
+//                              checked for shape; the pair must be pending and not weak, the caller must be
+//                              the loader of either side or an org-mate (isOwnerOrOrgMate), AND the caller's
+//                              side must be a profile a form created and still sits on — else nothing is
+//                              written. Writes one pair_unsure row for the caller's own email and notifies
+//                              the OTHER side's owner + group at most once a day per pair and group, with
+//                              server-read names — never caller-supplied text.
+//   undoSamePersonUnsure(candidateId)   same session/pair gate; marks only the caller's group's rows withdrawn
+//                              (another group's «No sé» is untouched) and marks the question read.
 const EXPECTED_ACTIONS = 190;
 
 let manifest;

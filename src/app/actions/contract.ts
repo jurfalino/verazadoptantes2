@@ -105,8 +105,8 @@ export async function createContractInvitation(
         // possible duplicate the caller may answer has no answer («No sé» counts). The panel locks the button;
         // this refuses the list's button and any stale tab. Refused BEFORE the retirement below.
         try {
-            const { unansweredSamePersonPairs } = await import('@/lib/samePersonGate');
-            const waiting = await unansweredSamePersonPairs(db, adopterId, userEmail);
+            const { unansweredForContract } = await import('@/lib/samePersonGate');
+            const waiting = await unansweredForContract(db, animalId, adopterId, userEmail);
             if (waiting > 0) {
                 logger.info('createContractInvitation: refused — «¿Es la misma persona?» unanswered', { animalId, adopterId, createdBy: userEmail, waiting });
                 return { success: false, error: 'same_person_unanswered' };

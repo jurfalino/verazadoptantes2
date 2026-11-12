@@ -253,13 +253,11 @@ export async function proposeAnimal(applicationId: string, animalId: string): Pr
         const auth = await loadAuthorizedApplication(db, applicationId, viewer);
         if (!auth) return fail('not_found');
         // «¿Es la misma persona?» first (Jon 2026-11-12), the same lock as «Enviar contrato».
-        if (auth.submission.linkedAdopterId) {
-            const { unansweredSamePersonPairs } = await import('@/lib/samePersonGate');
-            const waiting = await unansweredSamePersonPairs(db, auth.submission.linkedAdopterId, viewer);
-            if (waiting > 0) {
-                logger.info('proposeAnimal: refused — «¿Es la misma persona?» unanswered', { applicationId, animalId, viewer, waiting });
-                return fail('same_person_unanswered');
-            }
+        const { unansweredForSubmission } = await import('@/lib/samePersonGate');
+        const waiting = await unansweredForSubmission(db, auth.submission, viewer);
+        if (waiting > 0) {
+            logger.info('proposeAnimal: refused — «¿Es la misma persona?» unanswered', { applicationId, animalId, viewer, waiting });
+            return fail('same_person_unanswered');
         }
         const res = await proposeAuthorized(db, viewer, auth, animalId);
         if (!res.ok) return fail(res.error);

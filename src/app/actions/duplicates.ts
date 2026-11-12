@@ -1628,7 +1628,10 @@ export async function answerSamePersonUnsure(candidateId: string): Promise<
     try {
         if (typeof candidateId !== 'string' || !candidateId || candidateId.length > 100) return { success: false, code: 'not_found' };
         const { getUser } = await import('./_db');
-        try { actorEmail = await getUser(); } catch { return { success: false, code: 'not_authorized' }; }
+        try { actorEmail = await getUser(); } catch (e) {
+            logger.warn('answerSamePersonUnsure: refused — no session', { candidateId, authError: e instanceof Error ? e.message : String(e) });
+            return { success: false, code: 'not_authorized' };
+        }
         const db = await getDb();
         if (!db) throw new Error('Database not available');
         const { answerPairUnsure } = await import('@/lib/pairUnsure');
@@ -1648,7 +1651,10 @@ export async function undoSamePersonUnsure(candidateId: string): Promise<
     try {
         if (typeof candidateId !== 'string' || !candidateId || candidateId.length > 100) return { success: false, code: 'not_found' };
         const { getUser } = await import('./_db');
-        try { actorEmail = await getUser(); } catch { return { success: false, code: 'not_authorized' }; }
+        try { actorEmail = await getUser(); } catch (e) {
+            logger.warn('undoSamePersonUnsure: refused — no session', { candidateId, authError: e instanceof Error ? e.message : String(e) });
+            return { success: false, code: 'not_authorized' };
+        }
         const db = await getDb();
         if (!db) throw new Error('Database not available');
         const { clearPairUnsure } = await import('@/lib/pairUnsure');
@@ -1693,7 +1699,7 @@ export async function hidePendingPair(key: string): Promise<{ success: boolean; 
         logger.info('hidePendingPair: hidden', { actorEmail, pairKey: normalized });
         // Their «rechazó unir» notice about it is done too (only theirs: hiding is personal).
         const { clearPairNotices } = await import('@/lib/pairNotices');
-        await clearPairNotices(db, ids[0], ids[1], { types: ['merge_request_resolved'], userId: actorEmail, ctx: { op: 'hidePendingPair' } });
+        await clearPairNotices(db, ids[0], ids[1], { types: ['merge_request_resolved', 'same_person_question'], userId: actorEmail, ctx: { op: 'hidePendingPair' } });
         return { success: true };
     } catch (e) {
         const errorId = logger.error('hidePendingPair failed', e, { actorEmail });
