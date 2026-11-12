@@ -54,19 +54,15 @@ function useScrollToHashOnce(id: string, ready: boolean) {
         if (!el) return;
         const go = () => el.scrollIntoView({ block: 'start' });
         const events = ['wheel', 'touchstart', 'keydown', 'mousedown'] as const;
-        let observer: ResizeObserver | null = null;
-        let timer: ReturnType<typeof setTimeout> | undefined;
+        go();
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(go) : null;
+        observer?.observe(document.body);
         const stop = () => {
             observer?.disconnect();
             clearTimeout(timer);
             events.forEach(e => window.removeEventListener(e, stop));
         };
-        go();
-        if (typeof ResizeObserver !== 'undefined') {
-            observer = new ResizeObserver(go);
-            observer.observe(document.body);
-        }
-        timer = setTimeout(stop, 2000);
+        const timer = setTimeout(stop, 2000);
         events.forEach(e => window.addEventListener(e, stop, { passive: true }));
         return stop;
     }, [id, ready]);
