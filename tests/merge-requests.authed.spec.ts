@@ -214,9 +214,9 @@ test('/settings «Avisos»: «Siempre» where someone waits on you, a switch els
         await expect(section.getByTestId(`email-pref-${key}`)).toContainText(/Always|Siempre|Sempre/);
         await expect(section.getByTestId(`email-pref-toggle-${key}`)).toHaveCount(0);
     }
-    // 11 switchable rows + the check-up row (followup_settings.emailReminders).
-    await expect(section.locator('[data-testid^="email-pref-toggle-"]')).toHaveCount(12);
-    for (const key of ['form', 'contract', 'followups', 'content', 'group']) {
+    // 12 switchable rows (incl. «Te preguntan si es la misma persona», v2.59.8) + the check-up row (followup_settings.emailReminders).
+    await expect(section.locator('[data-testid^="email-pref-toggle-"]')).toHaveCount(13);
+    for (const key of ['form', 'contract', 'followups', 'content', 'group', 'same_person']) {
         await expect(section.getByTestId(`email-pref-toggle-${key}`)).toBeVisible();
     }
     await expect(section.getByTestId('email-pref-api')).toHaveCount(0);
