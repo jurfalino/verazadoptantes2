@@ -84,6 +84,20 @@ function placementValues(animalId: string, data: RecordData, recordType: string,
  * routes that generate their own uuid).
  */
 export async function insertRecord(db: Db, data: RecordData, actor: string): Promise<string> {
+    return (await writeNewRecord(db, data, actor, false)).id;
+}
+
+/**
+ * CREATE, insert-if-absent, for an EVENT with a pre-seeded id: `inserted` is false
+ * when a row with that id already exists (a concurrent call wrote it first) —
+ * nothing of this call is written. Any other record type: as insertRecord
+ * (`inserted` true).
+ */
+export async function insertRecordIfAbsent(db: Db, data: RecordData, actor: string): Promise<{ id: string; inserted: boolean }> {
+    return writeNewRecord(db, data, actor, true);
+}
+
+async function writeNewRecord(db: Db, data: RecordData, actor: string, report: boolean): Promise<{ id: string; inserted: boolean }> {
     const recordType: string = normalizeRecordType(data.recordType);
     const date: Date | number = data.date || new Date();
 
@@ -103,7 +117,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             const last = active ?? await db.select().from(placements).where(pair).orderBy(desc(placements.startedAt)).limit(1).get();
             placementId = last?.id ?? null;
         }
-        await db.insert(adopterEvents).values({
+        const insert = db.insert(adopterEvents).values({
             id,
             adopterId: data.adopterId ?? null,
             eventType: recordType,
@@ -121,6 +135,9 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             followupKey: data.followupKey ?? null,
             followupSubtype: data.followupSubtype ?? null,
         }).onConflictDoNothing();
+        let inserted = true;
+        if (report) inserted = ((await insert.returning({ id: adopterEvents.id })) as Array<{ id: string }>).length > 0;
+        else await insert;
 
         /* v2.56.116 (product decision): a returned animal is AVAILABLE again.
          *
@@ -141,7 +158,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
                 .set({ endedAt: (date ?? new Date()) as any })
                 .where(eq(placements.id, activePlacementId));
         }
-        return id;
+        return { id, inserted };
     }
 
     // available / foster / adoption → an animal (+ an active placement if placed)
@@ -168,7 +185,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
         // for this animal is not — it raises (isActivePlacementConflict).
         await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date, `${animalId}-plc`)).onConflictDoNothing({ target: placements.id });
     }
-    return animalId;
+    return { id: animalId, inserted: true };
 }
 
 /**

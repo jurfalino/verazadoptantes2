@@ -22,7 +22,11 @@ import type { FormMatchCardData } from '@/lib/formMatchCards';
 import type { ProposalAnimal, OfferCandidate } from './_applications';
 import type { ApplicantsLoad } from '@/lib/applicantsLoad';
 
-export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'already_candidate' | 'animal_adopted' | 'failed';
+/**
+ * `observation_saved_already_decided` («No avanzar» only): the observation WAS saved, but the application
+ * already had another outcome by the time it was to close (review M1) — never «No se guardó tu observación».
+ */
+export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'observation_saved_already_decided' | 'already_candidate' | 'animal_adopted' | 'failed';
 export type Fail = { ok: false; error: ApplicationActionError; errorId?: string };
 
 const fail = (error: Exclude<ApplicationActionError, 'failed'>): Fail => ({ ok: false, error });
@@ -123,7 +127,11 @@ export async function getApplicationDuplicates(applicationId: string): Promise<{
  * longer open is refused before any write, and so is one whose observation
  * another rescuer already wrote (their decline in flight, or its close timed
  * out) — that one is finished with THEIR observation, and this call answers
- * `already_decided` (the dialog says this text was not saved).
+ * `already_decided` (the dialog says this text was not saved). The observation
+ * is written insert-if-absent, so two decliners at the same instant can't
+ * overwrite each other either (review M2). If the observation landed but the
+ * application then closed another way, the answer is
+ * `observation_saved_already_decided` (review M1).
  */
 export async function declineApplication(applicationId: string, input: { text: string; rating: number; reason: string }): Promise<{ ok: true; recordId: string } | Fail> {
     let viewer: string | null = null;
@@ -153,9 +161,8 @@ export async function declineApplication(applicationId: string, input: { text: s
 
         // 0. Another rescuer's observation already sits on the pre-seeded id: theirs is the decision. Nothing of
         //    this call is written; their decline is finished (CAS) so the application never stays open behind it.
-        const author = await declineRecordAuthor(db, recordId);
-        if (author !== undefined && norm(author) !== norm(viewer)) {
-            const finishedBy = author || viewer;
+        const finishTheirs = async (author: string | null) => {
+            const finishedBy = author || viewer!;
             const nowSec = Math.floor(Date.now() / 1000);
             if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
             if (await markDeclined(db, applicationId, recordId, finishedBy, nowSec)) {
@@ -164,7 +171,9 @@ export async function declineApplication(applicationId: string, input: { text: s
             }
             logger.info("declineApplication: another rescuer's observation decides it — this one not saved", { applicationId, viewer, author });
             return fail('already_decided');
-        }
+        };
+        const author = await declineRecordAuthor(db, recordId);
+        if (author !== undefined && norm(author) !== norm(viewer)) return finishTheirs(author);
 
         // 1. The observation, through the one record save (visibility, history, notices as any observation).
         const { saveRecordFor } = await import('@/lib/recordSave');
@@ -178,7 +187,14 @@ export async function declineApplication(applicationId: string, input: { text: s
             animalId: app.animalId ?? undefined,
             animalName: animal?.name ?? null,
         };
-        const saved = await saveRecordFor(record, undefined, { notifyOwnerTeam: true });
+        // Insert-if-absent (review M2): never the edit branch over a record another call just wrote.
+        const saved = await saveRecordFor(record, undefined, { notifyOwnerTeam: true, insertOnly: true });
+        if (saved.existed) {
+            // Written between step 0 and this insert: by another rescuer → theirs decides; by this viewer
+            // (a concurrent double tap) → the same record, carry on and close with it.
+            const raced = await declineRecordAuthor(db, recordId);
+            if (norm(raced) !== norm(viewer)) return finishTheirs(raced ?? null);
+        }
 
         const nowSec = Math.floor(Date.now() / 1000);
         // 2. Their live contract link for this animal, if any, stops working.
@@ -186,7 +202,9 @@ export async function declineApplication(applicationId: string, input: { text: s
         // 3. The application ends, only if it is still open (a concurrent decision wins) — unless the call that
         //    won closed it with THIS observation (a teammate finishing it, step 0): then this one did land.
         if (!(await markDeclined(db, applicationId, saved.id, viewer, nowSec)) && !(await isDeclinedWith(db, applicationId, saved.id))) {
-            return fail('already_decided');
+            // The observation is on the profile (and its notice sent): say so, never «No se guardó» (review M1).
+            logger.info('declineApplication: observation saved, but the application already had another outcome', { applicationId, viewer, recordId: saved.id });
+            return fail('observation_saved_already_decided');
         }
         // 4. Answered once: its bell notices read, for everyone (best-effort, logged).
         const { clearFormNotices } = await import('@/lib/formNotices');

@@ -37,6 +37,8 @@ export function declineOutcome(res: { ok: true; recordId: string } | Fail):
     { kind: 'done' } | { kind: 'already_decided'; messageKey: string } | { kind: 'failed'; errorId: string | null } {
     if (res.ok) return { kind: 'done' };
     if (res.error === 'already_decided') return { kind: 'already_decided', messageKey: 'evaluation.decline_already_decided' };
+    // Saved, then the application closed another way (review M1): the panel re-reads the same way, with words that say it was saved.
+    if (res.error === 'observation_saved_already_decided') return { kind: 'already_decided', messageKey: 'evaluation.decline_saved_already_decided' };
     return { kind: 'failed', errorId: res.errorId ?? null };
 }
 
@@ -109,7 +111,7 @@ export function DeclineApplicationDialog({ applicationId, personName, animalName
                 return;
             }
             if (outcome.kind === 'already_decided') {
-                // Not a success: this text was not saved. Say so, then show what the application became.
+                // Another outcome won: say whether this text was saved, then show what the application became.
                 toast.info(t(outcome.messageKey));
                 onDone();
                 return;

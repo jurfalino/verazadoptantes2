@@ -42,7 +42,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates } from './applications';
 import { loadApplicantsForAnimal } from './_applicants';
-import { applications as applicationsTable } from '@/db/schema';
+import { applications as applicationsTable, adopterEvents as adopterEventsTable, adoptions as adoptionsView } from '@/db/schema';
 import { GET as contractByToken } from '@/app/api/contract/by-token/[token]/route';
 
 let sqlite: Sqlite;
@@ -144,6 +144,80 @@ describe('declineApplication («No avanzar»)', () => {
         });
         expect(await declineApplication('app-s-luna', DECLINE)).toEqual({ ok: true, recordId: 'decline-app-s-luna' });
         expect(events('decline-app-s-luna')[0]).toMatchObject({ details: `${DECLINE.text}\n${DECLINE.reason}`, recorded_by: OWNER });
+    });
+
+    it('the observation landed, then the application closed another way before its own close → «quedó guardada» (review M1)', async () => {
+        // Between this call's observation and its close, the animal was adopted by another candidate.
+        const real = (state.db as { update: (t: unknown) => unknown }).update.bind(state.db);
+        let raced = false;
+        state.db = new Proxy(state.db as object, {
+            get(t, p, r) {
+                if (p === 'update') return (table: unknown) => {
+                    if (!raced && table === applicationsTable) {
+                        raced = true;
+                        sqlite.prepare(`UPDATE applications SET state = 'closed', close_reason = 'adopted_other', closed_by = 'automatic' WHERE id = 'app-s-luna'`).run();
+                    }
+                    return real(table);
+                };
+                return Reflect.get(t, p, r);
+            },
+        });
+        expect(await declineApplication('app-s-luna', DECLINE)).toEqual({ ok: false, error: 'observation_saved_already_decided' });
+        // It IS on the profile — what the copy now says.
+        expect(events('decline-app-s-luna')).toHaveLength(1);
+        expect(events('decline-app-s-luna')[0]).toMatchObject({ rating: 4, recorded_by: OWNER });
+        expect(appRow('app-s-luna')).toMatchObject({ state: 'closed', decline_record_id: null });
+    });
+
+    const mateWrites = () => sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, animal_id, animal_name, rating, details, recorded_by, created_at)
+        VALUES ('decline-app-s-luna', 'ana', 'observation', 'luna', 'Luna', 2, 'Texto de Mate\nMotivo de Mate', ?, 1000)`).run(MATE);
+
+    it('two decliners at once, the other\'s observation written between our check and our insert → theirs intact, already_decided (review M2)', async () => {
+        const real = (state.db as { insert: (t: unknown) => unknown }).insert.bind(state.db);
+        let raced = false;
+        state.db = new Proxy(state.db as object, {
+            get(t, p, r) {
+                if (p === 'insert') return (table: unknown) => {
+                    if (!raced && table === adopterEventsTable) { raced = true; mateWrites(); }
+                    return real(table);
+                };
+                return Reflect.get(t, p, r);
+            },
+        });
+        const before = () => events('decline-app-s-luna');
+        expect(await declineApplication('app-s-luna', { ...DECLINE, rating: 5 })).toEqual({ ok: false, error: 'already_decided' });
+        expect(before()).toHaveLength(1);
+        expect(before()[0]).toMatchObject({ rating: 2, details: 'Texto de Mate\nMotivo de Mate', recorded_by: MATE });
+        // No history row or notice of OWNER's (nothing of this call was written); the application ends with MATE's.
+        expect(sqlite.prepare("SELECT * FROM adopter_history WHERE adopter_id = 'ana' AND changes LIKE '%adoption_added%'").all()).toHaveLength(0);
+        expect(appRow('app-s-luna')).toMatchObject({ state: 'declined', decline_record_id: 'decline-app-s-luna', closed_by: MATE });
+    });
+
+    it('two decliners at once, the other\'s observation written before our save reads it → never the edit branch over it (review M2)', async () => {
+        // The window the edit branch used to take: after step 0, before saveRecordFor's read.
+        const real = (state.db as { select: (...a: unknown[]) => unknown }).select.bind(state.db);
+        let raced = false;
+        state.db = new Proxy(state.db as object, {
+            get(t, p, r) {
+                if (p === 'select') return (...args: unknown[]) => {
+                    const builder = real(...args) as { from: (tbl: unknown) => unknown };
+                    return new Proxy(builder as object, {
+                        get(bt, bp, br) {
+                            if (bp === 'from') return (tbl: unknown) => {
+                                if (!raced && tbl === adoptionsView) { raced = true; mateWrites(); }
+                                return (bt as { from: (x: unknown) => unknown }).from(tbl);
+                            };
+                            return Reflect.get(bt, bp, br);
+                        },
+                    });
+                };
+                return Reflect.get(t, p, r);
+            },
+        });
+        expect(await declineApplication('app-s-luna', { ...DECLINE, rating: 5 })).toEqual({ ok: false, error: 'already_decided' });
+        expect(raced).toBe(true);
+        expect(events('decline-app-s-luna')[0]).toMatchObject({ rating: 2, details: 'Texto de Mate\nMotivo de Mate', recorded_by: MATE });
+        expect(appRow('app-s-luna')).toMatchObject({ state: 'declined', decline_record_id: 'decline-app-s-luna', closed_by: MATE });
     });
 
     it('declineApplication on a live contract retires the link (by-token would answer expired)', async () => {

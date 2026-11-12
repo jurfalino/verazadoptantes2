@@ -16,7 +16,7 @@ import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { saveAdoptionSchema } from '@/app/actions/validation';
 import { planFieldSave, canonField, holdTogether, SAVE_BUSY, ANIMAL_ALREADY_PLACED } from '@/domain/fieldCollab';
 import { recordFieldAuthors } from '@/lib/collabAttribution';
-import { insertRecord, updateRecord, isActivePlacementConflict, normalizeRecordType, isEventType, isPlacementType } from '@/app/actions/_recordWrite';
+import { insertRecord, insertRecordIfAbsent, updateRecord, isActivePlacementConflict, normalizeRecordType, isEventType, isPlacementType } from '@/app/actions/_recordWrite';
 import { copyDeliveryAddressToContacts } from '@/lib/deliveryAddressCopy';
 import { recordHandoverFields } from '@/domain/recordEditAccess';
 import { closePendingSearchesForAdopter } from '@/lib/pendingSearchLog';
@@ -26,7 +26,7 @@ import { deliveryAddressGiven, type AddedRecord } from '@/domain/profileAddition
 import { notifyProfileAddition } from '@/lib/profileAdditionNotices';
 
 export type RecordFieldConflict = { field: string; by: string; value: unknown };
-export type RecordSaveResult = { success: true; id: string; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[]; closedApplications?: { animalId: string; count: number } };
+export type RecordSaveResult = { success: true; id: string; /** insertOnly: a record with this id already existed — nothing of this call was written. */ existed?: true; saved?: string[]; conflicts?: RecordFieldConflict[]; updatedByOthers?: RecordFieldConflict[]; closedApplications?: { animalId: string; count: number } };
 
 // The editable fields of a record, as the `adoptions` view names them.
 // v2.55.17-1: sex/color/microchip/age/sourceUrl/comments were once missing
@@ -55,6 +55,12 @@ export interface SaveRecordHow {
     notifyOwnerTeam: boolean;
     /** An import: silent only when the importer is on the owner's team (review I1; see ProfileAdditionNotice.quietForTeam). */
     quietForTeam?: boolean;
+    /**
+     * Create only, never edit (a pre-seeded event id, e.g. «No avanzar»'s): when a record with
+     * `data.id` exists — read first, or written by a concurrent call between the read and the
+     * insert — nothing is written (no history, no notice) and the result says `existed`.
+     */
+    insertOnly?: boolean;
 }
 
 export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: { loaded?: Partial<Record<RecordField, unknown>> } | undefined, how: SaveRecordHow): Promise<RecordSaveResult> {
@@ -76,6 +82,7 @@ export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: {
         // Check if exists (for updates)
         const existing = data.id ? await db.select().from(adoptions).where(eq(adoptions.id, data.id)).get() : null;
 
+        if (existing && how.insertOnly) return { success: true, id: existing.id, existed: true };
         if (existing) {
             // Editing an existing record is a MUTATION: the record's creator,
             // a teammate of theirs, or an admin — exactly deleteAdoption's gate
@@ -99,7 +106,15 @@ export async function saveRecordFor(data: typeof adoptions.$inferInsert, opts: {
             // Create new — normalized write routes to animals/placements/events.
             // Returns the animal id (available/foster/adoption) or event id, which
             // is what callers use for image uploads + contract refs.
-            const id = await insertRecord(db, { ...data, date: data.date || new Date() }, changedBy);
+            const written = how.insertOnly
+                ? await insertRecordIfAbsent(db, { ...data, date: data.date || new Date() }, changedBy)
+                : { id: await insertRecord(db, { ...data, date: data.date || new Date() }, changedBy), inserted: true };
+            const id = written.id;
+            // Another call wrote this id between the read above and the insert: theirs stands, untouched.
+            if (!written.inserted) {
+                logger.info('saveRecordFor: insert-only id already written by another call, nothing saved', { adoptionId: id, adopterId: data.adopterId, changedBy });
+                return { success: true, id, existed: true };
+            }
 
             // Log to adopter history ONLY if linked immediately
             if (data.adopterId) {

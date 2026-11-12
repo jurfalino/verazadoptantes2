@@ -55,6 +55,8 @@ export const es = {
         missing_reason: 'Falta: motivo',
         decline_failed: 'No se pudo guardar. Probá de nuevo.',
         decline_already_decided: 'Esta solicitud ya tenía un resultado. No se guardó tu observación.',
+        // The observation landed, then the application closed another way (review M1).
+        decline_saved_already_decided: 'Tu observación quedó guardada, pero esta solicitud ya tenía otro resultado.',
         propose_title: 'Proponer un animal a {name}',
         candidates_one: '1 candidato',
         candidates_many: '{n} candidatos',

@@ -267,6 +267,8 @@ describe('«No avanzar» — what the answer leads to (final review M8)', () => 
     it('done / already decided elsewhere (an info notice: the observation was NOT saved) / failed', () => {
         expect(declineOutcome({ ok: true, recordId: 'r' })).toEqual({ kind: 'done' });
         expect(declineOutcome({ ok: false, error: 'already_decided' })).toEqual({ kind: 'already_decided', messageKey: 'evaluation.decline_already_decided' });
+        expect(declineOutcome({ ok: false, error: 'observation_saved_already_decided' })).toEqual({ kind: 'already_decided', messageKey: 'evaluation.decline_saved_already_decided' });
+        expect(t('evaluation.decline_saved_already_decided')).toBe('Tu observación quedó guardada, pero esta solicitud ya tenía otro resultado.');
         expect(declineOutcome({ ok: false, error: 'failed', errorId: 'abcd1234' })).toEqual({ kind: 'failed', errorId: 'abcd1234' });
         expect(declineOutcome({ ok: false, error: 'not_allowed' })).toEqual({ kind: 'failed', errorId: null });
         expect(t('evaluation.decline_already_decided')).toBe('Esta solicitud ya tenía un resultado. No se guardó tu observación.');
