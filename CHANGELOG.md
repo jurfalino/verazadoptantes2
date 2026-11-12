@@ -2,6 +2,12 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.58.57] - 2026-11-12
+
+### Fixed — hotfix: importing a post that names nobody
+- A post with a phone (or other contact) but no name failed to save with «No se pudo guardar»: the AI says
+  "no name" as empty and the server refused it. It now saves as a profile without a name, as intended.
+
 ## [2.58.55] - 2026-11-11
 
 ### Changed — the signed-out home shows «Para empezar» (Jon)
