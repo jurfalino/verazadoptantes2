@@ -183,7 +183,9 @@ export const verifyKnownInfoSchema = z.object({
 // ── Adopters API (POST /api/adopters) ────────────────
 
 export const createAdopterApiSchema = z.object({
-    name: z.string().max(1_000).optional().default(''),
+    // `.nullish()` → '': the import wizard sends the AI's name as is, and the AI
+    // answers null when the post names nobody (errorId 803973b9, 2026-11-12).
+    name: z.string().max(1_000).nullish().transform(v => v ?? ''),
     contactInfo: z.union([
         z.string().max(10_000),
         z.object({
