@@ -49,6 +49,7 @@ import { getFeatureFlag } from '@/config/features';
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { deserializeContactEntries, parseBlobToContactEntries, TYPE_LABEL } from '@/lib/contactEntries';
 import { withHouseholdLines } from '@/lib/households';
+import { normalizedTeam } from '@/domain/searchCountry';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -954,19 +955,23 @@ async function runDiscoveryMode(
 
     // Parallel: profile LIKE + deep search
     const profileConds: any[] = [isNull(adopters.deletedAt), buildProfileSearchConditions(tokens)];
+    // The country rule (src/domain/searchCountry.ts, Jon 2026-11-12): the viewer's
+    // current account country, plus — always — every profile the viewer or their
+    // group loaded, whatever its country. v2.19.1 bypassed only the viewer's own;
+    // a group-mate's profile from another country was hidden even on an exact phone.
+    let countryCond: any = null;
     if (userCountry) {
-        // v2.19.1: owned records bypass the geo filter. The country gate exists
-        // for cross-org relevance — a rescuer searching the global registry
-        // doesn't need adopters from other countries cluttering results — but
-        // it shouldn't ever hide YOUR OWN records. Before this fix, a rescuer
-        // who created an adopter without setting country (or whose adopter sits
-        // in a different country than their user_profile) would search by name
-        // and watch the record fail to appear, with no signal as to why.
         const ownerEmail = user && user !== 'unknown' ? user : null;
-        profileConds.push(ownerEmail
-            ? or(eq(adopters.country, userCountry), eq(adopters.addedBy, ownerEmail))
-            : eq(adopters.country, userCountry)
-        );
+        let team: string[] = ownerEmail ? [ownerEmail] : [];
+        if (ownerEmail) {
+            const { getTeamEmails } = await import('@/lib/orgMembership');
+            team = await getTeamEmails(ownerEmail); // fails open to [self], logged
+        }
+        team = normalizedTeam(team);
+        countryCond = team.length
+            ? or(eq(adopters.country, userCountry), ...team.map(e => sql`lower(trim(${adopters.addedBy})) = ${e}`))
+            : eq(adopters.country, userCountry);
+        profileConds.push(countryCond);
     }
 
     // A phone-shaped query ("+54 9 11 6585-1333") is answered by the phone and
@@ -1039,24 +1044,14 @@ async function runDiscoveryMode(
     // D1-compatible: fan out with eq() per ID instead of inArray() which silently breaks on D1
     let extraProfiles: typeof adopters.$inferSelect[] = [];
     if (extraIds.size > 0) {
-        // v2.19.2: same owner-relax as the directResults gate at line ~567.
-        // Phone-token / history / adoption-match paths correctly find the
-        // adopter ID, but the geo filter here would then re-exclude any
-        // record whose country doesn't match the viewer's profile country —
-        // including the viewer's OWN records (e.g. adopter 84da04dc-… with
-        // country=null + addedBy=viewer). That's the second half of the
-        // "phone search returns other records, not the one with that phone"
-        // bug from v2.19.1.
-        const ownerEmail = user && user !== 'unknown' ? user : null;
+        // The same country rule as the main gate (`countryCond`): phone / history /
+        // adoption / name / address hits are re-checked with it, so a phone search
+        // finds the viewer's and their group's profiles from any country (v2.19.2
+        // fixed this for the viewer's own; the group joined 2026-11-12).
         const extraProfileResults = await Promise.all(
             Array.from(extraIds).map(id => {
                 const conds: any[] = [eq(adopters.id, id)];
-                if (userCountry) {
-                    conds.push(ownerEmail
-                        ? or(eq(adopters.country, userCountry), eq(adopters.addedBy, ownerEmail))
-                        : eq(adopters.country, userCountry)
-                    );
-                }
+                if (countryCond) conds.push(countryCond);
                 return db.select().from(adopters).where(and(...conds)).catch((e: unknown) => {
                     options.trace?.degraded.push('profile_lookup');
                     logger.warn('findAdopters: D1 fallback hit (extra adopter profile lookup)', {
