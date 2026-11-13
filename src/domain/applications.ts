@@ -158,6 +158,21 @@ export function formNoticeUrl(n: { submissionId: string; applicationId: string |
     return `/my-animals?view=solicitudes&animal=${encodeURIComponent(n.animalId ?? GENERAL_ROW_ID)}&solicitud=${encodeURIComponent(n.applicationId)}`;
 }
 
+/** «Cargar un animal» from «Proponer un animal» (Jon 2026-11-13): «Agregar animal», proposing to this application on save. */
+export function proposeNewAnimalHref(applicationId: string): string {
+    return `/my-animals/new?proponer=${encodeURIComponent(applicationId)}`;
+}
+
+/** A general application's request on /my-animals (the panel opens on it). */
+export function generalRequestHref(applicationId: string): string {
+    return `/my-animals?view=solicitudes&animal=${GENERAL_ROW_ID}&solicitud=${encodeURIComponent(applicationId)}`;
+}
+
+/** `?proponer=` as read from the address: an id's shape, or nothing. */
+export function proposeParam(raw: string | null | undefined): string | null {
+    return raw && /^[A-Za-z0-9_-]{1,64}$/.test(raw) ? raw : null;
+}
+
 export type LifeStage = 'puppy' | 'young' | 'senior';
 
 export function lifeStageOf(birthMs: number | null, nowMs: number): LifeStage | null {

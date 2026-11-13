@@ -211,3 +211,20 @@ describe('candidatesLostOnDelete', () => {
         expect(candidatesLostOnDelete([])).toBe(0);
     });
 });
+
+describe('«Cargar un animal» from «Proponer un animal» (Jon 2026-11-13)', () => {
+    it('opens «Agregar animal» for the application, and comes back to its request', async () => {
+        const { proposeNewAnimalHref, generalRequestHref, proposeParam } = await import('./applications');
+        expect(proposeNewAnimalHref('app-1')).toBe('/my-animals/new?proponer=app-1');
+        expect(generalRequestHref('app-1')).toBe('/my-animals?view=solicitudes&animal=general&solicitud=app-1');
+        expect(proposeNewAnimalHref('a b/c')).toBe('/my-animals/new?proponer=a%20b%2Fc');
+    });
+    it('reads only a well-formed id from the address', async () => {
+        const { proposeParam } = await import('./applications');
+        expect(proposeParam('app-s-gen_1')).toBe('app-s-gen_1');
+        expect(proposeParam(null)).toBeNull();
+        expect(proposeParam('')).toBeNull();
+        expect(proposeParam('../x')).toBeNull();
+        expect(proposeParam('x'.repeat(65))).toBeNull();
+    });
+});

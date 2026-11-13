@@ -10,6 +10,9 @@
  * one line under it), each ≥44px.
  */
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { buttonClasses } from '@/components/ui/Button';
+import { proposeNewAnimalHref } from '@/domain/applications';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
@@ -19,15 +22,30 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { firstName } from '@/lib/householdCopy';
 
-/** The rows. */
-export function ProposalAnimalList({ animals, busyId, onPick }: {
+/** The rows, then «Cargar otro animal»; with none, «Cargar un animal» (Jon 2026-11-13). */
+export function ProposalAnimalList({ animals, busyId, onPick, personName, applicationId }: {
     animals: readonly ProposalAnimal[];
     /** The animal being proposed right now (every row waits). */
     busyId: string | null;
     onPick: (animal: ProposalAnimal) => void;
+    /** The person's first name, for «se lo proponés a {name}». */
+    personName: string;
+    /** «Agregar animal» proposes the new animal to this application on save. */
+    applicationId: string;
 }) {
     const { t } = useLanguage();
-    if (animals.length === 0) return <p className="text-sm text-stone-600" data-testid="propose-empty">{t('evaluation.propose_empty')}</p>;
+    const href = proposeNewAnimalHref(applicationId);
+    if (animals.length === 0) {
+        return (
+            <div data-testid="propose-empty" className="space-y-4">
+                <p className="text-sm text-stone-600">{t('evaluation.propose_empty_load').replace('{name}', personName)}</p>
+                <Link href={href} data-testid="propose-load-animal" className={buttonClasses({ variant: 'primary', fullWidth: true })}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" /></svg>
+                    {t('evaluation.propose_load_cta')}
+                </Link>
+            </div>
+        );
+    }
     return (
         <ul className="divide-y divide-stone-200">
             {animals.map((a) => {
@@ -57,6 +75,18 @@ export function ProposalAnimalList({ animals, busyId, onPick }: {
                     </li>
                 );
             })}
+            <li>
+                <Link href={href} data-testid="propose-load-animal" aria-disabled={busyId !== null}
+                    className={`w-full text-left flex items-center gap-3 min-h-11 py-2 group ${busyId !== null ? 'pointer-events-none opacity-50' : ''}`}>
+                    <span className="w-10 h-10 shrink-0 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" /></svg>
+                    </span>
+                    <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-semibold text-teal-700">{t('evaluation.propose_load_other')}</span>
+                        <span className="block text-xs text-stone-500">{t('evaluation.propose_load_other_desc').replace('{name}', personName)}</span>
+                    </span>
+                </Link>
+            </li>
         </ul>
     );
 }
@@ -136,7 +166,7 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
                     {load.errorId && <span className="text-xs text-stone-500"> ({t('homeModules.error_code')}: {load.errorId})</span>}
                 </p>
             )}
-            {load.state === 'ok' && <ProposalAnimalList animals={load.animals} busyId={busyId} onPick={pick} />}
+            {load.state === 'ok' && <ProposalAnimalList animals={load.animals} busyId={busyId} onPick={pick} personName={name} applicationId={applicationId} />}
         </Modal>
     );
 }

@@ -199,7 +199,7 @@ describe('«Proponer un animal»', () => {
     const animal = (id: string, candidates: number, o: Record<string, unknown> = {}) => ({ id, name: id === 'mora' ? 'Mora' : 'Toby', species: 'cat', photo: null, matches: true, candidates, ...o });
 
     it('one ≥44px row per animal with its photo or species icon, name and «N candidatos»', () => {
-        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1, { photo: 'https://img/mora.jpg' }), animal('toby', 3, { species: 'dog' }), animal('nube', 0, { name: null })]} busyId={null} onPick={() => {}} />);
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1, { photo: 'https://img/mora.jpg' }), animal('toby', 3, { species: 'dog' }), animal('nube', 0, { name: null })]} busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
         for (const id of ['mora', 'toby', 'nube']) expect(has(html, `propose-animal-${id}`)).toBe(true);
         expect(text(html)).toContain(`Mora ${E.candidates_one}`);
         expect(text(html)).toContain(`Toby ${E.candidates_many.replace('{n}', '3')}`);
@@ -209,8 +209,20 @@ describe('«Proponer un animal»', () => {
         expect(html).toContain('mora.jpg');
     });
 
-    it('no animal can take applications: «No hay animales que puedan recibir solicitudes.»', () => {
-        expect(text(renderToStaticMarkup(<ProposalAnimalList animals={[]} busyId={null} onPick={() => {}} />))).toContain(E.propose_empty);
+    it('no animal yet: says so and offers «Cargar un animal», which opens «Agregar animal» for this application (Jon 2026-11-13)', () => {
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[]} busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
+        expect(text(html)).toContain(E.propose_empty_load.replace('{name}', 'Ana'));
+        expect(text(html)).toContain(E.propose_load_cta);
+        expect(html).toContain('href="/my-animals/new?proponer=app-gen"');
+        expect(has(html, 'propose-load-animal')).toBe(true);
+    });
+
+    it('with animals, the last row is «Cargar otro animal» (for one not loaded yet)', () => {
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1)]} busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
+        expect(text(html)).toContain(E.propose_load_other);
+        expect(text(html)).toContain(E.propose_load_other_desc.replace('{name}', 'Ana'));
+        expect(html.indexOf('propose-animal-mora')).toBeLessThan(html.indexOf('propose-load-animal'));
+        expect(html).toContain('href="/my-animals/new?proponer=app-gen"');
     });
 });
 
