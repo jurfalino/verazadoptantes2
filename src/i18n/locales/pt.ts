@@ -3046,7 +3046,7 @@ export const pt = {
         notice_row_merge_request: 'Pedem para unir dois perfis',
         notice_row_merge_request_desc: 'Outro resgatista acha que um perfil seu é a mesma pessoa que um dele.',
         notice_row_same_person: 'Perguntam se é a mesma pessoa',
-        notice_row_same_person_desc: 'Outro resgatista não sabe se alguém que pediu para adotar é uma pessoa que você cadastrou.',
+        notice_row_same_person_desc: 'Outro resgatista não sabe se alguém que pediu para adotar é uma pessoa que você ou seu grupo cadastrou.',
         notice_row_pii_request: 'Pedem para ver dados de contato',
         notice_row_pii_request_desc: 'Alguém quer ver o telefone ou o e-mail de um perfil seu.',
         notice_row_pair_message: 'Outro resgatista escreve para você',

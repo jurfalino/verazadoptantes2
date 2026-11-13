@@ -235,6 +235,9 @@ export async function tellUnsureAskers(db: Db, askers: readonly string[], input:
     for (const asker of askers) {
         try {
             if (await isOwnerOrOrgMate(actor, asker)) continue;
+            // «Es la misma persona» is told once: claim the asker's row first (same_by IS NULL → actor), so a join
+            // request and a join — or two «Sí» — landing together never tell her twice (EM review #8).
+            if (answer === 'same' && !(await claimSameTell(db, a, b, asker, actor))) continue;
             const [sa, sb] = await Promise.all([a, b].map(id =>
                 db.select({ id: adopters.id, name: adopters.name, addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, id)).get()));
             if (!sa || !sb) continue;
@@ -267,6 +270,14 @@ export async function tellUnsureAskers(db: Db, askers: readonly string[], input:
     }
 }
 
+/** Mark the asker told «es la misma persona» by `actor`; false when someone else already told her. */
+async function claimSameTell(db: Db, a: string, b: string, asker: string, actor: string): Promise<boolean> {
+    const claimed = await db.update(pairUnsure).set({ sameBy: normEmail(actor) })
+        .where(and(eq(pairUnsure.pairKey, pairKey(a, b)), eq(pairUnsure.askerEmail, asker), isNull(pairUnsure.sameBy)))
+        .returning({ askerEmail: pairUnsure.askerEmail }).all();
+    return claimed.length > 0;
+}
+
 /**
  * The other side answered «Sí» by asking to join (createMergeRequest): tell each «No sé» asker outside the
  * actor's group, once — their «No sé» keeps counting (Jon 2026-11-12: inform, never block) and their card
@@ -279,13 +290,8 @@ export async function recordSameAnswer(db: Db, a: string, b: string, actor: stri
         const askers = await unsureAskersOf(db, a, b, ctx, { untoldOnly: true });
         const outside: string[] = [];
         for (const asker of askers) if (!(await isOwnerOrOrgMate(actor, asker))) outside.push(asker);
-        if (outside.length) {
-            await tellUnsureAskers(db, outside, { a, b, actor, answer: 'same', forget: false, ctx });
-            for (const asker of outside) {
-                await db.update(pairUnsure).set({ sameBy: normEmail(actor) })
-                    .where(and(eq(pairUnsure.pairKey, pairKey(a, b)), eq(pairUnsure.askerEmail, asker)));
-            }
-        }
+        // tellUnsureAskers claims each row (same_by) before telling: once per asker, whoever answers first.
+        if (outside.length) await tellUnsureAskers(db, outside, { a, b, actor, answer: 'same', forget: false, ctx });
         for (const member of await getOrgMemberEmailsFor(actor)) {
             await clearPairNotices(db, a, b, { types: ['same_person_question'], userId: member, ctx: { ...ctx, op: 'recordSameAnswer', actor } });
         }

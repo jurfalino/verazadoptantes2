@@ -3041,7 +3041,7 @@ export const en = {
         notice_row_merge_request: 'You are asked to join two profiles',
         notice_row_merge_request_desc: 'Another rescuer thinks a profile of yours is the same person as one of theirs.',
         notice_row_same_person: 'You\'re asked whether it\'s the same person',
-        notice_row_same_person_desc: 'Another rescuer doesn\'t know whether someone who asked them to adopt is a person you added.',
+        notice_row_same_person_desc: 'Another rescuer doesn\'t know whether someone who asked them to adopt is a person you or your group added.',
         notice_row_pii_request: 'You are asked to see contact details',
         notice_row_pii_request_desc: 'Someone wants to see the phone or email of a profile of yours.',
         notice_row_pair_message: 'Another rescuer writes to you',

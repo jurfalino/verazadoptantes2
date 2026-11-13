@@ -627,6 +627,12 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         personName={personName}
                         onClose={() => setDialog(null)}
                         onDone={() => { void afterChange('outcome'); }}
+                        onSamePerson={() => {
+                            // Same calm notice + jump as «Enviar contrato»'s refusal (UX review), after the sheet closes.
+                            setDialog(null);
+                            toast.info(t('samePerson.gate_hint_propose'));
+                            requestAnimationFrame(goToQuestion);
+                        }}
                     />
                 )}
             </div>

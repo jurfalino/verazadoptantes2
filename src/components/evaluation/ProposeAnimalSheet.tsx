@@ -61,12 +61,22 @@ export function ProposalAnimalList({ animals, busyId, onPick }: {
     );
 }
 
+/** What the sheet does with proposeAnimal's answer. */
+export function proposeOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>): 'done' | 'already_candidate' | 'same_person' | 'failed' {
+    if (res.ok || res.error === 'already_decided') return 'done';
+    if (res.error === 'already_candidate') return 'already_candidate';
+    if (res.error === 'same_person_unanswered') return 'same_person';
+    return 'failed';
+}
+
 type Load = { state: 'loading' } | { state: 'ok'; animals: ProposalAnimal[] } | { state: 'failed'; errorId: string | null };
 
-export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone }: {
+export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone, onSamePerson }: {
     applicationId: string;
     personName: string;
     onClose: () => void;
+    /** «¿Es la misma persona?» still waits (a «No sé» withdrawn, or a new match, since the panel read): the panel closes the sheet and goes to the question. */
+    onSamePerson: () => void;
     /** The proposal is recorded (or the application was already decided): the panel re-reads and moves on. */
     onDone: () => void;
 }) {
@@ -101,15 +111,15 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone 
         const animalName = animal.name || t('homeModules.unnamed_animal');
         try {
             const res = await proposeAnimal(applicationId, animal.id);
-            if (res.ok || res.error === 'already_decided') { onDone(); return; }
-            if (res.error === 'already_candidate') {
+            const next = proposeOutcome(res);
+            if (next === 'done') { onDone(); return; }
+            if (next === 'same_person') { onSamePerson(); return; }
+            if (next === 'already_candidate') {
                 // Not an error: they already are one of that animal's candidates — pick another.
                 toast.info(t('evaluation.propose_already').replace('{name}', name).replace('{animal}', animalName));
                 return;
             }
-            // «¿Es la misma persona?» still waits (a «No sé» withdrawn since the panel read): say what to do.
-            const message = res.error === 'same_person_unanswered' ? t('samePerson.gate_refused') : t('evaluation.propose_failed');
-            toast.error(t('errors.generic'), message, res.errorId ?? resolveErrorId(new Error(`proposeAnimal: ${res.error}`), 'ProposeAnimalSheet'));
+            toast.error(t('errors.generic'), t('evaluation.propose_failed'), (!res.ok && res.errorId) || resolveErrorId(new Error(`proposeAnimal: ${res.ok ? 'unknown' : res.error}`), 'ProposeAnimalSheet'));
         } catch (e) {
             if (!handledAsStale(e)) toast.error(t('errors.generic'), t('evaluation.propose_failed'), resolveErrorId(e, 'ProposeAnimalSheet'));
         } finally {

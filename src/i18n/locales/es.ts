@@ -3050,7 +3050,7 @@ export const es = {
         notice_row_merge_request: 'Te piden unir dos perfiles',
         notice_row_merge_request_desc: 'Otro rescatista cree que un perfil tuyo es la misma persona que uno suyo.',
         notice_row_same_person: 'Te preguntan si es la misma persona',
-        notice_row_same_person_desc: 'Otro rescatista no sabe si alguien que le pidió adoptar es una persona que cargaste vos.',
+        notice_row_same_person_desc: 'Otro rescatista no sabe si alguien que le pidió adoptar es una persona que cargaste vos o tu grupo.',
         notice_row_pii_request: 'Te piden ver datos de contacto',
         notice_row_pii_request_desc: 'Alguien quiere ver el teléfono o el email de un perfil tuyo.',
         notice_row_pair_message: 'Otro rescatista te escribe',

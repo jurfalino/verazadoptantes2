@@ -38,7 +38,7 @@ vi.mock('@/components/ui/Modal', async (orig) => ({
 const { ApplicationAnswersSummary } = await import('./ApplicationAnswersSummary');
 const { DeclineApplicationDialog, DeclineForm, declineMissing, declineOutcome } = await import('./DeclineApplicationDialog');
 const { DuplicateCards } = await import('./ApplicationDuplicate');
-const { ProposalAnimalList } = await import('./ProposeAnimalSheet');
+const { ProposalAnimalList, proposeOutcome } = await import('./ProposeAnimalSheet');
 const { OfferSheetBody, offerLinks, offerMessage, offerAnimalOf } = await import('./AdoptionOfferSheet');
 const { default: FormAnswersPanel } = await import('@/components/FormAnswersPanel');
 const { summarizeAnswers } = await import('@/domain/formAnswers');
@@ -159,6 +159,16 @@ const dup = (cards: FormMatchCardData[]) => renderToStaticMarkup(
         submissionId="s-1" applicantSelfieUrl={null} onDismiss={() => {}} onLinked={() => {}}
     />,
 );
+
+describe('«Proponer un animal» outcome', () => {
+    it('a «¿Es la misma persona?» refusal closes the sheet and goes to the question, never an error toast', () => {
+        expect(proposeOutcome({ ok: true, applicationId: 'a' })).toBe('done');
+        expect(proposeOutcome({ ok: false, error: 'already_decided' })).toBe('done');
+        expect(proposeOutcome({ ok: false, error: 'already_candidate' })).toBe('already_candidate');
+        expect(proposeOutcome({ ok: false, error: 'same_person_unanswered' })).toBe('same_person');
+        expect(proposeOutcome({ ok: false, error: 'failed', errorId: 'e1' })).toBe('failed');
+    });
+});
 
 describe('the possible duplicate inside the evaluation', () => {
     it('the same side-by-side compare as every «¿Es la misma persona?» screen, with both answers', () => {

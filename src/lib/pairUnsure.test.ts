@@ -213,6 +213,21 @@ describe('the answer reaches the asker', () => {
         await recordSameAnswer(db(), 'lmendez', 'laura', 'sol@sur.org'); // told once
         expect(notify).not.toHaveBeenCalled();
     });
+    it('two «Sí» at the same instant tell her once', async () => {
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        notify.mockClear();
+        await Promise.all([recordSameAnswer(db(), 'lmendez', 'laura', 'sur@sur.org'), recordSameAnswer(db(), 'lmendez', 'laura', 'sol@sur.org')]);
+        expect(notify).toHaveBeenCalledTimes(1);
+    });
+    it('a join that read her «No sé» before a join request told her does not tell her again', async () => {
+        await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
+        notify.mockClear();
+        const askers = await unsureAskersOf(db(), 'laura', 'lmendez', {}, { untoldOnly: true }); // mergeAdopters, before its claim
+        await recordSameAnswer(db(), 'lmendez', 'laura', 'sur@sur.org'); // the join request lands meanwhile
+        await tellUnsureAskers(db(), askers, { a: 'lmendez', b: 'laura', actor: 'sol@sur.org', answer: 'same', openId: 'lmendez' });
+        expect(notify).toHaveBeenCalledTimes(1);
+        expect(unsureRows()).toEqual([]); // the join still forgets the pair
+    });
     it('tells nobody when the asker\'s own group settled it', async () => {
         await answerPairUnsure(db(), 'p-sur', 'ana@norte.org');
         notify.mockClear();
