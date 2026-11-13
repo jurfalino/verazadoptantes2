@@ -53,8 +53,8 @@ async function openTab(page: Page, view = 'solicitudes') {
     await expect(page.getByTestId('tab-todos')).toBeVisible({ timeout: 60_000 });
 }
 
-/** Every card of the tab: «Sin animal elegido» and the animals. */
-const cardsOf = (page: Page) => page.locator('[data-testid="general-card"], [data-testid^="animal-card-"]');
+/** Every card of the tab: the animals (general forms live in «Mis adoptantes», Jon 2026-11-13). */
+const cardsOf = (page: Page) => page.locator('[data-testid^="animal-card-"]');
 
 /** The panel's applicant named `name`, paging with «Siguiente» through the whole list (the shared DB
  *  collects other specs' general applications, so it can be long). */
@@ -110,7 +110,7 @@ test.describe.serial('Mis animales: «Con solicitudes por evaluar»', () => {
         ]);
     });
 
-    test('the tab count equals the cards; «Sin animal elegido» is the first card and only in this tab', async ({ page }) => {
+    test('the tab count equals the cards, animals only: no «Sin animal elegido» card on any tab', async ({ page }) => {
         test.setTimeout(180_000);
         await openTab(page);
         const tab = page.getByTestId('tab-solicitudes');
@@ -118,20 +118,14 @@ test.describe.serial('Mis animales: «Con solicitudes por evaluar»', () => {
         await expect(page.getByTestId(`solicitudes-badge-${ANIMAL}`)).toBeVisible({ timeout: 60_000 });
         expect(await numberIn(page.getByTestId(`solicitudes-badge-${ANIMAL}`))).toBe(APPLICANTS.length);
         expect(await numberIn(tab)).toBe(await cardsOf(page).count());
-        // First, and the form icon instead of a photo.
-        await expect(cardsOf(page).first()).toHaveAttribute('data-testid', 'general-card');
-        await expect(page.getByTestId('general-card').locator('img')).toHaveCount(0);
-        expect(await numberIn(page.getByTestId('general-card-badge'))).toBeGreaterThanOrEqual(2);
+        await expect(page.getByTestId('general-card')).toHaveCount(0);
         // The adopted animal takes no applications: not on this tab.
         await expect(page.getByTestId(`animal-card-${ADOPTED}`)).toHaveCount(0);
-
-        // The other tabs: no «Sin animal elegido»; the same count on the tab label; the card keeps its amber row.
         const onTab = await numberIn(tab);
         for (const view of ['available', 'todos']) {
             await openTab(page, view);
             await expect(page.getByTestId(`animal-card-${ANIMAL}`)).toBeVisible({ timeout: 60_000 });
             await expect(page.getByTestId('general-card')).toHaveCount(0);
-            await expect(page.getByTestId(`solicitudes-badge-${ANIMAL}`)).toBeVisible();
             expect(await numberIn(page.getByTestId('tab-solicitudes'))).toBe(onTab);
         }
     });
@@ -153,18 +147,13 @@ test.describe.serial('Mis animales: «Con solicitudes por evaluar»', () => {
         await expect(page.getByTestId(`solicitudes-badge-${ANIMAL}`)).toBeVisible();
     });
 
-    test('decline from the general card: rating + reason → «No avanzó · …»; the tab count drops by one', async ({ page }) => {
+    test('decline a general form from «Mis adoptantes»: it opens alone, shows «No avanzó», and leaves «Formularios generales»', async ({ page }) => {
         test.setTimeout(180_000);
-        await openTab(page);
-        const tab = page.getByTestId('tab-solicitudes');
-        const badge = page.getByTestId('general-card-badge');
-        await expect(badge).toBeVisible({ timeout: 60_000 });
-        const [tabBefore, generalBefore] = [await numberIn(tab), await numberIn(badge)];
-
-        await badge.click();
-        const panel = page.getByTestId('my-animals-applicants-panel');
-        await goToApplicant(panel, GENERAL.decline.name);
-        // A general application: «No avanzar» + «Proponer un animal».
+        await page.goto(`/my-adopters?solicitud=${GENERAL.decline.app}#pendientes`);
+        await dismissCountryBanner(page);
+        const panel = page.getByTestId('request-panel');
+        await expect(panel.getByTestId('applicant-panel-single-header')).toBeVisible({ timeout: 60_000 });
+        await expect(panel.locator('#applicant-panel-title')).toContainText(GENERAL.decline.name);
         await expect(panel.getByTestId('evaluate-propose')).toBeVisible();
         await panel.getByTestId('evaluate-decline').click();
         const dialog = page.getByTestId('decline-dialog');
@@ -173,56 +162,44 @@ test.describe.serial('Mis animales: «Con solicitudes por evaluar»', () => {
         await dialog.getByTestId('decline-reason').fill('Busca un perro y no tenemos.');
         await dialog.getByTestId('decline-save').click();
         await expect(dialog).toHaveCount(0, { timeout: 60_000 });
-
-        // The panel moves on to the next one to evaluate (or closes when none is left)…
-        const title = panel.locator('#applicant-panel-title');
-        await expect.poll(async () => !(await panel.isVisible()) || !((await title.textContent()) ?? '').includes(GENERAL.decline.name),
-            { timeout: 60_000 }).toBe(true);
-        // …and the declined one, paged back to, reads its outcome, with no buttons.
-        if (await panel.isVisible()) {
-            await goToApplicant(panel, GENERAL.decline.name);
-            await expect(panel.getByTestId('applicant-status-line')).toHaveAttribute('data-status', 'declined');
-            await expect(panel.getByTestId('evaluate-decline')).toHaveCount(0);
-            await panel.getByTestId('applicant-panel-back').click();
-        }
+        // Decided: a request opened alone stays on itself, showing the result; «← Volver» leaves.
+        await expect(panel.getByTestId('applicant-status-line')).toHaveAttribute('data-status', 'declined', { timeout: 60_000 });
+        await panel.getByTestId('applicant-panel-back').click();
         await expect(panel).toHaveCount(0);
-        // One fewer general application to evaluate: the card's number, or the whole card when it was the last.
-        if (generalBefore > 1) {
-            await expect.poll(() => numberIn(badge), { timeout: 60_000 }).toBe(generalBefore - 1);
-            expect(await numberIn(tab)).toBe(tabBefore);
-        } else {
-            await expect(page.getByTestId('general-card')).toHaveCount(0, { timeout: 60_000 });
-            await expect.poll(() => numberIn(tab), { timeout: 60_000 }).toBe(tabBefore - 1);
-        }
-        expect(await numberIn(tab)).toBe(await cardsOf(page).count());
+        await expect(page).not.toHaveURL(/solicitud=/);
+        await expect(page.getByTestId('general-request-row').filter({ hasText: GENERAL.decline.name })).toHaveCount(0, { timeout: 60_000 });
     });
 
-    test('propose from the general card: pick the animal → it becomes that animal\'s candidate; «Enviar contrato» issues a link', async ({ page }) => {
+    test('«Sumar a un animal» from «Mis adoptantes»: the person becomes the animal\'s candidate; «Quitar» is offered until a contract goes out', async ({ page }) => {
         test.setTimeout(180_000);
         await openTab(page);
         const animalBadge = page.getByTestId(`solicitudes-badge-${ANIMAL}`);
         await expect(animalBadge).toBeVisible({ timeout: 60_000 });
         const before = await numberIn(animalBadge);
 
-        await page.getByTestId('general-card-badge').click();
-        const panel = page.getByTestId('my-animals-applicants-panel');
-        await goToApplicant(panel, GENERAL.propose.name);
-        await panel.getByTestId('evaluate-propose').click();
+        await page.goto(`/my-adopters?solicitud=${GENERAL.propose.app}#pendientes`);
+        const panel = page.getByTestId('request-panel');
+        await panel.getByTestId('evaluate-propose').click({ timeout: 60_000 });
         const sheet = page.getByTestId('propose-sheet');
         await expect(sheet).toBeVisible();
         await sheet.getByTestId(`propose-animal-${ANIMAL}`).click();
         await expect(sheet).toHaveCount(0, { timeout: 60_000 });
-        if (await panel.isVisible()) await panel.getByTestId('applicant-panel-back').click();
-        await expect(panel).toHaveCount(0);
+        await expect(panel.getByTestId('applicant-status-line')).toHaveAttribute('data-status', 'proposed', { timeout: 60_000 });
+        await expect(panel.getByTestId('applicant-undo-quit')).toBeVisible();
+        await panel.getByTestId('applicant-panel-back').click();
 
-        // The person is now one of the animal's candidates to evaluate.
+        // The person is now one of the animal's candidates to evaluate, marked as added by the team.
+        await openTab(page);
         await expect.poll(() => numberIn(animalBadge), { timeout: 60_000 }).toBe(before + 1);
         await animalBadge.click();
-        await goToApplicant(panel, GENERAL.propose.name);
-        await panel.getByTestId('evaluate-send-contract').click();
-        await expect(panel.locator('code[title]')).toHaveAttribute('title', /^https?:\/\/\S+/, { timeout: 60_000 });
-        await panel.getByTestId('applicant-panel-back').click();
-        // A contract sent is no longer to evaluate.
+        const animalPanel = page.getByTestId('my-animals-applicants-panel');
+        await goToApplicant(animalPanel, GENERAL.propose.name);
+        await expect(animalPanel.getByTestId('applicant-added-by')).toBeVisible();
+        await animalPanel.getByTestId('evaluate-send-contract').click();
+        await expect(animalPanel.locator('code[title]')).toHaveAttribute('title', /^https?:\/\/\S+/, { timeout: 60_000 });
+        // A contract went out: no more «Cambiar / Quitar».
+        await expect(animalPanel.getByTestId('applicant-undo-quit')).toHaveCount(0, { timeout: 60_000 });
+        await animalPanel.getByTestId('applicant-panel-back').click();
         await expect.poll(() => numberIn(animalBadge), { timeout: 60_000 }).toBe(before);
     });
 
@@ -239,10 +216,12 @@ test.describe.serial('Mis animales: «Con solicitudes por evaluar»', () => {
         await expect(page).not.toHaveURL(/solicitud=/);
         await expect(page.getByTestId('tab-solicitudes')).toBeVisible();
 
-        // A general one, from another tab.
+        // An old link to a general one (sent before 2026-11-13) lands on it in «Mis adoptantes».
         await page.goto(`/my-animals?view=available&animal=general&solicitud=${GENERAL.propose.app}`);
-        await expect(panel.locator('#applicant-panel-title')).toContainText(GENERAL.propose.name, { timeout: 60_000 });
-        await expect(panel.getByTestId('applicant-status-line')).toHaveAttribute('data-status', 'proposed');
+        await expect(page).toHaveURL(new RegExp(`/my-adopters\\?solicitud=${GENERAL.propose.app}`), { timeout: 60_000 });
+        const request = page.getByTestId('request-panel');
+        await expect(request.locator('#applicant-panel-title')).toContainText(GENERAL.propose.name, { timeout: 60_000 });
+        await expect(request.getByTestId('applicant-status-line')).toHaveAttribute('data-status', 'proposed');
     });
 
     test('adopted card shows the offer row while the offer is pending, and not after markOfferDone', async ({ page }) => {

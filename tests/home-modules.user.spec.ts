@@ -181,8 +181,8 @@ test.describe.serial('homepage modules', () => {
         test.setTimeout(240_000);
         await openHome(page);
         const card = page.getByTestId('home-animals');
-        // Every slot: the animals and «Sin animal elegido».
-        const rows = card.locator(`${ANIMAL_ROWS}, [data-testid="home-animals-general"]`);
+        // Every slot: the animals (general forms are «Mis adoptantes» rows since 2026-11-13).
+        const rows = card.locator(ANIMAL_ROWS);
         expect(await rows.count()).toBeLessThanOrEqual(4);
         // The overdue animal is listed as due, never again as «recently updated».
         await expect(card.getByTestId('home-animal-row').filter({ hasText: DUE_ANIMAL_NAME })).toHaveCount(0);
@@ -379,13 +379,13 @@ test.describe.serial('homepage ↔ «Con solicitudes por evaluar»', () => {
             await openHome(page);
             const card = page.getByTestId('home-animals');
             await expect(card.locator(ANIMAL_ROWS).first()).toBeVisible({ timeout: 60_000 });
-            // Every row shown, by name (the general row is named «Sin animal elegido», as its card).
+            // Every row shown, by name.
             const shown = new Set<string>();
-            for (const r of await card.locator(`${ANIMAL_ROWS}, [data-testid="home-animals-general"]`).all()) {
+            for (const r of await card.locator(ANIMAL_ROWS).all()) {
                 shown.add((await r.locator(ROW_NAME).first().getAttribute('title')) ?? '');
             }
             const appRows: string[] = [];
-            for (const r of await card.locator('[data-testid="home-animals-applications"], [data-testid="home-animals-general"]').all()) {
+            for (const r of await card.locator('[data-testid="home-animals-applications"]').all()) {
                 appRows.push((await r.locator(ROW_NAME).first().getAttribute('title')) ?? '');
             }
             // The fostered animal reads as due on the home, never as an applications row.
@@ -396,8 +396,8 @@ test.describe.serial('homepage ↔ «Con solicitudes por evaluar»', () => {
             await page.goto('/my-animals?view=solicitudes');
             const tab = page.getByTestId('tab-solicitudes');
             await expect(tab).toBeVisible({ timeout: 60_000 });
-            await expect(page.getByTestId('general-card')).toBeVisible({ timeout: 60_000 });
-            const tabNames = (await page.locator('[data-testid="general-card"] h3, [data-testid^="animal-card-"] + div h3').allTextContents()).map(n => n.trim());
+            await expect(page.locator('[data-testid^="animal-card-"]').first()).toBeVisible({ timeout: 60_000 });
+            const tabNames = (await page.locator('[data-testid^="animal-card-"] + div h3').allTextContents()).map(n => n.trim());
             const verdict = {
                 tabIsItsCards: (await numberIn(tab)) === tabNames.length,
                 hiddenAreTheMore: tabNames.filter(n => !shown.has(n)).length === more,

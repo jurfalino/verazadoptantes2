@@ -189,8 +189,9 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         }
         resetPerApplicant();
         setList(fresh);
-        // A link or a refresh stays on the same application (its new status line shows); an outcome moves on.
-        if (mode !== 'outcome') {
+        // A link or a refresh stays on the same application (its new status line shows); an outcome moves on —
+        // except in a request opened alone: there is nothing to move to, so the result (and «Cambiar / Quitar») shows.
+        if (mode !== 'outcome' || single) {
             const same = fresh.findIndex(a => a.applicationId === decidedId);
             if (same !== -1) {
                 setIndex(same);
@@ -499,7 +500,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                             {applicant.status.kind === 'proposed' && (
                                 <p className="text-sm text-stone-600">{t('evaluation.proposed_hidden_note').replace('{name}', personFirst)}</p>
                             )}
-                            {applicant.proposal.canUndo && (
+                            {/* A contract link just issued here ends it too (the server refuses after any link; the list isn't re-read so the link stays shown). */}
+                            {applicant.proposal.canUndo && !shareUrl && (
                                 <div className="flex flex-wrap gap-2">
                                     <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('change')} data-testid="applicant-undo-change">
                                         {t('evaluation.undo_change')}

@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
         // (org-mates share one), each animal read from its owner's team, applications only while
         // the animal takes a contract. This page heals missing application rows first (once per team
         // per request, inside the counts). Never per animal, never per application.
-        const [{ listApplicantIdsForAnimal }, { createOwnerTeamResolver }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal }, { normalizeTeamScope }] = await Promise.all([
+        const [{ listApplicantIdsForAnimal }, { createOwnerTeamResolver }, { countToEvaluateByAnimal, offerCountsByAnimal }, { normalizeTeamScope }] = await Promise.all([
             import('@/app/actions/_applicants'),
             import('@/lib/ownerTeamResolver'),
             import('@/lib/applicationCounts'),
@@ -128,15 +128,8 @@ export async function GET(request: NextRequest) {
                 return { toEvaluate: c && takesContract(a) ? c.toEvaluate.get(a.id) ?? 0 : 0, offer: c?.offer.get(a.id) ?? 0 };
             };
         };
-        // «Sin animal elegido»: the team's general applications to evaluate (tab lists only).
+        // General forms are people: they live in «Mis adoptantes» (Jon 2026-11-13), not on this tab.
         const tabList = !idParam && view !== 'all';
-        const generalP: Promise<number> = tabList
-            ? countGeneralToEvaluate(db, scopeEmails).catch((e: unknown) => {
-                countsFailed = true;
-                logger.warn('my-animals: D1 fallback hit (general)', { userEmail, view, error: errMsg(e) });
-                return 0;
-            })
-            : Promise.resolve(0);
         // …and its animals, for the tab label on every other tab: one id select over «Todos», counted
         // from the same per-team maps as the rows (started now, beside the list). Null (logged) when
         // the read fails: the header is left out and the page keeps the count it had.
@@ -171,7 +164,7 @@ export async function GET(request: NextRequest) {
             // «Con solicitudes por evaluar»: the «Todos» animals with applications to evaluate, most
             // waiting first (then newest, as the SQL order; sort is stable).
             const all = await db.select().from(adoptions).where(allWhere).orderBy(sql`${adoptions.date} DESC`).all();
-            const [countsOf] = await Promise.all([applicationCountsOf(all), generalP]);
+            const countsOf = await applicationCountsOf(all);
             // Without its counts this tab can't list anything: an error (with its id), never «nothing to evaluate».
             if (countsFailed) {
                 const errorId = logger.error('API my-animals: solicitudes counts unavailable', new Error('application counts fell back'), { userEmail, view });
@@ -343,13 +336,10 @@ export async function GET(request: NextRequest) {
                 : (await pendingRows(() => db.select({ id: adoptions.id, adopterId: adoptions.adopterId, date: adoptions.date })
                     .from(adoptions).where(placedWhere).all())).length;
             headers['x-pending-count'] = String(pending);
-            // «Con solicitudes por evaluar»: its cards — the animals waiting plus «Sin animal elegido».
-            const [waiting, general] = await Promise.all([view === 'solicitudes' ? deduped.length : waitingP, generalP]);
+            // «Con solicitudes por evaluar»: its cards — the animals waiting.
+            const waiting = view === 'solicitudes' ? deduped.length : await waitingP;
             // A count that fell back is left out: the page keeps the number it had.
-            if (!countsFailed && waiting != null) {
-                headers['x-solicitudes-count'] = String(waiting + (general > 0 ? 1 : 0));
-                headers['x-general-to-evaluate'] = String(general);
-            }
+            if (!countsFailed && waiting != null) headers['x-solicitudes-count'] = String(waiting);
         }
         return NextResponse.json(listed, { headers });
     } catch (error) {

@@ -3,8 +3,9 @@
  * «Destination pages»): the tab lists the animals with applications to
  * evaluate, scoped as the home counts them (applicationCounts, one grouped
  * query per animal-owner team, `takesContract`), and every tab list carries the
- * tab's count — «Sin animal elegido» included — so the tab label never waits
- * for its own list. Real SQL (migratedDb, the D1 promise shape), mocked session.
+ * tab's count so the tab label never waits for its own list. Animals only: a
+ * general form is a person in «Mis adoptantes» (Jon 2026-11-13), never counted
+ * here. Real SQL (migratedDb, the D1 promise shape), mocked session.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -30,7 +31,7 @@ vi.mock('@/lib/orgMembership', async (orig) => ({
 
 vi.mock('@/lib/applicationCounts', async (orig) => {
     const real = await orig<typeof import('@/lib/applicationCounts')>();
-    return { ...real, countToEvaluateByAnimal: vi.fn(real.countToEvaluateByAnimal), countGeneralToEvaluate: vi.fn(real.countGeneralToEvaluate) };
+    return { ...real, countToEvaluateByAnimal: vi.fn(real.countToEvaluateByAnimal) };
 });
 
 const { GET } = await import('./route');
@@ -45,11 +46,10 @@ let sqlite: Sqlite;
  *   tito  — fostered, 1 application to evaluate (fostered animals take contracts)
  *   ado   — adopted: an open application (never counted: no contract once adopted) and a candidate its adoption closed, not told yet (the offer)
  *   plain — available, no applications
- * plus 1 general application to evaluate («Sin animal elegido»). STRANGER's sol has one too (another team's).
+ * plus 1 general application to evaluate (a person in «Mis adoptantes»: never counted here). STRANGER's sol has one too (another team's).
  */
 beforeEach(() => {
     vi.mocked(counts.countToEvaluateByAnimal).mockImplementation(realCounts.countToEvaluateByAnimal);
-    vi.mocked(counts.countGeneralToEvaluate).mockImplementation(realCounts.countGeneralToEvaluate);
     const m = migratedDb();
     state.db = asyncDb(m.db as object);
     state.req = new Headers();
@@ -89,18 +89,11 @@ describe('GET /api/my-animals — «Con solicitudes por evaluar»', () => {
         expect(rows.map(r => r.toEvaluate)).toEqual([2, 1]);
     });
 
-    it('x-solicitudes-count = animals with toEvaluate + 1 for general; the same on every tab', async () => {
+    it('x-solicitudes-count = animals with toEvaluate, the general form not counted; the same on every tab', async () => {
         for (const view of ['solicitudes', 'available', 'adopted', 'todos', 'pendientes']) {
             const { solicitudes, general } = await list(view);
-            expect({ view, solicitudes, general }).toEqual({ view, solicitudes: '3', general: '1' });
+            expect({ view, solicitudes, general }).toEqual({ view, solicitudes: '2', general: null });
         }
-    });
-
-    it('without general applications the count is the animals alone', async () => {
-        sqlite.prepare(`UPDATE applications SET state = 'declined' WHERE id = 'app-f6'`).run();
-        const { rows, solicitudes, general } = await list('solicitudes');
-        expect(rows.map(r => r.id)).toEqual(['luna', 'tito']);
-        expect([solicitudes, general]).toEqual(['2', '0']);
     });
 
     it('each row carries toEvaluate (0 when none)', async () => {
@@ -125,31 +118,28 @@ describe('GET /api/my-animals — «Con solicitudes por evaluar»', () => {
         const { rows, solicitudes } = await list('solicitudes');
         expect(rows.map(r => r.id).sort()).toEqual(['luna', 'plain', 'tito']);
         expect(rows[0].id).toBe('luna');
-        expect(solicitudes).toBe('4');
+        expect(solicitudes).toBe('3');
     });
 
     it('a failed count never reads as «none»: the tab headers are left out (the page keeps its count) and the tab itself is an error', async () => {
-        for (const fn of [counts.countToEvaluateByAnimal, counts.countGeneralToEvaluate] as const) {
-            vi.mocked(fn).mockRejectedValue(new Error('D1 down'));
-            for (const view of ['available', 'todos']) {
-                const { solicitudes, general } = await list(view);
-                expect({ view, solicitudes, general }).toEqual({ view, solicitudes: null, general: null });
-            }
-            state.req = new Headers();
-            const res = await GET(new NextRequest('http://localhost/api/my-animals?view=solicitudes'));
-            expect(res.status).toBe(500);
-            expect(await res.json()).toMatchObject({ errorId: expect.any(String) });
-            vi.mocked(counts.countToEvaluateByAnimal).mockImplementation(realCounts.countToEvaluateByAnimal);
-            vi.mocked(counts.countGeneralToEvaluate).mockImplementation(realCounts.countGeneralToEvaluate);
+        vi.mocked(counts.countToEvaluateByAnimal).mockRejectedValue(new Error('D1 down'));
+        for (const view of ['available', 'todos']) {
+            const { solicitudes, general } = await list(view);
+            expect({ view, solicitudes, general }).toEqual({ view, solicitudes: null, general: null });
         }
+        state.req = new Headers();
+        const res = await GET(new NextRequest('http://localhost/api/my-animals?view=solicitudes'));
+        expect(res.status).toBe(500);
+        expect(await res.json()).toMatchObject({ errorId: expect.any(String) });
+        vi.mocked(counts.countToEvaluateByAnimal).mockImplementation(realCounts.countToEvaluateByAnimal);
         // Back to normal once the counts read again.
-        expect((await list('available')).solicitudes).toBe('3');
+        expect((await list('available')).solicitudes).toBe('2');
     });
 
     it('another team never sees these', async () => {
         state.user = STRANGER;
         const { rows, solicitudes, general } = await list('solicitudes');
         expect(rows.map(r => r.id)).toEqual(['sol']);
-        expect([solicitudes, general]).toEqual(['1', '0']);
+        expect([solicitudes, general]).toEqual(['1', null]);
     });
 });
