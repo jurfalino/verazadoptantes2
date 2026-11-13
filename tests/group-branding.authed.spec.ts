@@ -110,3 +110,47 @@ test.describe('Personalizar on a group card', () => {
         }
     });
 });
+
+test.describe('Settings: «Al compartir, usar:» also decides the look', () => {
+    // The earlier tests in this file save branding on the group; this one needs it unbranded.
+    test.beforeAll(() => { execD1(RESET); });
+    test('shows the hint, a look sub-line per row and the groups link; «Los míos» persists as self', async ({ page }) => {
+        await page.goto('/settings#adoption-docs');
+        const card = page.getByTestId('adoption-docs-settings');
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await expect(card.getByTestId('adoption-docs-hint')).toHaveText(/logo, colores y redes|logo, colors and (social|networks)/i);
+
+        await expect(card.getByTestId('adoption-docs-look-self')).toHaveText(/estándar de BuenAdoptante|standard BuenAdoptante/i);
+        // «Refugio E2E» has no branding (RESET) → the "not yet" line.
+        await expect(card.getByTestId(`adoption-docs-look-org:${ORG_ID}`)).toHaveText(/todavía no cargó|hasn.t (added|uploaded)/i);
+        await expect(card.getByTestId(`adoption-docs-thumb-org:${ORG_ID}`)).toBeVisible();
+        await expect(card.getByTestId('adoption-docs-groups-link')).toHaveAttribute('href', '/organizations');
+
+        // Pick the group, then «Los míos»: the explicit choice must survive a reload.
+        await card.locator(`input[name="adoption-docs-source"][value="org:${ORG_ID}"]`).check();
+        await expect(card.locator('input[name="adoption-docs-source"][value="self"]')).not.toBeChecked();
+        await expect.poll(() => rows(`SELECT group_concat(p.adoption_docs_source) AS s FROM user_profiles p WHERE p.user_id IN (SELECT id FROM user WHERE lower(email) = 'gatitosolivos@gmail.com')`)[0]?.s, { timeout: 30000 }).toContain(`org:${ORG_ID}`);
+        await card.locator('input[name="adoption-docs-source"][value="self"]').check();
+        await expect.poll(() => rows(`SELECT group_concat(p.adoption_docs_source) AS s FROM user_profiles p WHERE p.user_id IN (SELECT id FROM user WHERE lower(email) = 'gatitosolivos@gmail.com')`)[0]?.s, { timeout: 30000 }).toMatch(/^self(,self)*$/);
+
+        await page.reload();
+        await expect(page.getByTestId('adoption-docs-settings').locator('input[name="adoption-docs-source"][value="self"]')).toBeChecked({ timeout: 30000 });
+    });
+
+    test('fits the screen at 390 and 1280', async ({ page }) => {
+        for (const width of [390, 1280]) {
+            await page.setViewportSize({ width, height: 900 });
+            await page.goto('/settings#adoption-docs');
+            const card = page.getByTestId('adoption-docs-settings');
+            await expect(card.getByTestId('adoption-docs-groups-link')).toBeVisible({ timeout: 30000 });
+            const m = await page.evaluate(() => {
+                const el = document.querySelector('[data-testid="adoption-docs-settings"]') as HTMLElement;
+                const de = document.documentElement;
+                return { docScroll: de.scrollWidth, docClient: de.clientWidth, secScroll: el.scrollWidth, secClient: el.clientWidth };
+            });
+            console.log(`settings docs overflow @${width}: ${JSON.stringify(m)}`);
+            expect(m.docScroll).toBe(m.docClient);
+            expect(m.secScroll).toBe(m.secClient);
+        }
+    });
+});
