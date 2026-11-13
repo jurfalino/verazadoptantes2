@@ -40,7 +40,7 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
 }));
 
-import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates, withdrawProposal, changeProposedAnimal } from './applications';
+import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates, withdrawProposal, changeProposedAnimal, getGeneralApplications } from './applications';
 import { deleteUntouchedCandidacy } from './_applications';
 import { loadApplicantsForAnimal } from './_applicants';
 import { applications as applicationsTable, adopterEvents as adopterEventsTable, adoptions as adoptionsView } from '@/db/schema';
@@ -622,5 +622,29 @@ describe('«Quitar de …» / «Cambiar animal» (Jon 2026-11-13: «Sumar a un a
         expect(res).toMatchObject({ ok: false });
         expect(proposals().map(r => r.animal_id)).toEqual(['luna']);
         expect(appRow('app-s-gen').state).toBe('proposed');
+    });
+});
+
+describe('what the panel needs to undo (Jon 2026-11-13)', () => {
+    it('a proposed general form and its candidacy both carry `proposal`, with the same general id; undo only while untouched', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        const general = await getGeneralApplications();
+        const gen = general.ok ? general.applicants.find(a => a.applicationId === 'app-s-gen') : undefined;
+        expect(gen?.proposal).toMatchObject({ generalApplicationId: 'app-s-gen', canUndo: true });
+        expect(gen?.proposal?.byName).toBeTruthy();
+        const lunas = await loadApplicantsForAnimal(state.db, { id: 'luna', adopterId: null }, [OWNER, MATE], OWNER);
+        const cand = lunas.find(a => a.origin === 'proposed');
+        expect(cand?.proposal).toMatchObject({ generalApplicationId: 'app-s-gen', candidacyId: cand!.applicationId, canUndo: true });
+        invitation(sqlite, 't-x', 'luna', 'beto', NOW + DAY);
+        const again = await loadApplicantsForAnimal(state.db, { id: 'luna', adopterId: null }, [OWNER, MATE], OWNER);
+        expect(again.find(a => a.origin === 'proposed')?.proposal?.canUndo).toBe(false);
+    });
+
+    it('«Cambiar animal» lists the other animals while the form is added (not refused as decided)', async () => {
+        animal(sqlite, 'nube', 'Nube', OWNER, { species: 'dog' });
+        await proposeAnimal('app-s-gen', 'luna');
+        const res = await getProposalAnimals('app-s-gen');
+        expect(res).toMatchObject({ ok: true });
+        expect((res as { animals: Array<{ id: string }> }).animals.map(a => a.id)).toEqual(['nube']);
     });
 });

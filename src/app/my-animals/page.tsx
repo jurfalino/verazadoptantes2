@@ -24,7 +24,7 @@ import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
 import { GENERAL_ROW_ID } from '@/domain/homeModules';
 import { interpolate } from '@/lib/interpolate';
-import HomeApplicantsPanel, { type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
+import HomeApplicantsPanel, { applicantsTargetKey, type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
 import { AdoptionOfferSheet } from '@/components/evaluation/AdoptionOfferSheet';
 import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
 
@@ -792,7 +792,7 @@ export default function MyAnimalsPage() {
             </div>
             {applicantsPanel && (
                 <HomeApplicantsPanel
-                    key={applicantsPanel.target === 'general' ? GENERAL_ROW_ID : applicantsPanel.target.animal.id}
+                    key={applicantsPanel.target === 'general' ? GENERAL_ROW_ID : applicantsTargetKey(applicantsPanel.target)}
                     target={applicantsPanel.target}
                     applicationId={applicantsPanel.applicationId}
                     returnLabel

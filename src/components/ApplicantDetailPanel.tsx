@@ -52,6 +52,7 @@ import { ApplicationAnswersSummary } from '@/components/evaluation/ApplicationAn
 import { ApplicationDuplicate } from '@/components/evaluation/ApplicationDuplicate';
 import { DeclineApplicationDialog } from '@/components/evaluation/DeclineApplicationDialog';
 import { ProposeAnimalSheet } from '@/components/evaluation/ProposeAnimalSheet';
+import { WithdrawProposalDialog } from '@/components/evaluation/WithdrawProposalDialog';
 
 interface Props {
     applicants: ApplicantSummary[];
@@ -67,6 +68,11 @@ interface Props {
     onContractIssued?: (url: string, applicant: ApplicantSummary) => void;
     /** The dialog's data-testid (the home opens it as `home-applicants-panel`). */
     testId?: string;
+    /**
+     * One general form opened alone (Jon 2026-11-13: a general form is a person, not a list to page
+     * through): «← Volver» and «Formulario general», no Anterior/Siguiente/dots.
+     */
+    single?: boolean;
 }
 
 /**
@@ -110,7 +116,7 @@ function FlagBadge({ icon, label, tone }: { icon: string; label: string; tone: '
 /** Paging dots up to this many applicants; more get a «{i} / {N}» counter. */
 const MAX_PAGING_DOTS = 8;
 
-export default function ApplicantDetailPanel({ applicants, initialIndex, animal, onClose, onOutcome, returnLabel = false, onContractIssued, testId }: Props) {
+export default function ApplicantDetailPanel({ applicants, initialIndex, animal, onClose, onOutcome, returnLabel = false, onContractIssued, testId, single = false }: Props) {
     const { formatShortDate } = useDateFormat();
     const { t, locale } = useLanguage();
     const toast = useShowToast();
@@ -120,7 +126,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     const [busy, setBusy] = useState(false);
     const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
-    const [dialog, setDialog] = useState<'decline' | 'propose' | null>(null);
+    const [dialog, setDialog] = useState<'decline' | 'propose' | 'change' | 'withdraw' | null>(null);
     const [allAnswersOpen, setAllAnswersOpen] = useState(false);
     // «¿Es la misma persona?» still to answer, per application (Jon 2026-11-12): null while reading.
     const [samePersonGate, setSamePersonGate] = useState<{ applicationId: string; blocking: number | null } | null>(null);
@@ -288,6 +294,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     const personName = adopterDisplayName({ name: applicant.adopterName }, t('adopter.nameless'));
     // The name the «Sumar a un animal» copy uses, as the sheet does (gender-neutral: no pronoun).
     const personFirst = firstName(personName) || personName;
+    // The animal a general form was added to: named on the general form; the panel's own animal on the candidacy.
+    const proposalAnimalName = applicant.proposal?.animal?.name || animal?.name || t('homeModules.unnamed_animal');
 
     // Giving an animal waits for «¿Es la misma persona?» (src/domain/samePersonGate.ts): locked while the
     // section reads or while a pair has no answer. «No avanzar» never waits.
@@ -374,6 +382,21 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                 ].join(' ')}
                 onClick={(e) => e.stopPropagation()}
             >
+                {single ? (
+                    <div className="sticky top-0 z-10 bg-white border-b border-stone-200 px-4 py-3 flex items-center justify-between gap-2" data-testid="applicant-panel-single-header">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            data-testid="applicant-panel-back"
+                            className="min-h-11 px-3 rounded-xl text-sm font-semibold text-teal-700 hover:bg-stone-100 whitespace-nowrap"
+                        >
+                            {t('evaluation.back')}
+                        </button>
+                        <span className="text-xs font-semibold text-stone-500">{t('evaluation.general_title')}</span>
+                        <span className="w-11 h-11" aria-hidden="true" />
+                    </div>
+                ) : (
+                <>
                 {/* Sticky header — paging + close */}
                 <div className="sticky top-0 z-10 bg-white border-b border-stone-200 px-4 py-3 flex items-center justify-between gap-2">
                     <button
@@ -428,6 +451,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         </button>
                     )}
                 </div>
+                </>
+                )}
 
                 {/* Scrolling body */}
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
@@ -439,6 +464,13 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         {applicant.askedAnimal && (
                             <p className="text-sm text-stone-600 mt-0.5 [overflow-wrap:anywhere]" data-testid="applicant-asked-animal">
                                 {animalLine(t, 'evaluation.asked_adopted', applicant.askedAnimal)}
+                            </p>
+                        )}
+                        {applicant.origin === 'proposed' && applicant.proposal && (
+                            <p className="text-sm text-stone-600 mt-0.5 [overflow-wrap:anywhere]" data-testid="applicant-added-by">
+                                {applicant.proposal.byName
+                                    ? t('evaluation.added_by_line').replace('{proposer}', applicant.proposal.byName)
+                                    : t('evaluation.general_title')}
                             </p>
                         )}
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
@@ -461,6 +493,24 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                     </div>
 
                     <ApplicationStatusLine status={applicant.status} animal={animal} outcomeAnimal={applicant.outcomeAnimal} />
+                    {/* «Sumar a un animal» is internal and reversible (Jon 2026-11-13): on the general form and on the candidacy it made. */}
+                    {applicant.proposal && (applicant.status.kind === 'proposed' || applicant.origin === 'proposed') && (
+                        <div className="space-y-2 -mt-2" data-testid="applicant-proposal">
+                            {applicant.status.kind === 'proposed' && (
+                                <p className="text-sm text-stone-600">{t('evaluation.proposed_hidden_note').replace('{name}', personFirst)}</p>
+                            )}
+                            {applicant.proposal.canUndo && (
+                                <div className="flex flex-wrap gap-2">
+                                    <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('change')} data-testid="applicant-undo-change">
+                                        {t('evaluation.undo_change')}
+                                    </Button>
+                                    <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('withdraw')} data-testid="applicant-undo-quit">
+                                        {t('evaluation.undo_quit').replace('{animal}', proposalAnimalName)}
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* PERFIL section */}
                     <section>
@@ -622,6 +672,30 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         animalName={animal?.name ?? null}
                         onClose={() => setDialog(null)}
                         onDone={() => { void afterChange('outcome'); }}
+                    />
+                )}
+                {dialog === 'withdraw' && applicant.proposal && (
+                    <WithdrawProposalDialog
+                        generalApplicationId={applicant.proposal.generalApplicationId}
+                        personName={personFirst}
+                        animalName={proposalAnimalName}
+                        onClose={() => setDialog(null)}
+                        onDone={() => { setDialog(null); void afterChange('outcome'); }}
+                    />
+                )}
+                {dialog === 'change' && applicant.proposal && (
+                    <ProposeAnimalSheet
+                        applicationId={applicant.proposal.generalApplicationId}
+                        change
+                        fromAnimal={proposalAnimalName}
+                        personName={personName}
+                        onClose={() => setDialog(null)}
+                        onDone={() => { setDialog(null); void afterChange('outcome'); }}
+                        onSamePerson={() => {
+                            setDialog(null);
+                            toast.info(t('samePerson.gate_hint_propose').replace('{name}', personFirst));
+                            requestAnimationFrame(goToQuestion);
+                        }}
                     />
                 )}
                 {dialog === 'propose' && (

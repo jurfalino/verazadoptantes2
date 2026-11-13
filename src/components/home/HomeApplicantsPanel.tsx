@@ -28,7 +28,15 @@ import { applicantsOrThrow, type ApplicantsLoad } from '@/lib/applicantsLoad';
 export { applicantsOrThrow };
 
 /** Which list the row opens: one animal's candidates, or the general applications. */
-export type HomeApplicantsTarget = { animal: { id: string; name: string; sex: string | null } } | 'general';
+export type HomeApplicantsTarget = { animal: { id: string; name: string; sex: string | null } } | 'general'
+    /** One general form, opened alone (Jon 2026-11-13): «Mis adoptantes» and its link `requestHref`. */
+    | { request: string };
+
+/** A stable React key per target (a new target remounts the panel). */
+export function applicantsTargetKey(target: HomeApplicantsTarget): string {
+    if (target === 'general') return 'general';
+    return 'request' in target ? `request:${target.request}` : target.animal.id;
+}
 
 type Loaded = { kind: 'loading' } | { kind: 'ok'; list: ApplicantSummary[]; index: number } | { kind: 'error'; errorId: string };
 
@@ -71,25 +79,29 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged, applic
 }) {
     const { t } = useLanguage();
     const [state, setState] = useState<Loaded>({ kind: 'loading' });
-    const animal = target === 'general' ? null : target.animal;
+    const request = typeof target === 'object' && 'request' in target ? target.request : null;
+    const animal = typeof target === 'object' && 'animal' in target ? target.animal : null;
     const animalId = animal?.id ?? null;
 
     // A refusal reads as an empty list; a failure carries the server's errorId (ApplicantsLoad).
-    const read = useCallback(
-        () => (animalId ? getApplicantsForAnimal(animalId) : getGeneralApplications()),
-        [animalId],
-    );
+    // One request: the general list narrowed to it (the same read and checks as the whole list).
+    const read = useCallback(async (): Promise<ApplicantsLoad> => {
+        if (animalId) return getApplicantsForAnimal(animalId);
+        const res = await getGeneralApplications();
+        if (!request || !res.ok) return res;
+        return { ok: true, applicants: res.applicants.filter(a => a.applicationId === request) };
+    }, [animalId, request]);
 
     useEffect(() => {
         let current = true;
-        void readPanel(read, applicationId).then((res) => {
+        void readPanel(read, request ?? applicationId).then((res) => {
             if (!current) return;
             if (res.kind === 'empty') { onChanged(); onClose(); return; }
             if (res.kind === 'stale') { onClose(); return; }
             setState(res);
         });
         return () => { current = false; };
-    }, [read, applicationId, onClose, onChanged]);
+    }, [read, request, applicationId, onClose, onChanged]);
 
     const onOutcome = useCallback(async () => {
         onChanged();
@@ -103,6 +115,7 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged, applic
             <ApplicantDetailPanel
                 testId={testId}
                 returnLabel={returnLabel}
+                single={!!request}
                 applicants={state.list}
                 initialIndex={state.index}
                 animal={animal}

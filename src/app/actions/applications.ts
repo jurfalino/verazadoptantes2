@@ -251,7 +251,9 @@ export async function getProposalAnimals(applicationId: string): Promise<{ ok: t
         const auth = await loadAuthorizedApplication(db, applicationId, viewer);
         if (!auth) return fail('not_found');
         if (auth.app.animalId) return fail('not_allowed');
-        if (auth.app.state !== APPLICATION_STATES.OPEN) return fail('already_decided');
+        // Open: «Sumar a un animal». Proposed: «Cambiar animal» lists the others (its current animal is left out as
+        // one this person already has an open application for).
+        if (auth.app.state !== APPLICATION_STATES.OPEN && auth.app.state !== APPLICATION_STATES.PROPOSED) return fail('already_decided');
         return { ok: true, ...(await loadProposalAnimals(db, viewer, auth)) };
     } catch (e) {
         const errorId = logger.error('getProposalAnimals failed', e, { applicationId, viewer });

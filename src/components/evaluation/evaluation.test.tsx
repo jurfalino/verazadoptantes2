@@ -21,7 +21,7 @@ vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t, locale: '
 vi.mock('@/context/TimezoneContext', () => ({ useDateFormat: () => ({ formatShortDate: () => '' }) }));
 vi.mock('@/components/ui/Toast', () => ({ useShowToast: () => ({ error: vi.fn(), success: vi.fn() }) }));
 vi.mock('@/lib/clientErrorReporter', () => ({ resolveErrorId: vi.fn(() => 'err12345'), reportClientError: vi.fn() }));
-vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn(), getAdoptionOffer: vi.fn(), markOfferDone: vi.fn() }));
+vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn(), getAdoptionOffer: vi.fn(), markOfferDone: vi.fn(), withdrawProposal: vi.fn(), changeProposedAnimal: vi.fn() }));
 vi.mock('@/app/actions/formSubmission', () => ({ linkFormToExistingAdopter: vi.fn() }));
 vi.mock('@/app/actions/duplicates', () => ({ dismissDuplicateCandidate: vi.fn() }));
 vi.mock('@/app/actions', () => ({ getMatchContext: vi.fn(async () => ({ ok: false })) }));
@@ -40,6 +40,7 @@ const { DeclineApplicationDialog, DeclineForm, declineMissing, declineOutcome } 
 const { DuplicateCards } = await import('./ApplicationDuplicate');
 const { ProposalAnimalList, proposeOutcome, proposeNewOutcome } = await import('./ProposeAnimalSheet');
 const { OfferSheetBody, offerLinks, offerMessage, offerAnimalOf } = await import('./AdoptionOfferSheet');
+const { WithdrawProposalDialog } = await import('./WithdrawProposalDialog');
 const { default: FormAnswersPanel } = await import('@/components/FormAnswersPanel');
 const { summarizeAnswers } = await import('@/domain/formAnswers');
 
@@ -241,6 +242,15 @@ describe('«Agregar y proponer»: what the page says after saving (audit 2026-11
         expect(proposeNewOutcome({ ok: false, error: 'already_candidate' })).toBe('already_candidate');
         expect(proposeNewOutcome({ ok: false, error: 'not_found' })).toBe('failed');
         expect(proposeNewOutcome({ ok: false, error: 'failed', errorId: 'e1' })).toBe('failed');
+    });
+});
+
+describe('«Quitar de Luna» (Jon 2026-11-13)', () => {
+    it('asks first, gender-neutral: the person leaves Luna\'s candidates, back to «por evaluar», not told', () => {
+        const html = renderToStaticMarkup(<WithdrawProposalDialog generalApplicationId="app-gen" personName="Ana" animalName="Luna" onClose={() => {}} onDone={() => {}} />);
+        expect(text(html)).toContain(E.undo_confirm_title.replace('{name}', 'Ana').replace('{animal}', 'Luna'));
+        expect(text(html)).toContain(E.undo_confirm_body.split('{name}').join('Ana').replace('{animal}', 'Luna'));
+        expect(text(html)).toContain(E.undo_confirm_button.replace('{animal}', 'Luna'));
     });
 });
 

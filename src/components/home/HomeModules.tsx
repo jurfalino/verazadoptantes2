@@ -25,7 +25,7 @@ import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLaunc
 // Plain imports, never next/dynamic: on the Cloudflare build (next-on-pages) a dynamic chunk in this edge
 // page crashed the homepage («async__chunk_… is not defined», v2.58.43 CI). Both render only once opened.
 import HomeDuePanel from '@/components/home/HomeDuePanel';
-import HomeApplicantsPanel, { type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
+import HomeApplicantsPanel, { applicantsTargetKey, type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
 import { AdoptionOfferSheet } from '@/components/evaluation/AdoptionOfferSheet';
 import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
 import PendingDedup from '@/components/PendingDedup';
@@ -685,7 +685,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
             </div>
             {duePanel && <HomeDuePanel key={duePanel.id} animalId={duePanel.id} animalName={duePanel.name} onClose={closeDuePanel} onChanged={load} />}
             {applicantsPanel && (
-                <HomeApplicantsPanel key={applicantsPanel === 'general' ? 'general' : applicantsPanel.animal.id}
+                <HomeApplicantsPanel key={applicantsTargetKey(applicantsPanel)}
                     target={applicantsPanel} onClose={closeApplicantsPanel} onChanged={load} />
             )}
             {offerFor && <AdoptionOfferSheet key={offerFor} animalId={offerFor} onClose={closeOffer} onDone={load} />}

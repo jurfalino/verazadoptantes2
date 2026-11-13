@@ -505,7 +505,7 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //   changeProposedAnimal(generalApplicationId, animalId)  the same gate plus the «¿Es la misma persona?» lock, then
 //                              the same withdraw and the existing proposeAuthorized (animal in the caller's and the
 //                              form link's team, takes contracts). On refusal it restores the first animal.
-const EXPECTED_ACTIONS = 191;
+const EXPECTED_ACTIONS = 193;
 
 let manifest;
 try {

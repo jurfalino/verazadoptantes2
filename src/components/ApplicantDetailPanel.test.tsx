@@ -27,7 +27,7 @@ vi.mock('@/components/LocationMap', () => ({ default: () => null }));
 // «Todas las respuestas» itself is not under test here; its rows and labels are (the answers summary uses them).
 vi.mock('@/components/FormAnswersPanel', async (orig) => ({ ...(await orig<typeof import('@/components/FormAnswersPanel')>()), default: () => null }));
 vi.mock('@/components/FormPhotos', () => ({ default: () => null }));
-vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn() }));
+vi.mock('@/app/actions/applications', () => ({ declineApplication: vi.fn(), proposeAnimal: vi.fn(), getProposalAnimals: vi.fn(), getApplicationDuplicates: vi.fn(), withdrawProposal: vi.fn(), changeProposedAnimal: vi.fn() }));
 vi.mock('@/app/actions/applicants', () => ({ getApplicantsForAnimal: vi.fn(async () => ({ ok: true, applicants: [] })) }));
 vi.mock('@/app/actions/formSubmission', () => ({ linkFormToExistingAdopter: vi.fn() }));
 vi.mock('@/app/actions/duplicates', () => ({ dismissDuplicateCandidate: vi.fn() }));
@@ -54,8 +54,8 @@ const applicant = (o: Partial<ApplicantSummary> = {}): ApplicantSummary => ({
     adopterContext: null, ...o,
 });
 const LUNA = { id: 'luna', name: 'Luna', sex: 'hembra' };
-const render = (a: ApplicantSummary, o: { animal?: typeof LUNA | null; returnLabel?: boolean } = {}) => renderToStaticMarkup(
-    <ApplicantDetailPanel applicants={[a]} initialIndex={0} animal={o.animal === undefined ? LUNA : o.animal} returnLabel={o.returnLabel} onClose={() => {}} />,
+const render = (a: ApplicantSummary, o: { animal?: typeof LUNA | null; returnLabel?: boolean; single?: boolean } = {}) => renderToStaticMarkup(
+    <ApplicantDetailPanel applicants={[a]} initialIndex={0} animal={o.animal === undefined ? LUNA : o.animal} returnLabel={o.returnLabel} single={o.single} onClose={() => {}} />,
 );
 const has = (html: string, id: string) => html.includes(`data-testid="${id}"`);
 const NONE = es.myAnimals.applicants_panel_no_flags;
@@ -307,5 +307,41 @@ describe('«Enviar contrato» — what the answer leads to (final review I3)', (
         expect(sendOutcome({ success: false, error: 'already_decided' })).toBe('refresh');
         expect(sendOutcome({ success: false, error: 'not_allowed', errorId: 'e1' })).toBe('not_allowed');
         expect(sendOutcome({ success: false, error: 'Failed to create invitation (e2)', errorId: 'e2' })).toBe('failed');
+    });
+});
+
+describe('ApplicantDetailPanel — a general form is a person (Jon 2026-11-13)', () => {
+    const E = es.evaluation;
+    const proposal = (o: Partial<NonNullable<ApplicantSummary['proposal']>> = {}) => ({
+        generalApplicationId: 'app-gen', candidacyId: 'app-cand', animal: { id: 'luna', name: 'Luna', sex: 'hembra' }, byName: 'Jonathan U', canUndo: true, ...o,
+    });
+
+    it('single: opens alone — «← Volver» and «Formulario general», no Anterior/Siguiente', () => {
+        const html = render(applicant(), { animal: null, single: true });
+        const out = text(html);
+        expect(out).toContain(E.back);
+        expect(out).toContain(E.general_title);
+        expect(out).not.toContain(es.myAnimals.applicants_panel_prev);
+        expect(out).not.toContain(es.myAnimals.applicants_panel_next);
+    });
+
+    it('a general form added to Luna, untouched: «… no se entera», «Cambiar animal», «Quitar de Luna»', () => {
+        const html = render(applicant({ status: { kind: 'proposed' }, outcomeAnimal: { id: 'luna', name: 'Luna', sex: 'hembra' }, proposal: proposal() }), { animal: null, single: true });
+        const out = text(html);
+        expect(out).toContain(E.proposed_hidden_note.replace('{name}', 'Juan'));
+        expect(out).toContain(E.undo_change);
+        expect(out).toContain(E.undo_quit.replace('{animal}', 'Luna'));
+    });
+
+    it('once something happened on Luna\'s side: no «Cambiar» nor «Quitar»', () => {
+        const html = render(applicant({ status: { kind: 'proposed' }, outcomeAnimal: { id: 'luna', name: 'Luna', sex: 'hembra' }, proposal: proposal({ canUndo: false }) }), { animal: null, single: true });
+        expect(text(html)).not.toContain(E.undo_change);
+        expect(text(html)).not.toContain(E.undo_quit.replace('{animal}', 'Luna'));
+    });
+
+    it('on Luna, a team-added candidate reads «Sumó Jonathan U · formulario general»', () => {
+        const html = render(applicant({ origin: 'proposed', proposal: proposal({ animal: null }) }));
+        expect(text(html)).toContain(E.added_by_line.replace('{proposer}', 'Jonathan U'));
+        expect(text(html)).toContain(E.undo_quit.replace('{animal}', 'Luna'));
     });
 });
