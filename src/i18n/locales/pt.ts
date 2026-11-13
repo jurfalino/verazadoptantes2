@@ -390,6 +390,8 @@ export const pt = {
         flag_desc_followups: 'Ativa a linha de vida projetada: lembretes de controle pós-adoção e de lar temporário, a seção «Seguimientos» em Configurações, os selos de pendências em Meus animais e o envio diário de lembretes.',
         flag_label_custom_adoption_docs: 'Formulário e contrato personalizados',
         flag_desc_custom_adoption_docs: 'Permite que cada resgatista e grupo escolha quais perguntas o formulário faz e edite as seções 2–4 do contrato.',
+        flag_label_group_branding: 'Identidade visual dos grupos',
+        flag_desc_group_branding: 'Logo, capa, cores e redes dos grupos no formulário e no catálogo públicos',
         flag_label_sheet_import: 'Importar planilha em Meus Adotantes',
         flag_desc_sheet_import: 'Mostra o botão «Importar planilha» em Meus Adotantes, que abre a importação de adotantes a partir de uma planilha.',
         flag_label_origin_labels: 'Origem de perfis e atividades',

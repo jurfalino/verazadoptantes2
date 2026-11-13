@@ -94,6 +94,7 @@ export async function GET() {
             ENABLE_GUEST_NAME_MASK: config['ENABLE_GUEST_NAME_MASK'] || 'false',
             ENABLE_FOLLOWUPS: config['ENABLE_FOLLOWUPS'] || 'true',
             ENABLE_CUSTOM_ADOPTION_DOCS: config['ENABLE_CUSTOM_ADOPTION_DOCS'] || 'false',
+            ENABLE_GROUP_BRANDING: config['ENABLE_GROUP_BRANDING'] || 'false',
             ENABLE_SHEET_IMPORT: config['ENABLE_SHEET_IMPORT'] || 'false',
             ENABLE_ORIGIN_LABELS: config['ENABLE_ORIGIN_LABELS'] || 'false',
             ENABLE_INTERVIEW_GUIDE: config['ENABLE_INTERVIEW_GUIDE'] || 'false',

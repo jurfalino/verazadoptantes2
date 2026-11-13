@@ -54,6 +54,9 @@ export const PUBLIC_FLAG_KEYS = [
     // Custom adoption form + contract per user/group — settings card, editor,
     // and the /organizations button are all client-rendered.
     'ENABLE_CUSTOM_ADOPTION_DOCS',
+    // Group branding (logo, cover, colours, socials) — /organizations and
+    // /settings are client-rendered.
+    'ENABLE_GROUP_BRANDING',
     // "Importar planilla" link in the /my-adopters header.
     'ENABLE_SHEET_IMPORT',
     'ENABLE_ORIGIN_LABELS',
@@ -85,6 +88,7 @@ export const PUBLIC_FLAG_DEFAULTS: Record<string, string> = {
     ENABLE_EMAIL_OTP: 'false',
     ENABLE_PWA_INSTALL_PROMPT: 'false',
     ENABLE_CUSTOM_ADOPTION_DOCS: 'false',
+    ENABLE_GROUP_BRANDING: 'false',
     ENABLE_SHEET_IMPORT: 'false',
     ENABLE_ORIGIN_LABELS: 'false',
     ENABLE_INTERVIEW_GUIDE: 'false',

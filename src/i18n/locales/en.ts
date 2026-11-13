@@ -390,6 +390,8 @@ export const en = {
         flag_desc_followups: 'Turns on the projected line of life: post-adoption and foster check-in reminders, the «Seguimientos» section in Settings, the pending badges on My Animals, and the daily reminder job.',
         flag_label_custom_adoption_docs: 'Custom form & contract',
         flag_desc_custom_adoption_docs: 'Lets each rescuer and group choose which form questions to ask and edit contract sections 2–4.',
+        flag_label_group_branding: 'Group branding',
+        flag_desc_group_branding: 'Logo, cover, colours and social links of each group on the public form and catalogue',
         flag_label_sheet_import: 'Import spreadsheet in My Adopters',
         flag_desc_sheet_import: 'Shows the «Import spreadsheet» button in My Adopters, which opens the spreadsheet adopter import.',
         flag_label_origin_labels: 'Origin of profiles and activities',

@@ -391,6 +391,8 @@ export const es = {
         flag_desc_followups: 'Activa la línea de vida proyectada: recordatorios de control post-adopción y de tránsito, la sección «Seguimientos» en Configuración, las insignias de pendientes en Mis animales y el envío diario de recordatorios.',
         flag_label_custom_adoption_docs: 'Formulario y contrato personalizados',
         flag_desc_custom_adoption_docs: 'Permite que cada rescatista y grupo elija qué preguntas hace el formulario y edite las secciones 2–4 del contrato.',
+        flag_label_group_branding: 'Marca de los grupos',
+        flag_desc_group_branding: 'Logo, portada, colores y redes de los grupos en el formulario y el catálogo públicos',
         flag_label_sheet_import: 'Importar planilla en Mis Adoptantes',
         flag_desc_sheet_import: 'Muestra el botón «Importar planilla» en Mis Adoptantes, que lleva a la carga de adoptantes desde una planilla.',
         flag_label_origin_labels: 'Origen de perfiles y actividades',
