@@ -46,20 +46,45 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
             ? { hiddenSteps: resolved.hiddenSteps }
             : (await getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS')) ? { hiddenSteps: [] as string[] } : null;
 
-        // Cat-only / dog-only questions on a form opened for one animal (the
-        // species question is skipped there). Same lookup as the submit route;
-        // only the species leaves this route.
+        // A form opened for one animal (`?animalId=`): its species picks the
+        // cat-only / dog-only questions (the species question is skipped there),
+        // and the form names it at the top (Jon 2026-11-13) — only an animal of
+        // the link owner's team that still takes applications, its photo only
+        // while it is in the public catalogue (formAnimalForLink).
         const animalId = new URL(request.url).searchParams.get('animalId');
         let animalSpecies: 'cat' | 'dog' | null = null;
+        let animal: { name: string; photo: string | null } | null = null;
         if (animalId) {
             const { adoptions } = await import('@/db/schema');
-            const row = await db.select({ species: adoptions.species }).from(adoptions).where(eq(adoptions.id, animalId)).get()
+            const row = await db.select({ species: adoptions.species, name: adoptions.animalName, addedBy: adoptions.addedBy, recordType: adoptions.recordType, adopterId: adoptions.adopterId, listed: adoptions.listed })
+                .from(adoptions).where(eq(adoptions.id, animalId)).get()
                 .catch((e: unknown) => {
-                    logger.warn('api/form/[userId]: animal species lookup failed', { userId, animalId, error: e instanceof Error ? e.message : String(e) });
+                    logger.warn('api/form/[userId]: animal lookup failed', { userId, animalId, error: e instanceof Error ? e.message : String(e) });
                     return undefined;
                 });
             const sp = row?.species?.trim().toLowerCase();
             animalSpecies = sp === 'cat' || sp === 'gato' ? 'cat' : sp === 'dog' || sp === 'perro' ? 'dog' : null;
+            if (row && user?.email) {
+                try {
+                    const [{ getTeamEmails }, { formAnimalForLink }] = await Promise.all([
+                        import('@/lib/orgMembership'),
+                        import('@/domain/shareFormAnimals'),
+                    ]);
+                    const shown = formAnimalForLink(row, await getTeamEmails(user.email));
+                    if (shown) {
+                        let photo: string | null = null;
+                        if (shown.publicPhoto) {
+                            const { fetchAnimalImages } = await import('@/lib/showcase');
+                            const first = (await fetchAnimalImages(db, [animalId])).get(animalId)?.[0];
+                            photo = first ? (first.mediaType === 'video' ? first.thumbnailUrl ?? null : first.url) : null;
+                        }
+                        animal = { name: shown.name, photo };
+                    }
+                } catch (e) {
+                    // The form still opens, just without the animal at the top.
+                    logger.warn('api/form/[userId]: animal header falls back to the generic form', { userId, animalId, error: e instanceof Error ? e.message : String(e) });
+                }
+            }
         }
 
         return withCors(NextResponse.json({
@@ -67,6 +92,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
             userName: user?.name || null,
             formConfig,
             animalSpecies,
+            animal,
         }), origin);
     } catch (e) {
         const errorId = logger.error('api/form/[userId] failed', e, { userId });

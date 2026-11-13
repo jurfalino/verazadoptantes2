@@ -487,7 +487,14 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              server-read names — never caller-supplied text.
 //   undoSamePersonUnsure(candidateId)   same session/pair gate; marks only the caller's group's rows withdrawn
 //                              (another group's «No sé» is untouched) and marks the question read.
-const EXPECTED_ACTIONS = 190;
+// 191 (Jon 2026-11-13, «Compartir formulario» on the home + «¿Para qué animal?»): one export in
+// src/app/actions/applications.ts, imported by ShareFormMenu. What a stranger can do with it:
+//   getShareFormAnimals()       takes no arguments; session required (signed out → unauthorized). Lists only
+//                              the CALLER's team's animals that take applications (myAnimalsScope →
+//                              availableWhere: available or fostered, added by the caller or an org-mate),
+//                              with name, species, sex, colour, lead photo and the count of open
+//                              applications — what /my-animals already shows that caller. Read-only.
+const EXPECTED_ACTIONS = 191;
 
 let manifest;
 try {

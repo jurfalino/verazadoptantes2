@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { migratedDb } from '@/test-utils/migratedDb';
 import * as mocks from '@/test-utils/actionMocks';
-import { asyncDb, seedEvaluation, snapshot, application, form, adopter, type Sqlite } from '@/test-utils/applicationFixtures';
+import { asyncDb, seedEvaluation, snapshot, application, form, adopter, animal, placement, type Sqlite } from '@/test-utils/applicationFixtures';
 
 const { session, OWNER, MATE, STRANGER, ADMIN } = mocks;
 
@@ -40,6 +40,7 @@ vi.mock('@/lib/logger', () => ({
 
 import {
     getGeneralApplications, getApplicationDuplicates, declineApplication, getProposalAnimals, proposeAnimal, getAdoptionOffer, markOfferDone,
+    getShareFormAnimals,
 } from './applications';
 
 let sqlite: Sqlite;
@@ -131,6 +132,27 @@ describe('evaluation actions — access', () => {
         const res = await getProposalAnimals('app-s-gen');
         expect(res).toMatchObject({ ok: true });
         expect((res as { animals: Array<{ id: string }> }).animals.map(a => a.id)).toEqual(['luna']);
+    });
+
+    it('getShareFormAnimals («¿Para qué animal?») lists only the viewer\'s team\'s animals that take applications', async () => {
+        const res = await getShareFormAnimals();
+        expect(res).toMatchObject({ ok: true, animals: [{ id: 'luna', name: 'Luna', species: 'cat', candidates: 1 }] });
+        session.user = MATE;
+        expect((await getShareFormAnimals() as { animals: Array<{ id: string }> }).animals.map(a => a.id)).toEqual(['luna']);
+        session.user = STRANGER;
+        expect((await getShareFormAnimals() as { animals: Array<{ id: string }> }).animals.map(a => a.id)).toEqual(['sol']);
+    });
+
+    it('getShareFormAnimals leaves out an adopted animal, keeps a fostered one, and needs a session', async () => {
+        adopter(sqlite, 'casa', 'Casa', OWNER);
+        animal(sqlite, 'nube', 'Nube', OWNER, { species: 'dog' });
+        placement(sqlite, 'pl-nube', 'nube', 'casa', 'adoption');
+        animal(sqlite, 'tito', 'Tito', OWNER, { species: 'dog' });
+        placement(sqlite, 'pl-tito', 'tito', 'casa', 'foster');
+        const ids = (await getShareFormAnimals() as { animals: Array<{ id: string }> }).animals.map(a => a.id).sort();
+        expect(ids).toEqual(['luna', 'tito']);
+        session.user = null;
+        expect(await getShareFormAnimals()).toEqual({ ok: false, error: 'unauthorized' });
     });
 
     it('getGeneralApplications lists only the viewer\'s team\'s general applications', async () => {

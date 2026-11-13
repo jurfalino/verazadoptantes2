@@ -14,6 +14,8 @@ import PhotoPicker from './components/PhotoPicker'
 import { withOpenSteps, isAnswered, openText, type OpenTextStep } from './lib/openAnswers'
 import { draftAnswers, photosMissing, missingPhotosStep, MAX_PROTECTION_PHOTOS } from './lib/formPhotos'
 import { shrinkImage } from './lib/imageShrink'
+import { formAnimalFromConfig, type FormAnimal } from './lib/formAnimal'
+import { PawIcon } from './components/Icons'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -688,6 +690,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // The animal's species when the form is for one (its species question is
     // skipped): cat-only / dog-only questions follow it (spec 2026-10-14).
     const [animalSpecies, setAnimalSpecies] = useState<string | null>(null)
+    // The animal this link was opened for, named at the top of the first step (Jon 2026-11-13).
+    const [formAnimal, setFormAnimal] = useState<FormAnimal | null>(null)
     useEffect(() => {
         if (!userId) return
         const ctrl = new AbortController()
@@ -695,10 +699,11 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         const query = animalId ? `?animalId=${encodeURIComponent(animalId)}` : ''
         fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}${query}`, { signal: ctrl.signal })
             .then(r => (r.ok ? r.json() : null))
-            .then((data: { formConfig?: { hiddenSteps?: unknown } | null; animalSpecies?: unknown } | null) => {
+            .then((data: { formConfig?: { hiddenSteps?: unknown } | null; animalSpecies?: unknown; animal?: unknown } | null) => {
                 const hs = data?.formConfig?.hiddenSteps
                 if (Array.isArray(hs)) setHiddenSteps(hs.filter((x): x is string => typeof x === 'string'))
                 setAnimalSpecies(typeof data?.animalSpecies === 'string' ? data.animalSpecies : null)
+                setFormAnimal(animalId ? formAnimalFromConfig(data) : null)
             })
             // Standard form is the safe fallback — never block the adopter.
             .catch(err => console.warn('[PetShield] form config unavailable, using standard form', err))
@@ -1129,6 +1134,17 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         switch (currentStep.type) {
             case 'consent': return (
                 <div className="ps-step" key={key}>
+                    {currentStep.id === 'legal' && formAnimal && (
+                        <div className="ps-form-animal" data-testid="form-animal">
+                            {formAnimal.photo
+                                ? <img className="ps-form-animal__photo" src={formAnimal.photo} alt="" />
+                                : <span className="ps-form-animal__photo ps-form-animal__photo--empty" aria-hidden><PawIcon size={28} /></span>}
+                            <div className="ps-form-animal__text">
+                                <div className="ps-form-animal__label">{t('form.animal_for')}</div>
+                                <div className="ps-form-animal__name">{formAnimal.name}</div>
+                            </div>
+                        </div>
+                    )}
                     <h1 className="ps-title">{currentStep.title}</h1>
                     <div className="ps-consent-body">
                         <p>{currentStep.body}</p>

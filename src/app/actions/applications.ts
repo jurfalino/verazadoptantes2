@@ -20,6 +20,7 @@ import { APPLICATION_STATES, RECORD_TYPES } from '@/domain/constants';
 import { formLinkKind, formResultsView } from '@/domain/formLink';
 import type { FormMatchCardData } from '@/lib/formMatchCards';
 import type { ProposalAnimal, OfferCandidate } from './_applications';
+import type { ShareAnimal } from '@/domain/shareFormAnimals';
 import type { ApplicantsLoad } from '@/lib/applicantsLoad';
 
 /**
@@ -246,6 +247,25 @@ export async function getProposalAnimals(applicationId: string): Promise<{ ok: t
         return { ok: true, animals: await loadProposalAnimals(db, viewer, auth) };
     } catch (e) {
         const errorId = logger.error('getProposalAnimals failed', e, { applicationId, viewer });
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * «Compartir formulario» → «¿Para qué animal?»: the viewer's team's animals
+ * that take applications, newest first. Session required; the team scope is
+ * the viewer's own (myAnimalsScope), so a caller can never list another team.
+ */
+export async function getShareFormAnimals(): Promise<{ ok: true; animals: ShareAnimal[] } | Fail> {
+    let viewer: string | null = null;
+    try {
+        viewer = await sessionViewer();
+        if (!viewer) return fail('unauthorized');
+        const { loadShareFormAnimals } = await import('./_applications');
+        const db = await requireDb();
+        return { ok: true, animals: await loadShareFormAnimals(db, viewer) };
+    } catch (e) {
+        const errorId = logger.error('getShareFormAnimals failed', e, { viewer });
         return { ok: false, error: 'failed', errorId };
     }
 }

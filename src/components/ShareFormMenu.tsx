@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useContractBase } from '@/hooks/useContractBase';
 import { zarazTrack } from '@/lib/zaraz';
+import { getShareFormAnimals } from '@/app/actions/applications';
+import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { handledAsStale } from '@/lib/errorMessage';
+import ShareAnimalPicker, { ShareAnimalThumb } from '@/components/share/ShareAnimalPicker';
+import type { ShareAnimal } from '@/domain/shareFormAnimals';
 
 const getQrImageSrc = (url: string) => `/api/qr?data=${encodeURIComponent(url)}`;
 
@@ -22,25 +27,62 @@ interface ShareFormMenuProps {
      * full-width "Compartir formulario de adopción" label is too long.
      */
     compact?: boolean;
+    /**
+     * Draws the button that opens the window instead of the default one
+     * (the home's «Compartir formulario» row). Gets the opener.
+     */
+    renderTrigger?: (open: () => void) => ReactNode;
 }
 
-export default function ShareFormMenu({ userId, animalId, animalName, compact = false }: ShareFormMenuProps) {
+/** «¿Para qué animal?» — the team's animals, read when the window opens. */
+type AnimalsLoad = { state: 'idle' | 'loading' } | { state: 'ok'; animals: ShareAnimal[] } | { state: 'failed'; errorId: string | null };
+
+export default function ShareFormMenu({ userId, animalId, animalName, compact = false, renderTrigger }: ShareFormMenuProps) {
     const { t, locale } = useLanguage();
     const contractBase = useContractBase();
     const [isOpen, setIsOpen] = useState(false);
     const [showQr, setShowQr] = useState(false);
     const [copied, setCopied] = useState(false);
+    // «¿Para qué animal?» — only when the window was not opened for one animal.
+    const canPick = !animalId;
+    const [animalsLoad, setAnimalsLoad] = useState<AnimalsLoad>({ state: 'idle' });
+    const [picked, setPicked] = useState<ShareAnimal | null>(null);
+    const [picking, setPicking] = useState(false);
 
-    const perAnimal = !!animalId;
+    const linkAnimalId = animalId ?? picked?.id ?? null;
+    const linkAnimalName = animalId ? animalName : (picked?.name?.trim() || t('homeModules.unnamed_animal'));
+    const perAnimal = !!linkAnimalId;
     const baseUrl = contractBase ? `${contractBase}/form?u=${encodeURIComponent(userId)}` : '';
     // ?lang= renders the contract-app form in the sharer's language (defaults to es).
     const fullUrl = baseUrl
-        ? `${baseUrl}${animalId ? `&animal=${encodeURIComponent(animalId)}` : ''}&lang=${locale}`
+        ? `${baseUrl}${linkAnimalId ? `&animal=${encodeURIComponent(linkAnimalId)}` : ''}&lang=${locale}`
         : '';
     const ready = fullUrl !== '';
     const shareText = perAnimal
-        ? `${t('dashboard.share_form_for_animal_share_text') || 'Formulario de adopción para'} ${animalName || 'este animal'}`
-        : 'Formulario de adopción responsable — PetShield';
+        ? `${t('dashboard.share_form_for_animal_share_text') || 'Formulario de adopción para'} ${linkAnimalName || 'este animal'}`
+        : t('share.form_share_text');
+
+    // Read the team's animals each time the window opens (one may have been added meanwhile).
+    useEffect(() => {
+        if (!isOpen || !canPick) return;
+        let current = true;
+        setAnimalsLoad({ state: 'loading' });
+        getShareFormAnimals()
+            .then((res) => {
+                if (!current) return;
+                if (res.ok) { setAnimalsLoad({ state: 'ok', animals: res.animals }); return; }
+                setAnimalsLoad({ state: 'failed', errorId: res.errorId ?? resolveErrorId(new Error(`getShareFormAnimals: ${res.error}`), 'ShareFormMenu') });
+            })
+            .catch((e: unknown) => {
+                if (!current) return;
+                setAnimalsLoad({ state: 'failed', errorId: handledAsStale(e) ? null : resolveErrorId(e, 'ShareFormMenu') });
+            });
+        return () => { current = false; };
+    }, [isOpen, canPick]);
+
+    const open = () => { setPicked(null); setPicking(false); setShowQr(false); setIsOpen(true); };
+    const close = () => { setIsOpen(false); setShowQr(false); setPicking(false); };
+    const pickableAnimals = animalsLoad.state === 'ok' ? animalsLoad.animals : [];
 
     const handleCopyLink = async () => {
         if (!ready) return;
@@ -63,14 +105,14 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
         if (!ready) return;
         window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${fullUrl}`)}`, '_blank');
         zarazTrack('form_shared', { channel: 'whatsapp' });
-        setIsOpen(false);
+        close();
     };
 
     const handleEmail = () => {
         if (!ready) return;
         window.open(`mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(`${shareText}\n\n${fullUrl}`)}`, '_blank');
         zarazTrack('form_shared', { channel: 'email' });
-        setIsOpen(false);
+        close();
     };
 
     const handleNativeShare = async () => {
@@ -81,25 +123,26 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                 zarazTrack('form_shared', { channel: 'native' });
             } catch { /* User cancelled */ }
         }
-        setIsOpen(false);
+        close();
     };
 
     useEffect(() => {
         if (!isOpen) return;
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                setIsOpen(false);
-                setShowQr(false);
+                if (picking) { setPicking(false); return; }
+                close();
             }
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen]);
+    }, [isOpen, picking]);
 
     return (
         <>
+            {renderTrigger ? renderTrigger(open) : (
             <button
-                onClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsOpen(true); }}
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); open(); }}
                 className={`inline-flex items-center gap-2 ${compact ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-semibold text-teal-700 bg-teal-50 rounded-xl hover:bg-teal-100 transition-colors border border-teal-200`}
                 aria-label={perAnimal
                     ? `${t('dashboard.share_form_for_animal_short') || 'Compartir formulario'}${animalName ? ` — ${animalName}` : ''}`
@@ -112,17 +155,27 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                     ? (compact ? (t('dashboard.share_form_for_animal_short') || 'Formulario') : (t('dashboard.share_form_for_animal') || 'Compartir formulario'))
                     : (t('dashboard.share_form') || 'Share application form')}
             </button>
+            )}
 
             {isOpen && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
-                    onClick={() => { setIsOpen(false); setShowQr(false); }}
+                    onClick={close}
                 >
                     <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
                     <div
                         className="relative bg-white rounded-2xl shadow-2xl border border-stone-200 w-full max-w-sm animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
                         onClick={(e) => e.stopPropagation()}
                     >
+                        {picking ? (
+                            <ShareAnimalPicker
+                                animals={pickableAnimals}
+                                pickedId={picked?.id ?? null}
+                                onPick={(a) => { setPicked(a); setPicking(false); setCopied(false); }}
+                                onBack={() => setPicking(false)}
+                            />
+                        ) : (
+                        <>
                         {/* Header */}
                         <div className="p-5 pb-3 border-b border-stone-100">
                             <div className="flex items-center justify-between">
@@ -140,13 +193,14 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                                             {showQr
                                                 ? (t('dashboard.share_form_qr_hint') || 'Have the applicant scan to open the form')
                                                 : perAnimal
-                                                    ? (animalName || t('dashboard.share_form_for_animal_modal_hint') || 'Aspirantes completarán este formulario para postularse a este animal.')
+                                                    ? (linkAnimalName || t('dashboard.share_form_for_animal_modal_hint') || 'Aspirantes completarán este formulario para postularse a este animal.')
                                                     : (t('dashboard.share_form_modal_hint') || 'Applicants fill this form; you\'ll receive their responses.')}
                                         </p>
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => showQr ? setShowQr(false) : setIsOpen(false)}
+                                    onClick={() => showQr ? setShowQr(false) : close()}
+                                    aria-label={t('common.close')}
                                     className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-600 transition-colors"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -162,13 +216,32 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                             </div>
                         ) : (
                         <>
+                        {/* «¿Para qué animal?» — the window opened without an animal, and the team has some. */}
+                        {canPick && animalsLoad.state === 'ok' && pickableAnimals.length > 0 && (
+                            <div className="px-3 pt-3">
+                                <button type="button" onClick={() => setPicking(true)} data-testid="share-form-pick-animal"
+                                    className="w-full flex items-center gap-3 px-4 py-3 min-h-11 rounded-xl text-left bg-stone-50 border border-stone-200 hover:border-stone-300 transition-colors">
+                                    <ShareAnimalThumb animal={picked} />
+                                    <span className="flex-1 min-w-0">
+                                        <span className="block text-xs font-semibold text-stone-500">{t('share.pick_label')}</span>
+                                        <span className="block text-sm font-semibold text-stone-900 truncate">{picked ? linkAnimalName : t('share.pick_none')}</span>
+                                    </span>
+                                    <span className="text-xs font-semibold text-teal-700 shrink-0">{t('share.pick_change')}</span>
+                                </button>
+                            </div>
+                        )}
+                        {canPick && animalsLoad.state === 'failed' && animalsLoad.errorId && (
+                            <p className="px-5 pt-3 text-xs text-stone-500" data-testid="share-form-animals-failed">
+                                {t('share.pick_load_failed')} <span className="text-stone-400">({t('homeModules.error_code')}: {animalsLoad.errorId})</span>
+                            </p>
+                        )}
                         {/* Share Options */}
                         <div className="p-3 space-y-1">
                             <a
                                 href={fullUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={() => setIsOpen(false)}
+                                onClick={close}
                                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left hover:bg-stone-50 active:bg-stone-100 transition-colors"
                             >
                                 <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0 text-indigo-700">
@@ -250,6 +323,8 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                                     : t('share.form_footer_hint')}
                             </p>
                         </div>
+                        </>
+                        )}
                         </>
                         )}
                     </div>

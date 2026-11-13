@@ -15,6 +15,7 @@ import { and, eq, isNotNull, isNull, ne, or, gt, sql } from 'drizzle-orm';
 import { adopterEvents, adopterImages, adopters, adoptions, animals, applications, contractInvitations, formSubmissions, placements } from '@/db/schema';
 import { APPLICATION_CLOSE_REASONS, APPLICATION_ORIGINS, APPLICATION_STATES, DECLINE_REASON_MAX, DECLINE_TEXT_MAX, RECORD_TYPES } from '@/domain/constants';
 import { rankProposalAnimals } from '@/domain/applications';
+import { sortShareAnimals, type ShareAnimal } from '@/domain/shareFormAnimals';
 import { takesContract } from '@/domain/placements';
 import { applicantScopeWhere, isInTeamScope, normalizeTeamScope } from '@/lib/applicantScope';
 import { countOpenByAnimal } from '@/lib/applicationCounts';
@@ -245,6 +246,53 @@ export async function loadProposalAnimals(db: Db, viewer: string, auth: Authoriz
         ]);
         return { id: a.id, name: a.name, species: a.species, photo, matches: a.matches, candidates: counts.get(a.id) ?? 0 };
     }));
+}
+
+/**
+ * «Compartir formulario» → «¿Para qué animal?» (Jon 2026-11-13): every animal
+ * of the viewer's team that takes applications (available + fostered —
+ * `availableWhere`, the same set as «Proponer un animal» and /my-animals),
+ * newest first, each with its open applications and lead photo. No form is
+ * involved yet, so nothing is left out for «already applied».
+ */
+export async function loadShareFormAnimals(db: Db, viewer: string): Promise<ShareAnimal[]> {
+    const { availableWhere } = await myAnimalsScope(viewer);
+    const rows = await db.select({ id: adoptions.id, name: adoptions.animalName, species: adoptions.species, sex: adoptions.sex, color: adoptions.color, date: adoptions.date, addedBy: adoptions.addedBy })
+        .from(adoptions)
+        .where(availableWhere)
+        .all() as Array<{ id: string; name: string | null; species: string | null; sex: string | null; color: string | null; date: Date | null; addedBy: string | null }>;
+
+    // Open applications are counted per owner team, as on the home and in «Proponer».
+    const teamOf = createOwnerTeamResolver();
+    const countsByTeam = new Map<string, Promise<Map<string, number>>>();
+    const candidatesIn = (team: string[]) => {
+        const key = normalizeTeamScope(team).slice().sort().join(',');
+        let hit = countsByTeam.get(key);
+        if (!hit) { hit = countOpenByAnimal(db, team); countsByTeam.set(key, hit); }
+        return hit;
+    };
+    const animalsOut = await Promise.all(rows.map(async (r): Promise<ShareAnimal> => {
+        const [counts, photo] = await Promise.all([
+            teamOf(r.addedBy).then(candidatesIn).catch((e: unknown) => {
+                logger.warn('getShareFormAnimals: candidate count D1 fallback hit', { animalId: r.id, viewer, error: e instanceof Error ? e.message : String(e) });
+                return new Map<string, number>();
+            }),
+            db.select({ url: adopterImages.url }).from(adopterImages)
+                .where(eq(adopterImages.adoptionId, r.id))
+                .orderBy(animalPrimaryFirst(), sql`rowid ASC`).limit(1).get()
+                .then((x: { url: string } | undefined) => x?.url ?? null)
+                .catch((e: unknown) => {
+                    logger.warn('getShareFormAnimals: animal photo D1 fallback hit', { animalId: r.id, viewer, error: e instanceof Error ? e.message : String(e) });
+                    return null;
+                }),
+        ]);
+        return {
+            id: r.id, name: r.name, species: r.species, sex: r.sex, color: r.color, photo,
+            addedAtMs: r.date ? r.date.getTime() : null,
+            candidates: counts.get(r.id) ?? 0,
+        };
+    }));
+    return sortShareAnimals(animalsOut);
 }
 
 export type ProposeOutcome = { ok: true; applicationId: string } | { ok: false; error: 'not_found' | 'not_allowed' | 'animal_adopted' | 'already_candidate' | 'already_decided' };
