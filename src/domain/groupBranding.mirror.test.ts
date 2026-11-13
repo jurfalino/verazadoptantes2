@@ -8,7 +8,7 @@ const KEYS = ['d', 'dStrong', 'dHover', 'l', 'lStrong', 'lHover'] as const;
 
 const mirrored = [...src.matchAll(/\{\s*id:\s*'([^']+)'[^}]*\}/g)].map(m => {
     const hex = (k: string) => m[0].match(new RegExp(`\\b${k}:\\s*'(#[0-9a-fA-F]{6})'`))?.[1];
-    return { id: m[1], ...Object.fromEntries(KEYS.map(k => [k, hex(k)])) };
+    return { id: m[1], ...Object.fromEntries(KEYS.map(k => [k, hex(k)])) } as { id: string } & Record<(typeof KEYS)[number], string | undefined>;
 });
 
 describe('contract-app branding mirror', () => {
