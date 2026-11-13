@@ -4,7 +4,7 @@ import { useT, localizedHref } from './i18n/LocaleContext'
 import { speciesLabel, sexLabel, ageLabel, isFemale } from './lib/animalLabels'
 import { isVideo, posterOf, posterUrls } from './lib/media'
 import { applyBranding, parseBranding, type PublicBranding } from './lib/branding'
-import { withGroupHint } from './lib/brandLinks'
+import { withGroupHint, followInstagramUrl } from './lib/brandLinks'
 import { BrandBar } from './components/BrandHeader'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -151,6 +151,8 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
         a.rescuer.userHandle ? localizedHref(`/user/${a.rescuer.userHandle}`, locale) :
         null
     const rescuerLabel = a.rescuer.orgName || a.rescuer.displayName
+    // Branded page ⇒ the group's Instagram; otherwise the platform's, as today.
+    const followUrl = followInstagramUrl(branding, data.instagramUrl)
 
     return (
         <main className="ps-showcase-page ps-animal-detail">
@@ -231,9 +233,9 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
                 ) : (
                     <p className="ps-animal-cta__unavailable">{t('animal.unavailable_for_application')}</p>
                 )}
-                {data.instagramUrl && (
+                {followUrl && (
                     <a
-                        href={data.instagramUrl}
+                        href={followUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ps-btn ps-btn--ghost ps-animal-cta__ig"

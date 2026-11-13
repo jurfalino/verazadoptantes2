@@ -21,3 +21,12 @@ export function httpsOnly(url: string | null | undefined): string | null {
         return null
     }
 }
+
+/**
+ * The «follow on Instagram» CTA: on a branded page it is the group's own
+ * Instagram (https only); otherwise — or when the group has none — the
+ * platform's, as today. null ⇒ no CTA.
+ */
+export function followInstagramUrl(branding: { instagramUrl: string | null } | null, platformUrl: string | null | undefined): string | null {
+    return (branding && httpsOnly(branding.instagramUrl)) || platformUrl || null
+}

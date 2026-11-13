@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { withGroupHint, httpsOnly } from './brandLinks'
+import { withGroupHint, httpsOnly, followInstagramUrl } from './brandLinks'
 
 describe('withGroupHint', () => {
     it('appends g to an existing query', () => {
@@ -32,5 +32,23 @@ describe('httpsOnly', () => {
         expect(httpsOnly('not a url')).toBeNull()
         expect(httpsOnly('')).toBeNull()
         expect(httpsOnly(null)).toBeNull()
+    })
+})
+
+describe('followInstagramUrl', () => {
+    const platform = 'https://instagram.com/buenadoptante'
+    it("prefers the group's Instagram when branded", () => {
+        expect(followInstagramUrl({ instagramUrl: 'https://instagram.com/refugio' }, platform)).toBe('https://instagram.com/refugio')
+    })
+    it("falls back to the platform's when the group has none (or a non-https one)", () => {
+        expect(followInstagramUrl({ instagramUrl: null }, platform)).toBe(platform)
+        expect(followInstagramUrl({ instagramUrl: 'javascript:alert(1)' }, platform)).toBe(platform)
+    })
+    it("uses the platform's when unbranded", () => {
+        expect(followInstagramUrl(null, platform)).toBe(platform)
+    })
+    it('is null when neither is set', () => {
+        expect(followInstagramUrl(null, '')).toBeNull()
+        expect(followInstagramUrl({ instagramUrl: null }, undefined)).toBeNull()
     })
 })
