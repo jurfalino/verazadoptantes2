@@ -18,6 +18,7 @@ import { formAnimalFromConfig, type FormAnimal } from './lib/formAnimal'
 import { PawIcon } from './components/Icons'
 import { applyBranding, parseBranding, type PublicBranding } from './lib/branding'
 import { BrandBar, BrandLinks, BrandLogo, brandLinkList } from './components/BrandHeader'
+import { httpsOnly } from './lib/brandLinks'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -1132,7 +1133,7 @@ export default function PetShieldForm({ userId, animalId, groupHint }: { userId:
                             only when there is something to follow. */}
                         {branding && brandLinkList(branding).length > 0 && (
                             <div className="pb-follow">
-                                <div className="pb-follow__logo"><BrandLogo b={branding} size={56} /></div>
+                                {httpsOnly(branding.logoUrl) && <div className="pb-follow__logo"><BrandLogo b={branding} size={56} /></div>}
                                 <p className="pb-follow__title">{t('form.follow_title', { name: branding.orgName })}</p>
                                 <BrandLinks b={branding} labelled />
                             </div>
