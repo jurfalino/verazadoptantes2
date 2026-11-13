@@ -3,10 +3,11 @@ import { dismissCountryBanner } from './helpers';
 import { execD1Batch, rows } from './db';
 
 /**
- * «Proponer un animal» → «Cargar un animal / Cargar otro animal» (Jon
- * 2026-11-13): the request opens «Agregar animal» in propose mode (the person
- * named, «Agregar y proponer a …»); saving adds the animal, proposes it, and
- * goes back to the request, now «Propuesta para …».
+ * «Sumar a un animal» → «Cargar un animal / Cargar otro animal» (Jon
+ * 2026-11-13): the request opens «Agregar animal» in that mode (the person
+ * named, «Agregar y sumar a …»); saving adds the animal, adds the person to its
+ * candidates, and goes back to the request in «Mis adoptantes», now «En los
+ * candidatos de …» with «Cambiar animal / Quitar».
  *
  * Runs as the `user` project (testuser@example.com). Fixtures carry
  * `test-pl-fixture-*` ids (and the new animal's unique name) and are removed
@@ -19,7 +20,7 @@ const ID = (k: string) => `test-pl-fixture-${k}-${stamp}`;
 const PERSON = { adopter: ID('ad'), form: ID('fs'), app: ID('app'), first: `Proponida${stamp}`, name: `Proponida${stamp} Gómez` };
 const NEW_ANIMAL = `Nuevito ${stamp}`;
 
-test.describe.serial('«Cargar un animal» from «Proponer un animal»', () => {
+test.describe.serial('«Cargar un animal» from «Sumar a un animal»', () => {
     test.beforeAll(() => {
         execD1Batch([
             `INSERT INTO adopters (id, name, contact_info, status, added_by, source, created_at, updated_at) VALUES ('${PERSON.adopter}', '${PERSON.name}', '', '5', '${USER}', 'form', strftime('%s','now'), strftime('%s','now'))`,
@@ -39,9 +40,9 @@ test.describe.serial('«Cargar un animal» from «Proponer un animal»', () => {
         ]);
     });
 
-    test('the request → «Cargar … animal» → «Agregar y proponer» → back on the request, proposed', async ({ page }) => {
+    test('the request → «Cargar … animal» → «Agregar y sumar» → back on the request in «Mis adoptantes», added', async ({ page }) => {
         test.setTimeout(180_000);
-        await page.goto(`/my-animals?view=solicitudes&animal=general&solicitud=${PERSON.app}`);
+        await page.goto(`/my-adopters?solicitud=${PERSON.app}#pendientes`);
         await dismissCountryBanner(page);
 
         await page.getByTestId('evaluate-propose').click({ timeout: 60_000 });
@@ -55,9 +56,12 @@ test.describe.serial('«Cargar un animal» from «Proponer un animal»', () => {
         await page.locator('form input').first().fill(NEW_ANIMAL);
         await page.locator('form button[type="submit"]').click();
 
-        // Back on the request: proposed for the new animal.
-        await expect(page).toHaveURL(new RegExp(`solicitud=${PERSON.app}`), { timeout: 60_000 });
-        await expect(page.getByTestId('applicant-status-line')).toContainText(NEW_ANIMAL, { timeout: 60_000 });
+        // Back on the request, alone, in «Mis adoptantes»: among the new animal's candidates, still reversible.
+        await expect(page).toHaveURL(new RegExp(`/my-adopters\\?solicitud=${PERSON.app}#pendientes`), { timeout: 60_000 });
+        const panel = page.getByTestId('request-panel');
+        await expect(panel.getByTestId('applicant-status-line')).toHaveAttribute('data-status', 'proposed', { timeout: 60_000 });
+        await expect(panel.getByTestId('applicant-status-line')).toContainText(NEW_ANIMAL);
+        await expect(panel.getByTestId('applicant-undo-quit')).toBeVisible();
 
         // And in the data: one open candidacy for the new animal, the general one closed as proposed.
         const apps = rows(`SELECT a.state AS state, a.animal_id AS animal, an.name AS name FROM applications a LEFT JOIN animals an ON an.id = a.animal_id WHERE a.submission_id = '${PERSON.form}' ORDER BY a.created_at`) as Array<{ state: string; animal: string | null; name: string | null }>;
