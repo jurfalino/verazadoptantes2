@@ -1626,3 +1626,5 @@ body {
 :root[data-ps-theme="light"] .ps-showcase-card,
 :root[data-ps-theme="light"] .ps-option { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06); }
 :root[data-ps-theme="light"] .ps-showcase-card__photo-fade { opacity: 0; }
+/* The dark theme's white wash is invisible on a light page. */
+:root[data-ps-theme="light"] .ps-btn--ghost:hover:not(:disabled) { background: rgba(15, 23, 42, 0.05); }

@@ -1,0 +1,129 @@
+/* ══════════════════════════════════════════════
+ * GROUP BRANDING — header, compact bar, social links (components/BrandHeader.tsx).
+ * Only rendered when an API response carries `branding`; the light theme
+ * tokens themselves live in petshield.css (:root[data-ps-theme="light"]).
+ * ══════════════════════════════════════════════ */
+
+/* ── Group header (catalogue) ── */
+.pb-header {
+  margin-bottom: var(--ps-4);
+  padding-bottom: var(--ps-3);
+  border-bottom: 1px solid var(--ps-border);
+}
+/* Bleeds to the page edges on phones (.ps-showcase-page padding is --ps-4 / --ps-3). */
+.pb-banner {
+  margin: calc(-1 * var(--ps-4)) calc(-1 * var(--ps-3)) 0;
+  height: clamp(120px, 33vw, 280px);
+  overflow: hidden;
+  background: var(--ps-bg-subtle);
+}
+.pb-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+@media (min-width: 768px) {
+  .pb-banner { margin: 0; border-radius: 16px; }
+}
+.pb-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-2);
+  margin-bottom: var(--ps-2);
+}
+.pb-header--banner .pb-identity { margin-top: -36px; align-items: flex-start; padding: 0 var(--ps-1); }
+.pb-header--banner .pb-identity__text { padding-top: 44px; }
+/* Own white tile so transparent PNGs read on both themes. */
+.pb-logo {
+  flex: none;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--ps-bg);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+  object-fit: cover;
+}
+.pb-identity__text { min-width: 0; }
+.pb-name {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ps-text);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.pb-header--banner .pb-name { font-size: 20px; }
+@media (min-width: 768px) { .pb-header--banner .pb-name { font-size: 28px; } }
+.pb-subtitle { margin: 4px 0 0; color: var(--ps-text-secondary); font-size: 14px; }
+.pb-count {
+  margin: var(--ps-1) 0 0;
+  color: var(--ps-text-muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+/* ── Social links ── */
+.pb-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ps-1); }
+@media (min-width: 768px) { .pb-links { display: flex; flex-wrap: wrap; } }
+.pb-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 0;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid var(--ps-border);
+  background: var(--ps-card);
+  color: var(--ps-text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: border-color 200ms, color 200ms;
+}
+.pb-link svg { flex: none; color: var(--ps-accent); }
+.pb-link span { overflow: hidden; text-overflow: ellipsis; }
+.pb-link:hover { border-color: var(--ps-border-active); color: var(--ps-accent-strong); }
+.pb-links--labelled { margin-top: var(--ps-3); }
+@media (min-width: 768px) { .pb-links--labelled { justify-content: center; } }
+@media (min-width: 768px) { .pb-link { padding: 0 14px; font-size: 14px; } }
+
+/* ── Compact bar (form + animal pages) ── */
+.pb-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--ps-3) var(--ps-3) 0;
+  box-sizing: border-box;
+}
+.ps-animal-detail .pb-bar { padding: 0 0 var(--ps-2); max-width: none; }
+.pb-bar .pb-logo { border-width: 2px; }
+.pb-bar__name { min-width: 0; font-size: 15px; font-weight: 700; color: var(--ps-text); line-height: 1.3; overflow-wrap: anywhere; }
+
+/* ── Thank-you: follow the rescue ── */
+.pb-follow { margin-top: var(--ps-4); text-align: center; width: 100%; }
+.pb-follow__logo { display: flex; justify-content: center; margin-bottom: var(--ps-2); }
+.pb-follow__title { font-size: 15px; font-weight: 600; color: var(--ps-text-secondary); margin: 0; }
+
+/* ── Contract page: always white, so no theme tokens — stone like the page. ── */
+.pb-contract-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 32px;
+  border-bottom: 1px solid #e7e5e4;
+  font-family: system-ui, sans-serif;
+}
+.pb-contract-head img {
+  flex: none;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #e7e5e4;
+  object-fit: cover;
+}
+.pb-contract-head__name { min-width: 0; font-size: 15px; font-weight: 700; color: #1c1917; line-height: 1.3; overflow-wrap: anywhere; }
+@media (min-width: 640px) { .pb-contract-head { padding: 16px 48px; } } /* matches the body's sm:px-12 */
+.pb-contract-submit { background: var(--ps-accent); color: var(--ps-on-accent); }
+.pb-contract-submit:hover:not(:disabled) { background: var(--ps-accent-hover); }

@@ -30,6 +30,9 @@ export const showcase: CatalogSlice = {
         'showcase.empty_desc': 'Por ahora no hay animales en adopción en {where}.',
         'showcase.empty_follow_hint': 'Seguinos en redes para enterarte cuando publiquemos.',
         'showcase.empty_cta': 'Seguinos en Instagram',
+        'showcase.follow_instagram': 'Instagram',
+        'showcase.follow_facebook': 'Facebook',
+        'showcase.follow_website': 'Sitio web',
     },
     en: {
         'showcase.loading': 'Loading…',
@@ -57,6 +60,9 @@ export const showcase: CatalogSlice = {
         'showcase.empty_desc': 'There are no animals for adoption from {where} right now.',
         'showcase.empty_follow_hint': 'Follow us on social media to find out when we post new animals.',
         'showcase.empty_cta': 'Follow us on Instagram',
+        'showcase.follow_instagram': 'Instagram',
+        'showcase.follow_facebook': 'Facebook',
+        'showcase.follow_website': 'Website',
     },
     pt: {
         'showcase.loading': 'Carregando…',
@@ -84,5 +90,8 @@ export const showcase: CatalogSlice = {
         'showcase.empty_desc': 'Por enquanto {where} não tem animais em adoção.',
         'showcase.empty_follow_hint': 'Siga a gente nas redes para saber quando publicarmos.',
         'showcase.empty_cta': 'Siga a gente no Instagram',
+        'showcase.follow_instagram': 'Instagram',
+        'showcase.follow_facebook': 'Facebook',
+        'showcase.follow_website': 'Site',
     },
 };

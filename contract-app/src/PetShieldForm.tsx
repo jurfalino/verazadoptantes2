@@ -16,6 +16,8 @@ import { draftAnswers, photosMissing, missingPhotosStep, MAX_PROTECTION_PHOTOS }
 import { shrinkImage } from './lib/imageShrink'
 import { formAnimalFromConfig, type FormAnimal } from './lib/formAnimal'
 import { PawIcon } from './components/Icons'
+import { applyBranding, parseBranding, type PublicBranding } from './lib/branding'
+import { BrandBar, BrandLinks, BrandLogo, brandLinkList } from './components/BrandHeader'
 
 // ══════════════════════════════════════════════
 // TYPES — JSON Schema
@@ -352,7 +354,7 @@ const API_URL = import.meta.env.VITE_API_URL || ''
 // COMPONENT
 // ══════════════════════════════════════════════
 
-export default function PetShieldForm({ userId, animalId }: { userId: string | null; animalId?: string | null }) {
+export default function PetShieldForm({ userId, animalId, groupHint }: { userId: string | null; animalId?: string | null; groupHint?: string | null }) {
     const { t } = useT()
 
     // Schema lives inside the component so option/title text can resolve through
@@ -683,9 +685,15 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         },
     ], [t])
 
-    // ── Rescuer's saved form config (which steps to hide) ──
-    // Fetched async so it can never block the adopter: while it's in flight
-    // (or on failure/timeout) the standard schema applies — the safe default.
+    // ── Rescuer's saved form config (which steps to hide) + group branding ──
+    // The form waits behind a neutral loading screen until this settles, so it
+    // never flashes the default look before the group's (spec 2026-11-13). The
+    // wait is capped by the 3s abort: on failure/timeout the standard schema and
+    // today's look apply — the safe default — and the adopter is never blocked longer.
+    const [configSettled, setConfigSettled] = useState(!userId)
+    const [branding, setBranding] = useState<PublicBranding | null>(null)
+    // Leaving the form never leaves its theme behind.
+    useEffect(() => () => applyBranding(null), [])
     const [hiddenSteps, setHiddenSteps] = useState<string[] | null>(null)
     // The animal's species when the form is for one (its species question is
     // skipped): cat-only / dog-only questions follow it (spec 2026-10-14).
@@ -695,22 +703,41 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     const [formAnimal, setFormAnimal] = useState<FormAnimal | null | undefined>(animalId ? undefined : null)
     useEffect(() => {
         if (!userId) return
+        // Set by cleanup (unmount / StrictMode's re-run): that run's abort must
+        // not release the loading screen before the live request answers.
+        let stale = false
         const ctrl = new AbortController()
         const timer = setTimeout(() => ctrl.abort(), 3000)
-        const query = animalId ? `?animalId=${encodeURIComponent(animalId)}` : ''
+        const params = new URLSearchParams()
+        if (animalId) params.set('animalId', animalId)
+        // The catalogue's group (`?g=`): only a hint, the server re-checks membership.
+        if (groupHint) params.set('g', groupHint)
+        const query = params.toString() ? `?${params}` : ''
         fetch(`${API_URL}/api/form/${encodeURIComponent(userId)}${query}`, { signal: ctrl.signal })
             .then(r => (r.ok ? r.json() : null))
-            .then((data: { formConfig?: { hiddenSteps?: unknown } | null; animalSpecies?: unknown; animal?: unknown } | null) => {
+            .then((data: { formConfig?: { hiddenSteps?: unknown } | null; animalSpecies?: unknown; animal?: unknown; branding?: unknown } | null) => {
+                if (stale) return
                 const hs = data?.formConfig?.hiddenSteps
                 if (Array.isArray(hs)) setHiddenSteps(hs.filter((x): x is string => typeof x === 'string'))
                 setAnimalSpecies(typeof data?.animalSpecies === 'string' ? data.animalSpecies : null)
                 setFormAnimal(animalId ? formAnimalFromConfig(data) : null)
+                // Before the form is released, so its first paint is already branded.
+                const b = parseBranding(data?.branding)
+                applyBranding(b)
+                setBranding(b)
             })
-            // Standard form is the safe fallback — never block the adopter.
-            .catch(err => { setFormAnimal(null); console.warn('[PetShield] form config unavailable, using standard form', err) })
-            .finally(() => clearTimeout(timer))
-        return () => { clearTimeout(timer); ctrl.abort() }
-    }, [userId, animalId])
+            // Standard form + today's look is the safe fallback.
+            .catch(err => {
+                if (stale) return
+                setFormAnimal(null)
+                console.warn('[PetShield] form config unavailable, using standard form', err)
+            })
+            .finally(() => {
+                clearTimeout(timer)
+                if (!stale) setConfigSettled(true)
+            })
+        return () => { stale = true; clearTimeout(timer); ctrl.abort() }
+    }, [userId, animalId, groupHint])
 
     // When the form was launched from the public showcase (animalId present),
     // skip the three steps that ask about the desired animal — the choice is
@@ -1050,7 +1077,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // ── Keyboard navigation ──
     useEffect(() => {
         function handleKeyDown(e: KeyboardEvent) {
-            if (submitted || submitting) return
+            if (submitted || submitting || !configSettled) return
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 if (canAdvance()) goNext()
@@ -1101,6 +1128,15 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                         <p className="ps-complete__desc">
                             {t('form.complete_desc')}
                         </p>
+                        {/* The moment adopters are most likely to follow the rescue —
+                            only when there is something to follow. */}
+                        {branding && brandLinkList(branding).length > 0 && (
+                            <div className="pb-follow">
+                                <div className="pb-follow__logo"><BrandLogo b={branding} size={56} /></div>
+                                <p className="pb-follow__title">{t('form.follow_title', { name: branding.orgName })}</p>
+                                <BrandLinks b={branding} labelled />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1120,6 +1156,15 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                         </p>
                     </div>
                 </div>
+            </div>
+        )
+    }
+
+    // ── Waiting for the rescuer's config (≤ 3s): neutral, unbranded ──
+    if (!configSettled) {
+        return (
+            <div className="ps-form">
+                <div className="ps-showcase-loading" aria-busy="true" data-testid="form-config-loading">{t('common.loading')}</div>
             </div>
         )
     }
@@ -1652,6 +1697,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                     <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 0 0 8px', fontSize: 16 }}>×</button>
                 </div>
             )}
+
+            {branding && <BrandBar b={branding} />}
 
             {/* Step Content */}
             <div className="ps-step-container">

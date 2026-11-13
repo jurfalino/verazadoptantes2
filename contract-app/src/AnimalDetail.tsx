@@ -3,6 +3,9 @@ import { PawIcon, AlertIcon } from './components/Icons'
 import { useT, localizedHref } from './i18n/LocaleContext'
 import { speciesLabel, sexLabel, ageLabel, isFemale } from './lib/animalLabels'
 import { isVideo, posterOf, posterUrls } from './lib/media'
+import { applyBranding, parseBranding, type PublicBranding } from './lib/branding'
+import { withGroupHint } from './lib/brandLinks'
+import { BrandBar } from './components/BrandHeader'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -30,6 +33,8 @@ interface AnimalDetailData {
 interface ApiResponse {
     animal: AnimalDetailData
     instagramUrl?: string
+    /** Group branding: absent when the flag is off, null when there is nothing to show. */
+    branding?: unknown
 }
 
 /**
@@ -46,18 +51,28 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [activeImageIdx, setActiveImageIdx] = useState(0)
+    const [branding, setBranding] = useState<PublicBranding | null>(null)
+    // The catalogue's group this page was opened from (`?g=`): a hint the
+    // server re-checks against the poster, carried on to the adoption form.
+    const [groupHint] = useState(() => new URLSearchParams(window.location.search).get('g'))
+
+    // Leaving the page never leaves its theme behind.
+    useEffect(() => () => applyBranding(null), [])
 
     useEffect(() => {
         async function load() {
             setLoading(true)
             setError(null)
             try {
-                const res = await fetch(`${API_URL}/api/showcase/animal/${encodeURIComponent(animalId)}`)
+                const res = await fetch(withGroupHint(`${API_URL}/api/showcase/animal/${encodeURIComponent(animalId)}`, groupHint))
                 if (!res.ok) {
                     setError(res.status === 404 ? t('animal.no_longer_available') : t('common.network_error'))
                     return
                 }
                 const body = await res.json() as ApiResponse
+                const b = parseBranding(body.branding)
+                applyBranding(b)
+                setBranding(b)
                 setData(body)
             } catch {
                 setError(t('common.network_error'))
@@ -66,7 +81,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
             }
         }
         load()
-    }, [animalId, t])
+    }, [animalId, groupHint, t])
 
     // SEO meta + JSON-LD
     useEffect(() => {
@@ -127,7 +142,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
     const heroImage = heroItem ? posterOf(heroItem) : null
     const heroIsVideo = !!heroItem && isVideo(heroItem)
     const adoptHref = a.rescuer.userId
-        ? localizedHref(`/form?u=${encodeURIComponent(a.rescuer.userId)}&animal=${encodeURIComponent(a.id)}`, locale)
+        ? localizedHref(withGroupHint(`/form?u=${encodeURIComponent(a.rescuer.userId)}&animal=${encodeURIComponent(a.id)}`, groupHint), locale)
         : null
     // «Quiero adoptarla» for a female; unknown sex keeps «Quiero adoptarlo».
     const adoptCta = t(isFemale(a.sex) ? 'animal.adopt_cta_f' : 'animal.adopt_cta')
@@ -139,6 +154,7 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
 
     return (
         <main className="ps-showcase-page ps-animal-detail">
+            {branding && <BrandBar b={branding} />}
             <a href={localizedHref('/all', locale)} className="ps-showcase-back-link">{t('animal.back_to_catalog')}</a>
 
             <div className="ps-animal-hero">

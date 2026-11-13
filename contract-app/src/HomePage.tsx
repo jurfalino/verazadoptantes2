@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import AnimalCard, { type AnimalSummary } from './components/AnimalCard'
 import { useT, localizedHref } from './i18n/LocaleContext'
+import { applyBranding } from './lib/branding'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 const FEATURED_COUNT = 6
@@ -27,6 +28,9 @@ export default function HomePage() {
     const [animals, setAnimals] = useState<AnimalSummary[] | null>(null)
     const [total, setTotal] = useState<number>(0)
     const [loading, setLoading] = useState(true)
+
+    // The platform's own landing is never branded.
+    useEffect(() => applyBranding(null), [])
 
     useEffect(() => {
         async function load() {
