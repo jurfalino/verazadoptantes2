@@ -34,6 +34,12 @@ interface ShareFormMenuProps {
     renderTrigger?: (open: () => void) => ReactNode;
 }
 
+/**
+ * The last list read per rescuer, so the window opens with «¿Para qué animal?»
+ * already in place (no jump) while it is read again in the background.
+ */
+const lastAnimals = new Map<string, ShareAnimal[]>();
+
 /** «¿Para qué animal?» — the team's animals, read when the window opens. */
 type AnimalsLoad = { state: 'idle' | 'loading' } | { state: 'ok'; animals: ShareAnimal[] } | { state: 'failed'; errorId: string | null };
 
@@ -66,11 +72,18 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
     useEffect(() => {
         if (!isOpen || !canPick) return;
         let current = true;
-        setAnimalsLoad({ state: 'loading' });
+        const known = lastAnimals.get(userId);
+        setAnimalsLoad(known ? { state: 'ok', animals: known } : { state: 'loading' });
         getShareFormAnimals()
             .then((res) => {
                 if (!current) return;
-                if (res.ok) { setAnimalsLoad({ state: 'ok', animals: res.animals }); return; }
+                if (res.ok) {
+                    lastAnimals.set(userId, res.animals);
+                    setAnimalsLoad({ state: 'ok', animals: res.animals });
+                    // A picked animal no longer there (adopted meanwhile) is dropped.
+                    setPicked(p => (p && !res.animals.some(a => a.id === p.id) ? null : p));
+                    return;
+                }
                 setAnimalsLoad({ state: 'failed', errorId: res.errorId ?? resolveErrorId(new Error(`getShareFormAnimals: ${res.error}`), 'ShareFormMenu') });
             })
             .catch((e: unknown) => {
@@ -78,7 +91,7 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                 setAnimalsLoad({ state: 'failed', errorId: handledAsStale(e) ? null : resolveErrorId(e, 'ShareFormMenu') });
             });
         return () => { current = false; };
-    }, [isOpen, canPick]);
+    }, [isOpen, canPick, userId]);
 
     const open = () => { setPicked(null); setPicking(false); setShowQr(false); setIsOpen(true); };
     const close = () => { setIsOpen(false); setShowQr(false); setPicking(false); };
@@ -201,7 +214,7 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                                 <button
                                     onClick={() => showQr ? setShowQr(false) : close()}
                                     aria-label={t('common.close')}
-                                    className="w-8 h-8 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-600 transition-colors"
+                                    className="w-11 h-11 -mr-2 rounded-full flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-600 transition-colors"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
@@ -211,12 +224,24 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                         {showQr ? (
                             <div className="p-5 flex flex-col items-center">
                                 <p className="text-xs text-stone-500 mb-3 text-center">{t('share.form_qr_hint')}</p>
-                                <img src={getQrImageSrc(fullUrl)} alt="QR del enlace" className="rounded-xl border border-stone-200 bg-white" width={220} height={220} />
+                                <img src={getQrImageSrc(fullUrl)} alt={t('share.qr_alt')} className="rounded-xl border border-stone-200 bg-white" width={220} height={220} />
                                 <p className="text-xs text-stone-400 mt-3 truncate max-w-full px-2">{fullUrl}</p>
                             </div>
                         ) : (
                         <>
                         {/* «¿Para qué animal?» — the window opened without an animal, and the team has some. */}
+                        {/* First open: the line's place is held while the animals are read, so the options below don't jump. */}
+                        {canPick && animalsLoad.state === 'loading' && (
+                            <div className="px-3 pt-3" aria-busy="true" data-testid="share-form-pick-animal-loading">
+                                <div className="w-full flex items-center gap-3 px-4 py-3 min-h-11 rounded-xl bg-stone-50 border border-stone-200">
+                                    <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 animate-pulse" />
+                                    <span className="flex-1 min-w-0">
+                                        <span className="block text-xs font-semibold text-stone-500">{t('share.pick_label')}</span>
+                                        <span className="block h-4 w-32 mt-1 rounded bg-stone-200 animate-pulse" />
+                                    </span>
+                                </div>
+                            </div>
+                        )}
                         {canPick && animalsLoad.state === 'ok' && pickableAnimals.length > 0 && (
                             <div className="px-3 pt-3">
                                 <button type="button" onClick={() => setPicking(true)} data-testid="share-form-pick-animal"
@@ -261,7 +286,7 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                                     {copied ? '✅' : '🔗'}
                                 </div>
                                 <div>
-                                    <p className="text-sm font-semibold text-stone-900">{copied ? '¡Copiado!' : 'Copiar enlace'}</p>
+                                    <p className="text-sm font-semibold text-stone-900">{copied ? t('share.copied') : t('share.copy_link')}</p>
                                     <p className="text-xs text-stone-500 truncate max-w-[220px]">{fullUrl}</p>
                                 </div>
                             </button>
@@ -308,7 +333,7 @@ export default function ShareFormMenu({ userId, animalId, animalName, compact = 
                                 >
                                     <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-lg flex-shrink-0">📤</div>
                                     <div>
-                                        <p className="text-sm font-semibold text-stone-900">Más opciones...</p>
+                                        <p className="text-sm font-semibold text-stone-900">{t('share.more_title')}</p>
                                         <p className="text-xs text-stone-500">{t('share.more_options')}</p>
                                     </div>
                                 </button>

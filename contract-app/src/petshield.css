@@ -1588,5 +1588,6 @@ body {
 .ps-form-animal__photo { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
 .ps-form-animal__photo--empty { display: flex; align-items: center; justify-content: center; background: rgba(99, 102, 241, .06); color: var(--ps-accent); opacity: .7; }
 .ps-form-animal__text { min-width: 0; }
-.ps-form-animal__label { font-size: 12px; font-weight: 600; color: var(--ps-text-muted); }
+.ps-form-animal__label { font-size: 12px; font-weight: 600; color: var(--ps-text-secondary); }
 .ps-form-animal__name { font-size: 17px; font-weight: 700; color: var(--ps-text); overflow-wrap: anywhere; }
+.ps-form-animal__name-skeleton { width: 112px; height: 20px; margin-top: 4px; border-radius: 6px; background: var(--ps-card-hover); }

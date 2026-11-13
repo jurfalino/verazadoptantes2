@@ -134,6 +134,14 @@ describe('evaluation actions — access', () => {
         expect((res as { animals: Array<{ id: string }> }).animals.map(a => a.id)).toEqual(['luna']);
     });
 
+    it('getProposalAnimals says whether the team has animals at all, so an empty list can say why (Jon 2026-11-13)', async () => {
+        expect(await getProposalAnimals('app-s-gen')).toMatchObject({ ok: true, anyAnimals: true });
+        // Ana already applied to Luna, the team's only animal: nothing to propose, but the team has animals.
+        form(sqlite, 's-ana-gen', { name: 'Ana Pérez', adopter: 'ana' });
+        application(sqlite, 'app-s-ana-gen', 's-ana-gen', null);
+        expect(await getProposalAnimals('app-s-ana-gen')).toMatchObject({ ok: true, animals: [], anyAnimals: true });
+    });
+
     it('getShareFormAnimals («¿Para qué animal?») lists only the viewer\'s team\'s animals that take applications', async () => {
         const res = await getShareFormAnimals();
         expect(res).toMatchObject({ ok: true, animals: [{ id: 'luna', name: 'Luna', species: 'cat', candidates: 1 }] });

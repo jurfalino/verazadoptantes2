@@ -391,6 +391,7 @@ describe('proposeAnimal / getProposalAnimals («Proponer un animal»)', () => {
                 { id: 'tito', name: 'Tito', species: 'dog', photo: 'https://img/tito-1.jpg', matches: true, candidates: 1 },
                 { id: 'luna', name: 'Luna', species: 'cat', photo: null, matches: false, candidates: 1 },
             ],
+            anyAnimals: true,
         });
     });
 

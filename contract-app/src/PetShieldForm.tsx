@@ -691,7 +691,8 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
     // skipped): cat-only / dog-only questions follow it (spec 2026-10-14).
     const [animalSpecies, setAnimalSpecies] = useState<string | null>(null)
     // The animal this link was opened for, named at the top of the first step (Jon 2026-11-13).
-    const [formAnimal, setFormAnimal] = useState<FormAnimal | null>(null)
+    // undefined = still reading (its place is held, so the title doesn't jump), null = none.
+    const [formAnimal, setFormAnimal] = useState<FormAnimal | null | undefined>(animalId ? undefined : null)
     useEffect(() => {
         if (!userId) return
         const ctrl = new AbortController()
@@ -706,7 +707,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                 setFormAnimal(animalId ? formAnimalFromConfig(data) : null)
             })
             // Standard form is the safe fallback — never block the adopter.
-            .catch(err => console.warn('[PetShield] form config unavailable, using standard form', err))
+            .catch(err => { setFormAnimal(null); console.warn('[PetShield] form config unavailable, using standard form', err) })
             .finally(() => clearTimeout(timer))
         return () => { clearTimeout(timer); ctrl.abort() }
     }, [userId, animalId])
@@ -1134,6 +1135,15 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
         switch (currentStep.type) {
             case 'consent': return (
                 <div className="ps-step" key={key}>
+                    {currentStep.id === 'legal' && formAnimal === undefined && (
+                        <div className="ps-form-animal ps-form-animal--loading" aria-busy="true" data-testid="form-animal-loading">
+                            <span className="ps-form-animal__photo ps-form-animal__photo--empty" aria-hidden><PawIcon size={28} /></span>
+                            <div className="ps-form-animal__text">
+                                <div className="ps-form-animal__label">{t('form.animal_for')}</div>
+                                <div className="ps-form-animal__name-skeleton" />
+                            </div>
+                        </div>
+                    )}
                     {currentStep.id === 'legal' && formAnimal && (
                         <div className="ps-form-animal" data-testid="form-animal">
                             {formAnimal.photo

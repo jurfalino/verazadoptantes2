@@ -2,6 +2,19 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.11] - 2026-11-13
+
+### Fixed — independent review of 2.59.10 (engineering + UI audits, Jon 2026-11-13)
+- «Agregar y proponer»: a request decided meanwhile no longer reads «Le propusiste …»; each outcome has its own
+  message (decided, «¿Es la misma persona?» pending, already a candidate, failed), with «cargada» for a female
+  animal. The button waits until the request is read, so the animal is never added without the proposal.
+- «Proponer un animal» with animals that can't be offered to this person says «Ya le propusiste todos tus
+  animales a …» instead of «Todavía no cargaste animales».
+- Nothing jumps: the share window keeps «¿Para qué animal?» in place while it reads (and remembers the list
+  between opens); «Agregar animal» keeps its note's place; the public form keeps «Querés adoptar a …» in place.
+- «Querés adoptar a» is readable (contrast); the share window's «Copiar enlace», «¡Copiado!», «Más opciones…»
+  and the QR description follow the language; its ✕ is a full 44px tap target.
+
 ## [2.59.10] - 2026-11-13
 
 ### Added — «Compartir formulario» from the home (Jon 2026-11-13, option B)

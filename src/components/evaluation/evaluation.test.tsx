@@ -38,7 +38,7 @@ vi.mock('@/components/ui/Modal', async (orig) => ({
 const { ApplicationAnswersSummary } = await import('./ApplicationAnswersSummary');
 const { DeclineApplicationDialog, DeclineForm, declineMissing, declineOutcome } = await import('./DeclineApplicationDialog');
 const { DuplicateCards } = await import('./ApplicationDuplicate');
-const { ProposalAnimalList, proposeOutcome } = await import('./ProposeAnimalSheet');
+const { ProposalAnimalList, proposeOutcome, proposeNewOutcome } = await import('./ProposeAnimalSheet');
 const { OfferSheetBody, offerLinks, offerMessage, offerAnimalOf } = await import('./AdoptionOfferSheet');
 const { default: FormAnswersPanel } = await import('@/components/FormAnswersPanel');
 const { summarizeAnswers } = await import('@/domain/formAnswers');
@@ -199,7 +199,7 @@ describe('«Proponer un animal»', () => {
     const animal = (id: string, candidates: number, o: Record<string, unknown> = {}) => ({ id, name: id === 'mora' ? 'Mora' : 'Toby', species: 'cat', photo: null, matches: true, candidates, ...o });
 
     it('one ≥44px row per animal with its photo or species icon, name and «N candidatos»', () => {
-        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1, { photo: 'https://img/mora.jpg' }), animal('toby', 3, { species: 'dog' }), animal('nube', 0, { name: null })]} busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1, { photo: 'https://img/mora.jpg' }), animal('toby', 3, { species: 'dog' }), animal('nube', 0, { name: null })]} anyAnimals busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
         for (const id of ['mora', 'toby', 'nube']) expect(has(html, `propose-animal-${id}`)).toBe(true);
         expect(text(html)).toContain(`Mora ${E.candidates_one}`);
         expect(text(html)).toContain(`Toby ${E.candidates_many.replace('{n}', '3')}`);
@@ -210,19 +210,37 @@ describe('«Proponer un animal»', () => {
     });
 
     it('no animal yet: says so and offers «Cargar un animal», which opens «Agregar animal» for this application (Jon 2026-11-13)', () => {
-        const html = renderToStaticMarkup(<ProposalAnimalList animals={[]} busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[]} anyAnimals={false} busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
         expect(text(html)).toContain(E.propose_empty_load.replace('{name}', 'Ana'));
         expect(text(html)).toContain(E.propose_load_cta);
         expect(html).toContain('href="/my-animals/new?proponer=app-gen"');
         expect(has(html, 'propose-load-animal')).toBe(true);
     });
 
+    it('animals exist but none can be proposed to this person: «Ya le propusiste todos tus animales a …», still with «Cargar un animal»', () => {
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[]} anyAnimals busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
+        expect(text(html)).toContain(E.propose_empty_all_proposed.replace('{name}', 'Ana'));
+        expect(text(html)).not.toContain(E.propose_empty_load.replace('{name}', 'Ana'));
+        expect(has(html, 'propose-load-animal')).toBe(true);
+    });
+
     it('with animals, the last row is «Cargar otro animal» (for one not loaded yet)', () => {
-        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1)]} busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1)]} anyAnimals busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" />);
         expect(text(html)).toContain(E.propose_load_other);
         expect(text(html)).toContain(E.propose_load_other_desc.replace('{name}', 'Ana'));
         expect(html.indexOf('propose-animal-mora')).toBeLessThan(html.indexOf('propose-load-animal'));
         expect(html).toContain('href="/my-animals/new?proponer=app-gen"');
+    });
+});
+
+describe('«Agregar y proponer»: what the page says after saving (audit 2026-11-13)', () => {
+    it('a request decided meanwhile is never reported as proposed', () => {
+        expect(proposeNewOutcome({ ok: true, applicationId: 'x' })).toBe('proposed');
+        expect(proposeNewOutcome({ ok: false, error: 'already_decided' })).toBe('decided');
+        expect(proposeNewOutcome({ ok: false, error: 'same_person_unanswered' })).toBe('same_person');
+        expect(proposeNewOutcome({ ok: false, error: 'already_candidate' })).toBe('already_candidate');
+        expect(proposeNewOutcome({ ok: false, error: 'not_found' })).toBe('failed');
+        expect(proposeNewOutcome({ ok: false, error: 'failed', errorId: 'e1' })).toBe('failed');
     });
 });
 

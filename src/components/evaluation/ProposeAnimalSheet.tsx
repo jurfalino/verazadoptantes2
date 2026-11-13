@@ -23,8 +23,10 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { firstName } from '@/lib/householdCopy';
 
 /** The rows, then «Cargar otro animal»; with none, «Cargar un animal» (Jon 2026-11-13). */
-export function ProposalAnimalList({ animals, busyId, onPick, personName, applicationId }: {
+export function ProposalAnimalList({ animals, anyAnimals, busyId, onPick, personName, applicationId }: {
     animals: readonly ProposalAnimal[];
+    /** The team has animals that take applications, even if none fits this person. */
+    anyAnimals: boolean;
     /** The animal being proposed right now (every row waits). */
     busyId: string | null;
     onPick: (animal: ProposalAnimal) => void;
@@ -38,7 +40,7 @@ export function ProposalAnimalList({ animals, busyId, onPick, personName, applic
     if (animals.length === 0) {
         return (
             <div data-testid="propose-empty" className="space-y-4">
-                <p className="text-sm text-stone-600">{t('evaluation.propose_empty_load').replace('{name}', personName)}</p>
+                <p className="text-sm text-stone-600">{t(anyAnimals ? 'evaluation.propose_empty_all_proposed' : 'evaluation.propose_empty_load').replace('{name}', personName)}</p>
                 <Link href={href} data-testid="propose-load-animal" className={buttonClasses({ variant: 'primary', fullWidth: true })}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" /></svg>
                     {t('evaluation.propose_load_cta')}
@@ -99,7 +101,19 @@ export function proposeOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>): 
     return 'failed';
 }
 
-type Load = { state: 'loading' } | { state: 'ok'; animals: ProposalAnimal[] } | { state: 'failed'; errorId: string | null };
+/**
+ * «Agregar y proponer» (/my-animals/new): the animal is already saved, so —
+ * unlike the sheet — a request decided meanwhile must not read as proposed.
+ */
+export function proposeNewOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>): 'proposed' | 'decided' | 'same_person' | 'already_candidate' | 'failed' {
+    if (res.ok) return 'proposed';
+    if (res.error === 'already_decided') return 'decided';
+    if (res.error === 'same_person_unanswered') return 'same_person';
+    if (res.error === 'already_candidate') return 'already_candidate';
+    return 'failed';
+}
+
+type Load = { state: 'loading' } | { state: 'ok'; animals: ProposalAnimal[]; anyAnimals: boolean } | { state: 'failed'; errorId: string | null };
 
 export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone, onSamePerson }: {
     applicationId: string;
@@ -121,7 +135,7 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
         getProposalAnimals(applicationId)
             .then((res) => {
                 if (!current) return;
-                if (res.ok) { setLoad({ state: 'ok', animals: res.animals }); return; }
+                if (res.ok) { setLoad({ state: 'ok', animals: res.animals, anyAnimals: res.anyAnimals }); return; }
                 // Decided meanwhile (another tab): nothing to propose — the panel re-reads.
                 if (res.error === 'already_decided') { onDone(); return; }
                 setLoad({ state: 'failed', errorId: res.errorId ?? resolveErrorId(new Error(`getProposalAnimals: ${res.error}`), 'ProposeAnimalSheet') });
@@ -166,7 +180,7 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
                     {load.errorId && <span className="text-xs text-stone-500"> ({t('homeModules.error_code')}: {load.errorId})</span>}
                 </p>
             )}
-            {load.state === 'ok' && <ProposalAnimalList animals={load.animals} busyId={busyId} onPick={pick} personName={name} applicationId={applicationId} />}
+            {load.state === 'ok' && <ProposalAnimalList animals={load.animals} anyAnimals={load.anyAnimals} busyId={busyId} onPick={pick} personName={name} applicationId={applicationId} />}
         </Modal>
     );
 }

@@ -232,7 +232,7 @@ export async function declineApplication(applicationId: string, input: { text: s
 }
 
 /** The picker of «Proponer un animal» for a general, open application. */
-export async function getProposalAnimals(applicationId: string): Promise<{ ok: true; animals: ProposalAnimal[] } | Fail> {
+export async function getProposalAnimals(applicationId: string): Promise<{ ok: true; animals: ProposalAnimal[]; anyAnimals: boolean } | Fail> {
     let viewer: string | null = null;
     try {
         viewer = await sessionViewer();
@@ -244,7 +244,7 @@ export async function getProposalAnimals(applicationId: string): Promise<{ ok: t
         if (!auth) return fail('not_found');
         if (auth.app.animalId) return fail('not_allowed');
         if (auth.app.state !== APPLICATION_STATES.OPEN) return fail('already_decided');
-        return { ok: true, animals: await loadProposalAnimals(db, viewer, auth) };
+        return { ok: true, ...(await loadProposalAnimals(db, viewer, auth)) };
     } catch (e) {
         const errorId = logger.error('getProposalAnimals failed', e, { applicationId, viewer });
         return { ok: false, error: 'failed', errorId };

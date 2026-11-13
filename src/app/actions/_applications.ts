@@ -199,7 +199,7 @@ export type ProposalAnimal = { id: string; name: string | null; species: string 
  * open application for; matching the form's «Prefiere» first, each with its
  * open candidates (one grouped count per distinct owner team) and lead photo.
  */
-export async function loadProposalAnimals(db: Db, viewer: string, auth: AuthorizedApplication): Promise<ProposalAnimal[]> {
+export async function loadProposalAnimals(db: Db, viewer: string, auth: AuthorizedApplication): Promise<{ animals: ProposalAnimal[]; anyAnimals: boolean }> {
     const { submission } = auth;
     const { availableWhere } = await myAnimalsScope(viewer);
     const [rows, alreadyApplied] = await Promise.all([
@@ -231,7 +231,7 @@ export async function loadProposalAnimals(db: Db, viewer: string, auth: Authoriz
         { species: submission.species, lifeStage: submission.lifeStage },
         Date.now(),
     );
-    return Promise.all(ranked.map(async (a): Promise<ProposalAnimal> => {
+    const animals = await Promise.all(ranked.map(async (a): Promise<ProposalAnimal> => {
         const [counts, photo] = await Promise.all([
             candidatesIn(a.team),
             // The lead photo, as the home row and the /my-animals card pick it.
@@ -246,6 +246,9 @@ export async function loadProposalAnimals(db: Db, viewer: string, auth: Authoriz
         ]);
         return { id: a.id, name: a.name, species: a.species, photo, matches: a.matches, candidates: counts.get(a.id) ?? 0 };
     }));
+    // «anyAnimals»: the viewer's team has animals that take applications, even if none fits this
+    // person — the empty sheet says «ya le propusiste todos» instead of «todavía no cargaste».
+    return { animals, anyAnimals: rows.length > 0 };
 }
 
 /**
