@@ -2,6 +2,15 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.9] - 2026-11-13
+
+### Fixed — «¿Es la misma persona?» follow-ups (Jon 2026-11-13)
+- «Proponer un animal» refused because the question is still unanswered: the sheet closes and goes to the
+  question with the same calm notice as «Enviar contrato», instead of an error inside the open sheet.
+- «Avisos» row «Te preguntan si es la misma persona»: «…una persona que cargaste vos o tu grupo» (es/en/pt).
+- «…respondió: es la misma persona» reaches each «No sé» asker once, even when a join request and a join (or
+  two «Sí») land at the same moment.
+
 ## [2.59.8] - 2026-11-12
 
 ### Changed — «¿Es la misma persona?» on a form under evaluation (Jon 2026-11-12)
