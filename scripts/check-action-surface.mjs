@@ -494,6 +494,17 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              availableWhere: available or fostered, added by the caller or an org-mate),
 //                              with name, species, sex, colour, lead photo and the count of open
 //                              applications — what /my-animals already shows that caller. Read-only.
+// 193 (Jon 2026-11-13, «Sumar a un animal» is reversible): two exports in src/app/actions/applications.ts,
+// imported by ApplicantDetailPanel. What a stranger can do with them:
+//   withdrawProposal(generalApplicationId)  session required (signed out → unauthorized); the id is shape-checked;
+//                              the caller must pass loadAuthorizedApplication (the form link's team, or the animal
+//                              owner's team, or admin) — else not_found, nothing written. Only acts on a general form
+//                              in state «proposed»: deletes its team-added candidacy ONLY while it is still open and
+//                              no contract link was ever issued for that animal to either profile of the form (one
+//                              statement), then reopens the form. Writes no observation, history or notice.
+//   changeProposedAnimal(generalApplicationId, animalId)  the same gate plus the «¿Es la misma persona?» lock, then
+//                              the same withdraw and the existing proposeAuthorized (animal in the caller's and the
+//                              form link's team, takes contracts). On refusal it restores the first animal.
 const EXPECTED_ACTIONS = 191;
 
 let manifest;

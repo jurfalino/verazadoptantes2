@@ -40,7 +40,7 @@ vi.mock('@/lib/logger', () => ({
 
 import {
     getGeneralApplications, getApplicationDuplicates, declineApplication, getProposalAnimals, proposeAnimal, getAdoptionOffer, markOfferDone,
-    getShareFormAnimals,
+    getShareFormAnimals, withdrawProposal, changeProposedAnimal,
 } from './applications';
 
 let sqlite: Sqlite;
@@ -161,6 +161,19 @@ describe('evaluation actions — access', () => {
         expect(ids).toEqual(['luna', 'tito']);
         session.user = null;
         expect(await getShareFormAnimals()).toEqual({ ok: false, error: 'unauthorized' });
+    });
+
+    it('withdrawProposal / changeProposedAnimal: outsider → not_found and nothing written; teammate → ok; signed out → unauthorized', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        session.user = STRANGER;
+        const before = snapshot(sqlite);
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'not_found' });
+        expect(await changeProposedAnimal('app-s-gen', 'luna')).toEqual({ ok: false, error: 'not_found' });
+        expect(snapshot(sqlite)).toEqual(before);
+        session.user = null;
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'unauthorized' });
+        session.user = MATE;
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: true });
     });
 
     it('getGeneralApplications lists only the viewer\'s team\'s general applications', async () => {

@@ -40,7 +40,8 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
 }));
 
-import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates } from './applications';
+import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates, withdrawProposal, changeProposedAnimal } from './applications';
+import { deleteUntouchedCandidacy } from './_applications';
 import { loadApplicantsForAnimal } from './_applicants';
 import { applications as applicationsTable, adopterEvents as adopterEventsTable, adoptions as adoptionsView } from '@/db/schema';
 import { GET as contractByToken } from '@/app/api/contract/by-token/[token]/route';
@@ -551,5 +552,75 @@ describe('getApplicationDuplicates (a possible duplicate inside the evaluation)'
     it('a form with no profile has no cards', async () => {
         sqlite.prepare("UPDATE form_submissions SET linked_adopter_id = NULL, auto_adopter_id = NULL WHERE id = 's-luna'").run();
         expect(await getApplicationDuplicates('app-s-luna')).toMatchObject({ ok: true, cards: [], canLink: false });
+    });
+});
+
+describe('«Quitar de …» / «Cambiar animal» (Jon 2026-11-13: «Sumar a un animal» is reversible)', () => {
+    const proposals = () => sqlite.prepare("SELECT id, animal_id, state FROM applications WHERE origin = 'proposed' ORDER BY id").all() as Array<{ id: string; animal_id: string; state: string }>;
+    const counts = () => ({
+        events: sqlite.prepare('SELECT COUNT(*) AS n FROM adopter_events').get()!.n,
+        history: sqlite.prepare('SELECT COUNT(*) AS n FROM adopter_history').get()!.n,
+        notifications: sqlite.prepare('SELECT COUNT(*) AS n FROM notifications').get()!.n,
+    });
+
+    it('withdraw: the untouched candidacy is deleted, the general form is «por evaluar» again, nothing else written', async () => {
+        expect(await proposeAnimal('app-s-gen', 'luna')).toMatchObject({ ok: true });
+        const before = counts();
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: true });
+        expect(appRow('app-s-gen')).toMatchObject({ state: 'open', proposed_application_id: null, closed_at: null, closed_by: null });
+        expect(proposals()).toEqual([]);
+        expect(counts()).toEqual(before);
+    });
+
+    it('after a withdraw, the same animal can be added again', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        await withdrawProposal('app-s-gen');
+        expect(await proposeAnimal('app-s-gen', 'luna')).toMatchObject({ ok: true });
+        expect(proposals()).toHaveLength(1);
+    });
+
+    it('a contract link was ever issued for that person and animal (even expired) → already_acted, nothing changes', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        invitation(sqlite, 't-old', 'luna', 'beto', NOW - DAY);
+        const before = snapshot(sqlite);
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'already_acted' });
+        expect(snapshot(sqlite)).toEqual(before);
+    });
+
+    it('the candidacy was decided on the animal\'s side → already_acted', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        sqlite.prepare("UPDATE applications SET state = 'declined' WHERE origin = 'proposed'").run();
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'already_acted' });
+        expect(appRow('app-s-gen').state).toBe('proposed');
+    });
+
+    it('the delete itself refuses once a link exists (the race with «Enviar contrato» is decided in one statement)', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        const [cand] = proposals();
+        invitation(sqlite, 't-race', 'luna', 'beto', NOW + DAY);
+        expect(await deleteUntouchedCandidacy(state.db as never, cand.id, 'luna', ['beto', null])).toBe(false);
+        expect(proposals()).toHaveLength(1);
+    });
+
+    it('a general form that was never added → not_allowed', async () => {
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'not_allowed' });
+    });
+
+    it('change: Luna → Nube moves the candidacy and the general form points at the new one', async () => {
+        animal(sqlite, 'nube', 'Nube', OWNER, { species: 'dog' });
+        await proposeAnimal('app-s-gen', 'luna');
+        const res = await changeProposedAnimal('app-s-gen', 'nube');
+        expect(res).toMatchObject({ ok: true });
+        const rows = proposals();
+        expect(rows.map(r => r.animal_id)).toEqual(['nube']);
+        expect(appRow('app-s-gen')).toMatchObject({ state: 'proposed', proposed_application_id: rows[0].id });
+    });
+
+    it('change to an animal that can\'t take it puts the first one back (never left with neither)', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        const res = await changeProposedAnimal('app-s-gen', 'sol'); // another team's animal
+        expect(res).toMatchObject({ ok: false });
+        expect(proposals().map(r => r.animal_id)).toEqual(['luna']);
+        expect(appRow('app-s-gen').state).toBe('proposed');
     });
 });

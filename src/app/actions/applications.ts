@@ -27,7 +27,7 @@ import type { ApplicantsLoad } from '@/lib/applicantsLoad';
  * `observation_saved_already_decided` («No avanzar» only): the observation WAS saved, but the application
  * already had another outcome by the time it was to close (review M1) — never «No se guardó tu observación».
  */
-export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'observation_saved_already_decided' | 'already_candidate' | 'animal_adopted' | 'same_person_unanswered' | 'failed';
+export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'observation_saved_already_decided' | 'already_candidate' | 'animal_adopted' | 'same_person_unanswered' | 'already_acted' | 'failed';
 export type Fail = { ok: false; error: ApplicationActionError; errorId?: string };
 
 const fail = (error: Exclude<ApplicationActionError, 'failed'>): Fail => ({ ok: false, error });
@@ -305,6 +305,76 @@ export async function proposeAnimal(applicationId: string, animalId: string): Pr
         return res;
     } catch (e) {
         const errorId = logger.error('proposeAnimal failed', e, { applicationId, animalId, viewer });
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * «Quitar de …» (Jon 2026-11-13): the general form `generalApplicationId`, added to an animal, goes back to
+ * «por evaluar» — only while nothing happened on the animal's side (else `already_acted`). Team-internal: the
+ * person is not told and no observation is written.
+ */
+export async function withdrawProposal(generalApplicationId: string): Promise<{ ok: true } | Fail> {
+    let viewer: string | null = null;
+    try {
+        viewer = await sessionViewer();
+        if (!viewer) return fail('unauthorized');
+        const { isId, loadAuthorizedApplication, withdrawProposalAuthorized } = await import('./_applications');
+        if (!isId(generalApplicationId)) return fail('invalid');
+        const db = await requireDb();
+        const auth = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        if (!auth) return fail('not_found');
+        const res = await withdrawProposalAuthorized(db, viewer, auth);
+        if (!res.ok) {
+            logger.info('withdrawProposal: refused', { applicationId: generalApplicationId, viewer, error: res.error });
+            return fail(res.error);
+        }
+        logger.info('withdrawProposal: done', { applicationId: generalApplicationId, candidacyId: res.candidacyId, animalId: res.animalId, viewer });
+        return { ok: true };
+    } catch (e) {
+        const errorId = logger.error('withdrawProposal failed', e, { applicationId: generalApplicationId, viewer });
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * «Cambiar animal»: the same withdraw, then «Sumar a un animal» with `animalId`. When the new animal can't take
+ * it, the first animal is added back, so the person is never left with neither.
+ */
+export async function changeProposedAnimal(generalApplicationId: string, animalId: string): Promise<{ ok: true; applicationId: string } | Fail> {
+    let viewer: string | null = null;
+    try {
+        viewer = await sessionViewer();
+        if (!viewer) return fail('unauthorized');
+        const { isId, loadAuthorizedApplication, withdrawProposalAuthorized, proposeAuthorized } = await import('./_applications');
+        if (!isId(generalApplicationId) || !isId(animalId)) return fail('invalid');
+        const db = await requireDb();
+        const auth = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        if (!auth) return fail('not_found');
+        const { unansweredForSubmission } = await import('@/lib/samePersonGate');
+        if ((await unansweredForSubmission(db, auth.submission, viewer)) > 0) return fail('same_person_unanswered');
+
+        const out = await withdrawProposalAuthorized(db, viewer, auth);
+        if (!out.ok) return fail(out.error);
+        const reopened = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        if (!reopened) return fail('not_found');
+        const res = await proposeAuthorized(db, viewer, reopened, animalId);
+        if (res.ok) {
+            logger.info('changeProposedAnimal: moved', { applicationId: generalApplicationId, from: out.animalId, to: animalId, viewer });
+            return res;
+        }
+        // Put the first animal back (best effort): never leave the person with neither.
+        const again = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        const back = again ? await proposeAuthorized(db, viewer, again, out.animalId) : { ok: false as const, error: 'not_found' as const };
+        if (!back.ok) {
+            logger.error('changeProposedAnimal: the new animal refused and the first could not be restored', new Error(back.error),
+                { applicationId: generalApplicationId, from: out.animalId, to: animalId, viewer, refused: res.error });
+        } else {
+            logger.info('changeProposedAnimal: refused, first animal restored', { applicationId: generalApplicationId, from: out.animalId, to: animalId, viewer, refused: res.error });
+        }
+        return fail(res.error);
+    } catch (e) {
+        const errorId = logger.error('changeProposedAnimal failed', e, { applicationId: generalApplicationId, animalId, viewer });
         return { ok: false, error: 'failed', errorId };
     }
 }

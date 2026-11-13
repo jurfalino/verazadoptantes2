@@ -11,10 +11,10 @@
  * «replaced» application is in no access decision. Anything else is
  * «not found» — never a hint that it exists.
  */
-import { and, eq, isNotNull, isNull, ne, or, gt, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne, notExists, or, gt, sql } from 'drizzle-orm';
 import { adopterEvents, adopterImages, adopters, adoptions, animals, applications, contractInvitations, formSubmissions, placements } from '@/db/schema';
 import { APPLICATION_CLOSE_REASONS, APPLICATION_ORIGINS, APPLICATION_STATES, DECLINE_REASON_MAX, DECLINE_TEXT_MAX, RECORD_TYPES } from '@/domain/constants';
-import { rankProposalAnimals } from '@/domain/applications';
+import { proposalUndoable, rankProposalAnimals } from '@/domain/applications';
 import { sortShareAnimals, type ShareAnimal } from '@/domain/shareFormAnimals';
 import { takesContract } from '@/domain/placements';
 import { applicantScopeWhere, isInTeamScope, normalizeTeamScope } from '@/lib/applicantScope';
@@ -313,6 +313,66 @@ export async function loadShareFormAnimals(db: Db, viewer: string): Promise<Shar
         };
     }));
     return sortShareAnimals(animalsOut);
+}
+
+/**
+ * Deletes a team-added candidacy that nothing touched: still open, origin «proposed», and — in the same
+ * statement, so a concurrent «Enviar contrato» can't slip in between — no contract link ever issued for
+ * this animal to either profile of the form. True when it was deleted.
+ */
+export async function deleteUntouchedCandidacy(db: Db, candidacyId: string, animalId: string, adopterIds: ReadonlyArray<string | null>): Promise<boolean> {
+    const ids = [...new Set(adopterIds.filter((x): x is string => !!x))];
+    const noLink = ids.length === 0 ? undefined : notExists(
+        db.select({ one: sql`1` }).from(contractInvitations)
+            .where(and(eq(contractInvitations.animalId, animalId), or(...ids.map(id => eq(contractInvitations.adopterId, id))))),
+    );
+    const gone = await db.delete(applications)
+        .where(and(
+            eq(applications.id, candidacyId),
+            eq(applications.state, APPLICATION_STATES.OPEN),
+            eq(applications.origin, APPLICATION_ORIGINS.PROPOSED),
+            ...(noLink ? [noLink] : []),
+        ))
+        .returning({ id: applications.id }) as Array<{ id: string }>;
+    return gone.length > 0;
+}
+
+export type WithdrawOutcome = { ok: true; candidacyId: string; animalId: string } | { ok: false; error: 'not_allowed' | 'already_acted' };
+
+/**
+ * «Quitar de …» (Jon 2026-11-13): a general form added to an animal goes back to «por evaluar». Only while
+ * nothing happened on the animal's side (`proposalUndoable`): the untouched candidacy is deleted — so the same
+ * animal can be added again — and the general form reopens. No observation, history or notice: it was internal.
+ */
+export async function withdrawProposalAuthorized(db: Db, viewer: string, auth: AuthorizedApplication): Promise<WithdrawOutcome> {
+    const { app, submission } = auth;
+    if (app.animalId || app.state !== APPLICATION_STATES.PROPOSED) return { ok: false, error: 'not_allowed' };
+    const general = await db.select({ proposedApplicationId: applications.proposedApplicationId })
+        .from(applications).where(eq(applications.id, app.id)).get() as { proposedApplicationId: string | null } | undefined;
+    const candidacy = general?.proposedApplicationId
+        ? await db.select({ id: applications.id, animalId: applications.animalId, state: applications.state, origin: applications.origin })
+            .from(applications).where(eq(applications.id, general.proposedApplicationId))
+            .get() as { id: string; animalId: string | null; state: string; origin: string } | undefined
+        : undefined;
+    if (!candidacy || !candidacy.animalId || candidacy.origin !== APPLICATION_ORIGINS.PROPOSED) return { ok: false, error: 'not_allowed' };
+
+    const profiles = [submission.linkedAdopterId, submission.autoAdopterId];
+    const linkIds = [...new Set(profiles.filter((x): x is string => !!x))];
+    const links = linkIds.length === 0 ? 0 : (await Promise.all(linkIds.map(id => db.select({ n: sql<number>`count(*)` }).from(contractInvitations)
+        .where(and(eq(contractInvitations.animalId, candidacy.animalId!), eq(contractInvitations.adopterId, id))).get() as Promise<{ n: number } | undefined>)))
+        .reduce((sum, r) => sum + (r?.n ?? 0), 0);
+    if (!proposalUndoable({ candidacyState: candidacy.state, invitationsEver: links })) return { ok: false, error: 'already_acted' };
+    if (!(await deleteUntouchedCandidacy(db, candidacy.id, candidacy.animalId, profiles))) return { ok: false, error: 'already_acted' };
+
+    const reopened = await db.update(applications)
+        .set({ state: APPLICATION_STATES.OPEN, proposedApplicationId: null, closedAt: null, closedBy: null })
+        .where(and(eq(applications.id, app.id), eq(applications.state, APPLICATION_STATES.PROPOSED), eq(applications.proposedApplicationId, candidacy.id)))
+        .returning({ id: applications.id }) as Array<{ id: string }>;
+    if (reopened.length === 0) {
+        logger.error('withdrawProposal: candidacy deleted but the general form did not reopen', new Error('reopen lost'),
+            { applicationId: app.id, candidacyId: candidacy.id, animalId: candidacy.animalId, viewer });
+    }
+    return { ok: true, candidacyId: candidacy.id, animalId: candidacy.animalId };
 }
 
 export type ProposeOutcome = { ok: true; applicationId: string } | { ok: false; error: 'not_found' | 'not_allowed' | 'animal_adopted' | 'already_candidate' | 'already_decided' };
