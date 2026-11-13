@@ -14,6 +14,11 @@ import { storeOrgImageDataUrl, checkOrgImageDataUrl, R2_PUBLIC_URL } from './r2'
 import { ORG_IMAGE_MAX_DATA_URL } from '@/domain/groupBranding';
 
 const dataUrl = (mime: string, bytes: number[], pad = 64) => `data:${mime};base64,${Buffer.from([...bytes, ...new Array(pad).fill(7)]).toString('base64')}`;
+/** A PNG data URL of exactly `length` characters (9 header bytes = 12 base64 chars, then 'A' padding). */
+const exactLength = (length: number) => {
+    const head = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]).toString('base64')}`;
+    return head + 'A'.repeat(length - head.length);
+};
 const JPEG = [0xFF, 0xD8, 0xFF, 0xE0];
 const PNG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 const WEBP = [0x52, 0x49, 0x46, 0x46, 0x10, 0, 0, 0, 0x57, 0x45, 0x42, 0x50];
@@ -41,6 +46,13 @@ describe('storeOrgImageDataUrl — refusals (nothing reaches the bucket)', () =>
         expect(put).not.toHaveBeenCalled();
     });
 
+    it('the cap is exact: one character over ORG_IMAGE_MAX_DATA_URL is refused', async () => {
+        const over = exactLength(ORG_IMAGE_MAX_DATA_URL + 1);
+        expect(over.length).toBe(ORG_IMAGE_MAX_DATA_URL + 1);
+        expect(await storeOrgImageDataUrl(over, 'o', 'banner')).toBeNull();
+        expect(put).not.toHaveBeenCalled();
+    });
+
     it('a GIF is refused (JPEG, PNG and WEBP only)', async () => {
         expect(await storeOrgImageDataUrl(dataUrl('image/gif', GIF), 'o', 'logo')).toBeNull();
         expect(put).not.toHaveBeenCalled();
@@ -65,6 +77,13 @@ describe('storeOrgImageDataUrl — accepted images', () => {
             expect.stringMatching(/^orgs\/org1\/logo-[0-9a-f-]{36}\.png$/), expect.any(Uint8Array),
             expect.objectContaining({ httpMetadata: expect.objectContaining({ contentType: 'image/png' }) }),
         );
+    });
+
+    it('a PNG of exactly ORG_IMAGE_MAX_DATA_URL characters is accepted', async () => {
+        const atLimit = exactLength(ORG_IMAGE_MAX_DATA_URL);
+        expect(atLimit.length).toBe(ORG_IMAGE_MAX_DATA_URL);
+        expect(await storeOrgImageDataUrl(atLimit, 'org1', 'banner')).toMatch(/\/orgs\/org1\/banner-[0-9a-f-]{36}\.png$/);
+        expect(put).toHaveBeenCalledTimes(1);
     });
 
     it('a JPEG banner is stored as .jpg, a WEBP as .webp', async () => {

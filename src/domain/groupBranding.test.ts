@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    ACCENTS, DEFAULT_THEME, DEFAULT_ACCENT_ID, normalizeSocialLink, sanitizeBrandingInput, hasBranding, pickBrandingOrgId, brandingFromOrgRow,
+    ACCENTS, DEFAULT_THEME, DEFAULT_ACCENT_ID, normalizeSocialLink, sanitizeBrandingInput, hasBranding, pickBrandingOrgId, brandingFromOrgRow, ORG_IMAGE_MAX_DATA_URL,
 } from './groupBranding';
 
 describe('palette', () => {
@@ -92,5 +92,11 @@ describe('brandingFromOrgRow', () => {
     });
     it('a missing slug is null', () => {
         expect(brandingFromOrgRow({ ...row, slug: null }).orgSlug).toBeNull();
+    });
+});
+
+describe('ORG_IMAGE_MAX_DATA_URL', () => {
+    it('fits under the default 1 MB server-action body limit (setGroupImage sends it through an action)', () => {
+        expect(ORG_IMAGE_MAX_DATA_URL).toBe(750_000);
     });
 });

@@ -30,7 +30,8 @@ export const DEFAULT_ACCENT_ID: AccentId = 'violeta';
 
 export const ORG_IMAGE_KINDS = ['logo', 'banner'] as const;
 export type OrgImageKind = (typeof ORG_IMAGE_KINDS)[number];
-export const ORG_IMAGE_MAX_DATA_URL = 3_000_000;
+// Bounded by Next's default 1 MB server-action body limit (setGroupImage is an action): the client (Task 8) must check the size before sending.
+export const ORG_IMAGE_MAX_DATA_URL = 750_000;
 export const LOGO_MAX_PX = 512;
 export const BANNER_MAX_PX = 1600;
 
