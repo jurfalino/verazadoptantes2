@@ -47,17 +47,25 @@ async function requireDb() {
     return db;
 }
 
-/** The viewer's team's general applications («Sin animal elegido»), in panel order; empty signed out; a failure carries its errorId. */
-export async function getGeneralApplications(): Promise<ApplicantsLoad> {
+/**
+ * The viewer's team's general applications (formularios generales), in panel order; empty signed out; a failure
+ * carries its errorId. `scope`: one request by id (a link opening it alone), or only the open ones (the
+ * «Formularios generales» group) — never the whole history when a page needs less (review I4).
+ */
+export async function getGeneralApplications(scope?: { applicationId?: string; openOnly?: boolean }): Promise<ApplicantsLoad> {
     let viewer: string | null = null;
+    const applicationId = scope && typeof scope === 'object' && typeof scope.applicationId === 'string' ? scope.applicationId : undefined;
+    const openOnly = !!(scope && typeof scope === 'object' && scope.openOnly === true);
     try {
         viewer = await sessionViewer();
         if (!viewer) return { ok: true, applicants: [] };
+        const { isId } = await import('./_applications');
+        if (applicationId !== undefined && !isId(applicationId)) return { ok: true, applicants: [] };
         const db = await requireDb();
         const [{ getTeamEmails }, { loadGeneralApplications }] = await Promise.all([import('@/lib/orgMembership'), import('./_applicants')]);
-        return { ok: true, applicants: await loadGeneralApplications(db, await getTeamEmails(viewer), viewer) };
+        return { ok: true, applicants: await loadGeneralApplications(db, await getTeamEmails(viewer), viewer, { applicationId, openOnly }) };
     } catch (e) {
-        const errorId = logger.error('getGeneralApplications failed', e, { viewer });
+        const errorId = logger.error('getGeneralApplications failed', e, { viewer, applicationId: applicationId ?? null, openOnly });
         return { ok: false, errorId };
     }
 }

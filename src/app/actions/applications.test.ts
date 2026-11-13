@@ -602,6 +602,17 @@ describe('«Quitar de …» / «Cambiar animal» (Jon 2026-11-13: «Sumar a un a
         expect(proposals()).toHaveLength(1);
     });
 
+    it('a failure while reopening the general form undoes the delete too: never a form stuck «added» to a deleted candidacy (review I2)', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        sqlite.prepare(`CREATE TRIGGER fail_reopen BEFORE UPDATE ON applications WHEN OLD.id = 'app-s-gen' AND NEW.state = 'open' BEGIN SELECT RAISE(ABORT, 'D1 down'); END`).run();
+        expect(await withdrawProposal('app-s-gen')).toMatchObject({ ok: false, error: 'failed' });
+        sqlite.prepare('DROP TRIGGER fail_reopen').run();
+        expect(proposals()).toHaveLength(1);
+        expect(appRow('app-s-gen').state).toBe('proposed');
+        // And a retry works.
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: true });
+    });
+
     it('a general form that was never added → not_allowed', async () => {
         expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'not_allowed' });
     });
@@ -638,6 +649,17 @@ describe('what the panel needs to undo (Jon 2026-11-13)', () => {
         invitation(sqlite, 't-x', 'luna', 'beto', NOW + DAY);
         const again = await loadApplicantsForAnimal(state.db, { id: 'luna', adopterId: null }, [OWNER, MATE], OWNER);
         expect(again.find(a => a.origin === 'proposed')?.proposal?.canUndo).toBe(false);
+    });
+
+    it('getGeneralApplications reads only what is asked: one request by id, or the open ones (review I4)', async () => {
+        adopter(sqlite, 'dora', 'Dora Díaz', OWNER);
+        form(sqlite, 's-gen-old', { name: 'Dora Díaz', adopter: 'dora' });
+        application(sqlite, 'app-s-gen-old', 's-gen-old', null, { state: 'declined' });
+        const ids = (r: Awaited<ReturnType<typeof getGeneralApplications>>) => (r.ok ? r.applicants.map(a => a.applicationId).sort() : r);
+        expect(ids(await getGeneralApplications())).toEqual(['app-s-gen', 'app-s-gen-old']);
+        expect(ids(await getGeneralApplications({ openOnly: true }))).toEqual(['app-s-gen']);
+        expect(ids(await getGeneralApplications({ applicationId: 'app-s-gen-old' }))).toEqual(['app-s-gen-old']);
+        expect(ids(await getGeneralApplications({ applicationId: 'nope' }))).toEqual([]);
     });
 
     it('«Cambiar animal» lists the other animals while the form is added (not refused as decided)', async () => {

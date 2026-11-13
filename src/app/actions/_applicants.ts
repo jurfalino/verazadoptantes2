@@ -255,13 +255,25 @@ export async function loadGeneralApplications(
     db: Db,
     teamEmails: readonly string[],
     viewerEmail: string | null | undefined,
+    /**
+     * What to read (review I4: the whole history grows with every form ever received, and each row costs
+     * several D1 queries): `applicationId` = that one request (a link opens it alone); `openOnly` = the ones
+     * still open («Formularios generales» lists those to evaluate). Neither = every general application.
+     */
+    scope: { applicationId?: string; openOnly?: boolean } = {},
 ): Promise<ApplicantSummary[]> {
-    const where = generalScopeWhere(teamEmails);
-    if (!where) {
+    const team = generalScopeWhere(teamEmails);
+    if (!team) {
         logger.warn('loadGeneralApplications: empty team scope — failing closed', { viewer: viewerEmail ?? null });
         return [];
     }
-    await healMissingApplications(db, teamEmails);
+    const { applications } = await import('@/db/schema');
+    const { and, eq } = await import('drizzle-orm');
+    const where = scope.applicationId ? and(team as never, eq(applications.id, scope.applicationId))
+        : scope.openOnly ? and(team as never, eq(applications.state, APPLICATION_STATES.OPEN))
+            : team;
+    // One request by id already has its row: the heal (forms missing their application) is for the lists.
+    if (!scope.applicationId) await healMissingApplications(db, teamEmails);
     const rows = await selectApplicationRows(db, where);
     return panelOrder(await enrichApplicantRows(db, rows, { op: 'loadGeneralApplications', animalId: null, teamEmails, viewerEmail }));
 }
@@ -425,7 +437,9 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
         try {
             const p = await proposalOf(db, row);
             if (p) {
-                proposal = { ...p.info, animal: row.state === APPLICATION_STATES.PROPOSED ? outcomeAnimal : null };
+                const general = row.state === APPLICATION_STATES.PROPOSED;
+                // An animal this viewer's team can't see (the person was added in another group): named nowhere, never undone from here.
+                proposal = { ...p.info, animal: general ? outcomeAnimal : null, canUndo: p.info.canUndo && (!general || outcomeAnimal !== null) };
                 if (p.proposerEmail) proposerOf.set(row.applicationId, p.proposerEmail);
             }
         } catch (e) {

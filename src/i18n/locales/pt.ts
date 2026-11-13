@@ -96,7 +96,7 @@ export const pt = {
         undo_confirm_body: "{name} sai dos candidatos de {animal} e o formulário volta para «para avaliar». {name} não fica sabendo.",
         undo_confirm_button: "Tirar de {animal}",
         undo_refused: "Não é mais possível: {animal} tem um contrato ou uma decisão para {name}.",
-        added_by_line: "Adicionado por {proposer} · formulário geral",
+        added_by_line: "{proposer} adicionou · formulário geral",
         request_line_general: "Formulário geral · para avaliar",
         request_line_general_when: "Formulário geral · {when}",
         request_more_one: "Mais 1 formulário geral para avaliar",

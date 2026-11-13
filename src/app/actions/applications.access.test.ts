@@ -176,6 +176,18 @@ describe('evaluation actions — access', () => {
         expect(await withdrawProposal('app-s-gen')).toEqual({ ok: true });
     });
 
+    it('withdrawProposal on a candidacy of an animal the viewer may not see → not_found, nothing written; no «Quitar» offered (review I3)', async () => {
+        // The form is OWNER's team's; the candidacy sits on STRANGER's Sol (another group the form's person was added to).
+        application(sqlite, 'app-cand-sol', 's-gen', 'sol', { origin: 'proposed' });
+        sqlite.prepare("UPDATE applications SET state = 'proposed', proposed_application_id = 'app-cand-sol', closed_by = ? WHERE id = 'app-s-gen'").run(STRANGER);
+        const before = snapshot(sqlite);
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'not_found' });
+        expect(snapshot(sqlite)).toEqual(before);
+        const res = await getGeneralApplications();
+        const gen = res.ok ? res.applicants.find(a => a.applicationId === 'app-s-gen') : undefined;
+        expect(gen?.proposal?.canUndo ?? false).toBe(false);
+    });
+
     it('getGeneralApplications lists only the viewer\'s team\'s general applications', async () => {
         const res = await getGeneralApplications();
         expect(res.ok && res.applicants.map(a => a.applicationId)).toEqual(['app-s-gen']);

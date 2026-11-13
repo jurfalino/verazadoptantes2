@@ -166,7 +166,7 @@ export default function PendingDedup({ home }: {
         }
         if (loadedByFocus.current === page) { loadedByFocus.current = null; return; }
         // The general requests, read alongside the pairs: a failure is shown with its id and never hides the pairs.
-        const requestsRead = getGeneralApplications()
+        const requestsRead = getGeneralApplications({ openOnly: true })
             .then((res) => {
                 if (res.ok) return requestsToEvaluate(res.applicants);
                 toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'), res.errorId);
@@ -216,6 +216,15 @@ export default function PendingDedup({ home }: {
     }, [t, toast, page, home]);
 
     useEffect(() => { load(); }, [load]);
+
+    // Stable: they are the request panel's effect deps — new ones every render would re-read it each time (review I4).
+    const closeRequest = useCallback(() => {
+        setRequestOpen(null);
+        // Drop ?solicitud= so a reload doesn't reopen it (the hash stays).
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('solicitud')) { url.searchParams.delete('solicitud'); window.history.replaceState(null, '', url.toString()); }
+    }, []);
+    const requestChanged = useCallback(() => { void load(); }, [load]);
 
     // The section renders only once loaded, so the browser's own #pendientes
     // scroll has nothing to land on: scroll once it is there and open.
@@ -595,12 +604,6 @@ export default function PendingDedup({ home }: {
     // A pair just combined keeps the section on screen (D52), even the last one.
     // `total` counts what waits on the viewer; the section stays while anything is listed (a sent request too).
     if (total === 0 && pairs.length === 0 && merged.length === 0 && requests.length === 0 && !requestOpen) return null;
-    const closeRequest = () => {
-        setRequestOpen(null);
-        // Drop ?solicitud= so a reload doesn't reopen it (the hash stays).
-        const url = new URL(window.location.href);
-        if (url.searchParams.has('solicitud')) { url.searchParams.delete('solicitud'); window.history.replaceState(null, '', url.toString()); }
-    };
 
 
     return (
@@ -713,7 +716,7 @@ export default function PendingDedup({ home }: {
 
             {dialogs}
             {requestOpen && (
-                <HomeApplicantsPanel target={{ request: requestOpen }} onClose={closeRequest} onChanged={() => { void load(); }} testId="request-panel" />
+                <HomeApplicantsPanel target={{ request: requestOpen }} onClose={closeRequest} onChanged={requestChanged} testId="request-panel" />
             )}
         </section>
     );

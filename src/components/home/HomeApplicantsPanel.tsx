@@ -84,12 +84,10 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged, applic
     const animalId = animal?.id ?? null;
 
     // A refusal reads as an empty list; a failure carries the server's errorId (ApplicantsLoad).
-    // One request: the general list narrowed to it (the same read and checks as the whole list).
+    // One request: read alone (the same checks as the whole list, never the team's whole history — review I4).
     const read = useCallback(async (): Promise<ApplicantsLoad> => {
         if (animalId) return getApplicantsForAnimal(animalId);
-        const res = await getGeneralApplications();
-        if (!request || !res.ok) return res;
-        return { ok: true, applicants: res.applicants.filter(a => a.applicationId === request) };
+        return getGeneralApplications(request ? { applicationId: request } : undefined);
     }, [animalId, request]);
 
     useEffect(() => {
