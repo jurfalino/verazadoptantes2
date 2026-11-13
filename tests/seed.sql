@@ -534,6 +534,7 @@ INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms
 ('test-user-fixture-brand-solo', 'AR', 1, 1, strftime('%s','now'), NULL),
 ('test-user-fixture-brand-two', 'AR', 1, 1, strftime('%s','now'), 'org:test-org-fixture-1'),
 ('test-user-fixture-brand-left', 'AR', 1, 1, strftime('%s','now'), 'org:test-org-fixture-brand');
+UPDATE user_profiles SET handle = 'marca-solo-e2e' WHERE user_id = 'test-user-fixture-brand-solo';
 
 INSERT OR REPLACE INTO org_members (id, org_id, user_email, role, joined_at) VALUES
 ('test-orgm-fixture-brand-1', 'test-org-fixture-brand', 'e2e-brand-solo@example.com', 'owner', strftime('%s','now')),

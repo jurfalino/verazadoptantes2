@@ -40,6 +40,18 @@ test.describe('Public responses carry the group branding', () => {
         expect((await b.json()).branding).toBeNull();
     });
 
+    test('contract data: owner\'s group branding', async ({ request }) => {
+        const res = await request.get('/api/contract/test-animal-fixture-brand');
+        expect(res.status()).toBe(200);
+        expect((await res.json()).branding.orgSlug).toBe('refugio-marca-e2e');
+    });
+
+    test('user showcase: rescuer\'s group branding', async ({ request }) => {
+        const res = await request.get('/api/showcase/user/marca-solo-e2e');
+        expect(res.status()).toBe(200);
+        expect((await res.json()).branding.orgSlug).toBe('refugio-marca-e2e');
+    });
+
     test('animal showcase: branding and rescuer group agree', async ({ request }) => {
         const res = await request.get('/api/showcase/animal/test-animal-fixture-brand');
         expect(res.status()).toBe(200);

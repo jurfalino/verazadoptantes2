@@ -33,8 +33,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             return withCors(NextResponse.json({ error: 'Org not found' }, { status: 404 }), origin);
         }
 
-        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
-        const brandingPart = brandingOn ? { branding: await resolveBrandingForOrgSlug(db, org.slug) } : {};
+        let brandingPart: { branding?: Awaited<ReturnType<typeof resolveBrandingForOrgSlug>> } = {};
+        try {
+            if (await getFeatureFlag('ENABLE_GROUP_BRANDING')) brandingPart = { branding: await resolveBrandingForOrgSlug(db, org.slug) };
+        } catch (e) {
+            logger.warn('GET /api/showcase/org/[slug]: branding skipped', { slug, error: e instanceof Error ? e.message : String(e) });
+        }
 
         // Member emails for this org
         const members = await db.select({ userEmail: orgMembers.userEmail })
