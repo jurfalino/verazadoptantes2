@@ -2,6 +2,23 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.10] - 2026-11-13
+
+### Added — «Compartir formulario» from the home (Jon 2026-11-13, option B)
+- A «Compartir formulario» row right under the search for every signed-in rescuer (brand-new ones too, above
+  «Para empezar»). It opens the same share window as the button in «Mis animales».
+- The share window asks «¿Para qué animal?» (default «Ninguno en particular»; hidden with no animals).
+  «Cambiar» opens the team's animals that take applications: rows like «Proponer un animal», newest first;
+  from 7 animals a search box (name, colour or species) and species buttons. The link then names the animal.
+- The public form opened for an animal names it at the top: «Querés adoptar a …», with its photo while the
+  animal is on the public page. Only an animal of the link owner's team that takes applications is named.
+- The general share message says «Buen Adoptante» instead of the old «PetShield» (es/en/pt).
+
+### Fixed — «Proponer un animal» with no animals was a dead end (Jon 2026-11-13)
+- With no animals the window offers «Cargar un animal»; with animals, a last row «Cargar otro animal».
+- «Agregar animal» then names the person and reads «Agregar y proponer a …»: saving adds the animal, proposes
+  it and goes back to the request, now «Propuesta para …».
+
 ## [2.59.9] - 2026-11-13
 
 ### Fixed — «¿Es la misma persona?» follow-ups (Jon 2026-11-13)
