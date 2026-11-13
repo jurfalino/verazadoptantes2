@@ -1238,7 +1238,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                 <span style={{ fontSize: 32 }}>{opt.icon}</span>
                                 <span className="ps-card__label">{opt.label}</span>
                                 <span className="ps-card__check">
-                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" strokeWidth="2" style={{ stroke: 'var(--ps-on-accent)' }} strokeLinecap="round" strokeLinejoin="round" /></svg>
                                 </span>
                             </button>
                         ))}
@@ -1337,7 +1337,7 @@ export default function PetShieldForm({ userId, animalId }: { userId: string | n
                                 </div>
                                 <span className="ps-card__label">{opt.label}</span>
                                 <span className="ps-card__check">
-                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" strokeWidth="2" style={{ stroke: 'var(--ps-on-accent)' }} strokeLinecap="round" strokeLinejoin="round" /></svg>
                                 </span>
                             </button>
                         ))}
