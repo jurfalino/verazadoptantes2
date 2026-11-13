@@ -117,8 +117,17 @@ INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
 
 -- User profiles: country confirmed + terms accepted so CountryConfirmBanner doesn't block the page
 -- terms_version must match CURRENT_TERMS_VERSION (currently 1) from src/config/constants.ts
-INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES
-('test-admin-id', 'AR', 1, 1, strftime('%s','now'));
+-- adoption_docs_source self: the only group of the admin is test-org-fixture-1,
+-- and with ENABLE_GROUP_BRANDING on a NULL (never chosen) source would follow that
+-- group, but the docs specs edit the OWN form/contract of the admin («Los míos»).
+INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at, adoption_docs_source) VALUES
+('test-admin-id', 'AR', 1, 1, strftime('%s','now'), 'self');
+-- The tracked local DB also holds an older user row with the admin email
+-- (the unique index on user.email cannot be built there), and its profile is
+-- the one a by-email lookup may hit, so it gets the same explicit choice.
+UPDATE user_profiles SET adoption_docs_source = 'self'
+WHERE adoption_docs_source IS NULL
+  AND user_id IN (SELECT id FROM user WHERE lower(email) = 'gatitosolivos@gmail.com');
 
 INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at) VALUES
 ('test-user-id', 'AR', 1, 1, strftime('%s','now'));
