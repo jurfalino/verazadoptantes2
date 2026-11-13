@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    ACCENTS, DEFAULT_THEME, DEFAULT_ACCENT_ID, normalizeSocialLink, sanitizeBrandingInput, hasBranding, pickBrandingOrgId,
+    ACCENTS, DEFAULT_THEME, DEFAULT_ACCENT_ID, normalizeSocialLink, sanitizeBrandingInput, hasBranding, pickBrandingOrgId, brandingFromOrgRow,
 } from './groupBranding';
 
 describe('palette', () => {
@@ -69,5 +69,28 @@ describe('pickBrandingOrgId', () => {
         expect(pickBrandingOrgId({ hintOrgId: 'X', memberOrgIds: ['A', 'B'], source: { type: 'org', orgId: 'B' } })).toBe('B');
         expect(pickBrandingOrgId({ hintOrgId: null, memberOrgIds: ['A'], source: { type: 'self' } })).toBe(null);
         expect(pickBrandingOrgId({ hintOrgId: null, memberOrgIds: [], source: { type: 'org', orgId: 'B' } })).toBe(null);
+    });
+});
+
+describe('brandingFromOrgRow', () => {
+    const row = {
+        name: 'Refugio', slug: 'refugio', logoUrl: null, bannerUrl: null, brandTheme: null, brandAccent: null,
+        instagramUrl: null, facebookUrl: null, websiteUrl: null,
+    };
+    it('NULL theme/accent read as the defaults (today\'s look)', () => {
+        expect(brandingFromOrgRow(row)).toEqual({
+            orgName: 'Refugio', orgSlug: 'refugio', theme: 'dark', accentId: 'violeta',
+            logoUrl: null, bannerUrl: null, instagramUrl: null, facebookUrl: null, websiteUrl: null,
+        });
+    });
+    it('keeps valid stored values', () => {
+        const b = brandingFromOrgRow({ ...row, brandTheme: 'light', brandAccent: 'naranja', logoUrl: 'https://r2/l.png', instagramUrl: 'https://instagram.com/x' });
+        expect(b).toMatchObject({ theme: 'light', accentId: 'naranja', logoUrl: 'https://r2/l.png', instagramUrl: 'https://instagram.com/x' });
+    });
+    it('an unknown stored theme/accent falls back to the defaults, never reaches a page', () => {
+        expect(brandingFromOrgRow({ ...row, brandTheme: 'neon', brandAccent: '#ff0000' })).toMatchObject({ theme: 'dark', accentId: 'violeta' });
+    });
+    it('a missing slug is null', () => {
+        expect(brandingFromOrgRow({ ...row, slug: null }).orgSlug).toBeNull();
     });
 });

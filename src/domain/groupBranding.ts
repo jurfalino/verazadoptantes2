@@ -155,3 +155,26 @@ export function pickBrandingOrgId(a: { hintOrgId: string | null; memberOrgIds: r
     if (a.source.type === 'org' && a.memberOrgIds.includes(a.source.orgId)) return a.source.orgId;
     return null;
 }
+
+/** The branding columns of an organizations row (all nullable). */
+export type OrgBrandingRow = {
+    name: string; slug: string | null;
+    logoUrl: string | null; bannerUrl: string | null;
+    brandTheme: string | null; brandAccent: string | null;
+    instagramUrl: string | null; facebookUrl: string | null; websiteUrl: string | null;
+};
+
+/** A stored row as the public pages read it: NULL or unknown theme/accent → the defaults. */
+export function brandingFromOrgRow(row: OrgBrandingRow): PublicBranding {
+    return {
+        orgName: row.name,
+        orgSlug: row.slug ?? null,
+        theme: isTheme(row.brandTheme) ? row.brandTheme : DEFAULT_THEME,
+        accentId: isAccentId(row.brandAccent) ? row.brandAccent : DEFAULT_ACCENT_ID,
+        logoUrl: row.logoUrl ?? null,
+        bannerUrl: row.bannerUrl ?? null,
+        instagramUrl: row.instagramUrl ?? null,
+        facebookUrl: row.facebookUrl ?? null,
+        websiteUrl: row.websiteUrl ?? null,
+    };
+}
