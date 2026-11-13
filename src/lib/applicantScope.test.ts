@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
-import { normalizeTeamScope, applicantScopeWhere, isInTeamScope, teammateVisibleAnimal } from './applicantScope';
+import { normalizeTeamScope, applicantScopeWhere, generalScopeWhere, teamApplicationsWhere, isInTeamScope, teammateVisibleAnimal } from './applicantScope';
 
 /**
  * Which applicants belong to an animal (2026-09-30, product decision): a
@@ -55,11 +55,17 @@ describe('applicantScopeWhere', () => {
     it('targets the animal AND one case-insensitive user_id match per team email', () => {
         const q = compile('animal-1', ['Owner@Example.com', 'mate@example.com'])!;
         expect(q).not.toBeNull();
-        expect(q.sql).toContain('"form_submissions"."selected_animal_id" = ?');
+        expect(q.sql).toContain('"applications"."animal_id" = ?');
         const userMatches = q.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g) ?? [];
         expect(userMatches).toHaveLength(2);
         expect(q.sql).toContain(' or ');
-        expect(q.params).toEqual(['animal-1', 'owner@example.com', 'mate@example.com']);
+        expect(q.params).toEqual(['animal-1', 'owner@example.com', 'mate@example.com', 'replaced']);
+    });
+
+    it('never matches a «replaced» application (one scope rule for every caller)', () => {
+        const q = compile('animal-1', ['a@example.com'])!;
+        expect(q.sql).toContain('"applications"."state" <> ?');
+        expect(q.params).toContain('replaced');
     });
 
     it('never binds an array (D1 binds it as ONE value)', () => {
@@ -70,7 +76,7 @@ describe('applicantScopeWhere', () => {
 
     it('dedupes the team before building the OR', () => {
         const q = compile('animal-1', ['a@example.com', 'A@example.com '])!;
-        expect(q.params).toEqual(['animal-1', 'a@example.com']);
+        expect(q.params).toEqual(['animal-1', 'a@example.com', 'replaced']);
     });
 
     it('fails CLOSED (null, no query) for an empty or all-blank team', () => {
@@ -80,6 +86,44 @@ describe('applicantScopeWhere', () => {
 
     it('fails CLOSED for a blank animal id', () => {
         expect(applicantScopeWhere('', ['owner@example.com'])).toBeNull();
+    });
+});
+
+describe('generalScopeWhere', () => {
+    it('matches animal-less applications and one user_id match per team email', () => {
+        const q = dialect.sqlToQuery(generalScopeWhere(['Owner@Example.com', 'mate@example.com'])!);
+        expect(q.sql).toContain('"applications"."animal_id" is null');
+        expect(q.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g)).toHaveLength(2);
+        expect(q.params).toEqual(['owner@example.com', 'mate@example.com', 'replaced']);
+        expect(q.sql).toContain('"applications"."state" <> ?');
+        expect(q.sql).not.toMatch(/\bin\s*\(/i);
+    });
+
+    it('fails CLOSED for an empty team', () => {
+        expect(generalScopeWhere([])).toBeNull();
+        expect(generalScopeWhere([null, ' '])).toBeNull();
+    });
+});
+
+describe('teamApplicationsWhere', () => {
+    const q = (mode: 'animals' | 'any') => dialect.sqlToQuery(teamApplicationsWhere(['Owner@Example.com', 'mate@example.com'], mode)!);
+    it("'animals': an animal application needs BOTH the form-link owner AND the animal's owner in the team", () => {
+        const c = q('animals');
+        expect(c.sql).toContain('"applications"."animal_id" is not null');
+        expect(c.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g)).toHaveLength(2);
+        expect(c.sql.match(/lower\(trim\("animals"\."added_by"\)\) = \?/g)).toHaveLength(2);
+        expect(c.sql).toContain('"applications"."state" <> ?');
+        expect(c.sql).not.toMatch(/\bin\s*\(/i);
+    });
+    it("'any': a general application needs only the link owner; an animal one also the animal's owner", () => {
+        const c = q('any');
+        expect(c.sql).toContain('"applications"."animal_id" is null');
+        expect(c.sql.match(/lower\(trim\("animals"\."added_by"\)\) = \?/g)).toHaveLength(2);
+        expect(c.sql.match(/lower\("form_submissions"\."user_id"\) = \?/g)).toHaveLength(2);
+    });
+    it('fails CLOSED for an empty team', () => {
+        expect(teamApplicationsWhere([], 'animals')).toBeNull();
+        expect(teamApplicationsWhere([' '], 'any')).toBeNull();
     });
 });
 

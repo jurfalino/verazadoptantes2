@@ -13,8 +13,9 @@ import { execD1Batch, isDbNull, rows } from './db';
  *     `merge_request` notification) → she cancels it → asks again → an admin
  *     approves it on /admin/merge-requests → merged.
  *
- * Plus /settings «Avisos por email»: the requests row is always on (no switch)
- * and the API row shows only to someone holding a live API key.
+ * Plus /settings «Avisos» (2026-11-11): the rows someone waits on read
+ * «Siempre» (no switch), every other row has one, there is no API row, and
+ * the matrix doesn't overflow at 390px.
  *
  * The rescuer is a per-test fixture user (mergereq-*-<stamp>@example.com) in
  * her own browser context, with a NextAuth session cookie signed here the way
@@ -202,34 +203,48 @@ test('a rescuer\'s request goes to the other owner, can be cancelled, and an adm
     }
 });
 
-test('/settings «Avisos por email»: requests are always on; the API row follows a live API key', async ({ page }) => {
+test('/settings «Avisos»: «Siempre» where someone waits on you, a switch elsewhere, no API row, no overflow at 390px', async ({ page }) => {
     test.setTimeout(120_000);
-    // Other specs in this project create admin API keys, so the expectation
-    // comes from the DB rather than assuming the seed's "no key".
-    const hasLiveKey = Number(rows(
-        `SELECT COUNT(*) AS n FROM api_keys WHERE owner_email = '${ADMIN_EMAIL}' AND revoked_at IS NULL`,
-    )[0]?.n ?? 0) > 0;
-
     await page.goto('/settings');
     await dismissCountryBanner(page);
     const section = page.getByTestId('email-prefs-section');
     await expect(section).toBeVisible({ timeout: 30_000 });
 
-    const requestsRow = section.getByTestId('email-pref-requests');
-    await expect(requestsRow).toBeVisible();
-    await expect(requestsRow).toContainText(/Always on|Siempre activo|Sempre ativo/);
-    await expect(section.getByTestId('email-pref-toggle-requests')).toHaveCount(0);
-    // Switchable categories do carry a switch.
-    await expect(section.getByTestId('email-pref-toggle-forms')).toBeVisible();
+    for (const key of ['merge_request', 'pii_request', 'pair_message']) {
+        await expect(section.getByTestId(`email-pref-${key}`)).toContainText(/Always|Siempre|Sempre/);
+        await expect(section.getByTestId(`email-pref-toggle-${key}`)).toHaveCount(0);
+    }
+    // 12 switchable rows (incl. «Te preguntan si es la misma persona», v2.59.8) + the check-up row (followup_settings.emailReminders).
+    await expect(section.locator('[data-testid^="email-pref-toggle-"]')).toHaveCount(13);
+    for (const key of ['form', 'contract', 'followups', 'content', 'group', 'same_person']) {
+        await expect(section.getByTestId(`email-pref-toggle-${key}`)).toBeVisible();
+    }
+    await expect(section.getByTestId('email-pref-api')).toHaveCount(0);
+    await expect(section.getByTestId('animals-scope').getByRole('radio')).toHaveCount(2);
+    // One hint, the selected option's (CX review I1).
+    await expect(section.getByTestId('animals-scope-hint')).toHaveCount(1);
+    await expect(section.getByTestId('animals-scope-hint')).not.toBeEmpty();
+    await expect(section.getByTestId('notices-not-sent')).toBeVisible();
 
-    await expect(section.getByTestId('email-pref-api')).toHaveCount(hasLiveKey ? 1 : 0);
+    // The three-column matrix fits a phone: nothing scrolls sideways.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(section).toBeVisible();
+    expect(await section.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+
+    // The emails' «Configurar avisos» link (/settings#avisos) lands on the card, though it renders after load.
+    await page.goto('about:blank'); // a fresh load: same-page hash changes don't reload
+    await page.goto('/settings#avisos');
+    await expect(section).toBeVisible({ timeout: 30_000 });
+    await expect(section).toHaveAttribute('id', 'avisos');
+    await expect(section).toBeInViewport();
 });
 
-test('/settings «Avisame de cambios hechos por:» under «Cambios en tus perfiles»: two choices, saved, shown even with the email switch off', async ({ page }) => {
+test('/settings «Avisame de cambios hechos por:» under «Cambios en tus perfiles»: two choices, saved, shown even with the email switches off', async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/settings');
     await dismissCountryBanner(page);
-    const row = page.getByTestId('email-pref-profile_changes');
+    const row = page.getByTestId('profile-changes-from');
     await expect(row).toBeVisible({ timeout: 30_000 });
     const group = row.getByRole('radiogroup');
     await expect(group).toBeVisible();
@@ -237,7 +252,7 @@ test('/settings «Avisame de cambios hechos por:» under «Cambios en tus perfil
     const outside = row.getByTestId('profile-changes-from-outside');
     const team = row.getByTestId('profile-changes-from-team');
     const hint = row.getByTestId('profile-changes-from-hint');
-    const toggle = row.getByTestId('email-pref-toggle-profile_changes');
+    const toggle = page.getByTestId('email-pref-toggle-content');
     const switchWasOn = (await toggle.getAttribute('aria-checked')) === 'true';
     const startedOnTeam = await team.isChecked();
     // Each choice / switch is a server-action POST; wait for it to land before reloading.
@@ -254,18 +269,18 @@ test('/settings «Avisame de cambios hechos por:» under «Cambios en tus perfil
         await page.reload();
         await expect(page.getByTestId('profile-changes-from-team')).toBeChecked({ timeout: 30_000 });
         // The email switch off keeps the choice visible and usable (it decides the bell too).
-        if (switchWasOn) await saved(() => page.getByTestId('email-pref-toggle-profile_changes').click());
-        await expect(page.getByTestId('email-pref-toggle-profile_changes')).toHaveAttribute('aria-checked', 'false');
+        if (switchWasOn) await saved(() => page.getByTestId('email-pref-toggle-content').click());
+        await expect(page.getByTestId('email-pref-toggle-content')).toHaveAttribute('aria-checked', 'false');
         await saved(() => page.getByTestId('profile-changes-from-outside').check());
         await expect(page.getByTestId('profile-changes-from-outside')).toBeChecked();
     } finally {
         // Leave the admin as found (other specs read the bell), and confirm it after a reload.
         const radio = page.getByTestId(`profile-changes-from-${startedOnTeam ? 'team' : 'outside'}`);
         if (!(await radio.isChecked())) await saved(() => radio.check());
-        const now = (await page.getByTestId('email-pref-toggle-profile_changes').getAttribute('aria-checked')) === 'true';
-        if (now !== switchWasOn) await saved(() => page.getByTestId('email-pref-toggle-profile_changes').click());
+        const now = (await page.getByTestId('email-pref-toggle-content').getAttribute('aria-checked')) === 'true';
+        if (now !== switchWasOn) await saved(() => page.getByTestId('email-pref-toggle-content').click());
         await page.reload();
         await expect(page.getByTestId(`profile-changes-from-${startedOnTeam ? 'team' : 'outside'}`)).toBeChecked({ timeout: 30_000 });
-        await expect(page.getByTestId('email-pref-toggle-profile_changes')).toHaveAttribute('aria-checked', String(switchWasOn));
+        await expect(page.getByTestId('email-pref-toggle-content')).toHaveAttribute('aria-checked', String(switchWasOn));
     }
 });

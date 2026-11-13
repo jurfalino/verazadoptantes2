@@ -117,7 +117,7 @@ const DEFS: ScenarioDef[] = [
         }],
         person: { fullName: 'Jorge Ramírez', documentId: { value: '99913502', country: 'AR' } },
         activity: { activityType: 'adoption_request' },
-        why: 'El documento coincide (los puntos no importan) y «Jorge Ramírez» es compatible con «Jorge Luis Ramírez» (todas sus palabras están en el nombre registrado) → `found`. Un 3★ no impide adoptar: miralo con más cuidado.',
+        why: 'El documento coincide (los puntos no importan) y «Jorge Ramírez» es compatible con «Jorge Luis Ramírez» (todas sus palabras están en el nombre registrado) → `found`. Un 3★ (Regular) pide evaluación y seguimiento: miralo con más cuidado.',
     },
     {
         key: 'two_stars',
@@ -146,7 +146,7 @@ const DEFS: ScenarioDef[] = [
         }],
         person: { fullName: 'Diego Sosa', phone: '11 5550-3105', email: 'diego.sosa.demo@example.com' },
         activity: { activityType: 'adoption_request', animalName: 'Rocco', species: 'dog' },
-        why: 'Email, teléfono y nombre coinciden → `found`. `ratingLevel` 1 (`dangerous`): **en BuenAdoptante, 1★ impide adoptar**. `risk.alerts` trae `too_many_requests` (4 rescates distintos en pocos días). No entregues el animal.',
+        why: 'Email, teléfono y nombre coinciden → `found`. `ratingLevel` 1 (`dangerous`): **en BuenAdoptante, 1★ quiere decir que no se recomienda entregarle animales en adopción**. `risk.alerts` trae `too_many_requests` (4 rescates distintos en pocos días). No entregues el animal.',
     },
     {
         key: 'not_rated',

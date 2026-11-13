@@ -72,7 +72,7 @@ const declinedSent = (theirsAction: 'merge' | 'dispute'): PendingDedupPair => pa
     actionByKeep: { new: null, existing: theirsAction },
     request: {
         id: 'r1', status: 'declined', direction: 'sent', createdAt: 1, counterpartName: 'María', toAdmins: false, dispute: false,
-        canMessage: true, declinedAt: 2, declinedByName: 'María', keepId: 'mine',
+        canMessage: true, declinedAt: 2, declinedByName: 'María', keepId: 'mine', messages: [],
     },
 });
 
@@ -108,7 +108,7 @@ describe('PairRow — «Pedir revisión a un administrador» (D49)', () => {
             group: 'sent',
             request: {
                 id: 'r2', status: 'pending', direction: 'sent', createdAt: 1, counterpartName: null, toAdmins: true, dispute: true,
-                canMessage: false, declinedAt: null, declinedByName: null, keepId: 'theirs',
+                canMessage: false, declinedAt: null, declinedByName: null, keepId: 'theirs', messages: [],
             },
         }), as(dict));
         expect(html).toContain(dict.myAdopters.pending_d_line_sent_dispute.replace('{when}', 'hace 1 día'));
@@ -151,5 +151,43 @@ describe('PairRow — each side\'s standing row (dedup-side-standing, point C)',
         const html = render(pair({ existingAdopter: side('theirs', { rating: null }) }), as(es));
         const theirs = rows(html)[1];
         expect(theirs).toContain('person-unrated');
+    });
+});
+
+describe('PairRow — «Mensajes (N)» on the pair (2026-11-11)', () => {
+    const received = (messages: NonNullable<PendingDedupPair['request']>['messages']): PendingDedupPair => pair({
+        group: 'received',
+        request: {
+            id: 'r3', status: 'pending', direction: 'received', createdAt: 1, counterpartName: 'Marta Giménez', toAdmins: false, dispute: false,
+            canMessage: true, declinedAt: null, declinedByName: null, keepId: 'theirs', messages,
+        },
+    });
+    const two = [
+        { id: 'm1', senderName: 'Marta Giménez', mine: false, body: 'Hola! Creo que es el mismo Juan.', createdAt: 10 },
+        { id: 'm2', senderName: 'Ana', mine: true, body: 'Sí, coincide el teléfono.', createdAt: 20 },
+    ];
+    const renderRow = (p: PendingDedupPair, open: boolean, dict: Record<string, unknown> = as(es)) => renderToStaticMarkup(
+        <PairRow pair={p} open={open} onToggle={() => undefined} keep={p.defaultKeep} onKeep={() => undefined} busy={false} locked={false} isAdmin={false}
+            t={tFor(dict)} formatShortDate={() => ''} age={(s) => `hace ${s}`} onAction={() => undefined} onRequestAccess={() => undefined} />,
+    );
+
+    it.each(dicts)('%s: open, the messages sit under the buttons, oldest first; mine say «Vos» and sit on the right', (_l, dict) => {
+        const html = renderRow(received(two), true, as(dict));
+        const m = dict.myAdopters;
+        expect(html).toContain(m.pending_d_messages_title.replace('{n}', '2'));
+        const thread = html.slice(html.indexOf('data-testid="pair-messages"'));
+        expect(html.indexOf('data-testid="dedup-accept-request"')).toBeLessThan(html.indexOf('data-testid="pair-messages"'));
+        expect(thread.indexOf('Hola! Creo que es el mismo Juan.')).toBeLessThan(thread.indexOf('Sí, coincide el teléfono.'));
+        expect(thread).toContain('Marta Giménez · hace 10');
+        expect(thread).toContain(`${m.pending_d_message_you} · hace 20`);
+        expect(thread).toMatch(/data-mine="true"[^>]*class="[^"]*self-end/);
+    });
+
+    it('closed, the status line counts them: «· 1 mensaje» / «· 2 mensajes»; nothing when there are none', () => {
+        expect(renderRow(received(two.slice(0, 1)), false)).toContain(' · 1 mensaje');
+        expect(renderRow(received(two), false)).toContain(' · 2 mensajes');
+        const none = renderRow(received([]), false);
+        expect(none).not.toContain('mensaje');
+        expect(renderRow(received([]), true)).not.toContain('data-testid="pair-messages"');
     });
 });

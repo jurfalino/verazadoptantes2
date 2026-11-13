@@ -14,10 +14,13 @@ interface StarRatingProps {
     clearable?: boolean;
 }
 
+// `star` sizes the drawing; `hit` (when set) the button around it. The large input is the one
+// tapped on a phone: a 44px target per star (tap-target rule), the star still drawn at 32px. Its
+// stars sit closer (no gap) so the row stays about as wide as the 44px targets allow.
 const sizeConfig = {
-    sm: { star: 'w-4 h-4', gap: 'gap-0.5', text: 'text-xs' },
-    md: { star: 'w-6 h-6', gap: 'gap-1', text: 'text-sm' },
-    lg: { star: 'w-8 h-8', gap: 'gap-1.5', text: 'text-base' },
+    sm: { star: 'w-4 h-4', hit: '', gap: 'gap-0.5', text: 'text-xs' },
+    md: { star: 'w-6 h-6', hit: '', gap: 'gap-1', text: 'text-sm' },
+    lg: { star: 'w-8 h-8', hit: 'min-h-11 min-w-11 inline-flex items-center justify-center', gap: 'gap-0', text: 'text-base' },
 };
 
 export function StarRating({ value, onChange, size = 'md', showLabel = false, clearable = true }: StarRatingProps) {
@@ -45,13 +48,15 @@ export function StarRating({ value, onChange, size = 'md', showLabel = false, cl
                             // Tapping the current rating again clears it back to "not rated".
                             onClick={() => onChange?.(star === level ? 0 : star)}
                             aria-pressed={interactive ? filled : undefined}
-                            className={`${config.star} flex-shrink-0 transition-all ${interactive
+                            className={`${config.hit || config.star} flex-shrink-0 transition-all ${interactive
                                     ? 'cursor-pointer hover:scale-110 active:scale-95'
                                     : 'cursor-default'
                                 } ${filled ? colors.text : 'text-stone-300'}`}
                             aria-label={`${star} star${star > 1 ? 's' : ''}`}
                         >
-                            <StarIcon className="w-full h-full" filled={filled} />
+                            {config.hit
+                                ? <span className={`${config.star} block`}><StarIcon className="w-full h-full" filled={filled} /></span>
+                                : <StarIcon className="w-full h-full" filled={filled} />}
                         </button>
                     );
                 })}

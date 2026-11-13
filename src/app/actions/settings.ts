@@ -344,7 +344,7 @@ export async function updateUserName(name: string): Promise<{ success: boolean; 
 // ── Follow-up schedule + message templates (v2.55.16, animal-timeline PR3) ──
 
 import { z } from 'zod';
-import { parseFollowupSettings, FOLLOWUP_SUBTYPES, type FollowupSettings, type FollowupSubtype } from '@/domain/followups';
+import { parseFollowupSettings, withStoredEmailReminders, FOLLOWUP_SUBTYPES, type FollowupSettings, type FollowupSubtype } from '@/domain/followups';
 
 /**
  * v2.56.11: `messages` is a record with a STRING key, not `z.enum`. In zod v4 an
@@ -363,7 +363,6 @@ const followupSettingsSchema = z.object({
     fosterIntervalDays: z.number().int().min(7).max(120).optional(),
     messages: z.record(z.string().max(40), z.string().max(1000)).optional(),
     emailReminders: z.boolean().optional(),
-    onlyMyAnimals: z.boolean().optional(),
 }).nullable();
 
 /** Keep only known subtypes, so an unknown key can never reach the DB. */
@@ -426,14 +425,21 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
         const { env } = (await import('@/lib/requestContext')).getRequestContext();
         if (!env?.DB) throw new Error('Database not available');
 
-        const user = await env.DB.prepare(`SELECT id FROM user WHERE email = ? LIMIT 1`)
-            .bind(userEmail).first<{ id: string }>();
+        const user = await env.DB.prepare(
+            `SELECT u.id AS id, up.followup_settings AS settings
+             FROM user u LEFT JOIN user_profiles up ON up.user_id = u.id
+             WHERE u.email = ? LIMIT 1`
+        ).bind(userEmail).first<{ id: string; settings: string | null }>();
         if (!user?.id) throw new Error('No user row for the session email');
 
-        const value = parsed.data === null ? null : JSON.stringify({
+        const sent: FollowupSettings | null = parsed.data === null ? null : {
             ...parsed.data,
             ...(parsed.data.messages ? { messages: pickKnownMessages(parsed.data.messages as Record<string, string>) } : {}),
-        });
+        } as FollowupSettings;
+        // The check-up email is switched only in Avisos: «Guardar» here keeps the stored value (CX review I5).
+        // Read-then-write, as setFollowupEmailForEmail: a switch in Avisos in the same instant can still lose.
+        const next = withStoredEmailReminders(sent, parseFollowupSettings(user.settings ?? null));
+        const value = next ? JSON.stringify(next) : null;
 
         // Single atomic upsert — the profile row may not exist yet.
         await env.DB.prepare(
@@ -441,7 +447,7 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
              ON CONFLICT(user_id) DO UPDATE SET followup_settings = excluded.followup_settings`
         ).bind(user.id, value).run();
 
-        logAudit({ userEmail, action: 'followup_settings_saved', details: { reset: parsed.data === null } });
+        logAudit({ userEmail, action: 'followup_settings_saved', details: { reset: parsed.data === null, emailRemindersKept: next?.emailReminders === true } });
         return { success: true };
     } catch (error) {
         const errorId = logger.error('saveFollowupSettings failed', error, { userEmail });
@@ -449,61 +455,86 @@ export async function saveFollowupSettings(input: FollowupSettings | null): Prom
     }
 }
 
-// ── Email notification switches (per category) ──────────────────────────────
+// ── «Avisos» (Jon 2026-11-11): the email switch per row, and the two choices ──
 
-import { and, eq, isNull } from 'drizzle-orm';
-import { apiKeys } from '@/db/schema';
-import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory, type EmailPrefs } from '@/domain/emailCategories';
-import { getEmailPrefsForEmail, getLocaleForEmail, setEmailPrefForEmail, setLocaleForEmail } from '@/lib/emailPrefs';
+import { SWITCHABLE_ROW_KEYS, type NoticePrefs, type SwitchableRowKey } from '@/domain/noticeRows';
+import { getFollowupEmailForEmail, getLocaleForEmail, getNoticePrefsForEmail, setFollowupEmailForEmail, setLocaleForEmail, setNoticePrefForEmail } from '@/lib/emailPrefs';
 import { READ_ONLY_ERROR_NAME } from '@/lib/readOnlyGuard';
 import { PROFILE_CHANGES_FROM, type ProfileChangesFrom } from '@/domain/teamChangeAudience';
 import { getProfileChangesFromForEmail, setProfileChangesFromForEmail } from '@/lib/teamChangeAudience';
+import type { AnimalsScope } from '@/domain/animalNotices';
+import { getAnimalsScopeForEmail, setAnimalsScopeForEmail } from '@/lib/animalsScope';
 
 /**
- * The viewer's email switches, whether they hold a live API key, and their
- * «Avisame de cambios hechos por:» choice (null = no session).
+ * What saveEmailPref switches: a row's email («Avisos»), the check-up row
+ * ('followups' = followup_settings.emailReminders, the same value «Seguimientos
+ * de adopción» shows) or «Formularios, contratos y controles de:»
+ * ('animals_mine': true = «Lo mío: mis animales y mi formulario», false = «Todo el equipo»).
  */
-export async function getEmailPrefs(): Promise<{ prefs: EmailPrefs; hasApiKey: boolean; profileChangesFrom: ProfileChangesFrom } | null> {
+export type NoticePrefKey = SwitchableRowKey | 'followups' | 'animals_mine';
+
+export type NoticeSettings = {
+    prefs: NoticePrefs;
+    followupEmail: boolean;
+    animalsScope: AnimalsScope;
+    profileChangesFrom: ProfileChangesFrom;
+};
+
+/**
+ * The viewer's «Avisos»: the row switches, the check-up email, and the two
+ * choices (null = no session). An unreadable choice shows its default, logged,
+ * rather than hiding every switch (review M6).
+ */
+export async function getEmailPrefs(): Promise<NoticeSettings | null> {
     let userEmail: string | undefined;
     try {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') return null;
+        const email = userEmail;
 
         const db = await getDb();
-        const [prefs, keys, profileChangesFrom] = await Promise.all([
-            getEmailPrefsForEmail(db, userEmail),
-            db.select({ id: apiKeys.id }).from(apiKeys)
-                .where(and(eq(apiKeys.ownerEmail, userEmail), isNull(apiKeys.revokedAt))).limit(1),
-            // Its own fallback: an unreadable choice must not hide every email switch (review M6).
-            getProfileChangesFromForEmail(db, userEmail).catch((e): ProfileChangesFrom => {
-                logger.warn('getEmailPrefs: profile_changes_from unreadable, shown as the default', { userEmail, error: e instanceof Error ? e.message : String(e) });
-                return 'outside';
-            }),
+        const fallback = <T,>(what: string, value: T) => (e: unknown): T => {
+            logger.warn(`getEmailPrefs: ${what} unreadable, shown as the default`, { userEmail: email, error: e instanceof Error ? e.message : String(e) });
+            return value;
+        };
+        const [prefs, followupEmail, animalsScope, profileChangesFrom] = await Promise.all([
+            getNoticePrefsForEmail(db, email),
+            getFollowupEmailForEmail(db, email).catch(fallback('followup email', false)),
+            getAnimalsScopeForEmail(db, email).catch(fallback<AnimalsScope>('animals scope', 'team')),
+            getProfileChangesFromForEmail(db, email).catch(fallback<ProfileChangesFrom>('profile_changes_from', 'outside')),
         ]);
-        return { prefs, hasApiKey: keys.length > 0, profileChangesFrom };
+        return { prefs, followupEmail, animalsScope, profileChangesFrom };
     } catch (error) {
         logger.error('getEmailPrefs failed', error, { userEmail });
         return null;
     }
 }
 
-/** Switch one email category on or off. Always-on categories and unknown values are refused. */
-export async function saveEmailPref(category: EmailCategory, enabled: boolean): Promise<{ success: boolean; errorId?: string }> {
+const NOTICE_PREF_KEYS: readonly string[] = [...SWITCHABLE_ROW_KEYS, 'followups', 'animals_mine'];
+
+/** Switch one «Avisos» preference (see NoticePrefKey). The «Siempre» rows and unknown keys are refused. */
+export async function saveEmailPref(key: NoticePrefKey, enabled: boolean): Promise<{ success: boolean; errorId?: string }> {
     let userEmail: string | undefined;
     try {
         userEmail = await getUser();
         if (!userEmail || userEmail === 'unknown') throw new Error('No authenticated user');
-        if (!EMAIL_CATEGORIES.includes(category) || typeof enabled !== 'boolean') {
-            throw new Error(`Invalid email preference: ${String(category)}`);
+        if (typeof key !== 'string' || !NOTICE_PREF_KEYS.includes(key) || typeof enabled !== 'boolean') {
+            throw new Error(`Invalid notice preference: ${String(key).slice(0, 40)}`);
         }
-        if (ALWAYS_ON_CATEGORIES.has(category)) throw new Error(`Email category cannot be switched off: ${category}`);
+        const db = await getDb();
+        if (key === 'followups') await setFollowupEmailForEmail(db, userEmail, enabled);
+        else if (key === 'animals_mine') await setAnimalsScopeForEmail(db, userEmail, enabled ? 'mine' : 'team');
+        else await setNoticePrefForEmail(db, userEmail, key, enabled);
 
-        await setEmailPrefForEmail(await getDb(), userEmail, category, enabled);
-
-        logAudit({ userEmail, action: 'email_pref_saved', details: { category, enabled } });
+        logAudit({ userEmail, action: 'email_pref_saved', details: { key, enabled } });
         return { success: true };
     } catch (error) {
-        const errorId = logger.error('saveEmailPref failed', error, { userEmail, category });
+        if (error instanceof Error && error.name === READ_ONLY_ERROR_NAME) {
+            const errorId = generateErrorId();
+            logger.warn('saveEmailPref: read-only ("view as") session, not saved', { userEmail, key: String(key).slice(0, 40), errorId });
+            return { success: false, errorId };
+        }
+        const errorId = logger.error('saveEmailPref failed', error, { userEmail, key: String(key).slice(0, 40) });
         return { success: false, errorId };
     }
 }

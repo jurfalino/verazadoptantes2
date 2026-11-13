@@ -58,10 +58,10 @@ describe('createNotification with a template', () => {
     });
 
     it('ifAbsent: a second create with the same id is skipped quietly — no row change, no email, no error', async () => {
-        const first = await createNotification({ id: 'n-fixed', userId: 'a@example.com', type: 'system', title: 'T1', body: 'B1', ifAbsent: true });
+        const first = await createNotification({ id: 'n-fixed', userId: 'a@example.com', type: 'member_joined', title: 'T1', body: 'B1', ifAbsent: true });
         expect(first).toBe('n-fixed');
         const { logger } = await import('@/lib/logger');
-        const second = await createNotification({ id: 'n-fixed', userId: 'a@example.com', type: 'system', title: 'T2', body: 'B2', ifAbsent: true });
+        const second = await createNotification({ id: 'n-fixed', userId: 'a@example.com', type: 'member_joined', title: 'T2', body: 'B2', ifAbsent: true });
         expect(second).toBeNull();
         expect(row('n-fixed')).toMatchObject({ title: 'T1', body: 'B1' });
         expect(emails).toHaveLength(1);
@@ -69,7 +69,7 @@ describe('createNotification with a template', () => {
     });
 
     it('without a template nothing changes', async () => {
-        const id = await createNotification({ userId: 'a@example.com', type: 'system', title: 'T', body: 'B', metadata: { a: 1 } });
+        const id = await createNotification({ userId: 'a@example.com', type: 'member_joined', title: 'T', body: 'B', metadata: { a: 1 } });
         expect(row(id!)).toMatchObject({ title: 'T', body: 'B', metadata: JSON.stringify({ a: 1 }) });
     });
 });

@@ -29,6 +29,7 @@ import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/cont
 import { isPiiGatingEnabled, isPublicProfilesEnabled, resolveAdoptersVisibility, maskOptionsFor } from '@/lib/piiAccessServer';
 import { logger } from '@/lib/logger';
 import { withHouseholdLines } from '@/lib/households';
+import { shownInCountrySearch } from '@/domain/searchCountry';
 import type { DiscoveryMatch, DuplicateMatch } from './types';
 
 const DEFAULT_STATS = { searchHits: 0, profileViews: 0, requests: 0, adoptions: 0 };
@@ -43,8 +44,10 @@ interface HydrateOpts {
     viewer: string;
     /** When true, every row is masked (NO_ACCESS_VISIBILITY); no grant resolution. */
     isUnauthenticated: boolean;
-    /** When set, drop rows in a different country unless the viewer owns them. */
+    /** When set, drop rows in a different country unless the viewer or their group loaded them. */
     userCountry?: string | null;
+    /** The viewer and their group-mates (getTeamEmails), for the country re-check. Defaults to the viewer alone. */
+    teamEmails?: readonly string[];
     /**
      * ENABLE_GUEST_NAME_MASK for a logged-out viewer: what they typed. When set,
      * each result goes through `toGuestMatch` (masked name, card fields only).
@@ -90,11 +93,14 @@ export async function hydrateDuplicateMatches(
             }),
     ))).filter((r): r is typeof adopters.$inferSelect => !!r);
 
-    // Geo re-check — duplicate mode has no geo gate, so a cross-country record
-    // could surface here that the pure search would hide. Owned records bypass.
-    const scoped = opts.userCountry
-        ? rows.filter(r => r.country === opts.userCountry || r.addedBy === opts.viewer)
-        : rows;
+    // Country re-check — duplicate mode has no country gate, so a cross-country
+    // record could surface here that the search would hide. The one rule
+    // (shownInCountrySearch): the viewer's and their group's profiles always pass.
+    let scoped = rows;
+    if (opts.userCountry) {
+        const team = opts.teamEmails ?? [opts.viewer];
+        scoped = rows.filter(r => shownInCountrySearch(r, opts.userCountry, team));
+    }
     if (scoped.length === 0) return [];
 
     const enrichmentMap = await enrichAdopters(db, scoped.map(r => r.id));

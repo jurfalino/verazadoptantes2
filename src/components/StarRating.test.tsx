@@ -35,4 +35,24 @@ describe('StarRating', () => {
             expect(html).not.toContain('ratings.clear');
         }
     });
+
+    // Every tap target is ≥44px (plan global constraint): the large input's stars keep their 32px
+    // drawing inside a 44px button; the smaller sizes are unchanged.
+    it('size lg: each star is a 44px button around a 32px star', () => {
+        const html = renderToStaticMarkup(<StarRating value={0} onChange={noop} size="lg" />);
+        const stars = html.split('<button').slice(1).filter(b => /aria-label="\d stars?"/.test(b));
+        expect(stars).toHaveLength(5);
+        for (const b of stars) {
+            expect(b).toMatch(/\bmin-h-11\b/);
+            expect(b).toMatch(/\bmin-w-11\b/);
+            expect(b).toMatch(/<span class="[^"]*\bw-8 h-8\b/);
+        }
+    });
+
+    it('sizes md / sm keep their star-sized buttons', () => {
+        for (const size of ['md', 'sm'] as const) {
+            const html = renderToStaticMarkup(<StarRating value={0} onChange={noop} size={size} />);
+            expect(html).not.toContain('min-h-11');
+        }
+    });
 });

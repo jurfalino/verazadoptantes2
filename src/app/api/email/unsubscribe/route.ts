@@ -5,8 +5,9 @@ import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
 import { resolveAuthSecret } from '@/lib/otp';
-import { setEmailPrefForEmail } from '@/lib/emailPrefs';
-import { unsubscribableCategory, verifyUnsubscribe } from '@/lib/emailUnsubscribe';
+import { setNoticePrefsForEmail } from '@/lib/emailPrefs';
+import { verifyUnsubscribe } from '@/lib/emailUnsubscribe';
+import { unsubscribeRows } from '@/domain/noticeRows';
 
 function back(req: NextRequest, params: Record<string, string>): NextResponse {
     const url = new URL('/email/unsubscribe', req.url);
@@ -23,13 +24,14 @@ export async function POST(req: NextRequest) {
         email = String(form.get('e') ?? '');
         category = String(form.get('c') ?? '');
         const sig = String(form.get('s') ?? '');
-        const cat = unsubscribableCategory(category);
-        if (!cat || !(await verifyUnsubscribe(email, category, sig, resolveAuthSecret()))) {
+        // A row key, or an old category (emails sent before «Avisos») mapped to its rows.
+        const rows = unsubscribeRows(category);
+        if (!rows || !(await verifyUnsubscribe(email, category, sig, resolveAuthSecret()))) {
             logger.warn('email.unsubscribe: invalid signature', { category });
             return back(req, { invalid: '1' });
         }
-        await setEmailPrefForEmail(await getDb(), email.toLowerCase(), cat, false);
-        return back(req, { done: '1', c: cat });
+        await setNoticePrefsForEmail(await getDb(), email.toLowerCase(), rows, false);
+        return back(req, { done: '1', c: category });
     } catch (e) {
         const errorId = logger.error('email.unsubscribe: failed', e, { category, email: maskEmail(email) });
         return back(req, { error: errorId });

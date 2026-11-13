@@ -12,6 +12,7 @@ import { RatingBadge } from '@/components/RatingBadge';
 import { deleteAdoption, getAdoptionImages } from '@/app/actions';
 import { getAdoptionDeleteImpact } from '@/app/actions/adoptions';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { animalDeleteWarningText } from '@/components/evaluation/AnimalDeleteWarning';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getRecordTypeColors } from '@/lib/recordTypeColors';
 import { useShowToast } from '@/components/ui/Toast';
@@ -23,6 +24,8 @@ import { formatAge } from '@/lib/ageUtils';
 import { isAdmin as isAdminEmail } from '@/config/admins-shared';
 import { MediaLightbox, MediaThumbnail } from '@/components/ui/MediaLightbox';
 import { ActivityCountsLine } from '@/components/ActivityCountsLine';
+import { ApplicationOutcomeLine } from '@/components/evaluation/ApplicationStatusLine';
+import type { ApplicationStatus } from '@/domain/applications';
 import { countActivity } from '@/domain/activityCounts';
 import type { MediaItem } from '@/components/ui/MediaLightbox';
 
@@ -58,6 +61,8 @@ interface Adoption {
     apiTool?: string;
     /** May this viewer edit/delete the record — getAdoptions, same rule as saveAdoption. */
     canEdit?: boolean;
+    /** How the form's application ended (getAdoptions → applicationOutcomes); absent while open. */
+    applicationOutcome?: { status: ApplicationStatus; animal: { name: string; sex: string | null } | null; outcomeAnimal: { name: string; sex: string | null } | null };
 }
 
 interface AdoptionImage {
@@ -191,7 +196,7 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
         // confirm rather than silently doing nothing.
         setPendingDelete({
             id: adoptionId,
-            impact: impact ?? { kind: 'event', animalName: null, willDeleteAnimal: false, links: { otherPlacements: 0, adopterEvents: 0, animalEvents: 0, formsAndContracts: 0 } },
+            impact: impact ?? { kind: 'event', animalName: null, willDeleteAnimal: false, links: { otherPlacements: 0, adopterEvents: 0, animalEvents: 0, formsAndContracts: 0 }, openCandidates: 0 },
         });
     };
 
@@ -217,7 +222,10 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
         : pendingDelete.impact.kind === 'event'
             ? t('dialogs.confirm_delete_record')
             : pendingDelete.impact.willDeleteAnimal
-                ? (t('dialogs.delete_record_last_link') || '').replace('{animal}', animalLabel)
+                // Moving the animal to the trash closes its open applications: say how many candidates that loses
+                // (Jon 2026-11-11) — «Eliminar solo el registro» keeps them.
+                ? [(t('dialogs.delete_record_last_link') || '').replace('{animal}', animalLabel),
+                    animalDeleteWarningText(t, animalLabel, pendingDelete.impact.openCandidates)].filter(Boolean).join(' ')
                 : (t('dialogs.delete_record_animal_kept') || '').replace('{animal}', animalLabel);
 
     if (initialAdoptions.length === 0) {
@@ -497,6 +505,8 @@ export default function AdoptionHistory({ adoptions: initialAdoptions, adopterId
                                             </a>
                                         );
                                     })()}
+
+                                    {recordType === 'adoption_request' && adoption.applicationOutcome && <ApplicationOutcomeLine outcome={adoption.applicationOutcome} />}
 
                                     {/* Answers of the rescue's own form, sent through the API */}
                                     {recordType === 'adoption_request' && adoption.formContent && (

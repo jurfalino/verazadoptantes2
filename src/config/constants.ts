@@ -95,3 +95,8 @@ export const SESSION_MAX_AGE_SECONDS = 315_360_000;
  * initial rollout when no users had a terms_version record at all.
  */
 export const CURRENT_TERMS_VERSION = 1;
+
+// ── Compartir formulario ─────────────────────────────────────────
+/** «¿Para qué animal?»: from this many animals the list gets the search box
+ *  and species buttons; below it, they would only be noise. */
+export const SHARE_PICKER_SEARCH_MIN = 7;

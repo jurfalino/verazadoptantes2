@@ -11,7 +11,7 @@
  * log + notification system is the trust-but-verify backstop.
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { organizations, orgMembers } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -63,6 +63,32 @@ export async function isOrgMateStrict(
             .all()
             .then((rows: { userEmail: string }[]) =>
                 rows.some(r => normEmail(r.userEmail) === o))
+    ));
+    return hits.some(Boolean);
+}
+
+/**
+ * isOrgMateStrict, case-insensitive on both sides: member rows keep the session
+ * email as it was. Throws on DB errors. For who gets a form's email
+ * (src/domain/animalNotices.ts formNoticeRecipients), where a case mismatch
+ * must not read as «not in the team».
+ */
+export async function sharesAnOrgStrict(a: string | null | undefined, b: string | null | undefined): Promise<boolean> {
+    const x = normEmail(a);
+    const y = normEmail(b);
+    if (!x || !y || x === y) return false;
+    const db = await getDb();
+    if (!db) return false;
+    const orgs = await db.select({ orgId: orgMembers.orgId })
+        .from(orgMembers)
+        .where(sql`lower(trim(${orgMembers.userEmail})) = ${x}`);
+    const orgIds = [...new Set<string>(orgs.map((r: { orgId: string }) => r.orgId))];
+    // Per org, never inArray (D1).
+    const hits = await Promise.all(orgIds.map((orgId: string) =>
+        db.select({ userEmail: orgMembers.userEmail })
+            .from(orgMembers)
+            .where(eq(orgMembers.orgId, orgId))
+            .then((rows: { userEmail: string }[]) => rows.some(r => normEmail(r.userEmail) === y))
     ));
     return hits.some(Boolean);
 }
@@ -270,6 +296,23 @@ export async function getTeamEmails(email: string | null | undefined): Promise<s
 }
 
 /**
+ * Session-free: the member emails of ONE organization (empty when it has none or
+ * the read fails, logged). For notification fan-out to the group an event is
+ * about (member_joined), never the actor's other groups.
+ */
+export async function getMemberEmailsOfOrg(orgId: string): Promise<string[]> {
+    const db = await getDb();
+    if (!db || !orgId) return [];
+    try {
+        const rows = await db.select({ userEmail: orgMembers.userEmail }).from(orgMembers).where(eq(orgMembers.orgId, orgId));
+        return [...new Set<string>(rows.map((r: { userEmail: string }) => r.userEmail))];
+    } catch (error) {
+        logger.error('getMemberEmailsOfOrg failed', error, { orgId });
+        return [];
+    }
+}
+
+/**
  * Session-free: all member emails across every organization the given email
  * belongs to (always including that email). For server code only — public API
  * routes, notification fan-out, visibility resolution — where getUser() would
@@ -282,9 +325,11 @@ export async function getOrgMemberEmailsFor(email: string): Promise<string[]> {
     if (!db) return [email];
 
     try {
+        // Case-insensitive on both sides: member rows keep the session email as it was, and the
+        // actor's may differ in case.
         const myOrgs = await db.select({ orgId: orgMembers.orgId })
             .from(orgMembers)
-            .where(eq(orgMembers.userEmail, email));
+            .where(sql`lower(trim(${orgMembers.userEmail})) = ${normEmail(email)}`);
 
         if (myOrgs.length === 0) return [email];
 

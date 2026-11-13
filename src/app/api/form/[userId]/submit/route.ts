@@ -208,20 +208,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         // Its owner — the teammate fan-out names the animal only when that
         // owner is in the form-link owner's team (forged ?animal= rows).
         let selectedAnimalOwner: string | null = null;
+        // What the application records: undefined = lookup failed, null = no such animal.
+        let selectedAnimalRow: { recordType: string | null; adopterId: string | null } | null | undefined;
         if (selectedAnimalId) {
             try {
                 const { adoptions } = await import('@/db/schema');
-                const animal = await db.select({ animalName: adoptions.animalName, addedBy: adoptions.addedBy })
+                const animal = await db.select({ animalName: adoptions.animalName, addedBy: adoptions.addedBy, recordType: adoptions.recordType, adopterId: adoptions.adopterId })
                     .from(adoptions)
                     .where(eq(adoptions.id, selectedAnimalId))
                     .get();
                 if (animal?.animalName) selectedAnimalName = animal.animalName;
                 selectedAnimalOwner = animal?.addedBy ?? null;
+                selectedAnimalRow = animal ? { recordType: animal.recordType, adopterId: animal.adopterId } : null;
             } catch (e) {
                 logger.warn('Form submit: animal lookup failed — generic notification copy', {
                     submissionId, selectedAnimalId, error: e instanceof Error ? e.message : String(e),
                 });
             }
+        }
+
+        // The form is an application (one per form). Its own try: a failure is
+        // logged and the saved form stays.
+        let applicationId: string | null = null;
+        try {
+            const { createApplicationForSubmission } = await import('@/lib/applicationWrites');
+            applicationId = await createApplicationForSubmission(db, { submissionId, selectedAnimalId, animal: selectedAnimalRow, createdAt: new Date() });
+        } catch (e) {
+            logger.error('form submit: application not created', e, { submissionId, selectedAnimalId });
         }
 
         // v2.14.10-18: auto-create an adopter row + run duplicate detection
@@ -315,12 +328,56 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
 
         logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId, shownCount: shownSteps ? shownSteps.length : null });
 
+        // Where the notice leads (owner and teammates alike): that application on Mis animales'
+        // «Con solicitudes por evaluar», where the panel opens at it — else the form (formNoticeUrl).
+        // The application's animal, not the asked one: a form for an adopted animal is general.
+        const noticeUrl = await (async () => {
+            try {
+                const [{ formNoticeUrl, submissionApplication }, { getFeatureFlag }] = await Promise.all([
+                    import('@/domain/applications'),
+                    import('@/config/features'),
+                ]);
+                const animalId = submissionApplication(selectedAnimalId, selectedAnimalRow).animalId;
+                const owner = (selectedAnimalOwner ?? '').trim().toLowerCase();
+                const animalInTeam = !!animalId && !!owner && (owner === rescuerEmail.trim().toLowerCase()
+                    || (await import('@/lib/orgMembership').then(m => m.getTeamEmails(rescuerEmail))).some(e => e.trim().toLowerCase() === owner));
+                return formNoticeUrl({ submissionId, applicationId, animalId, animalInTeam, animalsOn: await getFeatureFlag('ENABLE_ANIMALS_FOR_ADOPTION') });
+            } catch (e) {
+                logger.warn('Form submit: notice link falls back to the form', { submissionId, applicationId, selectedAnimalId, error: e instanceof Error ? e.message : String(e) });
+                return `/form-results/${submissionId}`;
+            }
+        })();
+
         // Notification + org fan-out. Helper above already ran duplicate
         // detection and returned the matches; we just plug them into the
         // notification metadata.
         try {
             const { createNotification } = await import('@/app/actions/notifications');
             const matchCount = matches.length;
+
+            // Who gets which copy («Avisos», Jon 2026-11-11; src/domain/animalNotices.ts formNoticeRecipients):
+            // a teammate who added the animal gets their own emailable copy right here (not via the
+            // background fan-out); the link owner's copy is then bell only. A failed team lookup
+            // falls back to emailing the link owner, logged.
+            const [{ formNoticeRecipients, afterOwnerCopy, formNoticeAnimalOwner }, { submissionApplication }] = await Promise.all([
+                import('@/domain/animalNotices'),
+                import('@/domain/applications'),
+            ]);
+            // The APPLICATION's animal decides: a form for an already adopted animal became a general
+            // application, the link owner's to evaluate — no animal owner, the link owner is emailed (review M9).
+            const noticeAnimalOwner = formNoticeAnimalOwner(submissionApplication(selectedAnimalId, selectedAnimalRow).animalId, selectedAnimalOwner);
+            const animalOwnerEmail = (noticeAnimalOwner ?? '').trim();
+            let ownerInTeam: boolean | null = false;
+            if (selectedAnimalId && animalOwnerEmail && animalOwnerEmail.toLowerCase() !== rescuerEmail.trim().toLowerCase()) {
+                try {
+                    const { sharesAnOrgStrict } = await import('@/lib/orgMembership');
+                    ownerInTeam = await sharesAnOrgStrict(rescuerEmail, animalOwnerEmail);
+                } catch (e) {
+                    ownerInTeam = null;
+                    logger.warn('Form submit: team lookup failed, the email goes to the link owner', { submissionId, selectedAnimalId, rescuerEmail, error: e instanceof Error ? e.message : String(e) });
+                }
+            }
+            const planned = formNoticeRecipients({ linkOwner: rescuerEmail, animalOwner: noticeAnimalOwner, ownerInTeam });
 
             // When the submission targets a specific animal the title reads
             // "Juana aplicó para Luna", with the match count appended
@@ -331,14 +388,43 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                 key: 'form_submission_owner',
                 params: { ...titleParams, ...(selectedAnimalName ? { animalName: selectedAnimalName } : {}) },
             });
+            // The animal's owner (a teammate of the link owner): their own copy, emailed per their
+            // «Llega un formulario…» row («Mis animales» doesn't apply: it is their animal). Created
+            // FIRST: if it isn't saved, afterOwnerCopy falls back to emailing the link owner.
+            let ownerCopySaved = false;
+            if (planned.animalOwnerCopy) {
+                try {
+                    const { resolveDisplayName } = await import('@/app/actions/notifications');
+                    const sharedByName = await resolveDisplayName(rescuerEmail);
+                    const savedId = await createNotification({
+                        userId: planned.animalOwnerCopy,
+                        type: 'form_submission',
+                        ...notificationContent({
+                            key: 'form_submission_teammate',
+                            params: { ...titleParams, sharedByName, ...(selectedAnimalName ? { animalName: selectedAnimalName } : {}) },
+                        }),
+                        url: noticeUrl,
+                        icon: '📋',
+                        metadata: { submissionId, submitterName: name, selectedAnimalId, selectedAnimalName },
+                    });
+                    ownerCopySaved = !!savedId;
+                    if (!savedId) logger.warn('Form submit: the animal owner\'s copy was not saved, the email goes to the link owner', { submissionId, selectedAnimalId, rescuerEmail });
+                } catch (e) {
+                    logger.error('Form submit: the animal owner\'s copy was not created, the email goes to the link owner', e, { submissionId, selectedAnimalId, rescuerEmail });
+                }
+            }
+            const recipients = afterOwnerCopy({ linkOwner: rescuerEmail, animalOwner: noticeAnimalOwner, ownerInTeam }, ownerCopySaved);
+            const ownerBellOnly = recipients.linkOwnerBellOnly;
+
             if (matchCount > 0) {
                 await createNotification({
                     id: notificationId,
                     userId: rescuerEmail,
                     type: 'form_submission',
                     ...ownerContent,
-                    url: `/form-results/${submissionId}`,
+                    url: noticeUrl,
                     icon: '⚠️',
+                    ...(ownerBellOnly ? { bellOnly: true } : {}),
                     metadata: {
                         submissionId,
                         matchCount,
@@ -360,8 +446,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                     userId: rescuerEmail,
                     type: 'form_submission',
                     ...ownerContent,
-                    url: `/form-results/${submissionId}`,
+                    url: noticeUrl,
                     icon: '📋',
+                    ...(ownerBellOnly ? { bellOnly: true } : {}),
                     metadata: {
                         submissionId,
                         matchCount: 0,
@@ -401,12 +488,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
                         key: 'form_submission_teammate',
                         params: { ...titleParams, sharedByName, ...(animal?.name ? { animalName: animal.name } : {}) },
                     }),
-                    url: `/form-results/${submissionId}`,
+                    url: noticeUrl,
                     icon: '📋',
                     metadata: {
                         submissionId, submitterName: name,
                         selectedAnimalId: animal?.id ?? null, selectedAnimalName: animal?.name ?? null,
                     },
+                    // Bell only (the animal owner's emailable copy was made above); nothing for a
+                    // member who chose «Mis animales» unless it is their animal.
+                    teamCopy: recipients.teamCopy,
+                    excludeEmails: recipients.excludeFromTeam,
                 });
             }, { submissionId, rescuerEmail, selectedAnimalId });
         } catch (searchErr) {

@@ -9,6 +9,8 @@ import { renameUndoOf } from '@/domain/profileIdentity';
 import { RenameUndoButton } from '@/components/RenameUndo';
 import { NotificationTypeIcon, useNotificationTypeLabel } from '@/components/NotificationTypeIcon';
 import { Archive, Bell, Check, CheckCircle2, X } from 'lucide-react';
+import { trackNotificationClicked } from '@/lib/notificationEvents';
+import { isViewingAs } from '@/lib/viewAsClient';
 
 interface NotificationItem {
     id: string;
@@ -148,6 +150,7 @@ export default function NotificacionesPage() {
 
     // Click notification → mark read + navigate
     const handleClick = (item: NotificationItem) => {
+        if (!isViewingAs(session)) trackNotificationClicked(item, 'page');
         handleMarkRead(item);
         if (item.url) router.push(item.url);
     };
@@ -364,7 +367,7 @@ export default function NotificacionesPage() {
                                     color: typeFilter === type ? '#fff' : 'var(--text-muted)',
                                 }}
                             >
-                                <NotificationTypeIcon type={type} className="w-4 h-4" />{label || t('settings.email_cat_other')}
+                                <NotificationTypeIcon type={type} className="w-4 h-4" />{label || t('notifications.type_other')}
                             </button>
                         );
                     })}

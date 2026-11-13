@@ -25,8 +25,28 @@ const PAIR_A = `test-hm-fixture-pa-${stamp}`;
 const PAIR_B = `test-hm-fixture-pb-${stamp}`;
 const PAIR_CAND = `test-hm-fixture-cand-${stamp}`;
 const PAIR_NAME = `Parejita Home ${stamp}`;
+// «Evaluar solicitudes» (2026-11-10): an animal with 2 applications to evaluate, and an adopted
+// one whose adoption closed a candidate who was not told yet (the offer row).
+const EV = (k: string) => `test-hm-fixture-ev-${k}-${stamp}`;
+const EV_ANIMAL = EV('an');
+const EV_ANIMAL_NAME = `Evaluable ${stamp}`;
+const EV_APPLICANTS = [
+    { adopter: EV('ad1'), form: EV('fs1'), app: EV('app1'), name: `Postulanta Uno ${stamp}`, days: 2 },
+    { adopter: EV('ad2'), form: EV('fs2'), app: EV('app2'), name: `Postulanta Dos ${stamp}`, days: 1 },
+];
+const EV_ADOPTED = EV('ado');
+const EV_ADOPTED_NAME = `Adoptadita ${stamp}`;
+const EV_HOME = EV('home');
+const EV_CANDIDATE = { adopter: EV('ad4'), form: EV('fs4'), app: EV('app4'), name: `Candidata Cuatro ${stamp}` };
+const EV_ADOPTERS = [...EV_APPLICANTS.map(a => a.adopter), EV_HOME, EV_CANDIDATE.adopter];
+const EV_FORMS = [...EV_APPLICANTS.map(a => a.form), EV_CANDIDATE.form];
+const inList = (ids: string[]) => ids.map(id => `'${id}'`).join(', ');
 
 const numberIn = async (loc: Locator): Promise<number> => Number(((await loc.textContent()) ?? '').match(/\d+/)?.[0] ?? NaN);
+/** The number in a row's line under the name (the fixture names carry digits of their own; both carry a title). */
+const lineNumberIn = (row: Locator): Promise<number> => numberIn(row.locator('[title]').last());
+/** Every row of Mis animales that is an animal (never «Sin animal elegido»). */
+const ANIMAL_ROWS = '[data-testid="home-animals-due"], [data-testid="home-animal-row"], [data-testid="home-animals-applications"], [data-testid="home-animals-offer"]';
 
 async function openHome(page: Page) {
     await page.goto('/');
@@ -57,6 +77,20 @@ test.describe.serial('homepage modules', () => {
             `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${PAIR_A}', '${PAIR_NAME}', '', '5', '${USER}', strftime('%s','now','-2 days'), strftime('%s','now','-2 days'))`,
             `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${PAIR_B}', '${PAIR_NAME} G.', '', '5', '${USER}', strftime('%s','now'), strftime('%s','now'))`,
             `INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES ('${PAIR_CAND}', '${PAIR_B}', '${PAIR_A}', '["name_word"]', '{}', 100, 'high', 'pending', strftime('%s','now','+1 day'))`,
+            // An available animal with two applications to evaluate, each on its own profile.
+            `INSERT INTO animals (id, name, species, sex, added_by, created_at, updated_at) VALUES ('${EV_ANIMAL}', '${EV_ANIMAL_NAME}', 'cat', 'hembra', '${USER}', strftime('%s','now','-10 days'), strftime('%s','now','-10 days'))`,
+            ...EV_APPLICANTS.flatMap(a => [
+                `INSERT INTO adopters (id, name, contact_info, status, added_by, source, created_at, updated_at) VALUES ('${a.adopter}', '${a.name}', '', '5', '${USER}', 'form', strftime('%s','now','-${a.days} days'), strftime('%s','now','-${a.days} days'))`,
+                `INSERT INTO form_submissions (id, user_id, name, email, phone, status, selected_animal_id, linked_adopter_id, created_at) VALUES ('${a.form}', '${USER}', '${a.name}', '${a.form}@example.com', '11 5555 01${a.days}${a.days}', 'pending', '${EV_ANIMAL}', '${a.adopter}', strftime('%s','now','-${a.days} days'))`,
+                `INSERT INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES ('${a.app}', '${a.form}', '${EV_ANIMAL}', 'form', 'open', strftime('%s','now','-${a.days} days'))`,
+            ]),
+            // Adopted today (no check-up due yet); its adoption closed a candidate nobody has told.
+            `INSERT INTO animals (id, name, species, sex, added_by, created_at, updated_at) VALUES ('${EV_ADOPTED}', '${EV_ADOPTED_NAME}', 'dog', 'hembra', '${USER}', strftime('%s','now','-20 days'), strftime('%s','now'))`,
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${EV_HOME}', 'Hogar Evaluar ${stamp}', '', '5', '${USER}', strftime('%s','now'), strftime('%s','now'))`,
+            `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('${EV('pl')}', '${EV_ADOPTED}', '${EV_HOME}', 'adoption', strftime('%s','now'), '${USER}')`,
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, source, created_at, updated_at) VALUES ('${EV_CANDIDATE.adopter}', '${EV_CANDIDATE.name}', '', '5', '${USER}', 'form', strftime('%s','now','-5 days'), strftime('%s','now','-5 days'))`,
+            `INSERT INTO form_submissions (id, user_id, name, email, phone, status, selected_animal_id, linked_adopter_id, created_at) VALUES ('${EV_CANDIDATE.form}', '${USER}', '${EV_CANDIDATE.name}', 'candidata-${stamp}@example.com', '11 5555 0144', 'pending', '${EV_ADOPTED}', '${EV_CANDIDATE.adopter}', strftime('%s','now','-5 days'))`,
+            `INSERT INTO applications (id, submission_id, animal_id, origin, state, close_reason, offer_done_at, closed_at, closed_by, created_at) VALUES ('${EV_CANDIDATE.app}', '${EV_CANDIDATE.form}', '${EV_ADOPTED}', 'form', 'closed', 'adopted_other', NULL, strftime('%s','now'), 'application-auto', strftime('%s','now','-5 days'))`,
         ]);
     });
 
@@ -70,6 +104,16 @@ test.describe.serial('homepage modules', () => {
             `DELETE FROM duplicate_candidates WHERE id = '${PAIR_CAND}'`,
             `DELETE FROM adopter_flags WHERE adopter_id IN ('${PAIR_A}', '${PAIR_B}') OR target_adopter_id IN ('${PAIR_A}', '${PAIR_B}')`,
             `DELETE FROM adopters WHERE id IN ('${POST_ADOPTER}', '${DUE_ADOPTER}', '${PAIR_A}', '${PAIR_B}')`,
+            // «Evaluar solicitudes»: the applications, forms, the «No avanzar» observation and its trail.
+            `DELETE FROM applications WHERE submission_id IN (${inList(EV_FORMS)})`,
+            `DELETE FROM form_submissions WHERE id IN (${inList(EV_FORMS)})`,
+            `DELETE FROM adopter_events WHERE adopter_id IN (${inList(EV_ADOPTERS)})`,
+            `DELETE FROM adopter_history WHERE adopter_id IN (${inList(EV_ADOPTERS)})`,
+            `DELETE FROM adopter_flags WHERE adopter_id IN (${inList(EV_ADOPTERS)})`,
+            `DELETE FROM notifications WHERE url LIKE '%${stamp}%' OR metadata LIKE '%${stamp}%'`,
+            `DELETE FROM placements WHERE id = '${EV('pl')}'`,
+            `DELETE FROM animals WHERE id IN ('${EV_ANIMAL}', '${EV_ADOPTED}')`,
+            `DELETE FROM adopters WHERE id IN (${inList(EV_ADOPTERS)})`,
             `UPDATE user_profiles SET home_prefs = NULL WHERE user_id = (SELECT id FROM user WHERE email = '${USER}')`,
         ]);
     });
@@ -137,7 +181,8 @@ test.describe.serial('homepage modules', () => {
         test.setTimeout(240_000);
         await openHome(page);
         const card = page.getByTestId('home-animals');
-        const rows = card.locator('[data-testid="home-animals-due"], [data-testid="home-animal-row"]');
+        // Every slot: the animals and «Sin animal elegido».
+        const rows = card.locator(`${ANIMAL_ROWS}, [data-testid="home-animals-general"]`);
         expect(await rows.count()).toBeLessThanOrEqual(4);
         // The overdue animal is listed as due, never again as «recently updated».
         await expect(card.getByTestId('home-animal-row').filter({ hasText: DUE_ANIMAL_NAME })).toHaveCount(0);
@@ -148,7 +193,7 @@ test.describe.serial('homepage modules', () => {
             // No «Ver los N» when every animal already has its row.
             const onCard = (await more.count()) > 0
                 ? await numberIn(more)
-                : await c.locator('[data-testid="home-animals-due"], [data-testid="home-animal-row"]').count();
+                : await c.locator(ANIMAL_ROWS).count();
             await page.goto('/my-animals?view=todos');
             const tab = page.getByTestId('tab-todos');
             await expect(tab).toBeVisible({ timeout: 60_000 });
@@ -181,6 +226,78 @@ test.describe.serial('homepage modules', () => {
         await expect(row).toHaveCount(0, { timeout: 60_000 });
     });
 
+    test('Mis animales: the animal row\'s «N solicitudes por evaluar» equals the applications its panel lists to evaluate', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        const row = page.getByTestId('home-animals').getByTestId('home-animals-applications').filter({ hasText: EV_ANIMAL_NAME });
+        await expect(row).toHaveCount(1, { timeout: 60_000 });
+        // The amber line in place of the grey «Disponible · N interesadas».
+        expect(await lineNumberIn(row)).toBe(EV_APPLICANTS.length);
+        await row.click();
+        const panel = page.getByTestId('home-applicants-panel');
+        await expect(panel.locator('#applicant-panel-title')).toBeVisible({ timeout: 60_000 });
+        // Every one of them is still to evaluate: no outcome line, «No avanzar» offered.
+        await expect(panel.getByLabel(`1 / ${EV_APPLICANTS.length}`)).toHaveCount(1);
+        await expect(panel.getByTestId('applicant-status-line')).toHaveCount(0);
+        await expect(panel.getByTestId('evaluate-decline')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(panel).toHaveCount(0);
+    });
+
+    test('Mis animales: tapping the row opens the applicant panel over the home; «No avanzar» there moves to the next and the row\'s count drops', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        const row = page.getByTestId('home-animals').getByTestId('home-animals-applications').filter({ hasText: EV_ANIMAL_NAME });
+        await expect(row).toHaveCount(1, { timeout: 60_000 });
+        const before = await lineNumberIn(row);
+        await row.click();
+
+        const panel = page.getByTestId('home-applicants-panel');
+        const title = panel.locator('#applicant-panel-title');
+        await expect(title).toBeVisible({ timeout: 60_000 });
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        const first = (await title.textContent()) ?? '';
+        expect(EV_APPLICANTS.some(a => first.includes(a.name))).toBe(true);
+
+        await panel.getByTestId('evaluate-decline').click();
+        const dialog = page.getByTestId('decline-dialog');
+        await expect(dialog).toBeVisible();
+        await dialog.getByRole('button', { name: '4 stars' }).click();
+        await dialog.getByTestId('decline-reason').fill('Prefirió esperar a un cachorro.');
+        await dialog.getByTestId('decline-save').click();
+
+        // Still on the home: the panel moved on to the other applicant, and the card says one fewer.
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        await expect(dialog).toHaveCount(0, { timeout: 60_000 });
+        const other = EV_APPLICANTS.find(a => !first.includes(a.name))!;
+        await expect(title).toContainText(other.name, { timeout: 60_000 });
+        await page.keyboard.press('Escape');
+        await expect(panel).toHaveCount(0);
+        await expect.poll(() => lineNumberIn(row), { timeout: 60_000, intervals: [1_000] }).toBe(before - 1);
+    });
+
+    test('Mis animales: offer row → sheet → «Listo» → the row is gone after reload', async ({ page }) => {
+        test.setTimeout(240_000);
+        await openHome(page);
+        const row = page.getByTestId('home-animals').getByTestId('home-animals-offer').filter({ hasText: EV_ADOPTED_NAME });
+        await expect(row).toHaveCount(1, { timeout: 60_000 });
+        await row.click();
+
+        const sheet = page.getByTestId('offer-sheet');
+        await expect(sheet).toBeVisible({ timeout: 60_000 });
+        await expect(page).toHaveURL(/\/$|\/\?/);
+        // The candidate, with the contacts they left on the form, and the message to edit.
+        await expect(sheet.getByTestId('offer-message')).toBeVisible({ timeout: 60_000 });
+        await expect(sheet.getByTestId(`offer-wa-${EV_CANDIDATE.app}`)).toHaveAttribute('href', /^https:\/\/wa\.me\/\d+\?text=/);
+        await expect(sheet.getByTestId(`offer-email-${EV_CANDIDATE.app}`)).toHaveAttribute('href', new RegExp(`^mailto:candidata-${stamp}@example\\.com\\?subject=`));
+        await sheet.getByTestId('offer-done').click();
+        await expect(sheet).toHaveCount(0, { timeout: 60_000 });
+
+        await openHome(page);
+        await expect(page.getByTestId('home-animals')).toBeVisible();
+        await expect(page.getByTestId('home-animals').getByTestId('home-animals-offer').filter({ hasText: EV_ADOPTED_NAME })).toHaveCount(0);
+    });
+
     // Last: it resolves the fixture's check-in, which the tests above count on.
     test('Mis animales: an overdue animal opens «Para hacer ahora» over the home, and registering there clears it', async ({ page }) => {
         test.setTimeout(240_000);
@@ -208,4 +325,91 @@ test.describe.serial('homepage modules', () => {
         }, { timeout: 60_000, intervals: [2_000] }).toBe(0);
     });
 
+});
+
+/**
+ * Home ↔ «Con solicitudes por evaluar» (spec «every home count equals the page it opens»): the
+ * home's application rows, «Sin animal elegido» and «N animales más con solicitudes» account for
+ * every card on /my-animals?view=solicitudes — including an animal that is both due and has
+ * applications, which the home lists as due (check-up first) but the tab must still list. Its own
+ * fixtures (more to-dos than the 4 slots, so «más» shows), made after the suite above has cleaned up.
+ */
+test.describe.serial('homepage ↔ «Con solicitudes por evaluar»', () => {
+    const P = (k: string) => `test-hm-fixture-par-${k}-${stamp}`;
+    // Fostered 35 days ago: its first monthly foster check-in is due, and it takes applications.
+    const DUAL = P('dual');
+    const DUAL_NAME = `Transitoria ${stamp}`;
+    const FOSTER_HOME = P('foster');
+    const ANIMALS = [DUAL, ...[1, 2, 3, 4].map(i => P(`an${i}`))];
+    const NAMES = [DUAL_NAME, ...[1, 2, 3, 4].map(i => `Pedida ${i} ${stamp}`)];
+    // One applicant per animal, plus one general application.
+    const APPS = [...ANIMALS.map((animal, i) => ({ animal: animal as string | null, i })), { animal: null as string | null, i: ANIMALS.length }]
+        .map(({ animal, i }) => ({ animal, adopter: P(`ad${i}`), form: P(`fs${i}`), app: P(`app${i}`), name: `Paridad ${i} ${stamp}` }));
+    const ROW_NAME = '[title]';
+
+    test.beforeAll(() => {
+        execD1Batch([
+            ...ANIMALS.map((id, i) => `INSERT INTO animals (id, name, species, sex, added_by, created_at, updated_at) VALUES ('${id}', '${NAMES[i]}', 'dog', 'macho', '${USER}', strftime('%s','now','-50 days'), strftime('%s','now','-50 days'))`),
+            `INSERT INTO adopters (id, name, contact_info, status, added_by, created_at, updated_at) VALUES ('${FOSTER_HOME}', 'Hogar Paridad ${stamp}', '', '5', '${USER}', strftime('%s','now','-35 days'), strftime('%s','now','-35 days'))`,
+            `INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, recorded_by) VALUES ('${P('pl')}', '${DUAL}', '${FOSTER_HOME}', 'foster', strftime('%s','now','-35 days'), '${USER}')`,
+            ...APPS.flatMap(a => [
+                `INSERT INTO adopters (id, name, contact_info, status, added_by, source, created_at, updated_at) VALUES ('${a.adopter}', '${a.name}', '', '5', '${USER}', 'form', strftime('%s','now','-1 days'), strftime('%s','now','-1 days'))`,
+                `INSERT INTO form_submissions (id, user_id, name, email, status, selected_animal_id, linked_adopter_id, created_at) VALUES ('${a.form}', '${USER}', '${a.name}', '${a.form}@example.com', 'pending', ${a.animal ? `'${a.animal}'` : 'NULL'}, '${a.adopter}', strftime('%s','now','-1 days'))`,
+                `INSERT INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES ('${a.app}', '${a.form}', ${a.animal ? `'${a.animal}'` : 'NULL'}, 'form', 'open', strftime('%s','now','-1 days'))`,
+            ]),
+        ]);
+    });
+
+    test.afterAll(() => {
+        execD1Batch([
+            `DELETE FROM applications WHERE submission_id IN (${inList(APPS.map(a => a.form))})`,
+            `DELETE FROM form_submissions WHERE id IN (${inList(APPS.map(a => a.form))})`,
+            `DELETE FROM adopter_events WHERE adopter_id IN (${inList([FOSTER_HOME, ...APPS.map(a => a.adopter)])})`,
+            `DELETE FROM adopter_history WHERE adopter_id IN (${inList([FOSTER_HOME, ...APPS.map(a => a.adopter)])})`,
+            `DELETE FROM notifications WHERE url LIKE '%${stamp}%' OR metadata LIKE '%${stamp}%'`,
+            `DELETE FROM placements WHERE id = '${P('pl')}'`,
+            `DELETE FROM animals WHERE id IN (${inList(ANIMALS)})`,
+            `DELETE FROM adopters WHERE id IN (${inList([FOSTER_HOME, ...APPS.map(a => a.adopter)])})`,
+        ]);
+    });
+
+    test('the home\'s «N solicitudes por evaluar» rows + «N animales más con solicitudes» account for every card on the tab, an animal both due and with applications included', async ({ page }) => {
+        test.setTimeout(240_000);
+        await expect.poll(async () => {
+            await openHome(page);
+            const card = page.getByTestId('home-animals');
+            await expect(card.locator(ANIMAL_ROWS).first()).toBeVisible({ timeout: 60_000 });
+            // Every row shown, by name (the general row is named «Sin animal elegido», as its card).
+            const shown = new Set<string>();
+            for (const r of await card.locator(`${ANIMAL_ROWS}, [data-testid="home-animals-general"]`).all()) {
+                shown.add((await r.locator(ROW_NAME).first().getAttribute('title')) ?? '');
+            }
+            const appRows: string[] = [];
+            for (const r of await card.locator('[data-testid="home-animals-applications"], [data-testid="home-animals-general"]').all()) {
+                appRows.push((await r.locator(ROW_NAME).first().getAttribute('title')) ?? '');
+            }
+            // The fostered animal reads as due on the home, never as an applications row.
+            const dualAsApplications = await card.getByTestId('home-animals-applications').filter({ hasText: DUAL_NAME }).count();
+            const moreRow = card.getByTestId('home-animals-applications-more');
+            const more = (await moreRow.count()) > 0 ? await numberIn(moreRow) : 0;
+
+            await page.goto('/my-animals?view=solicitudes');
+            const tab = page.getByTestId('tab-solicitudes');
+            await expect(tab).toBeVisible({ timeout: 60_000 });
+            await expect(page.getByTestId('general-card')).toBeVisible({ timeout: 60_000 });
+            const tabNames = (await page.locator('[data-testid="general-card"] h3, [data-testid^="animal-card-"] + div h3').allTextContents()).map(n => n.trim());
+            const verdict = {
+                tabIsItsCards: (await numberIn(tab)) === tabNames.length,
+                hiddenAreTheMore: tabNames.filter(n => !shown.has(n)).length === more,
+                applicationRowsOnTab: appRows.every(n => tabNames.includes(n)),
+                dualOnTab: tabNames.includes(DUAL_NAME),
+                dualAsApplications,
+                moreShows: more > 0,
+            };
+            console.log('PARITY', JSON.stringify({ ...verdict, more, shown: [...shown], tabNames }));
+            return verdict;
+        }, { timeout: 200_000, intervals: [2_000] }).toEqual({
+            tabIsItsCards: true, hiddenAreTheMore: true, applicationRowsOnTab: true, dualOnTab: true, dualAsApplications: 0, moreShows: true,
+        });
+    });
 });

@@ -54,7 +54,7 @@ import {
     type CardHousehold,
 } from '@/lib/households';
 import {
-    notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed, notifyHouseholdRelationshipChanged,
+    notifyHouseholdMemberRemoved, notifyHouseholdPersonAdded, notifyHouseholdReaddDisputed,
 } from '@/lib/householdNotices';
 import { canRemoveMembership, currentAge, householdNameKey, isGiftHousehold, isMinor, MAX_HOUSEHOLD_MEMBERS, MAX_HOUSEHOLDS_PER_PROFILE } from '@/domain/households';
 import { sameName } from '@/domain/profileIdentity';
@@ -631,11 +631,7 @@ export async function updateHouseholdMembership(
             logger.error('updateHouseholdMembership: relationship saved, history not written', e, ctx);
         });
         logAudit({ userEmail: actor, action: 'household_relationship_changed', target: person.id, details: { membershipId, householdId: m.householdId, from: m.relationship, to } });
-        const relative = m.relativeToAdopterId ? await liveProfile(db, m.relativeToAdopterId) : null;
-        await notifyHouseholdRelationshipChanged({
-            householdId: m.householdId, membershipId, person: { id: person.id, name: person.name }, relationship: to,
-            relativeName: relative && relative.id !== person.id ? relative.name : null, actor,
-        });
+        // No notice: the change is in the person's history («No te avisamos», Jon 2026-11-11).
         return { ok: true };
     } catch (e) {
         const errorId = logger.error('updateHouseholdMembership failed', e, ctx);

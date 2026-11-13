@@ -8,10 +8,18 @@ import { useAuthContext } from '@/context/AuthContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { saveAdoption, deleteAnimalForAdoption, deleteAnimalImage } from '@/app/actions';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { getApplicantsForAnimal } from '@/app/actions/applicants';
+import { candidatesLostOnDelete } from '@/domain/applications';
+import { animalDeleteWarningText } from '@/components/evaluation/AnimalDeleteWarning';
 import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
 import Link from 'next/link';
 import { zarazTrack } from '@/lib/zaraz';
 import { isFemaleAnimal } from '@/domain/animalSex';
+import { generalRequestHref, proposeParam } from '@/domain/applications';
+import { getGeneralApplications, proposeAnimal } from '@/app/actions/applications';
+import { proposeNewOutcome } from '@/components/evaluation/ProposeAnimalSheet';
+import { firstName } from '@/lib/householdCopy';
+import { handledAsStale } from '@/lib/errorMessage';
 
 /** Compress image to max 1200px and JPEG 80% */
 function compressImage(file: File): Promise<string> {
@@ -69,10 +77,17 @@ export default function NewAnimalPage() {
     }, [legacyEditId, router]);
 
     if (legacyEditId) return null;
-    return <CreateAnimalForm />;
+    return <CreateAnimalForm proposeTo={proposeParam(searchParams.get('proponer'))} />;
 }
 
-function CreateAnimalForm() {
+/**
+ * `proposeTo`: opened from «Proponer un animal» → «Cargar un animal» (Jon
+ * 2026-11-13). While that general application is still to evaluate, the page
+ * names the person, the button reads «Agregar y proponer a {name}», saving
+ * also proposes the new animal, and every way out goes back to the request.
+ * Otherwise (decided meanwhile, not the viewer's team) it is the plain page.
+ */
+function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
     const router = useRouter();
     const editId: string | null = null;
     const isEditMode = false;
@@ -83,6 +98,33 @@ function CreateAnimalForm() {
     const toast = useShowToast();
 
     const [loading, setLoading] = useState(false);
+    // The person the new animal is proposed to: read from the request itself, never from the address.
+    // undefined = still reading (the save button waits), null = nothing to propose to (plain page).
+    const [proposeName, setProposeName] = useState<string | null | undefined>(proposeTo ? undefined : null);
+    useEffect(() => {
+        if (!proposeTo) return;
+        let current = true;
+        getGeneralApplications()
+            .then((res) => {
+                if (!current) return;
+                if (!res.ok) { setProposeName(null); toast.error(t('errors.generic'), t('evaluation.action_failed'), res.errorId); return; }
+                const a = res.applicants.find(x => x.applicationId === proposeTo && x.status.kind === 'to_evaluate');
+                setProposeName(a ? (firstName(a.adopterName) || a.adopterName) : null);
+            })
+            .catch((e: unknown) => {
+                // The page still adds the animal; it just doesn't propose it.
+                if (!current) return;
+                setProposeName(null);
+                if (!handledAsStale(e)) toast.error(t('errors.generic'), t('evaluation.action_failed'), resolveErrorId(e, 'my-animals/new:propose'));
+            });
+        return () => { current = false; };
+        // Read once per request id; `t`/`toast` are stable enough for an error message.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [proposeTo]);
+    const proposeReading = proposeName === undefined;
+    const proposing = !!proposeTo && typeof proposeName === 'string';
+    // Opened from a request: every way out goes back to it, proposed or not.
+    const exitHref = proposeTo ? generalRequestHref(proposeTo) : '/my-animals';
     const [loadingData, setLoadingData] = useState(isEditMode);
     const [uploading, setUploading] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -184,6 +226,27 @@ function CreateAnimalForm() {
         }
     };
 
+    /** The animal is saved: propose it to the request's person, say how it went, go back to the request. */
+    const proposeNew = async (animalId: string) => {
+        const animal = formData.animalName.trim() || t('homeModules.unnamed_animal');
+        const who = proposeName ?? '';
+        const g = isFemaleAnimal(formData.sex) ? '_f' : '';
+        const fill = (key: string) => t(key).replace('{animal}', animal).replace('{name}', who);
+        try {
+            const res = await proposeAnimal(proposeTo!, animalId);
+            const next = proposeNewOutcome(res);
+            if (next === 'proposed') toast.success(t('toast.saved_title'), fill('evaluation.propose_new_done'));
+            else if (next === 'decided') toast.info(fill(`evaluation.propose_new_decided${g}`));
+            else if (next === 'same_person') toast.info(fill(`evaluation.propose_new_same_person${g}`));
+            else if (next === 'already_candidate') toast.info(fill('evaluation.propose_already'));
+            else toast.error(t('errors.generic'), fill(`evaluation.propose_new_saved_not_proposed${g}`),
+                (!res.ok && res.errorId) || resolveErrorId(new Error(`proposeAnimal: ${res.ok ? 'unknown' : res.error}`), 'my-animals/new:propose'));
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), fill(`evaluation.propose_new_saved_not_proposed${g}`), resolveErrorId(e, 'my-animals/new:propose'));
+        }
+        router.push(generalRequestHref(proposeTo!));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!session?.user) { openLogin(); return; }
@@ -238,6 +301,11 @@ function CreateAnimalForm() {
                 zarazTrack('animal_listed', { species: formData.species, hasMedia: pendingImages.length > 0 ? 1 : 0 });
             }
 
+            if (proposing && result?.id) {
+                await proposeNew(result.id);
+                return;
+            }
+
             toast.success(
                 t('toast.saved_title'),
                 isEditMode
@@ -268,7 +336,7 @@ function CreateAnimalForm() {
             <div className="max-w-2xl mx-auto">
                 {/* Header */}
                 <div className="flex items-center gap-4 mb-8">
-                    <Link href="/my-animals" className="text-stone-500 hover:text-stone-700 transition-colors">
+                    <Link href={exitHref} className="text-stone-500 hover:text-stone-700 transition-colors">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                     </Link>
                     <h1 className="text-3xl font-extrabold text-stone-900 tracking-tight">
@@ -279,6 +347,12 @@ function CreateAnimalForm() {
                     </h1>
                 </div>
 
+                {/* The note keeps its place while the request is read, so the form doesn't jump down. */}
+                {(proposing || proposeReading) && (
+                    <p data-testid="propose-new-note" aria-busy={proposeReading} className="rounded-xl px-4 py-3 mb-4 bg-teal-50 border border-teal-200 text-sm text-teal-800 [overflow-wrap:anywhere]">
+                        {proposing ? t('evaluation.propose_new_note').replace('{name}', proposeName ?? '') : t('common.loading')}
+                    </p>
+                )}
                 <div className="bg-white p-5 rounded-xl border-2 border-teal-400/50 shadow-lg ring-4 ring-teal-50/50">
                     <form onSubmit={handleSubmit} className="space-y-4">
                         {/* Animal Name */}
@@ -538,10 +612,18 @@ function CreateAnimalForm() {
                                     type="button"
                                     disabled={deleting}
                                     onClick={async () => {
+                                        const animalName = formData.animalName || 'Animal';
+                                        // Candidates the delete would lose: one read; a failed read says the generic warning (never zero).
+                                        let lost: number | null = null;
+                                        try {
+                                            const load = await getApplicantsForAnimal(editId);
+                                            if (load.ok) lost = candidatesLostOnDelete(load.applicants);
+                                        } catch (err) {
+                                            resolveErrorId(err, 'page'); // reports with context; the confirm falls back to the generic warning
+                                        }
+                                        const warning = animalDeleteWarningText(t, animalName, lost);
                                         const confirmed = window.confirm(
-                                            locale !== 'en'
-                                                ? `¿Eliminar "${formData.animalName || 'este animal'}"? Se borrarán también todas sus fotos. Esta acción no se puede deshacer.`
-                                                : `Delete "${formData.animalName || 'this animal'}"? All photos will also be removed. This cannot be undone.`
+                                            t('animalProfile.delete_confirm_plain').replace('{name}', animalName) + (warning ? '\n\n' + warning : '')
                                         );
                                         if (!confirmed) return;
                                         setDeleting(true);
@@ -565,21 +647,23 @@ function CreateAnimalForm() {
 
                             <div className="flex gap-3">
                                 <Link
-                                    href="/my-animals"
+                                    href={exitHref}
                                     className="px-5 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100 rounded-lg transition-colors"
                                 >
                                     {t('common.cancel') || 'Cancel'}
                                 </Link>
                                 <button
                                     type="submit"
-                                    disabled={loading}
+                                    disabled={loading || proposeReading}
                                     className="px-6 py-2.5 text-sm font-semibold text-white bg-teal-700 rounded-xl hover:bg-teal-600 shadow-lg shadow-teal-700/20 hover:shadow-teal-700/40 disabled:opacity-50 transition-all duration-300 active:scale-[0.99]"
                                 >
                                     {loading
                                         ? (t('common.processing') || 'Processing...')
                                         : isEditMode
                                             ? '💾 ' + (t('common.save') || 'Save Changes')
-                                            : '🐾 ' + (t('dashboard.add_animal') || 'Add Animal')
+                                            : proposing
+                                                ? t('evaluation.propose_new_submit').replace('{name}', proposeName ?? '')
+                                                : '🐾 ' + (t('dashboard.add_animal') || 'Add Animal')
                                     }
                                 </button>
                             </div>

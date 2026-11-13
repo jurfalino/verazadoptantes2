@@ -227,9 +227,12 @@ export async function deleteAdopter(adopterId: string) {
  * set deletedAt + a tokenHash marker and drop the dedup tokens.
  */
 async function softDeleteAdopter(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string, actor: string) {
-    const { duplicateTokens } = await import('@/db/schema');
+    const { duplicateTokens, formSubmissions } = await import('@/db/schema');
     await db.update(adopters).set({ deletedAt: new Date(), tokenHash: 'DELETED' }).where(eq(adopters.id, adopterId));
     await db.delete(duplicateTokens).where(eq(duplicateTokens.adopterId, adopterId));
+    // Its forms go back to unlinked, as on the rescuer's own delete (deleteOwnAdopter): an application on a
+    // deleted profile would stay a to-do nobody can decline. A restore does not re-link them.
+    await db.update(formSubmissions).set({ linkedAdopterId: null }).where(eq(formSubmissions.linkedAdopterId, adopterId));
     // A restore does not reopen them: whoever still wants the merge asks again.
     await closeRequestsForDeletedAdopter(db, adopterId, actor);
 }

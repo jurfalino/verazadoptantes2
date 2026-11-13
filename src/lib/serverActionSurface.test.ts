@@ -111,14 +111,12 @@ const MUST_NOT_BE_ACTIONS = [
     // Households as profiles, Task 8: the profile page's household read and the delete cleanup.
     'readProfileHouseholds',
     'dropMembershipsOfDeletedProfile',
-    // Profile name / age (src/lib/profileIdentity.ts): the actor is an argument; the browser
+    // Profile name (src/lib/profileIdentity.ts): the actor is an argument; the browser
     // goes through src/app/actions/profileIdentity.ts (session).
     'renameProfile',
     'undoRename',
-    'setProfileAge',
     'notifyProfileRenamed',
     'notifyRenameUndone',
-    'notifyProfileAgeChanged',
     // The duplicate check with server-only options (contact-only search): findFormDuplicates never takes them.
     'searchFormDuplicates',
 ];

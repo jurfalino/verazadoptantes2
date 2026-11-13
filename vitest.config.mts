@@ -15,7 +15,7 @@ export default defineConfig({
         jsx: { runtime: 'automatic' },
     },
     test: {
-        include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+        include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'workers/**/*.test.ts'],
         // Pin the suite to a zone that is neither UTC (what the Cloudflare
         // Worker runs in) nor America/Argentina/Buenos_Aires (what most viewers
         // run in, and our DEFAULT_TIMEZONE). Any formatter that reads the host

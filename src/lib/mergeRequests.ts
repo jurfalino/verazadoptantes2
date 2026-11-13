@@ -29,6 +29,7 @@ import { adopterFlags, adopters, duplicateCandidates, mergeRequests } from '@/db
 import type { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { clearPairNotices, PAIR_NOTICE_TYPES } from '@/lib/pairNotices';
+import { tellUnsureAskers, unsureAskersOf } from '@/lib/pairUnsure';
 import { mergeAdopters, notifyMergeOwners } from '@/lib/adopterMerge';
 import { getOrgMemberEmailsFor, isOwnerOrOrgMate, normEmail } from '@/lib/orgMembership';
 import { isAdminAsync } from '@/config/admins';
@@ -189,6 +190,9 @@ export async function createMergeRequest(db: Db, input: {
             requestId: id, actor: input.requesterEmail, error: e instanceof Error ? e.message : String(e),
         });
     }
+    // Asking to join is a «Sí»: whoever answered «No sé» on this pair hears it (never throws).
+    const { recordSameAnswer } = await import('@/lib/pairUnsure');
+    await recordSameAnswer(db, input.primaryId, input.secondaryId, input.requesterEmail, { op: 'createMergeRequest', requestId: id });
     return { id, created: true, requesterEmail: input.requesterEmail };
 }
 
@@ -397,12 +401,14 @@ export async function recordSeparatePairs(
                 ))
                 .get() as { id: string; status: string | null } | undefined;
             if (existing) {
+                const askers = existing.status === 'pending' ? await unsureAskersOf(db, newId, other, { ...ctx, op: 'recordSeparatePairs' }) : [];
                 if (existing.status === 'pending') {
                     await db.update(duplicateCandidates)
                         .set({ status: 'dismissed', resolvedBy: actor, resolvedAt: new Date() })
                         .where(eq(duplicateCandidates.id, existing.id));
                 }
                 await clearPairNotices(db, newId, other, { types: PAIR_NOTICE_TYPES, ctx: { ...ctx, op: 'recordSeparatePairs', actor } });
+                await tellUnsureAskers(db, askers, { a: newId, b: other, actor, answer: 'different', ctx: { ...ctx, op: 'recordSeparatePairs' } });
                 continue;
             }
             // Sorted, as the Scan's skip set and the save-time matcher look pairs up (adopter1Id < adopter2Id).
@@ -438,6 +444,7 @@ export async function keepSeparate(
     ctx: Record<string, unknown> = {},
 ): Promise<void> {
     const { a, b } = pair;
+    const askers = await unsureAskersOf(db, a, b, { ...ctx, op: 'keepSeparate' });
     try {
         await db.update(duplicateCandidates)
             .set({ status: 'dismissed', resolvedBy: actor, resolvedAt: new Date() })
@@ -463,6 +470,8 @@ export async function keepSeparate(
         return;
     }
     await clearPairNotices(db, a, b, { types: PAIR_NOTICE_TYPES, ctx: { ...ctx, op: 'keepSeparate', actor } });
+    const answer = flagMarker.endsWith('household') ? 'household' : 'different';
+    await tellUnsureAskers(db, askers, { a, b, actor, answer, ctx: { ...ctx, op: 'keepSeparate' } });
 }
 
 /**

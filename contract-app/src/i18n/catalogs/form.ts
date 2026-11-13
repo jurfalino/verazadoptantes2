@@ -144,6 +144,7 @@ export const form: CatalogSlice = {
 
         // ── Consent (legal) ──
         'form.legal_title': 'Solicitud de adopción',
+        'form.animal_for': 'Querés adoptar a',
         'form.legal_body': 'Completá este breve formulario para registrar tu interés en adoptar. Nos ayuda a encontrar el animal ideal según lo que buscás. El rescatista revisará tu solicitud para ponerse en contacto.',
         'form.consent_accept_prefix': 'Acepto los',
         'form.consent_terms_link': 'Términos y Condiciones',
@@ -433,6 +434,7 @@ export const form: CatalogSlice = {
 
         // ── Consent (legal) ──
         'form.legal_title': 'Adoption request',
+        'form.animal_for': 'You want to adopt',
         'form.legal_body': 'Fill out this short form to register your interest in adopting. It helps us find the right animal for what you’re looking for. The rescuer will review your request to get in touch.',
         'form.consent_accept_prefix': 'I accept the',
         'form.consent_terms_link': 'Terms and Conditions',
@@ -722,6 +724,7 @@ export const form: CatalogSlice = {
 
         // ── Consent (legal) ──
         'form.legal_title': 'Solicitação de adoção',
+        'form.animal_for': 'Você quer adotar',
         'form.legal_body': 'Preencha este breve formulário para registrar seu interesse em adotar. Isso nos ajuda a encontrar o animal ideal conforme o que você procura. O resgatista vai analisar sua solicitação para entrar em contato.',
         'form.consent_accept_prefix': 'Aceito os',
         'form.consent_terms_link': 'Termos e Condições',

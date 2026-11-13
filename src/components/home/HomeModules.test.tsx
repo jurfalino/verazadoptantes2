@@ -11,14 +11,16 @@ import type { ReactNode } from 'react';
 import { es } from '@/i18n/locales/es';
 import { en } from '@/i18n/locales/en';
 import { pt } from '@/i18n/locales/pt';
-import type { HomeAdoptersData, HomeAnimalsData, HomePendingItem } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeGeneralRow, HomePendingItem } from '@/types/homeModules';
 
 vi.mock('@/app/actions/homeModules', () => ({ getHomeModules: vi.fn() }));
 vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t: (k: string) => k, locale: 'es' }) }));
 vi.mock('./HomeDuePanel', () => ({ default: () => null }));
 vi.mock('@/components/PendingDedup', () => ({ default: () => null }));
+vi.mock('./HomeApplicantsPanel', () => ({ default: () => null }));
+vi.mock('@/components/evaluation/AdoptionOfferSheet', () => ({ AdoptionOfferSheet: () => null }));
 
-import { AdoptersCard, AnimalsCard } from './HomeModules';
+import { AdoptersCard, AnimalsCard, animalsTodo } from './HomeModules';
 
 const get = (dict: unknown, path: string): unknown =>
     path.split('.').reduce<unknown>((cur, k) => (cur as Record<string, unknown> | undefined)?.[k], dict);
@@ -29,7 +31,7 @@ const t = (path: string): string => {
 const rel = () => 'hace 1 día';
 
 const adopters = (pendingReview: number): HomeAdoptersData => ({ total: 4, pendingReview, pending: [], recent: [] });
-const animals = (dueCount: number): HomeAnimalsData => ({ available: 1, adopted: 2, total: 3, dueCount, rows: [] });
+const animals = (dueCount: number): HomeAnimalsData => ({ available: 1, adopted: 2, total: 3, dueCount, moreDue: 0, solicitudesCount: 0, moreApplications: 0, rows: [] });
 
 /** A string as a literal inside a RegExp: every metacharacter escaped, backslash included (CodeQL js/incomplete-sanitization). */
 const reLiteral = (v: string) => v.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
@@ -144,8 +146,8 @@ describe('Mis adoptantes / Mis animales — same 4 slots, so side by side they a
 
     it('every person and animal row is one 56px slot on desktop', () => {
         const animal = (id: string): HomeAnimalsData['rows'][number] => ({
-            id, name: id, photo: null, species: 'cat', status: 'available', personName: null, applicants: 0, due: null,
-        } as HomeAnimalsData['rows'][number]);
+            id, name: id, photo: null, species: 'cat', sex: null, status: 'available', personName: null, applicants: 0, due: null, toEvaluate: 0, offer: 0,
+        });
         const animalsHtml = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: { ...animals(0), total: 9, rows: ['a', 'b', 'c', 'd'].map(animal) } }} t={t} />);
         expect(n(animalsHtml, 'home-animal-row')).toBe(4);
         for (const html of [renderAdopters(people(0)), animalsHtml]) {
@@ -158,9 +160,9 @@ describe('Mis adoptantes / Mis animales — same 4 slots, so side by side they a
 
 describe('Mis animales — an animal with a check-up due opens «Para hacer ahora» over the home (Jon 2026-11-09, option C)', () => {
     const dueAnimal = {
-        id: 'luna', name: 'Luna', photo: null, species: 'cat', status: 'adopted', personName: 'Ana', applicants: 0,
-        due: { dueFollowups: 1, dueTop: { copyKey: 'checkin_6m', dueDate: Date.now() - 86400000 } },
-    } as HomeAnimalsData['rows'][number];
+        id: 'luna', name: 'Luna', photo: null, species: 'cat', sex: 'hembra', status: 'adopted', personName: 'Ana', applicants: 0,
+        due: { dueFollowups: 1, dueTop: { copyKey: 'checkin_6m', dueDate: Date.now() - 86400000 } }, toEvaluate: 0, offer: 0,
+    } as HomeAnimalRow;
     const data: HomeAnimalsData = { ...animals(1), rows: [dueAnimal] };
 
     it('with the panel available, the row is a button that opens a dialog — not a link to the animal page', () => {
@@ -184,7 +186,7 @@ describe('Mis animales — an animal with a check-up due opens «Para hacer ahor
     });
 
     it('rows with nothing due stay links to the animal page', () => {
-        const calm = { ...dueAnimal, id: 'sol', name: 'Sol', due: null } as HomeAnimalsData['rows'][number];
+        const calm: HomeAnimalRow = { ...dueAnimal, id: 'sol', name: 'Sol', due: null };
         const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: { ...data, rows: [dueAnimal, calm] } }} t={t} onOpenDue={() => {}} />);
         expect(anchor(html, 'home-animal-row')).toContain('href="/my-animals/sol"');
     });
@@ -227,6 +229,96 @@ describe('Mis adoptantes — each row that waits on you is its own row, like Mis
         expect(text((rows(render(data([item(1, { group: 'received', by: 'María' })], 1)))[0] ?? ''))).toBe('Ana 1 / Ana G. 1 María te pide unir');
         expect(text((rows(render(data([item(1, { group: 'declined', by: 'Lucía' })], 1)))[0] ?? ''))).toBe('Ana 1 / Ana G. 1 Lucía no aceptó unir');
         expect(text(rows(render(data([item(1, { names: ['Luz', 'Luz '] })], 1)))[0] ?? '')).toContain('Luz ×2');
+    });
+});
+
+describe('Mis animales — applications to evaluate and the offer to tell the others (spec 2026-11-10)', () => {
+    const row = (over: Partial<HomeAnimalRow>): HomeAnimalRow => ({
+        id: 'luna', name: 'Luna', photo: null, species: 'cat', sex: 'hembra', status: 'available', personName: null,
+        applicants: 3, due: null, toEvaluate: 0, offer: 0, ...over,
+    });
+    const general = (n: number): HomeGeneralRow => ({ id: 'general', general: true, toEvaluate: n });
+    const data = (rows: HomeAnimalsData['rows'], over: Partial<HomeAnimalsData> = {}): HomeAnimalsData =>
+        ({ ...animals(0), total: 9, rows, ...over });
+    const render = (d: HomeAnimalsData) => renderToStaticMarkup(
+        <AnimalsCard section={{ ok: true, data: d }} t={t} onOpenDue={() => {}} onOpenApplications={() => {}} onOpenOffer={() => {}} />);
+    const button = (html: string, id: string) => html.match(new RegExp(`<button[^>]*data-testid="${id}"[^>]*>[\\s\\S]*?</button>`))?.[0] ?? '';
+    const plain = (html: string) => text(html).replace(/\u00a0/g, ' ');
+
+    it('an animal with applications: amber «3 solicitudes por evaluar» instead of the grey line', () => {
+        const html = render(data([row({ toEvaluate: 3 })], { solicitudesCount: 1 }));
+        const r = button(html, 'home-animals-applications');
+        expect(plain(r)).toBe('Luna 3 solicitudes por evaluar');
+        expect(r).toContain('aria-haspopup="dialog"');
+        expect(r).toContain('text-amber-700');
+        expect(r).toContain('md:h-14');
+        expect(html).not.toContain('data-testid="home-animal-row"');
+        expect(plain(html)).not.toContain('interesad');
+        // One: «1 solicitud por evaluar».
+        expect(plain(button(render(data([row({ toEvaluate: 1 })])), 'home-animals-applications'))).toBe('Luna 1 solicitud por evaluar');
+    });
+
+    it('«Sin animal elegido · 2 solicitudes por evaluar» row', () => {
+        const html = render(data([general(2), row({ toEvaluate: 1 })], { solicitudesCount: 2 }));
+        const r = button(html, 'home-animals-general');
+        expect(plain(r)).toBe('Sin animal elegido 2 solicitudes por evaluar');
+        expect(r).toContain('aria-haspopup="dialog"');
+        expect(r).toContain('text-amber-700');
+        // The general row is first, before the animals.
+        expect(html.indexOf('home-animals-general')).toBeLessThan(html.indexOf('home-animals-applications'));
+    });
+
+    it('offer row «Luna fue adoptada · avisá a 2 candidatos» (hembra) / «adoptado» otherwise', () => {
+        const fem = button(render(data([row({ status: 'adopted', offer: 2, applicants: 0 })])), 'home-animals-offer');
+        expect(plain(fem)).toBe('Luna Luna fue adoptada · avisá a 2 candidatos');
+        expect(fem).toContain('text-amber-700');
+        expect(fem).toContain('aria-haspopup="dialog"');
+        const male = button(render(data([row({ id: 'sol', name: 'Sol', sex: 'macho', status: 'adopted', offer: 1, applicants: 0 })])), 'home-animals-offer');
+        expect(plain(male)).toBe('Sol Sol fue adoptado · avisá a 1 candidato');
+        const unknown = button(render(data([row({ id: 'x', name: 'Rayo', sex: null, status: 'adopted', offer: 3, applicants: 0 })])), 'home-animals-offer');
+        expect(plain(unknown)).toBe('Rayo Rayo fue adoptado · avisá a 3 candidatos');
+    });
+
+    it('«2 animales más con solicitudes» links to /my-animals?view=solicitudes', () => {
+        const html = render(data([row({ toEvaluate: 1 })], { solicitudesCount: 3, moreApplications: 2 }));
+        const more = anchor(html, 'home-animals-applications-more');
+        expect(more).toContain('href="/my-animals?view=solicitudes"');
+        expect(plain(more)).toBe('2 animales más con solicitudes');
+        expect(plain(anchor(render(data([row({ toEvaluate: 1 })], { moreApplications: 1 })), 'home-animals-applications-more'))).toBe('1 animal más con solicitudes');
+        expect(anchor(render(data([row({ toEvaluate: 1 })])), 'home-animals-applications-more')).toBe('');
+    });
+
+    it('both «more» rows when both kinds are hidden; «N más con controles» reads the server count', () => {
+        const html = render(data([row({ id: 'd', due: { dueFollowups: 1, dueTop: { copyKey: 'checkin_6m', dueDate: Date.now() - 86400000 } } as HomeAnimalRow['due'] })], { dueCount: 4, moreDue: 3, moreApplications: 2 }));
+        expect(plain(anchor(html, 'home-animals-due-more'))).toBe('3 animales más con controles pendientes');
+        expect(plain(anchor(html, 'home-animals-applications-more'))).toBe('2 animales más con solicitudes');
+    });
+
+    it('a row with a check-up due keeps the check-up line even with applications', () => {
+        const due = { dueFollowups: 1, dueTop: { copyKey: 'checkin_6m', dueDate: Date.now() - 86400000 } } as HomeAnimalRow['due'];
+        const html = render(data([row({ due, toEvaluate: 2 })]));
+        expect(html).toContain('data-testid="home-animals-due"');
+        expect(html).not.toContain('data-testid="home-animals-applications"');
+    });
+
+    it('«Ver los N animales» counts animals, never the «Sin animal elegido» row', () => {
+        const three = [row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })];
+        expect(anchor(render(data([general(1), ...three], { total: 3 })), 'home-animals-more')).toBe('');
+        expect(anchor(render(data([general(1), ...three], { total: 4 })), 'home-animals-more')).toContain('href="/my-animals?view=todos"');
+    });
+
+    it('without the panels, the rows link to the pages they summarize', () => {
+        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: data([general(2), row({ toEvaluate: 1 }), row({ id: 'sol', status: 'adopted', offer: 1 })]) }} t={t} />);
+        expect(anchor(html, 'home-animals-general')).toContain('href="/my-animals?view=solicitudes"');
+        expect(anchor(html, 'home-animals-applications')).toContain('href="/my-animals/luna"');
+        expect(anchor(html, 'home-animals-offer')).toContain('href="/my-animals/sol"');
+    });
+
+    it('the card is a to-do (todo state) when solicitudesCount > 0 even with no check-up due', () => {
+        expect(animalsTodo(data([], { solicitudesCount: 1 }))).toBe(true);
+        expect(animalsTodo(data([row({ status: 'adopted', offer: 2 })]))).toBe(true);
+        expect(animalsTodo(data([row({})]))).toBe(false);
+        expect(animalsTodo(data([], { dueCount: 1 }))).toBe(true);
     });
 });
 

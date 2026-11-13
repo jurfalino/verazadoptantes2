@@ -12,6 +12,7 @@
 
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
+import { notificationEmailLink } from '@/domain/notificationTracking';
 
 export type EmailLocale = 'en' | 'es' | 'pt';
 
@@ -136,21 +137,21 @@ const NOTIFICATION_CHROME: Record<EmailLocale, { cta: string; undo: string; sett
     es: {
         cta: 'Ver en BuenAdoptante',
         undo: 'Deshacer',
-        settings: 'Configurar avisos por email',
+        settings: 'Configurar avisos',
         unsubscribe: 'Dejar de recibir estos avisos',
         staging: 'Este mensaje viene del entorno de pruebas (staging) de BuenAdoptante, no del sitio real.',
     },
     en: {
         cta: 'View on BuenAdoptante',
         undo: 'Undo',
-        settings: 'Email notification settings',
+        settings: 'Notification settings',
         unsubscribe: 'Stop receiving these notices',
         staging: 'This message comes from the BuenAdoptante test environment (staging), not the real site.',
     },
     pt: {
         cta: 'Ver no BuenAdoptante',
         undo: 'Desfazer',
-        settings: 'Configurar avisos por email',
+        settings: 'Configurar avisos',
         unsubscribe: 'Deixar de receber estes avisos',
         staging: 'Esta mensagem vem do ambiente de testes (staging) do BuenAdoptante, não do site real.',
     },
@@ -165,14 +166,18 @@ const NOTIFICATION_CHROME: Record<EmailLocale, { cta: string; undo: string; sett
  */
 export function buildNotificationEmail(
     /** `undoUrl`: a second, outlined «Deshacer» button (a path; it opens a confirmation, never acts on the click). */
-    n: { title: string; body: string; url: string | null; undoUrl?: string | null },
+    /** `notificationId` + `type`: tag the main link so the landing reports `notification_email_clicked` (src/domain/notificationTracking.ts). */
+    n: { title: string; body: string; url: string | null; undoUrl?: string | null; notificationId?: string; type?: string; recipientUserId?: string },
     links: { appBaseUrl: string; unsubscribeUrl: string | null },
     opts: { locale: EmailLocale; staging: boolean },
 ): { subject: string; html: string; text: string } {
     const c = NOTIFICATION_CHROME[opts.locale] ?? NOTIFICATION_CHROME.es;
-    const target = n.url ? `${links.appBaseUrl}${n.url}` : links.appBaseUrl;
+    const plainTarget = n.url ? `${links.appBaseUrl}${n.url}` : links.appBaseUrl;
+    // Only the main button: the undo opens a confirmation, and settings/unsubscribe (signed) are not the notice.
+    const target = n.notificationId && n.type ? notificationEmailLink(plainTarget, n.notificationId, n.type, n.recipientUserId) : plainTarget;
     const undo = n.undoUrl ? `${links.appBaseUrl}${n.undoUrl}` : null;
-    const settings = `${links.appBaseUrl}/settings`;
+    // Straight to the «Avisos» card (CX review M2): it is the 5th card on /settings.
+    const settings = `${links.appBaseUrl}/settings#avisos`;
     const unsub = links.unsubscribeUrl;
     const banner = opts.staging
         ? `\n  <p style="margin:0 0 16px;padding:8px 12px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:13px;"><strong>Staging</strong> · ${escapeHtml(c.staging)}</p>`

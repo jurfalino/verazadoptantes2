@@ -20,6 +20,7 @@ import { normalizeText } from '@/lib/tokenizer';
 import { deserializeContactEntries, foldContactEntries, parseBlobToContactEntries, contactEntriesToBlob, isRenameAlias, RENAME_ALIAS_AUTHOR, type ContactEntry } from '@/lib/contactEntries';
 import { knownAsNames, preserveRenameAliases, withRenameAliases } from '@/domain/profileIdentity';
 import { deserializeHouseholdMembers, serializeHouseholdMembers, undoHouseholdMerge } from '@/lib/householdMembers';
+import { dedupeApplicationsAfterMerge, restoreApplicationStates, type ApplicationStateUndo } from '@/lib/applicationWrites';
 import { tokenizeAdopter } from '@/lib/adopterTokenize';
 import { casAdopterLists } from '@/lib/adopterListCas';
 import { MERGED_FLAG_DETAILS_PREFIX, mergeOwnersToTell } from '@/domain/dedupPair';
@@ -106,6 +107,10 @@ export async function mergeAdopters(
                 return { success: false, error: HOUSEHOLD_NOT_CONVERTED };
             }
         }
+
+        // Who answered «No sé» on this pair and wasn't told yet (read before the merge settles the pair).
+        const { unsureAskersOf, tellUnsureAskers } = await import('@/lib/pairUnsure');
+        const unsureAskers = await unsureAskersOf(db, primaryId, secondaryId, { op: 'mergeAdopters', actor: actorEmail }, { untoldOnly: true });
 
         // 0. Claim the pair before moving anything: ONE statement soft-deletes
         // the secondary only while it AND the primary are still live. Two merges
@@ -318,6 +323,9 @@ export async function mergeAdopters(
         const movedFormIds = movedForms.map((r: { id: string }) => r.id);
         undo.formSubmissionIds = movedFormIds;
         mergeDetails.forms = movedFormIds.length;
+        // 5b'. One application per person per animal: the survivor now owns both
+        // profiles' forms. Never throws; undo gets the prior states.
+        undo.applicationStates = await dedupeApplicationsAfterMerge(db, primaryId, { actorEmail });
 
         // 7. The secondary was soft-deleted by the claim (step 0).
 
@@ -446,6 +454,8 @@ export async function mergeAdopters(
         await clearPairNotices(db, primaryId, secondaryId, { types: PAIR_NOTICE_TYPES, ctx: { op: 'mergeAdopters', actor: actorEmail } });
         // The absorbed profile is gone: its other pairs' notices point at nothing either.
         await clearProfilePairNotices(db, secondaryId, { op: 'mergeAdopters', actor: actorEmail });
+        // Joined = «es la misma persona»: tell the «No sé» askers outside the actor's group, open the survivor (never throws).
+        await tellUnsureAskers(db, unsureAskers, { a: primaryId, b: secondaryId, actor: actorEmail, answer: 'same', openId: primaryId, ctx: { op: 'mergeAdopters' } });
 
         return {
             success: true,
@@ -608,6 +618,8 @@ interface MergeUndoPayload {
     statsIds: string[];
     /** Absent in payloads written before v2.56.129 — those merges never moved forms. */
     formSubmissionIds?: string[];
+    /** Applications this merge ended as replaced / also_applied, with their prior state. Absent before the applicant evaluation. */
+    applicationStates?: ApplicationStateUndo[];
     /** OLD SHAPE. Household links this merge moved, as they were before (D51). Absent before 2.57.1. */
     householdLinks?: MovedHouseholdLink[];
     /** OLD SHAPE. «No convive» corrections this merge moved, as they were before (D48/D51). Absent before 2.57.1. */
@@ -743,6 +755,8 @@ export async function unmergeAdopters(auditId: string, actorEmail: string): Prom
                 .set({ linkedAdopterId: secondaryId })
                 .where(or(...chunk.map(id => eq(formSubmissions.id, id))));
         }
+
+        await restoreApplicationStates(db, undo.applicationStates ?? []);
 
         // 3. Restore the survivor's pre-merge fields (drops the appended
         //    contact blob, the merged entries and the auto-alias in one go).

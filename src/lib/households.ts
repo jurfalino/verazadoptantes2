@@ -492,6 +492,17 @@ export async function dropHousemateCandidates(db: Db, householdId: string, adopt
         await Promise.all(drop.map(r => db.delete(duplicateCandidates)
             .where(and(eq(duplicateCandidates.id, r.id), eq(duplicateCandidates.status, 'pending'))).run()));
         logger.info('households: pending duplicate pairs with new housemates removed', { ...ctx, removed: drop.length, kept: rows.length - drop.length });
+        // A «No sé» on a removed pair is answered: they live together (Jon 2026-11-12). The forced path
+        // («alguien de su hogar») tells the asker through keepSeparate. Never throws.
+        if ('actor' in how && drop.length) {
+            const [{ unsureAskersOf, tellUnsureAskers }, { clearPairNotices }] = await Promise.all([import('@/lib/pairUnsure'), import('@/lib/pairNotices')]);
+            for (const r of drop) {
+                const askers = await unsureAskersOf(db, r.a, r.b, ctx);
+                if (!askers.length) continue;
+                await clearPairNotices(db, r.a, r.b, { types: ['same_person_question'], ctx });
+                await tellUnsureAskers(db, askers, { a: r.a, b: r.b, actor: how.actor, answer: 'household', ctx });
+            }
+        }
     } catch (e) {
         logger.warn('households: housemate duplicate pairs not removed (the feed and badge still hide them)', { ...ctx, error: errMsg(e) });
     }

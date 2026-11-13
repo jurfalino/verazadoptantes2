@@ -104,11 +104,31 @@ export interface FollowupSettings {
      *  (opt-in; the bell always fires). Per-recipient — with team reminders,
      *  each member chooses their own channel. */
     emailReminders?: boolean;
-    /** v2.55.20: only be reminded about animals I added. Team reminders are
-     *  the default ("everyone is responsible"), but on a big team that becomes
-     *  "nobody is" — this opts the member out of teammates' reminders without
-     *  touching visibility (they still see and can act on every team animal). */
-    onlyMyAnimals?: boolean;
+    // `onlyMyAnimals` (v2.55.20, «Recordarme solo los animales que cargué yo») is gone:
+    // «Formularios, contratos y controles de:» (user_profiles.animals_scope,
+    // src/domain/animalNotices.ts) replaced it; migration 0107 copied it over.
+}
+
+/**
+ * The settings with the check-up email («Toca un control de seguimiento» in
+ * Configuración → Avisos) switched.
+ * Everything else is kept; settings that end up as the bare defaults are null.
+ */
+export function withEmailReminders(settings: FollowupSettings | null, on: boolean): FollowupSettings | null {
+    const { emailReminders: _was, ...rest } = settings ?? { version: 1 as const };
+    const next: FollowupSettings = on ? { ...rest, emailReminders: true } : rest;
+    return Object.keys(next).length === 1 && next.version === 1 ? null : next;
+}
+
+/**
+ * What «Guardar» in «Seguimientos de adopción» stores: the schedule it sent, with
+ * the check-up email as STORED. That switch lives only in Configuración → Avisos
+ * («Toca un control de seguimiento», CX review I5), so whatever the screen sent
+ * for it (an old tab still sends its own copy) is ignored, and «Restaurar» (null)
+ * keeps it.
+ */
+export function withStoredEmailReminders(input: FollowupSettings | null, stored: FollowupSettings | null): FollowupSettings | null {
+    return withEmailReminders(input, stored?.emailReminders === true);
 }
 
 /** Tolerant parse: garbage/legacy JSON → null (defaults). Never throws. */
@@ -130,7 +150,6 @@ export function parseFollowupSettings(json: string | null | undefined): Followup
         }
         if (Number.isFinite(parsed.fosterIntervalDays)) out.fosterIntervalDays = Math.max(7, Math.round(parsed.fosterIntervalDays));
         if (parsed.emailReminders === true) out.emailReminders = true;
-        if (parsed.onlyMyAnimals === true) out.onlyMyAnimals = true;
         if (parsed.messages && typeof parsed.messages === 'object') {
             const messages: Partial<Record<FollowupSubtype, string>> = {};
             for (const st of FOLLOWUP_SUBTYPES) {
@@ -343,4 +362,15 @@ export function computeFollowups(input: ComputeFollowupsInput): ProjectedFollowu
         : slots;
 
     return visible.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+}
+
+/**
+ * «Seguimientos de adopción» (ENABLE_FOLLOWUPS) as stored in app_config, read the way the app's
+ * getFeatureFlag reads it: no row = the code default (ON); a row is on only when 'true' or '1'.
+ * The reminder cron Worker used `=== 'true'`, so with no row saved (prod until 2026-11-11) the
+ * admin page showed the switch ON while the daily reminders silently skipped.
+ */
+export function followupsEnabled(stored: string | undefined): boolean {
+    if (stored === undefined) return true;
+    return stored === 'true' || stored === '1';
 }

@@ -652,6 +652,8 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                             else if (parsed.household_joined) { eventType = 'hh_joined'; changes = parsed.household_joined; }
                                             else if (parsed.household_relationship_changed) { eventType = 'hh_rel_changed'; changes = parsed.household_relationship_changed; }
                                             else if (parsed.household_member_removed) { eventType = 'hh_member_removed_mistake'; changes = parsed.household_member_removed; }
+                                            // An adoption closed this candidate's application (automatic, no rescuer edit).
+                                            else if (parsed.application_closed) { eventType = 'application_closed'; changes = parsed.application_closed; }
                                             else { changes = parsed; }
                                         } catch { /* ignore */ }
 
@@ -690,6 +692,7 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                         {eventType === 'hh_rel_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_hh_relationship_changed')}</span>}
                                                         {eventType === 'name_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_changed')}</span>}
                                                         {eventType === 'name_restored' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_name_restored')}</span>}
+                                                        {eventType === 'application_closed' && <span className="bg-stone-200 text-stone-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_application_closed')}</span>}
                                                         {eventType === 'age_changed' && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold uppercase">{t('audit.event_age_changed')}</span>}
                                                     </div>
                                                     <span className="max-w-full truncate text-xs px-2.5 py-0.5 bg-white border border-teal-100 rounded-full text-teal-700 font-medium shadow-sm">
@@ -740,6 +743,15 @@ export function AdopterProfileV2({ id, isNew, adopter, history, adoptions, image
                                                                         <span className="line-through text-rose-400 text-xs mr-2 opacity-70">{side(changes.from)}</span>
                                                                         <span className="text-teal-700 mr-2">➜</span>
                                                                         <span className="text-teal-900 bg-teal-100 px-1.5 rounded">{side(changes.to)}</span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {eventType === 'application_closed' && (() => {
+                                                                const fem = ['hembra', 'female'].includes(String(changes.animalSex ?? '').toLowerCase());
+                                                                const key = changes.reason === 'adopted_open_link' ? 'closed_open_link' : 'closed_other';
+                                                                return (
+                                                                    <div className="text-teal-800 break-words" data-testid="history-application-closed">
+                                                                        {t(`evaluation.${key}_${fem ? 'f' : 'm'}`).replace('{animal}', changes.animalName || t('adopter.nameless'))}
                                                                     </div>
                                                                 );
                                                             })()}

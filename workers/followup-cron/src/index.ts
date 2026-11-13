@@ -17,12 +17,16 @@
  */
 
 import {
-    computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
+    computeFollowups, mergeSchedule, mergeFosterRule,
     FOLLOWUPS_EPOCH,
     DEFAULT_SCHEDULE, type FollowupSettings, type RecordedFollowup,
+    followupsEnabled,
 } from '../../../src/domain/followups';
+import { notificationKillSwitchKey, notificationTypeEnabled } from '../../../src/domain/notificationKillSwitch';
+import { followupDelivery, type AnimalsScope } from '../../../src/domain/animalNotices';
 import { dedupKey, notificationBody, bellNotice, buildFollowupEmail, type FollowupEmailItem, type BellItem } from './copy';
 import { log, type AxiomEnv } from './log';
+import { readRecipientSettings } from './recipientSettings';
 
 interface Env extends AxiomEnv {
     DB: D1Database;
@@ -108,11 +112,11 @@ export default {
             const resendKey = env.RESEND_API_KEY || flagMap.get('RESEND_API_KEY') || '';
             const emailFrom = env.EMAIL_FROM || flagMap.get('EMAIL_FROM') || 'BuenAdoptante <noreply@buenadoptante.org>';
             const baseUrl = (env.APP_BASE_URL || 'https://buenadoptante.org').replace(/\/$/, '');
-            if (flagMap.get('ENABLE_FOLLOWUPS') !== 'true') {
+            if (!followupsEnabled(flagMap.get('ENABLE_FOLLOWUPS'))) {
                 log(env, 'info', { message: 'skipped', skipped: 'ENABLE_FOLLOWUPS off' }, ctx);
                 return;
             }
-            if (flagMap.get('NOTIF_ENABLED_follow_up_due') === 'false') {
+            if (!notificationTypeEnabled(flagMap.get(notificationKillSwitchKey('follow_up_due')))) {
                 log(env, 'info', { message: 'skipped', skipped: 'kill switch' }, ctx);
                 return;
             }
@@ -160,16 +164,16 @@ export default {
             }
             const everyEmail = Array.from(new Set([...owners, ...[...recipientsByOwner.values()].flat()]));
             const settingsByEmail = new Map<string, FollowupSettings | null>();
+            // «Formularios, contratos y controles de:» (Configuración → Avisos), 'team' when unreadable.
+            const scopeByEmail = new Map<string, AnimalsScope>();
+            // The recipient's user id tags their digest links (u), so a click names whose email it was.
+            const userIdByEmail = new Map<string, string>();
             for (const email of everyEmail) {
-                try {
-                    const row = await env.DB.prepare(
-                        `SELECT up.followup_settings AS s FROM user_profiles up JOIN user u ON u.id = up.user_id WHERE u.email = ? LIMIT 1`
-                    ).bind(email).first<{ s: string | null }>();
-                    settingsByEmail.set(email, parseFollowupSettings(row?.s));
-                } catch (e) {
-                    log(env, 'warn', { warn: 'settings fallback', email, error: String(e) }, ctx);
-                    settingsByEmail.set(email, null);
-                }
+                // Two reads (recipientSettings.ts): a scope read failing (before 0107) never drops the settings.
+                const r = await readRecipientSettings(env.DB, email, fields => log(env, 'warn', fields, ctx));
+                if (r.id) userIdByEmail.set(email, r.id);
+                settingsByEmail.set(email, r.settings);
+                scopeByEmail.set(email, r.scope);
             }
 
             // v2.55.21: email is DIGESTED — one message per recipient per run,
@@ -221,12 +225,14 @@ export default {
                         }).filter(s => s.status === 'due'); // NEVER missed — storm guard #1
                         summary.due += slots.length;
 
-                        // v2.55.20: a member who chose «solo los animales que
-                        // cargué yo» is dropped from OTHER people's animals
-                        // (the owner always keeps their own). Visibility is
-                        // unaffected — this is purely about being pinged.
-                        const recipients = (recipientsByOwner.get(p.added_by) ?? [p.added_by])
-                            .filter(r => r === p.added_by || settingsByEmail.get(r)?.onlyMyAnimals !== true);
+                        // «Avisos» (2026-11-11, src/domain/animalNotices.ts followupDelivery): a teammate
+                        // gets the bell only, or nothing with «Mis animales»; the digest email is for
+                        // whoever added the animal, when they switched it on. Visibility is unaffected.
+                        const delivery = new Map((recipientsByOwner.get(p.added_by) ?? [p.added_by]).map(r => [r, followupDelivery({
+                            recipient: r, owner: p.added_by, scope: scopeByEmail.get(r) ?? 'team',
+                            emailReminders: settingsByEmail.get(r)?.emailReminders === true,
+                        })] as const));
+                        const recipients = [...delivery.keys()].filter(r => delivery.get(r) !== 'skip');
                         for (const s of slots) {
                             for (const recipient of recipients) {
                                 const key = dedupKey(p.id, s.key, recipient);
@@ -252,11 +258,11 @@ export default {
                                 bellQueue.set(recipient, bell);
                                 summary.notified++;
 
-                                // v2.55.19/21: opt-in email — the RECIPIENT's own setting
-                                // decides. Queued here (inside the post-insert branch) so
+                                // v2.55.19/21: opt-in email — the owner's own setting
+                                // decides (followupDelivery). Queued here (inside the post-insert branch) so
                                 // the digest covers exactly the slots that were newly
                                 // notified, then sent once per recipient after the scan.
-                                if (resendKey && settingsByEmail.get(recipient)?.emailReminders === true) {
+                                if (resendKey && delivery.get(recipient) === 'bell_and_email') {
                                     const queue = emailQueue.get(recipient) || [];
                                     queue.push({
                                         animalName: p.name,
@@ -303,7 +309,7 @@ export default {
             for (const [recipient, queueItems] of emailQueue) {
                 if (queueItems.length === 0) continue;
                 try {
-                    const mail = buildFollowupEmail(queueItems, `${baseUrl}/my-animals`);
+                    const mail = buildFollowupEmail(queueItems, `${baseUrl}/my-animals`, userIdByEmail.get(recipient), `${baseUrl}/settings#avisos`);
                     const res = await fetch('https://api.resend.com/emails', {
                         method: 'POST',
                         headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },

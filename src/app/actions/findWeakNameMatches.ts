@@ -51,12 +51,17 @@ export async function findWeakNameMatches(
         const user = await getUser().catch(() => 'unknown');
         const isUnauthenticated = user === 'unknown';
         const userCountry = await getUserCountry(user);
+        // The group's profiles pass the country re-check too (src/domain/searchCountry.ts).
+        const teamEmails = userCountry && !isUnauthenticated
+            ? await (await import('@/lib/orgMembership')).getTeamEmails(user)
+            : undefined;
 
         const guestNameMasked = isUnauthenticated && await getFeatureFlag('ENABLE_GUEST_NAME_MASK');
         const results = await hydrateDuplicateMatches(db, matches, {
             viewer: user,
             isUnauthenticated,
             userCountry,
+            ...(teamEmails && { teamEmails }),
             ...(guestNameMasked && { guestMaskQuery: name }),
         });
         return { results };

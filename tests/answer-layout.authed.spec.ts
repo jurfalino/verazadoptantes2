@@ -20,11 +20,12 @@ const EMAIL = 'diego.ruiz@ejemplo.com.ar';
 
 type RowBox = { label: string; labelW: number; valueX: number; valueW: number; valueH: number; lineH: number };
 
-/** Every answer row in the "Respuestas completas" section: label text + the value cell's box. */
-async function measureRows(page: Page): Promise<RowBox[]> {
-    return page.evaluate(() => {
+/** Every answer row in the "Respuestas completas" section (or under `root`): label text + the value cell's box. */
+async function measureRows(page: Page, root?: string): Promise<RowBox[]> {
+    return page.evaluate((rootSel) => {
         const out: RowBox[] = [];
-        const labels = Array.from(document.querySelectorAll('span.font-semibold.text-stone-600'))
+        const scope: Document | Element = (rootSel && document.querySelector(rootSel)) || document;
+        const labels = Array.from(scope.querySelectorAll('span.font-semibold.text-stone-600'))
             .filter(el => /:\s*$/.test(el.textContent || ''));
         for (const label of labels) {
             const value = label.nextElementSibling as HTMLElement | null;
@@ -35,7 +36,7 @@ async function measureRows(page: Page): Promise<RowBox[]> {
             out.push({ label: (label.textContent || '').trim(), labelW: Math.round(lb.width), valueX: Math.round(vb.left), valueW: Math.round(vb.width), valueH: Math.round(vb.height), lineH: Math.round(lineH) });
         }
         return out;
-    });
+    }, root ?? null);
 }
 
 /** Screenshot of one element, scrolled clear of the sticky nav. */
@@ -132,15 +133,18 @@ for (const width of [390, 1280]) {
             await page.getByText(/1 persona interesada/).click({ timeout: 30_000 });
             await page.getByText(`Panel Diego ${stamp}`).first().click();
             await page.getByText(/Todas las respuestas/).click();
-            await expect(page.getByText(LONG_LABEL)).toBeVisible({ timeout: 15_000 });
-            const rows = await measureRows(page);
+            // The panel's answers summary above repeats a red answer (this one) as its own row:
+            // measure «Todas las respuestas» only.
+            const all = page.getByTestId('answers-all');
+            await expect(all.getByText(LONG_LABEL)).toBeVisible({ timeout: 15_000 });
+            const rows = await measureRows(page, '[data-testid="answers-all"]');
             console.log(`PANEL ${width}`, JSON.stringify(rows));
             const sterilize = rows.find(r => r.label === LONG_LABEL)!;
             expect(sterilize.valueW).toBeGreaterThanOrEqual(120);
             expect(sterilize.valueH).toBeLessThanOrEqual(sterilize.lineH * 1.5);
             const xs = [...new Set(rows.map(r => r.valueX))];
             expect(Math.max(...xs) - Math.min(...xs), `value x: ${xs.join(', ')}`).toBeLessThanOrEqual(1);
-            await crop(page, page.getByText(LONG_LABEL).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]'), `test-results/answer-layout-panel-${width}.png`);
+            await crop(page, all.getByText(LONG_LABEL).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]'), `test-results/answer-layout-panel-${width}.png`);
         } finally {
             const w = JSON.parse(execD1(`SELECT auto_adopter_id AS a FROM form_submissions WHERE id = '${submissionId}'`));
             const auto = ((Array.isArray(w) ? w[0] : w)?.results ?? [])[0]?.a as string | undefined;

@@ -682,6 +682,10 @@ export async function POST(request: Request) {
 
             // Clear leftovers from a previous run that died mid-rebuild.
             await db.delete(duplicateCandidates).where(eq(duplicateCandidates.status, REBUILDING));
+            // A «No sé» on a pair that is no longer pending (dropped since) must not count if this scan finds
+            // the pair again (Jon 2026-11-12). Never throws.
+            const { sweepOrphanUnsure } = await import('@/lib/pairUnsure');
+            await sweepOrphanUnsure(db, { op: 'duplicateScan:before' });
 
             /** Buffered candidate rows, flushed in chunks after scoring. */
             const candidateRows: (typeof duplicateCandidates.$inferInsert)[] = [];
@@ -765,6 +769,9 @@ export async function POST(request: Request) {
                     .set({ status: 'pending' })
                     .where(eq(duplicateCandidates.status, REBUILDING));
             }
+
+            // Pairs this scan dropped take their «No sé» with them (kept pairs keep theirs: same pair key).
+            await sweepOrphanUnsure(db, { op: 'duplicateScan:after' });
 
             // Release lock & store timestamp
             await db.update(appConfig).set({

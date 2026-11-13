@@ -48,7 +48,7 @@ import ConfirmCombine, { type ConfirmMode } from '@/components/pendientes/Confir
 import IdentityChoice from '@/components/pendientes/IdentityChoice';
 import WriteMessage from '@/components/pendientes/WriteMessage';
 import MergedRow, { keptSentence, mergedInfo, type MergedInfo } from '@/components/pendientes/MergedRow';
-import { pendientesSections } from '@/components/pendientes/sections';
+import { OTHERS_SECTIONS, pendientesSections } from '@/components/pendientes/sections';
 import { Modal } from '@/components/ui/Modal';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
@@ -404,6 +404,11 @@ export default function PendingDedup({ home }: {
         const result = await sendPairMessage(r.id, text);
         if (result.success) {
             setWriteTo(null);
+            // The message is on the pair now: show it under «Mensajes» without a reload (the next load reads it back).
+            const sent = { id: `sent-${Date.now()}`, senderName: '', mine: true, body: text.trim(), createdAt: Math.floor(Date.now() / 1000) };
+            setPairs(prev => prev?.map(p => (p.candidateId === pair.candidateId && p.request
+                ? { ...p, request: { ...p.request, messages: [...p.request.messages, sent] } }
+                : p)) ?? prev);
             toast.success(fill(t('myAdopters.pending_d_write_sent') || 'Mensaje enviado a {name}', { name: r.counterpartName || (t('myAdopters.pending_dedup_a_user') || 'Un usuario') }));
         } else {
             // The box stays open with the text, so nothing typed is lost.
@@ -612,7 +617,7 @@ export default function PendingDedup({ home }: {
                             ];
                             const { group, pairs: list } = section;
                             // The first section that doesn't wait on the viewer opens «No necesitan nada tuyo».
-                            const othersStart = (group === 'sent' || group === 'declined_done') && !othersShown;
+                            const othersStart = OTHERS_SECTIONS.has(group) && !othersShown;
                             if (othersStart) othersShown = true;
                             const waits = group === 'received' || group === 'declined';
                             return [
@@ -625,7 +630,7 @@ export default function PendingDedup({ home }: {
                                 // No count: the page shows a slice, so «· 8» contradicted «65 esperan tu respuesta».
                                 <h3 key={`h-${group}`} data-testid={`dedup-group-${group}`}
                                     className={`px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider border-t border-[var(--border-default)] first:border-t-0 ${waits ? 'text-[var(--status-warning-text)]' : T_MUTED}`}>
-                                    {group === 'declined_done' ? t('myAdopters.pending_d_group_declined_done') : groupLabel(group, t)}
+                                    {group === 'declined_done' ? t('myAdopters.pending_d_group_declined_done') : groupLabel(group === 'pair_done' ? 'pair' : group, t)}
                                 </h3>,
                                 ...list.map(pair => (
                                     <PairRow

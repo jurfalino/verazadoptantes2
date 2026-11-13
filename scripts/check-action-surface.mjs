@@ -436,7 +436,65 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 // so a stranger can store nothing but those strings; writes only the caller's own
 // user_profiles.adopter_list_pins (user row looked up by the SESSION email; no row → refused);
 // a "view as" session is read-only (warn + errorId). Returns the stored pins only.
-const EXPECTED_ACTIONS = 181;
+// 2026-11-10 evaluating applicants (Task 8, src/app/actions/applications.ts): seven new exports,
+// computed 181 + 7 = 188. MEASURED (npm run build): still 181 — Next records an action only once a
+// client component imports it, and nothing does yet (Tasks 9 and 10 wire them, and raise this
+// number to what their build measures). What a stranger can do with arguments they choose — every one
+// reads the viewer from the session (signed out → `unauthorized`, the list → []), takes ids that must
+// be strings of ≤64 chars (else `invalid`), and goes through loadAuthorizedApplication /
+// loadAuthorizedAnimal (_applications.ts): an animal's application only for the animal's owner, an
+// org-mate of the owner or an admin, and only when its form link is in the owner's team (a forged
+// `?animal=` row is nobody's); a general one only for whoever may open its form
+// (canAccessFormSubmission); a «replaced» row never. Anyone else gets `not_found` and nothing written:
+//   getGeneralApplications()   takes nothing; lists the general applications of the caller's own team.
+//   getApplicationDuplicates(applicationId)  reads only; the open pairs of that form's own profile, masked
+//                              for the caller as /form-results masks them (loadFormMatchCards).
+//   declineApplication(applicationId, {text, rating, reason})  rating an integer 1–5, text ≤500 and reason
+//                              ≤2000 chars, trimmed, non-blank (else `invalid`); only an OPEN application
+//                              on a live profile. Writes one observation with a pre-seeded id (a retry
+//                              is the same record) through saveRecordFor, voids only that animal +
+//                              person's live link, and closes only that application (compare-and-swap).
+//   getProposalAnimals(applicationId)  reads only; the caller's own team's available/fostered animals
+//                              whose owner's team holds the form link.
+//   proposeAnimal(applicationId, animalId)  only an open GENERAL application; the animal must pass the
+//                              same animal gate (else `not_found`), have the form link in its owner's
+//                              team (else `not_allowed`) and take contracts (else `animal_adopted`).
+//                              Inserts one application (unique per form + animal) and closes the general
+//                              one by compare-and-swap; a loser removes only the row it made.
+//   getAdoptionOffer(animalId) reads only; first name + the contacts typed on the form of that animal's
+//                              closed candidates — the animal gate first.
+//   markOfferDone(animalId)    animal gate; sets offer_done_at on exactly those rows, one UPDATE per id.
+// 188 = 181 + 7. 2026-11-10 the applicant panel (Task 9) imports declineApplication, proposeAnimal,
+// getProposalAnimals and getApplicationDuplicates from a client component. MEASURED (npm run build):
+// Next then records EVERY export of src/app/actions/applications.ts, not only the four imported —
+// the seven above, with their what-a-stranger-can-do lines (the three not yet imported by any client,
+// getGeneralApplications, getAdoptionOffer and markOfferDone, are on the wire from now on too).
+// getApplicantsForAnimal (src/app/actions/applicants.ts), now also imported by the client
+// AnimalApplicants to re-read after an outcome, adds nothing: the server page my-animals/[id]
+// already imported it, so it was in the 181 (manifest layer "rsc"). What a stranger can do with it:
+//   getApplicantsForAnimal(animalId)  session required (signed out → []); the animal must exist and
+//                              the caller must pass isOwnerOrgMateOrAdmin on the animal's OWNER
+//                              (else []); lists only applications whose form link is in the owner's
+//                              team (applicantScopeWhere). Every failure fails closed to [] (logged).
+// 190 (Jon 2026-11-12, «¿Es la misma persona?» answered before an animal is given): two exports in
+// src/app/actions/duplicates.ts, imported by FormResultMatchCard. What a stranger can do with them:
+//   answerSamePersonUnsure(candidateId)  session required (signed out → not_authorized, logged); the id is
+//                              checked for shape; the pair must be pending and not weak, the caller must be
+//                              the loader of either side or an org-mate (isOwnerOrOrgMate), AND the caller's
+//                              side must be a profile a form created and still sits on — else nothing is
+//                              written. Writes one pair_unsure row for the caller's own email and notifies
+//                              the OTHER side's owner + group at most once a day per pair and group, with
+//                              server-read names — never caller-supplied text.
+//   undoSamePersonUnsure(candidateId)   same session/pair gate; marks only the caller's group's rows withdrawn
+//                              (another group's «No sé» is untouched) and marks the question read.
+// 191 (Jon 2026-11-13, «Compartir formulario» on the home + «¿Para qué animal?»): one export in
+// src/app/actions/applications.ts, imported by ShareFormMenu. What a stranger can do with it:
+//   getShareFormAnimals()       takes no arguments; session required (signed out → unauthorized). Lists only
+//                              the CALLER's team's animals that take applications (myAnimalsScope →
+//                              availableWhere: available or fostered, added by the caller or an org-mate),
+//                              with name, species, sex, colour, lead photo and the count of open
+//                              applications — what /my-animals already shows that caller. Read-only.
+const EXPECTED_ACTIONS = 191;
 
 let manifest;
 try {

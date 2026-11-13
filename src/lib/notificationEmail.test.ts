@@ -74,7 +74,8 @@ describe('sendNotificationEmail', () => {
         expect(await call(addNotif('merge_request'), 'merge_request')).toBe('sent');
         expect(send).toHaveBeenCalledTimes(2);
     });
-    it('a different throttleable category is not throttled by a recent email', async () => {
+    it('a different switchable row is not throttled by a recent email', async () => {
+        seedUser(JSON.stringify({ duplicates: true }));
         expect(await call(addNotif('form_submission'), 'form_submission')).toBe('sent');
         expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('sent');
         expect(send).toHaveBeenCalledTimes(2);
@@ -90,7 +91,7 @@ describe('sendNotificationEmail', () => {
     });
     it('the user row has capitals: prefs still apply (matched case-insensitively)', async () => {
         sqlite.prepare(`UPDATE user SET email = 'Rescuer@Example.com' WHERE id = 'u1'`).run();
-        seedUser(JSON.stringify({ forms: false }));
+        seedUser(JSON.stringify({ forms: false, duplicates: true }));
         expect(await call(addNotif('form_submission'), 'form_submission')).toBe('skipped_pref');
         expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('sent');
     });
@@ -108,11 +109,38 @@ describe('sendNotificationEmail', () => {
         // Still always-on: no unsubscribe link.
         expect(send.mock.calls[1][0].html).not.toContain('Dejar de recibir');
     });
-    it('an in-app-only type (member_removed, F6) -> skipped_in_app_only, nothing sent, emailed_at stays null', async () => {
-        const id = addNotif('member_removed');
-        expect(await call(id, 'member_removed')).toBe('skipped_in_app_only');
+    it('an admin-only type -> skipped_admin_only, nothing sent, emailed_at stays null', async () => {
+        const id = addNotif('adopter_flagged');
+        expect(await call(id, 'adopter_flagged')).toBe('skipped_admin_only');
         expect(send).not.toHaveBeenCalled();
         expect(emailedAt(id)).toBeNull();
+    });
+    it('a copy the caller made bell only -> skipped_bell_only, even on an always row', async () => {
+        const id = addNotif('form_submission');
+        expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'form_submission', title: 'T', body: 'B', bellOnly: true })).toBe('skipped_bell_only');
+        expect(await sendNotificationEmail({ id: addNotif('merge_request'), userId: EMAIL, type: 'merge_request', title: 'T', body: 'B', bellOnly: true })).toBe('skipped_bell_only');
+        expect(send).not.toHaveBeenCalled();
+    });
+    it('«Avisos» defaults: a switch-off row is not emailed until switched on', async () => {
+        expect(await call(addNotif('adopter_merged'), 'adopter_merged')).toBe('skipped_pref');
+        expect(await call(addNotif('member_joined'), 'member_joined')).toBe('skipped_pref');
+        seedUser(JSON.stringify({ group: true }));
+        expect(await call(addNotif('member_joined'), 'member_joined')).toBe('sent');
+        expect(send.mock.calls[0][0].html).toContain('Dejar de recibir');
+    });
+    it('member_removed is never emailed, even with «Tu grupo» on (decision F6)', async () => {
+        seedUser(JSON.stringify({ group: true }));
+        expect(await call(addNotif('member_removed'), 'member_removed')).toBe('skipped_not_emailed');
+        expect(send).not.toHaveBeenCalled();
+    });
+    it('every signed contract is emailed while its switch is on, duplicates or not (Jon 2026-11-12); a check-up never through the twin', async () => {
+        const contract = (matchCount: number) => sendNotificationEmail({ id: addNotif('contract_result'), userId: EMAIL, type: 'contract_result', title: 'T', body: 'B', metadata: { matchCount } });
+        expect(await contract(0)).toBe('sent');
+        seedUser(JSON.stringify({ contract: false }));
+        expect(await contract(3)).toBe('skipped_pref');
+        expect(await contract(0)).toBe('skipped_pref');
+        expect(await call(addNotif('follow_up_due'), 'follow_up_due')).toBe('skipped_not_emailed');
+        expect(send).toHaveBeenCalledTimes(1);
     });
     it('ENABLE_NOTIFICATION_EMAIL off (app_config) -> skipped_disabled, checked before anything else', async () => {
         sqlite.prepare(`INSERT INTO app_config (key, value) VALUES ('ENABLE_NOTIFICATION_EMAIL', 'false')`).run();
@@ -192,10 +220,8 @@ describe('local runs never email (D53)', () => {
 describe('pair_message reply-to', () => {
     const callWith = (type: string, metadata: Record<string, unknown> | undefined) =>
         sendNotificationEmail({ id: addNotif(type), userId: EMAIL, type, title: 'T', body: 'B', url: '/x', metadata });
-    it('pair_message: reply_to is the sender (metadata.replyTo), category merges', async () => {
-        seedUser(JSON.stringify({ merges: false }));
-        expect(await callWith('pair_message', { replyTo: 'sender@example.com' })).toBe('skipped_pref');
-        sqlite.prepare('DELETE FROM user_profiles').run();
+    it('pair_message: always emailed, reply_to is the sender (metadata.replyTo)', async () => {
+        seedUser(JSON.stringify({ merges: false, duplicates: false, pair_message: false }));
         expect(await callWith('pair_message', { requestId: 'r', replyTo: 'sender@example.com' })).toBe('sent');
         expect(send.mock.calls[0][0]).toMatchObject({ to: EMAIL, replyTo: 'sender@example.com' });
     });
@@ -218,7 +244,7 @@ describe('recipient language (D38)', () => {
         sendNotificationEmail({ id: addNotif('contact_entry_added'), userId: EMAIL, type: 'contact_entry_added', ...stored, url: '/x', metadata });
 
     it('a pt recipient gets the pt subject and body', async () => {
-        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'pt')`).run();
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale, email_prefs) VALUES ('u1', 'pt', '{"contact":true}')`).run();
         expect(await callWith({ adopterId: 'a1', template })).toBe('sent');
         const sent = send.mock.calls[0][0];
         expect(sent.subject).toContain('Novo dado de contato');
@@ -226,13 +252,13 @@ describe('recipient language (D38)', () => {
         expect(sent.text).toContain('Ver no BuenAdoptante');
     });
     it('a notification without a template still emails its stored Spanish text', async () => {
-        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'en')`).run();
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale, email_prefs) VALUES ('u1', 'en', '{"contact":true}')`).run();
         expect(await callWith({ adopterId: 'a1' })).toBe('sent');
         expect(send.mock.calls[0][0].subject).toContain(stored.title);
         expect(send.mock.calls[0][0].text).toContain(stored.body);
     });
     it('an unknown template key falls back to the stored text, never the key', async () => {
-        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale) VALUES ('u1', 'en')`).run();
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, locale, email_prefs) VALUES ('u1', 'en', '{"contact":true}')`).run();
         await callWith({ template: { key: 'gone', params: {} } });
         expect(send.mock.calls[0][0].subject).toContain(stored.title);
         expect(send.mock.calls[0][0].subject).not.toContain('gone');
@@ -240,6 +266,7 @@ describe('recipient language (D38)', () => {
     it('a failed locale lookup still sends, in Spanish, and logs a warn', async () => {
         const { logger } = await import('@/lib/logger');
         const warn = vi.spyOn(logger, 'warn');
+        seedUser(JSON.stringify({ contact: true }));
         state.localeFails = true;
         const id = addNotif('contact_entry_added');
         expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'contact_entry_added', ...stored, url: '/x', metadata: { template } })).toBe('sent');
@@ -264,6 +291,12 @@ describe('buildNotificationEmail', () => {
         expect(m.html).toContain('Dejar de recibir estos avisos');
         expect(m.text).toContain('https://u/x');
     });
+    it('the footer\'s «Configurar avisos» opens the «Avisos» card (CX review M2)', () => {
+        const m = buildNotificationEmail({ title: 't', body: 'b', url: null }, links, prod);
+        expect(m.html).toContain('<a href="https://staging.buenadoptante.org/settings#avisos" style="color:#78716c;">Configurar avisos</a>');
+        expect(m.text).toContain('Configurar avisos: https://staging.buenadoptante.org/settings#avisos');
+        expect(buildNotificationEmail({ title: 't', body: 'b', url: null }, links, { locale: 'en', staging: false }).html).toContain('>Notification settings</a>');
+    });
     it('staging: subject prefix and banner, in the recipient language', () => {
         const m = buildNotificationEmail({ title: 'Hola', body: 'b', url: null }, links, { locale: 'es', staging: true });
         expect(m.subject).toBe('[Staging] Hola');
@@ -275,6 +308,33 @@ describe('buildNotificationEmail', () => {
         const m = buildNotificationEmail({ title: 'Hola', body: 'b', url: null }, links, prod);
         expect(m.subject).toBe('Hola');
         expect(m.html).not.toContain('Staging');
+    });
+    it('tags the main link with the notification id, channel and type — never settings or unsubscribe', () => {
+        const m = buildNotificationEmail(
+            { title: 't', body: 'b', url: '/my-animals?view=pendientes#top', notificationId: 'n-42', type: 'merge_request', undoUrl: '/a?undoRename=h' },
+            { ...links, unsubscribeUrl: 'https://u/x' }, prod,
+        );
+        const tagged = 'https://staging.buenadoptante.org/my-animals?view=pendientes&amp;n=n-42&amp;ch=email&amp;kind=merge_request#top';
+        expect(m.html).toContain(`href="${tagged}"`);
+        expect(m.text).toContain('https://staging.buenadoptante.org/my-animals?view=pendientes&n=n-42&ch=email&kind=merge_request#top');
+        // The undo (opens a confirmation), settings and the signed unsubscribe link stay untouched.
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/a?undoRename=h"');
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/settings#avisos"');
+        expect(m.html).toContain('href="https://u/x"');
+    });
+    it('the main link names the recipient (u = their user id) so a click says whose email it was', () => {
+        const m = buildNotificationEmail({ title: 't', body: 'b', url: '/a', notificationId: 'n-1', type: 'form_submission', recipientUserId: 'u1' }, links, prod);
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/a?n=n-1&amp;ch=email&amp;kind=form_submission&amp;u=u1"');
+    });
+    it('sendNotificationEmail passes the recipient\'s user id into the link', async () => {
+        await call(addNotif('form_submission'), 'form_submission');
+        const html = String(send.mock.calls.at(-1)?.[0]?.html ?? JSON.stringify(send.mock.calls.at(-1)));
+        expect(html).toContain('u=u1');
+    });
+    it('without a notification id the link is untagged', () => {
+        const m = buildNotificationEmail({ title: 't', body: 'b', url: '/a' }, links, prod);
+        expect(m.html).toContain('href="https://staging.buenadoptante.org/a"');
+        expect(m.html).not.toContain('ch=email');
     });
     it('en and pt chrome', () => {
         const en = buildNotificationEmail({ title: 't', body: 'b', url: null }, { ...links, unsubscribeUrl: 'https://u/x' }, { locale: 'en', staging: false });
@@ -291,6 +351,8 @@ describe('profile_renamed email: a second «Deshacer» button (households as pro
         adopterId: 'pedro', profileId: 'pedro', undo: { historyId: 'h-1' },
         template: { key: 'profile_renamed', params: { actorName: 'Jonathan U', fromName: 'Pedro Paez', toName: 'P. Paez' } },
     };
+    // «Le cambian el nombre» is off by default: this person switched it on.
+    beforeEach(() => seedUser(JSON.stringify({ rename: true, household: true })));
     it('links «Deshacer» to the confirmation on the profile, next to «Ver en BuenAdoptante»', async () => {
         const id = addNotif('profile_renamed');
         expect(await sendNotificationEmail({ id, userId: EMAIL, type: 'profile_renamed', title: 'T', body: 'B', url: '/adopter/pedro', metadata })).toBe('sent');
@@ -298,6 +360,12 @@ describe('profile_renamed email: a second «Deshacer» button (households as pro
         expect(msg.subject).toBe('[Staging] Jonathan U cambió el nombre de Pedro Paez a P. Paez');
         expect(msg.html).toMatch(/Ver en BuenAdoptante<\/a><a href="[^"]*\/adopter\/pedro\?undoRename=h-1"[^>]*>Deshacer<\/a>/);
         expect(msg.text).toMatch(/Deshacer: \S*\/adopter\/pedro\?undoRename=h-1/);
+    });
+    it('the sent email\'s main link carries this notification\'s id', async () => {
+        const id = addNotif('profile_renamed');
+        await sendNotificationEmail({ id, userId: EMAIL, type: 'profile_renamed', title: 'T', body: 'B', url: '/adopter/pedro', metadata });
+        const msg = send.mock.calls[0][0] as { html: string; text: string };
+        expect(msg.text).toContain(`/adopter/pedro?n=${id}&ch=email&kind=profile_renamed`);
     });
     it('no undo in the metadata (or another type) → one button only', async () => {
         const id = addNotif('profile_renamed');

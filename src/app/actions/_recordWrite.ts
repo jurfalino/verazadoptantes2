@@ -11,6 +11,9 @@ import { eq, and, isNull, desc, ne, sql } from 'drizzle-orm';
 import { deriveEndedPlacement } from '@/domain/placements';
 import { NO_LINKS, type AnimalLinks } from '@/domain/animalDeletion';
 import { canonField } from '@/domain/fieldCollab';
+import { RECORD_TYPES } from '@/domain/constants';
+import type { AdoptionVia } from '@/domain/applications';
+import { closeApplicationsOnAdoption, closeApplicationsOnAnimalDelete } from '@/lib/applicationWrites';
 
 const PLACEMENT_TYPES = ['foster', 'adoption'];
 const EVENT_TYPES = ['observation', 'adoption_request', 'follow_up', 'returned_pet'];
@@ -81,6 +84,20 @@ function placementValues(animalId: string, data: RecordData, recordType: string,
  * routes that generate their own uuid).
  */
 export async function insertRecord(db: Db, data: RecordData, actor: string): Promise<string> {
+    return (await writeNewRecord(db, data, actor, false)).id;
+}
+
+/**
+ * CREATE, insert-if-absent, for an EVENT with a pre-seeded id: `inserted` is false
+ * when a row with that id already exists (a concurrent call wrote it first) —
+ * nothing of this call is written. Any other record type: as insertRecord
+ * (`inserted` true).
+ */
+export async function insertRecordIfAbsent(db: Db, data: RecordData, actor: string): Promise<{ id: string; inserted: boolean }> {
+    return writeNewRecord(db, data, actor, true);
+}
+
+async function writeNewRecord(db: Db, data: RecordData, actor: string, report: boolean): Promise<{ id: string; inserted: boolean }> {
     const recordType: string = normalizeRecordType(data.recordType);
     const date: Date | number = data.date || new Date();
 
@@ -100,7 +117,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             const last = active ?? await db.select().from(placements).where(pair).orderBy(desc(placements.startedAt)).limit(1).get();
             placementId = last?.id ?? null;
         }
-        await db.insert(adopterEvents).values({
+        const insert = db.insert(adopterEvents).values({
             id,
             adopterId: data.adopterId ?? null,
             eventType: recordType,
@@ -118,6 +135,9 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
             followupKey: data.followupKey ?? null,
             followupSubtype: data.followupSubtype ?? null,
         }).onConflictDoNothing();
+        let inserted = true;
+        if (report) inserted = ((await insert.returning({ id: adopterEvents.id })) as Array<{ id: string }>).length > 0;
+        else await insert;
 
         /* v2.56.116 (product decision): a returned animal is AVAILABLE again.
          *
@@ -138,7 +158,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
                 .set({ endedAt: (date ?? new Date()) as any })
                 .where(eq(placements.id, activePlacementId));
         }
-        return id;
+        return { id, inserted };
     }
 
     // available / foster / adoption → an animal (+ an active placement if placed)
@@ -165,7 +185,7 @@ export async function insertRecord(db: Db, data: RecordData, actor: string): Pro
         // for this animal is not — it raises (isActivePlacementConflict).
         await db.insert(placements).values(placementValues(animalId, data, recordType, data.adopterId, actor, date, `${animalId}-plc`)).onConflictDoNothing({ target: placements.id });
     }
-    return animalId;
+    return { id: animalId, inserted: true };
 }
 
 /**
@@ -223,7 +243,7 @@ function asPlanned(viewOf: (f: string) => unknown, existing: RecordData, fields:
  * caller should re-read and re-plan. Without it, writes are unconditional (the
  * pre-collision behaviour, kept for callers that do no checking).
  */
-export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean } = {}): Promise<{ lost: boolean; landed?: string[] }> {
+export async function updateRecord(db: Db, data: RecordData, existing: RecordData, actor: string, opts: { cas?: boolean; adoptionVia?: AdoptionVia } = {}): Promise<{ lost: boolean; landed?: string[]; closedApplications?: number }> {
     const id: string = data.id;
     const now = new Date();
     const cas = !!opts.cas;
@@ -330,6 +350,21 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
         return won.length > 0;
     };
 
+    /** An adoption opened: the animal's other candidates close (never throws). */
+    const closeCandidates = async () => {
+        if (desiredType !== RECORD_TYPES.ADOPTION) return {};
+        const closedApplications = await closeApplicationsOnAdoption(db, {
+            animalId: id,
+            ownerEmail: existing.addedBy ?? null,
+            animalName: existing.animalName ?? null,
+            animalSex: existing.sex ?? null,
+            adopterId: desiredAdopter,
+            via: opts.adoptionVia ?? 'in_app',
+            nowSec: Math.floor(now.getTime() / 1000),
+        });
+        return { closedApplications };
+    };
+
     if (wantsPlacement) {
         if (active) {
             // Reuse the domain decision: does the prior placement END?
@@ -342,6 +377,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
             if (ended) {
                 if (!(await closeActive())) return lostAfterAnimal();
                 if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
+                return { lost: false, ...(await closeCandidates()) };
             } else {
                 // Same holder + type → patch mutable fields on the active placement.
                 const pPatch: RecordData = {};
@@ -370,6 +406,7 @@ export async function updateRecord(db: Db, data: RecordData, existing: RecordDat
             // available → placed: open the first placement. Two people doing
             // this at once: the database lets only one in.
             if (!(await openPlacement(placementValues(id, opening, desiredType, desiredAdopter, actor, opening.date ?? now)))) return lostAfterAnimal();
+            return { lost: false, ...(await closeCandidates()) };
         }
     } else if (active && (desiredType === 'available' || !desiredAdopter)) {
         // Placed → available: close the active placement.
@@ -479,7 +516,8 @@ export async function softDeleteAnimal(db: Db, id: string, actor: string): Promi
     // hidden — a later restore shows an accurate, ended history.
     await db.update(placements).set({ endedAt: now as any })
         .where(and(eq(placements.animalId, id), isNull(placements.endedAt)));
-    void actor;
+    // Nobody can evaluate for a deleted animal: its open applications close (logged, never throws).
+    await closeApplicationsOnAnimalDelete(db, id, actor, Math.floor(now.getTime() / 1000));
     return true;
 }
 

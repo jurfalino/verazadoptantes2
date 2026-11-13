@@ -2,11 +2,191 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.11] - 2026-11-13
+
+### Fixed — independent review of 2.59.10 (engineering + UI audits, Jon 2026-11-13)
+- «Agregar y proponer»: a request decided meanwhile no longer reads «Le propusiste …»; each outcome has its own
+  message (decided, «¿Es la misma persona?» pending, already a candidate, failed), with «cargada» for a female
+  animal. The button waits until the request is read, so the animal is never added without the proposal.
+- «Proponer un animal» with animals that can't be offered to this person says «Ya le propusiste todos tus
+  animales a …» instead of «Todavía no cargaste animales».
+- Nothing jumps: the share window keeps «¿Para qué animal?» in place while it reads (and remembers the list
+  between opens); «Agregar animal» keeps its note's place; the public form keeps «Querés adoptar a …» in place.
+- «Querés adoptar a» is readable (contrast); the share window's «Copiar enlace», «¡Copiado!», «Más opciones…»
+  and the QR description follow the language; its ✕ is a full 44px tap target.
+
+## [2.59.10] - 2026-11-13
+
+### Added — «Compartir formulario» from the home (Jon 2026-11-13, option B)
+- A «Compartir formulario» row right under the search for every signed-in rescuer (brand-new ones too, above
+  «Para empezar»). It opens the same share window as the button in «Mis animales».
+- The share window asks «¿Para qué animal?» (default «Ninguno en particular»; hidden with no animals).
+  «Cambiar» opens the team's animals that take applications: rows like «Proponer un animal», newest first;
+  from 7 animals a search box (name, colour or species) and species buttons. The link then names the animal.
+- The public form opened for an animal names it at the top: «Querés adoptar a …», with its photo while the
+  animal is on the public page. Only an animal of the link owner's team that takes applications is named.
+- The general share message says «Buen Adoptante» instead of the old «PetShield» (es/en/pt).
+
+### Fixed — «Proponer un animal» with no animals was a dead end (Jon 2026-11-13)
+- With no animals the window offers «Cargar un animal»; with animals, a last row «Cargar otro animal».
+- «Agregar animal» then names the person and reads «Agregar y proponer a …»: saving adds the animal, proposes
+  it and goes back to the request, now «Propuesta para …».
+
+## [2.59.9] - 2026-11-13
+
+### Fixed — «¿Es la misma persona?» follow-ups (Jon 2026-11-13)
+- «Proponer un animal» refused because the question is still unanswered: the sheet closes and goes to the
+  question with the same calm notice as «Enviar contrato», instead of an error inside the open sheet.
+- «Avisos» row «Te preguntan si es la misma persona»: «…una persona que cargaste vos o tu grupo» (es/en/pt).
+- «…respondió: es la misma persona» reaches each «No sé» asker once, even when a join request and a join (or
+  two «Sí») land at the same moment.
+
+## [2.59.8] - 2026-11-12
+
+### Changed — «¿Es la misma persona?» on a form under evaluation (Jon 2026-11-12)
+- «Enviar contrato», «Reenviar contrato» and «Proponer un animal» wait until each possible match of a profile
+  this form created is answered. A line above the buttons says why, with «Ir a la pregunta». «No avanzar»
+  never waits. The server refuses too.
+- New answer «No sé»: it unlocks, keeps the profiles separate and asks the other profile's rescue (bell, plus
+  email by default — new «Avisos» row «Te preguntan si es la misma persona»), at most once a day. «Cambiar mi
+  respuesta» undoes it.
+- When the other rescue answers, the person who said «No sé» is told — «es otra persona» or «es la misma
+  persona». «Es la misma persona» never locks anything: it tells them to check that profile and any contract
+  already sent, and their evaluation card shows who answered.
+- «No, es alguien de su hogar» on the evaluation card, as in «Pendientes de revisar».
+- The top of the panel says «Perfil nuevo: lo creó este formulario» instead of «Sin calificación» / «Sin alertas».
+- Search: your group's profiles always show, whatever their country.
+- 1★ copy: «no se recomienda entregarle animales en adopción», not «impide que esta persona adopte».
+
+## [2.59.7] - 2026-11-12
+
+### Fixed — importing Instagram posts
+- A post that names nobody (a phone, no name) saved with «No se pudo guardar»; it now saves as a profile
+  without a name (also shipped to production as hotfix 2.58.57).
+- The Instagram reader (scraper 2.5.0, deployed separately on Fly) opens the post instead of stopping at its
+  link preview: the full caption instead of the first line, and full-size photos instead of the cropped preview.
+
+## [2.59.6] - 2026-11-12
+
+### Changed — after the senior EM + CX review of everything waiting for production (Jon: "fix them")
+- Emailed by default: «Le cambian el nombre» (its «Deshacer» is the owner's safeguard) and «Responden tu
+  pedido de unir o de acceso» (the person who asked is waiting too).
+- Every signed contract is emailed to the animal's owner while «Un adoptante firma un contrato» is on —
+  personal link or open link, with or without possible duplicates (the email says when there are). None is
+  held back by the 10-minute email limit.
+- «Avisos» says what reaches the bell: «Lo que te corresponde aparece en la campanita, según lo que elijas
+  abajo». The choice is now «Lo mío: mis animales y mi formulario» / «Todo el equipo», each with its own hint;
+  the form row is «Llega un formulario» (to your link, or for an animal you added).
+- The check-up email has one switch, in «Avisos». «Seguimientos» points there; the reminder email and the
+  notice emails link straight to Configuración → Avisos.
+- Being removed from a group is bell-only again.
+
+### Fixed
+- «Te escribió» opens that pair, also for the person who asked to merge (whose pair sits under «No necesitan
+  nada tuyo»), and an older pair of theirs is no longer cut off the list.
+- «No avanzar»: when the application already had another outcome, it says the observation was saved (it was);
+  two rescuers at once can't overwrite each other's words; a retry by the same rescuer saves the correction.
+- A form for an animal that was already adopted is emailed to whoever shared the form link.
+- The public site's images and files skip the address check (only pages run it).
+
+## [2.59.5] - 2026-11-11
+
+### Changed — «Avisos»: the bell shows everything, email only when someone waits on you (Jon)
+- Configuración → «Avisos» replaces «Avisos por email». One row per event, in rescuer words, with two columns:
+  «Campanita» (always on) and «Email». Email is «Siempre» for the three things that wait on you (a request to
+  merge two profiles, a request to see contact details, a message from another rescuer); every other row has
+  its own switch. Forms and contracts start ON, everything else OFF (changed in 2.59.6: name changes and
+  answers to your requests also start ON). A «No te avisamos» list says what only
+  goes to the profile's history.
+- «Formularios, contratos y controles de: Mis animales / Los animales de todo el equipo». It replaces
+  «Recordarme solo los animales que cargué yo» in «Seguimientos de adopción» and applies to the check-up job too.
+- Form and contract emails go only to the animal's owner (or the form link's owner when there's no animal).
+  Teammates get it in the bell. A contract is emailed only when it has possible duplicates (changed in
+  2.59.6: every signed contract is emailed).
+- Unsubscribe links in emails sent before «Avisos» still work and switch off the matching row.
+
+### Added — «Te escribió» messages live on the pair
+- Messages between rescuers about a possible duplicate now show inside the pair in «Pendientes de revisar»
+  («Mensajes (N)», oldest first), and the closed row says «· N mensaje(s)». Earlier messages are copied in.
+
+### Fixed — notifications cleanup
+- An answered contact-access request clears for every approver, not only the one who answered.
+- «Intento de login bloqueado» goes through the normal path (bell only, respects the off switch).
+- «Nuevo miembro» goes only to the group that was joined.
+- Four notices that were never sent are removed; four that only repeated the profile history stop being sent.
+- Notification email links now say which recipient clicked (PostHog `recipient_user_id`).
+
+## [2.59.4] - 2026-11-11
+
+### Fixed — check-up reminders never ran
+- «Seguimientos de adopción» showed ON in Admin → Config, but the daily reminder job (09:00) only ran when the
+  switch had been saved explicitly, which it never was — so no reminder ever went out. The job now reads the
+  switch like the app does. From the next morning, rescuers with a due check-up get one bell notice (plus the
+  daily email if they turned it on in Configuración).
+
+### Added — notification tracking (Jon: measure before changing notifications)
+- PostHog events: the bell is opened (`notification_bell_opened`), a notice is clicked in the bell or on
+  «Notificaciones» (`notification_clicked`, with its type), and a link in a notification email is clicked
+  (`notification_email_clicked`, with its type; also counted when the person has to sign in first). Only types,
+  ids and counts are sent — never names, titles or contents.
+- Opening a notification from its email marks it read in the bell.
+
+## [2.59.3] - 2026-11-11
+
+### Fixed — the enadopcion.org move (review of 2.59.2)
+- Old addresses now actually forward on staging: the setting is built into each deploy (the hosting platform
+  was erasing it on every deploy). A mistyped address in that setting switches the forwarding off instead of
+  looping the site onto itself, and the forwarding is temporary (302) until the new domain is settled.
+- enadopcion.org and www.enadopcion.org no longer share a cached API answer that one of them would refuse.
+
+## [2.59.2] - 2026-11-11
+
+### Changed — the public site moves to enadopcion.org (Jon)
+- The catalogue, forms and contracts are served from **enadopcion.org** (staging: staging.enadopcion.org).
+  Links already shared and QR codes already printed keep working: the old adoptions.pages.dev addresses (and
+  www) send visitors to the same page on the new domain. The redirect is switched on per environment, so
+  production only starts redirecting once the app accepts requests from the new address.
+
+## [2.59.1] - 2026-11-11
+
+### Fixed — the delete warning (review of 2.59.0)
+- «Es el único registro de {animal}…»: if the candidate count can't be read, the dialog still warns that open
+  applications are lost (without a number) instead of saying nothing. Only the record's team (or an admin)
+  gets the delete preview at all.
+- The warning reads «Luna tiene 3 candidatos» — it counts every open candidate, including those with a
+  contract sent, not only the ones still to evaluate.
+
+## [2.59.0] - 2026-11-11
+
+### Added — «Evaluar solicitudes»: every form is a person to evaluate (Jon)
+- A form received for an animal is now an application to evaluate. Mis animales shows «Luna · 3 solicitudes
+  por evaluar» on the home and in a new «Solicitudes» tab; forms that name no animal are one «Sin animal
+  elegido» row. Tapping opens the candidates one by one («← Anterior / Siguiente →», a «3 / 25» counter
+  past 8) with their answers, the semáforo and «N respuestas sin observaciones».
+- Each evaluation ends with «Enviar contrato», «No avanzar» (a regular observation: rating 1–5 and a reason
+  required) or, for a form without an animal, «Proponer un animal». A teammate's outcome is respected: a
+  second «No avanzar» or a contract to someone already turned down is refused with a clear message.
+- A possible duplicate is shown inside the evaluation with the same side-by-side «Qué coincide y qué no»
+  card, and is not counted twice in «esperan tu respuesta» while the evaluation is open.
+- When an animal is adopted, the other candidates close on their own, and the home offers «Luna fue
+  adoptada · avisá a N candidatos» with a ready message to send by WhatsApp or email (the rescuer sends it).
+- A form for an animal already adopted becomes a general application; merging two profiles keeps one
+  application per person per animal (undo puts them back). Fostered animals can receive contracts; signing
+  ends the foster, and an adoption by someone else in the meantime wins (the signature is refused).
+- Deleting an animal with candidates warns how many are lost (the people's profiles are not deleted).
+- Rating stars in «No avanzar» and the other large star pickers are now 44px tap targets.
+
 ## [2.58.57] - 2026-11-12
 
 ### Fixed — hotfix: importing a post that names nobody
 - A post with a phone (or other contact) but no name failed to save with «No se pudo guardar»: the AI says
   "no name" as empty and the server refused it. It now saves as a profile without a name, as intended.
+
+## [2.58.56] - 2026-11-11
+
+### Changed — analytics library updated
+- PostHog's browser library 1.424.1 → 1.447.10 (it was 23 releases and ten weeks behind). Analytics, session
+  recordings and page views work as before, still through the app's own `/ingest` address.
 
 ## [2.58.55] - 2026-11-11
 
@@ -16,6 +196,12 @@ All notable changes to BuenAdoptante are documented here.
   its feature is on). A step opens the login box and continues there after signing in.
 - Replaces the three old action cards («Registrar adopción», «Reportar», «Importar») that guests still saw.
   The clean-homepage mode is unchanged.
+
+### Changed — the login code is in the email subject
+- The sign-in email's subject now starts with the code («417682 es tu código de BuenAdoptante»; English and
+  Portuguese too), so it reads from the phone notification and inbox without opening the email, and each
+  code arrives as its own Gmail conversation instead of stacking under one subject. (Gmail's «Copy code»
+  button is Gmail's call per sender; five variants were tested and none showed it.)
 
 ## [2.58.54] - 2026-11-10
 

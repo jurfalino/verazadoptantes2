@@ -1,6 +1,6 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
-import { adopters, duplicateCandidates, mergeRequests, pendingPairHidden } from '@/db/schema';
-import { pairKey } from '@/domain/dedupPair';
+import { adopters, duplicateCandidates, mergeRequests, pairUnsure, pendingPairHidden } from '@/db/schema';
+import { pairKey, realOwner } from '@/domain/dedupPair';
 import { hiddenAsHousematesSql } from '@/lib/housemateSql';
 import { logger } from '@/lib/logger';
 import { getTeamEmails, normEmail } from '@/lib/orgMembership';
@@ -35,6 +35,31 @@ export async function loadHiddenPairKeys(db: Db, actorEmail: string): Promise<Se
  */
 export async function viewerTeam(viewer: string): Promise<Set<string>> {
     return new Set([normEmail(viewer), ...(await getTeamEmails(viewer)).map(normEmail)].filter(Boolean));
+}
+
+/**
+ * Per pair key, who in the viewer's group answered «No sé» (pair_unsure, not withdrawn) — another group's
+ * «No sé» is theirs, never the viewer's answer. A failed read answers nothing (the panel and the server
+ * read the same, so they stay in step), logged.
+ */
+async function loadTeamUnsure(db: Db, keys: readonly string[], team: ReadonlySet<string>, viewer: string): Promise<Map<string, { by: string; sameBy: string | null }>> {
+    const out = new Map<string, { by: string; sameBy: string | null }>();
+    const unique = [...new Set(keys)];
+    if (unique.length === 0) return out;
+    try {
+        const rows = await db.select({ pairKey: pairUnsure.pairKey, askerEmail: pairUnsure.askerEmail, sameBy: pairUnsure.sameBy }).from(pairUnsure)
+            .where(and(eq(pairUnsure.withdrawn, 0), or(...unique.map(k => eq(pairUnsure.pairKey, k)))!))
+            .all() as Array<{ pairKey: string; askerEmail: string; sameBy: string | null }>;
+        for (const r of rows) {
+            if (!team.has(normEmail(r.askerEmail))) continue;
+            const seen = out.get(r.pairKey);
+            if (!seen) out.set(r.pairKey, { by: r.askerEmail, sameBy: r.sameBy ?? null });
+            else if (!seen.sameBy && r.sameBy) seen.sameBy = r.sameBy;
+        }
+    } catch (e) {
+        logger.warn('loadOpenPairs: «No sé» answers unreadable, none counted', { viewer, pairKeys: unique.length, error: e instanceof Error ? e.message : String(e) });
+    }
+    return out;
 }
 
 /**
@@ -91,6 +116,7 @@ export async function loadOpenPairs(
         )
     ), db.select({ addedBy: adopters.addedBy }).from(adopters).where(eq(adopters.id, adopterId)).get(),
     loadHiddenPairKeys(db, viewer), viewerTeam(viewer)]);
+    const unsure = await loadTeamUnsure(db, candidates.map((c: { adopter1Id: string; adopter2Id: string }) => pairKey(c.adopter1Id, c.adopter2Id)), team, viewer);
     const nameMap = new Map<string, string>();
     const ownerMap = new Map<string, string | null>();
     for (const a of otherAdopters) {
@@ -113,6 +139,9 @@ export async function loadOpenPairs(
                 confidence: c.confidence,
                 confidencePercent: storedScoreToPercent(c.score),
                 onViewerList: onViewerList(otherId),
+                unsureBy: unsure.get(pairKey(c.adopter1Id, c.adopter2Id))?.by ?? null,
+                unsureSameBy: unsure.get(pairKey(c.adopter1Id, c.adopter2Id))?.sameBy ?? null,
+                otherSide: mayAnswerPair(team, ownerMap.get(otherId)) ? 'team' as const : realOwner(ownerMap.get(otherId)) ? 'outside' as const : 'none' as const,
             };
         })
         .sort((a: DuplicateCandidate, b: DuplicateCandidate) => b.confidencePercent - a.confidencePercent);

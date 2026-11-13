@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
+import { followupsEnabled, withEmailReminders, withStoredEmailReminders,
     computeFollowups, mergeSchedule, mergeFosterRule, parseFollowupSettings,
     getMessageTemplate, addDays, DEFAULT_SCHEDULE, DEFAULT_MESSAGES,
     type RecordedFollowup, type ComputeFollowupsInput,
@@ -172,12 +172,14 @@ describe('mergeSchedule / mergeFosterRule / settings parse', () => {
 });
 
 describe('v2.55.20 preferences', () => {
-    it('parses onlyMyAnimals + emailReminders, ignoring non-true values', () => {
-        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":true,"emailReminders":true}'))
-            .toEqual({ version: 1, onlyMyAnimals: true, emailReminders: true });
+    it('parses emailReminders, ignoring non-true values', () => {
+        expect(parseFollowupSettings('{"version":1,"emailReminders":true}')).toEqual({ version: 1, emailReminders: true });
         // Only a literal `true` opts in — "false"/1/"yes" must not enable it.
-        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":"true","emailReminders":1}'))
-            .toEqual({ version: 1 });
+        expect(parseFollowupSettings('{"version":1,"emailReminders":1}')).toEqual({ version: 1 });
+    });
+
+    it('onlyMyAnimals is gone: «Formularios, contratos y controles de:» (user_profiles.animals_scope) replaced it', () => {
+        expect(parseFollowupSettings('{"version":1,"onlyMyAnimals":true}')).toEqual({ version: 1 });
     });
 
     it('the scan bound still covers the longest DEFAULT slot (worker guard invariant)', () => {
@@ -240,5 +242,46 @@ describe('computeFollowups — pre-launch placements (retroactive "missed")', ()
         const slots = compute({ placementStartedAt: OLD, now: NOW });
         expect(slots.length).toBeGreaterThan(0);
         expect(slots.every(s => s.status === 'missed')).toBe(true);
+    });
+});
+
+describe('followupsEnabled — the daily reminder job reads «Seguimientos de adopción» like the app does', () => {
+    it('nothing saved = ON (the app\'s default; prod had no row and the job skipped every day)', () => {
+        expect(followupsEnabled(undefined)).toBe(true);
+    });
+    it('a saved value follows the app: "true"/"1" on, anything else off', () => {
+        expect(followupsEnabled('true')).toBe(true);
+        expect(followupsEnabled('1')).toBe(true);
+        expect(followupsEnabled('false')).toBe(false);
+        expect(followupsEnabled('0')).toBe(false);
+        expect(followupsEnabled('')).toBe(false);
+    });
+});
+
+describe('withEmailReminders («Toca un control de seguimiento» in Avisos)', () => {
+    it('switches only emailReminders, keeping the schedule and messages', () => {
+        const s = { version: 1 as const, checkins: [{ offsetDays: 10 }], messages: { neuter: 'Hola' }, fosterIntervalDays: 21 };
+        expect(withEmailReminders(s, true)).toEqual({ ...s, emailReminders: true });
+        expect(withEmailReminders({ ...s, emailReminders: true }, false)).toEqual(s);
+    });
+    it('nothing stored: the defaults plus the switch; off again is the defaults', () => {
+        expect(withEmailReminders(null, true)).toEqual({ version: 1, emailReminders: true });
+        expect(withEmailReminders(null, false)).toBeNull();
+        expect(withEmailReminders({ version: 1, emailReminders: true }, false)).toBeNull();
+    });
+});
+
+describe('withStoredEmailReminders («Guardar» in Seguimientos never touches the check-up email)', () => {
+    const schedule = { version: 1 as const, checkins: [{ offsetDays: 10 }], fosterIntervalDays: 21 };
+    it('keeps the stored switch whatever the screen sent (an old tab still sends its own copy)', () => {
+        expect(withStoredEmailReminders({ ...schedule, emailReminders: false }, { version: 1, emailReminders: true })).toEqual({ ...schedule, emailReminders: true });
+        expect(withStoredEmailReminders({ ...schedule, emailReminders: true }, { version: 1 })).toEqual(schedule);
+        expect(withStoredEmailReminders({ ...schedule, emailReminders: true }, null)).toEqual(schedule);
+        expect(withStoredEmailReminders(schedule, { version: 1, emailReminders: true })).toEqual({ ...schedule, emailReminders: true });
+    });
+    it('«Restaurar» (null) keeps the switch on; with it off, the bare defaults', () => {
+        expect(withStoredEmailReminders(null, { ...schedule, emailReminders: true })).toEqual({ version: 1, emailReminders: true });
+        expect(withStoredEmailReminders(null, schedule)).toBeNull();
+        expect(withStoredEmailReminders(null, null)).toBeNull();
     });
 });

@@ -55,22 +55,23 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
     // Applicants only matter while the animal still needs a home. The action
     // gates like getAnimalProfile (owner / org-mate / admin) and lists every
     // applicant from a form link of the OWNER's team — the same scope as the
-    // /my-animals «N interesadas» chip. Fail-closed: returns [].
-    const applicants = profile.activePlacement?.recordType === 'adoption'
-        ? []
+    // /my-animals «N interesadas» chip. A refusal is an empty list; a failure
+    // carries the errorId the action logged, shown where the list would be.
+    const applicantsLoad = profile.activePlacement?.recordType === 'adoption'
+        ? { ok: true as const, applicants: [] }
         : await getApplicantsForAnimal(id).catch((e) => {
-            logger.warn('animal page: getApplicantsForAnimal fallback', {
-                animalId: id, userEmail: session.user?.email,
-                error: e instanceof Error ? e.message : String(e),
-            });
-            return [];
+            const errorId = logger.error('animal page: getApplicantsForAnimal threw', e, { animalId: id, userEmail: session.user?.email });
+            return { ok: false as const, errorId };
         });
+    const applicants = applicantsLoad.ok ? applicantsLoad.applicants : [];
+    const applicantsErrorId = applicantsLoad.ok ? null : applicantsLoad.errorId;
 
     return (
         <div className="min-h-screen bg-stone-50 py-8 px-4">
             <AnimalProfile
                 profile={profile}
                 applicants={applicants}
+                applicantsErrorId={applicantsErrorId}
                 userId={session.user.id || ''}
             />
         </div>

@@ -22,6 +22,8 @@ import {
     type FollowupSettings, type FollowupStatus, type FollowupSubtype, type RecordedFollowup,
 } from '@/domain/followups';
 import { compareTimelineItems } from '@/domain/animalTimelineOrder';
+import { followupDelivery, type AnimalsScope } from '@/domain/animalNotices';
+import { getAnimalsScopeForEmail } from '@/lib/animalsScope';
 import { getFeatureFlag } from '@/config/features';
 import { interpolate } from '@/lib/interpolate';
 import { buildWaMeUrl, buildTelegramUrl } from '@/lib/whatsapp';
@@ -97,7 +99,7 @@ export type AnimalProfileData = {
     /** v2.56.14: what actually happens when a slot comes due, so the page can
      *  say it instead of leaving the user to guess. Reflects the VIEWER's own
      *  notification settings. */
-    reminder: { email: boolean; toYou: boolean };
+    reminder: { email: boolean; toYou: boolean; canEmail: boolean };
     /** v2.55.18: attribution — resolved display name of the animal's owner, the
      *  shared org's name (null for solo rescuers), and a name map for every
      *  recordedBy email on the timeline. Always displayed (audit identity). */
@@ -316,7 +318,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
     // ── projected follow-ups (flag-gated; computed, never materialized) ──
     let followupsEnabled = false;
     let projected: ProjectedSlot[] = [];
-    let reminder = { email: false, toYou: true };
+    let reminder = { email: false, toYou: true, canEmail: false };
     let healthRecord: AnimalProfileData['healthRecord'] = null;
 
     if (active) {
@@ -363,7 +365,7 @@ export async function getAnimalProfile(animalId: string): Promise<AnimalProfileD
                 logger.warn('getAnimalProfile: projected fallback', {
                     animalId, userEmail, error: e instanceof Error ? e.message : String(e),
                 });
-                return { slots: [] as ProjectedSlot[], reminder: { email: false, toYou: true } };
+                return { slots: [] as ProjectedSlot[], reminder: { email: false, toYou: true, canEmail: false } };
             });
             projected = built.slots;
             reminder = built.reminder;
@@ -471,7 +473,7 @@ async function buildProjectedSlots(db: any, input: {
     careEvents: any[];
     /** Resolved once by the caller and shared with the health-record handover. */
     contact: { phone: string | null; channel: 'whatsapp' | 'telegram'; firstName: string };
-}): Promise<{ slots: ProjectedSlot[]; reminder: { email: boolean; toYou: boolean } }> {
+}): Promise<{ slots: ProjectedSlot[]; reminder: { email: boolean; toYou: boolean; canEmail: boolean } }> {
     const { placement, animal } = input;
     const settings = await getSettingsForEmail(db, input.userEmail);
 
@@ -493,12 +495,21 @@ async function buildProjectedSlots(db: any, input: {
         })),
     ];
 
-    // The cron sends to the whole team, EXCEPT to members who asked for only
-    // their own animals — so on a teammate's animal the honest answer is "the
-    // person who registered it gets this one", not "we'll tell you".
+    // The same rule the cron applies (followupDelivery, «Avisos» 2026-11-11): the
+    // whole team gets the bell, except members who chose «Mis animales» — so on a
+    // teammate's animal the honest answer is "the person who registered it gets
+    // this one" — and only whoever added the animal can get it by email.
+    const scope = await getAnimalsScopeForEmail(db, input.userEmail).catch((e: unknown): AnimalsScope => {
+        logger.warn('followups: animals scope lookup fallback', { userEmail: input.userEmail, animalId: input.animalId, error: e instanceof Error ? e.message : String(e) });
+        return 'team';
+    });
+    const delivery = followupDelivery({
+        recipient: input.userEmail, owner: animal.addedBy ?? '', scope, emailReminders: settings?.emailReminders === true,
+    });
     const reminder = {
-        email: settings?.emailReminders === true,
-        toYou: settings?.onlyMyAnimals !== true || animal.addedBy === input.userEmail,
+        email: delivery === 'bell_and_email',
+        toYou: delivery !== 'skip',
+        canEmail: !!animal.addedBy && animal.addedBy.trim().toLowerCase() === input.userEmail.trim().toLowerCase(),
     };
 
     const startedAt = asDate(placement.startedAt);

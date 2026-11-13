@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const playwright_1 = require("playwright");
+const instagram_1 = require("./instagram");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3001;
 const API_KEY = process.env.API_KEY;
@@ -154,55 +155,6 @@ async function extractOgTags(page) {
         return { title, description, images, videos };
     });
 }
-/** Fetch OG tags via HTTP with a bot User-Agent (no Playwright needed) */
-/** Stable-ish id for an Instagram CDN image URL, so size variants of the same
- *  photo dedupe to one while distinct carousel slides stay separate. Keys on the
- *  first two id groups (`<photoId>_<mediaId>`), which are identical across the
- *  og:image (scontent host) and the image_versions2 (fbcdn host) URLs of the same
- *  slide — so the cover doesn't get counted twice — yet unique per slide. */
-function instagramImageId(u) {
-    const m = u.match(/\/([0-9]{6,}_[0-9]{6,})_[0-9]/);
-    return m ? m[1] : u.split('?')[0];
-}
-/**
- * Harvest ALL Instagram carousel image URLs from page HTML/JSON and append the
- * new ones to `out`. Instagram exposes only ONE `og:image` (the cover) even for
- * multi-photo carousels, but embeds every slide in the Relay preload JSON under
- * `image_versions2.candidates[].url` (the first candidate is the full-res one).
- * Only the PRIMARY post emits these blocks — suggested/related posts on the page
- * are just references — so this stays scoped to the target post's slides.
- *
- * (History: Instagram retired the old `display_url` field this used to read, which
- * is why multi-image posts silently returned only the cover. Feed images carry a
- * `t51.<n>-15` path segment; `-19` is profile pics, which we skip.) Dedupes by
- * image id so the cover (already in `out` from og:image) isn't double-counted.
- * Escaped JSON slashes/ampersands are unescaped. Best-effort — markup evolves.
- */
-function harvestInstagramImages(html, out) {
-    const seen = new Set(out.map(instagramImageId));
-    const consider = (raw) => {
-        const u = raw
-            .replace(/\\u0026/gi, '&')
-            .replace(/\\u00253D/gi, '%3D')
-            .replace(/\\\//g, '/');
-        if (!/scontent|cdninstagram|fbcdn/i.test(u))
-            return;
-        // Skip thumbnails, profile pics, emoji, and non-feed image classes.
-        if (/(_s\.|_t\.|s150x150|150x150|\/profile|profile_pic|emoji|t51\.[0-9]+-19)/i.test(u))
-            return;
-        const id = instagramImageId(u);
-        if (seen.has(id))
-            return;
-        seen.add(id);
-        out.push(u);
-    };
-    // Primary source: the current image_versions2 structure (first candidate = full-res).
-    for (const m of html.matchAll(/"image_versions2":\{"candidates":\[\{"url":"([^"]+)"/g))
-        consider(m[1]);
-    // Legacy fallback for older markup that still exposes display_url.
-    for (const m of html.matchAll(/"display_url":"([^"]+)"/g))
-        consider(m[1]);
-}
 async function fetchOgTagsHttp(url, userAgent) {
     try {
         const response = await fetch(url, {
@@ -243,13 +195,19 @@ async function fetchOgTagsHttp(url, userAgent) {
         const images = realImagesOf(rawImages);
         // Instagram carousels: og:image is just the cover — harvest the rest of
         // the slides from the embedded JSON so multi-image posts return them all.
-        if (/instagram\.com|instagr\.am/.test(url))
-            harvestInstagramImages(html, images);
+        // The harvested image_versions2 copies are full size; og:image is cropped for
+        // link previews — the full-size copy of the same photo wins (2026-11-12).
+        let finalImages = images;
+        if (/instagram\.com|instagr\.am/.test(url)) {
+            const harvested = [];
+            (0, instagram_1.harvestInstagramImages)(html, harvested);
+            finalImages = (0, instagram_1.mergeImagesPreferFullRes)(harvested, images);
+        }
         return {
             title: titleMatch ? decodeEntities(titleMatch[1]) : undefined,
             description: descMatch ? decodeEntities(descMatch[1]) : undefined,
             text: jsonLdText || undefined,
-            images,
+            images: finalImages,
             videos: videoMatches.map(m => decodeEntities(m[1])),
             canonicalUrl: urlMatch ? decodeEntities(urlMatch[1]) : undefined,
             ogType: typeMatch ? typeMatch[1] : undefined,
@@ -507,38 +465,39 @@ async function scrapeFacebookPost(url) {
 // ═══════════════════════════════════════════════════════════════════════════════
 async function scrapeInstagramPost(url) {
     let browser = null;
+    // ── LAYER 1: link-preview tags — merge data and the fallback ───────────────
+    // It deliberately does NOT short-circuit on success (2026-11-12, same lesson
+    // as Facebook): og:description is a short header + the START of the caption
+    // (a post arrived as 73 chars, the AI rightly said «cortado») and og:image is
+    // cropped for preview cards. The post page has the full caption and full-size
+    // photos; the preview only answers when the page can't be read.
+    console.log(`[Scraper] Starting Instagram scrape for: ${url}`);
+    const ogData = await fetchOgTagsHttp(url, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+    const previewCaption = (0, instagram_1.captionFromOgDescription)(ogData.description || ogData.text || '');
+    let author = ogData.title || '';
+    const igAuthorOf = (s) => {
+        const m = s.match(/^(.+?)\s+on\s+Instagram/i) || s.match(/^(.+?)\s+en\s+Instagram/i) || s.match(/^(.+?)\s*[@|]/);
+        return m ? m[1].trim() : s;
+    };
+    if (author)
+        author = igAuthorOf(author);
+    const previewResult = (why) => {
+        const text = sanitizeText(previewCaption);
+        const images = realImagesOf(ogData.images);
+        if (!hasRealContent(text, images) && ogData.videos.length === 0)
+            return null;
+        console.log(`[Scraper] Instagram: preview fallback (${why}): text=${text.length}, images=${images.length}`);
+        return {
+            text: text.trim(),
+            author: author.trim() || undefined,
+            images: images.slice(0, 20),
+            videos: (ogData.videos || []).slice(0, 5),
+            platform: 'instagram',
+            layer: 'http-og',
+        };
+    };
     try {
-        console.log(`[Scraper] Starting Instagram scrape for: ${url}`);
-        // Step 1: Try HTTP OG fetch first (fast, no browser needed)
-        // Instagram serves OG tags to certain bots
-        const ogData = await fetchOgTagsHttp(url, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
-        let text = ogData.description || ogData.text || '';
-        let author = ogData.title || '';
-        const images = [...ogData.images];
-        const videos = [...(ogData.videos || [])];
-        // Clean up Instagram OG title (usually "Author on Instagram: 'caption...'")
-        if (author) {
-            const igAuthorMatch = author.match(/^(.+?)\s+on\s+Instagram/i)
-                || author.match(/^(.+?)\s+en\s+Instagram/i)
-                || author.match(/^(.+?)\s*[@|]/);
-            if (igAuthorMatch) {
-                author = igAuthorMatch[1].trim();
-            }
-        }
-        // If we got good data from OG, we can skip Playwright
-        if (text.length > 30 && images.length > 0) {
-            console.log(`[Scraper] Instagram OG extraction success: text=${text.length}, images=${images.length}`);
-            return {
-                text: text.trim(),
-                author: author.trim() || undefined,
-                images: images.slice(0, 20),
-                videos: videos.slice(0, 5),
-                platform: 'instagram',
-                layer: 'http-og',
-            };
-        }
-        // Step 2: Playwright fallback for when OG tags are insufficient
-        console.log('[Scraper] Instagram OG insufficient, launching Playwright...');
+        console.log(`[Scraper] Instagram layer 1: text=${previewCaption.length}, images=${ogData.images.length}; opening the post`);
         browser = await launchBrowser();
         const context = await browser.newContext({
             // Use mobile viewport — Instagram serves a lighter page to mobile
@@ -552,45 +511,27 @@ async function scrapeInstagramPost(url) {
         await page.waitForTimeout(3000);
         // Dismiss login prompts
         await dismissModals(page);
-        // Try to extract OG tags from the rendered page
         const pageOg = await extractOgTags(page);
-        if (!text && pageOg.description)
-            text = pageOg.description;
-        if (!author && pageOg.title) {
-            author = pageOg.title;
-            const igMatch = author.match(/^(.+?)\s+on\s+Instagram/i) || author.match(/^(.+?)\s+en\s+Instagram/i);
-            if (igMatch)
-                author = igMatch[1].trim();
-        }
-        for (const img of pageOg.images) {
-            if (!images.includes(img))
-                images.push(img);
-        }
-        for (const vid of pageOg.videos) {
-            if (!videos.includes(vid))
-                videos.push(vid);
-        }
-        // Extract text from article or main content
+        if (!author && pageOg.title)
+            author = igAuthorOf(pageOg.title);
+        // The longest text span inside the post's <article> (the caption, when rendered).
         const articleText = await page.evaluate(() => {
-            // Try article elements
             const article = document.querySelector('article');
-            if (article) {
-                // Get spans within article with text content
-                const spans = article.querySelectorAll('span');
-                let longest = '';
-                spans.forEach(s => {
-                    const t = s.textContent || '';
-                    if (t.length > longest.length && t.length > 10)
-                        longest = t;
-                });
-                return longest;
-            }
-            return '';
+            if (!article)
+                return '';
+            let longest = '';
+            article.querySelectorAll('span').forEach(s => {
+                const t = s.textContent || '';
+                if (t.length > longest.length && t.length > 10)
+                    longest = t;
+            });
+            return longest;
         });
-        if (articleText && articleText.length > text.length) {
-            text = articleText;
-        }
-        // Extract images from rendered page
+        const html = await page.content();
+        const embeddedCaption = (0, instagram_1.harvestInstagramCaption)(html);
+        // Full-size photos first: every slide from the embedded JSON, then the rendered <img>s.
+        const fullRes = [];
+        (0, instagram_1.harvestInstagramImages)(html, fullRes);
         const pageImages = await page.evaluate(() => {
             const imgs = [];
             document.querySelectorAll('img').forEach(img => {
@@ -608,17 +549,7 @@ async function scrapeInstagramPost(url) {
             });
             return imgs;
         });
-        for (const img of pageImages) {
-            if (!images.includes(img))
-                images.push(img);
-        }
-        // Carousels: only the first slide renders as an <img> (lazy-loaded), so
-        // harvest every slide's URL from the rendered page's embedded JSON.
-        try {
-            harvestInstagramImages(await page.content(), images);
-        }
-        catch { /* best-effort */ }
-        // Extract video thumbnails and video source URLs
+        // Video thumbnails and sources
         const videoData = await page.evaluate(() => {
             const posters = [];
             const srcs = [];
@@ -627,30 +558,33 @@ async function scrapeInstagramPost(url) {
                     posters.push(v.poster);
                 if (v.src)
                     srcs.push(v.src);
-                // Check source elements inside video
-                v.querySelectorAll('source').forEach(s => {
-                    if (s.src)
-                        srcs.push(s.src);
-                });
+                v.querySelectorAll('source').forEach(s => { if (s.src)
+                    srcs.push(s.src); });
             });
             return { posters, srcs };
         });
-        for (const img of videoData.posters) {
-            if (!images.includes(img))
-                images.push(img);
-        }
-        for (const vid of videoData.srcs) {
-            if (!videos.includes(vid))
-                videos.push(vid);
-        }
         await browser.close();
-        // Honest ending — same contract as Facebook: an author alone means the
-        // wall identified the poster and withheld the post, and wall
-        // boilerplate scooped as text is not a caption.
-        text = sanitizeText(text);
+        browser = null;
+        // The cropped preview photos (layer 1 and the rendered page's og:image) only fill in what the page lacked.
+        const images = (0, instagram_1.mergeImagesPreferFullRes)([...fullRes, ...pageImages, ...videoData.posters], [...ogData.images, ...pageOg.images]);
+        const videos = [];
+        for (const v of [...(ogData.videos || []), ...pageOg.videos, ...videoData.srcs])
+            if (!videos.includes(v))
+                videos.push(v);
+        const pagePreviewCaption = (0, instagram_1.captionFromOgDescription)(pageOg.description || '');
+        const text = sanitizeText((0, instagram_1.chooseInstagramCaption)({
+            embedded: embeddedCaption,
+            pageText: articleText,
+            preview: pagePreviewCaption.length > previewCaption.length ? pagePreviewCaption : previewCaption,
+        }));
         const cleanImages = realImagesOf(images);
-        console.log(`[Scraper] Instagram result: text=${text.length}, author="${author}", images=${cleanImages.length}`);
+        console.log(`[Scraper] Instagram result: text=${text.length} (embedded=${embeddedCaption?.length ?? 0}, article=${articleText.length}, preview=${previewCaption.length}), author="${author}", images=${cleanImages.length} (fullRes=${fullRes.length})`);
+        // Honest ending — same contract as Facebook: an author alone means the
+        // wall identified the poster and withheld the post.
         if (!hasRealContent(text, cleanImages) && videos.length === 0) {
+            const fallback = previewResult('page had no content');
+            if (fallback)
+                return fallback;
             return {
                 text: '',
                 author: author.trim() || undefined,
@@ -673,7 +607,11 @@ async function scrapeInstagramPost(url) {
     catch (error) {
         console.error('[Scraper] Instagram error:', error);
         if (browser)
-            await browser.close();
+            await browser.close().catch(() => { });
+        // The page couldn't be read: the preview is still better than nothing.
+        const fallback = previewResult(error instanceof Error ? error.message : 'page error');
+        if (fallback)
+            return fallback;
         return {
             text: '',
             images: [],
@@ -994,7 +932,7 @@ async function scrapePost(url) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // EXPRESS ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
-const SCRAPER_VERSION = '2.4.0-lean';
+const SCRAPER_VERSION = '2.5.0-ig-full-post';
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({

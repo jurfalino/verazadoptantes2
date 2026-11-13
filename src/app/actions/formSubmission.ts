@@ -388,6 +388,12 @@ export async function linkFormToExistingAdopter(
             await db.update(formSubmissions)
                 .set({ linkedAdopterId: adopterId, status: 'linked' })
                 .where(eq(formSubmissions.id, submissionId));
+            // 'link' joins this form's application to the person's others, as a merge does (mergeAdopters runs
+            // it for 'merge'): one open application per animal (Q3). Logs and never throws.
+            if (plan.op === 'link') {
+                const { dedupeApplicationsAfterMerge } = await import('@/lib/applicationWrites');
+                await dedupeApplicationsAfterMerge(db, adopterId, { actorEmail });
+            }
 
             try {
                 await db.insert(auditLog).values({

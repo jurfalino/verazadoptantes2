@@ -23,7 +23,6 @@ const schema = z.object({
     fosterIntervalDays: z.number().int().min(7).max(120).optional(),
     messages: z.record(z.string().max(40), z.string().max(1000)).optional(),
     emailReminders: z.boolean().optional(),
-    onlyMyAnimals: z.boolean().optional(),
 }).nullable();
 
 const base = { version: 1 as const, checkins: [{ offsetDays: 7 }, { offsetDays: 30 }], fosterIntervalDays: 30 };
@@ -44,7 +43,10 @@ describe('followup settings payloads', () => {
 
     it('accepts null (restore defaults) and the preference toggles', () => {
         expect(schema.safeParse(null).success).toBe(true);
-        expect(schema.safeParse({ ...base, emailReminders: true, onlyMyAnimals: true }).success).toBe(true);
+        expect(schema.safeParse({ ...base, emailReminders: true }).success).toBe(true);
+        // An old tab still sending «solo los animales que cargué yo»: accepted, the key dropped.
+        const old = schema.safeParse({ ...base, onlyMyAnimals: true });
+        expect(old.success && 'onlyMyAnimals' in old.data!).toBe(false);
     });
 
     it('still rejects out-of-range offsets', () => {

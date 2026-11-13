@@ -122,13 +122,30 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         const p = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine');
         expect(p.request).toEqual({
             id: requestId(), status: 'pending', direction: 'sent', createdAt: expect.any(Number), counterpartName: 'stranger', toAdmins: false,
-            dispute: false, canMessage: true, declinedAt: null, declinedByName: null, keepId: 'o-old',
+            dispute: false, canMessage: true, declinedAt: null, declinedByName: null, keepId: 'o-old', messages: [],
         });
         expect(p.request!.createdAt).toBeLessThan(Date.now() / 1000 + 5); // epoch seconds, not ms
         expect(p.request!.createdAt).toBeGreaterThan(Date.now() / 1000 - 60);
         // The asked owner sees it as received, from OWNER by name.
         expect(pairOf((await feed(STRANGER)).pairs, 'cand-newer-mine').request)
             .toMatchObject({ direction: 'received', counterpartName: 'Olga Dueña', toAdmins: false });
+    });
+
+    it('«Mensajes (N)»: every viewer of the pair gets the messages, oldest first, names only, theirs marked', async () => {
+        expect(await as(OWNER, () => mergePendingDedupPair('cand-newer-mine'))).toMatchObject({ success: true, outcome: 'requested' });
+        const rid = requestId();
+        const add = sqlite.prepare(`INSERT INTO pair_messages (id, request_id, sender_email, sender_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
+        add.run('m2', rid, STRANGER, null, 'Sí, coincide.', 2000);
+        add.run('m1', rid, OWNER, 'Olga Dueña', 'Hola, ¿es la misma?', 1000);
+        add.run('other', 'another-request', OWNER, 'Olga Dueña', 'No es de este par', 1500);
+        const mine = pairOf((await feed(OWNER)).pairs, 'cand-newer-mine').request!.messages;
+        expect(mine).toEqual([
+            { id: 'm1', senderName: 'Olga Dueña', mine: true, body: 'Hola, ¿es la misma?', createdAt: 1000 },
+            { id: 'm2', senderName: 'stranger', mine: false, body: 'Sí, coincide.', createdAt: 2000 },
+        ]);
+        expect(JSON.stringify(mine)).not.toContain('@');
+        const theirs = pairOf((await feed(STRANGER)).pairs, 'cand-newer-mine').request!.messages;
+        expect(theirs.map(m => [m.id, m.mine])).toEqual([['m1', false], ['m2', true]]);
     });
 
     it("a teammate of the asked owner sees the request though they created neither profile (D16)", async () => {
@@ -190,6 +207,40 @@ describe('getPendingDuplicatesForUser — open merge requests', () => {
         expect(theirs.mergeAction).toBe('merge'); // keeping STRANGER's older profile needs no consent
         // The decliner keeping STRANGER's profile is their own consent: merged straight away.
         expect(await as(OWNER, () => mergePendingDedupPair('cand-older-mine', { keepId: 's-old' }))).toEqual({ success: true, outcome: 'merged' });
+    });
+
+    it("a pair whose side is the team's applicant to evaluate is not a second to-do; after «No avanzar» it counts again (Q6)", async () => {
+        const before = await feed(STRANGER);
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES ('f-new', ?, 'Ana', NULL, 's-new', 1)`).run(STRANGER);
+        sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id, origin, state) VALUES ('app-f-new', 'f-new', NULL, 'form', 'open')`).run();
+        const during = await feed(STRANGER);
+        expect(during.needsViewer).toBe(before.needsViewer - 1);
+        expect(pairOf(during.pairs, 'cand-newer-mine').needsViewer).toBe(false);
+        expect(pairOf(during.pairs, 'cand-anon').needsViewer).toBe(true);
+        // The OTHER profile's owner has no evaluation of it: for them it is still a to-do.
+        expect(pairOf((await feed(OWNER)).pairs, 'cand-newer-mine').needsViewer).toBe(true);
+        sqlite.prepare(`UPDATE applications SET state = 'declined' WHERE id = 'app-f-new'`).run(); // «No avanzar»
+        const after = await feed(STRANGER);
+        expect(after.needsViewer).toBe(before.needsViewer);
+        expect(pairOf(after.pairs, 'cand-newer-mine').needsViewer).toBe(true);
+    });
+
+    it('the home feed (needs_viewer) writes no heal on its path; /my-adopters (all) heals first (final review I4)', async () => {
+        // A form whose application row is missing (submitted to the old build): only a heal writes it.
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES ('f-heal', ?, 'Ana', NULL, 's-new', 1)`).run(STRANGER);
+        const rows = () => Number(sqlite.prepare(`SELECT COUNT(*) AS n FROM applications WHERE submission_id = 'f-heal'`).get()!.n);
+        await as(STRANGER, () => getPendingDuplicatesForUser(1, 4, false, undefined, 'needs_viewer'));
+        expect(rows()).toBe(0);
+        await feed(STRANGER);
+        expect(rows()).toBe(1);
+    });
+
+    it('a RECEIVED merge request on a side in evaluation still counts: only a plain possible duplicate is deferred (Q6)', async () => {
+        await mergePendingDedupPair('cand-older-mine'); // STRANGER asks OWNER (o-new is OWNER's)
+        sqlite.prepare(`INSERT INTO form_submissions (id, user_id, name, selected_animal_id, linked_adopter_id, created_at) VALUES ('f-o', ?, 'Carla', NULL, 'o-new', 1)`).run(OWNER);
+        sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id, origin, state) VALUES ('app-f-o', 'f-o', NULL, 'form', 'open')`).run();
+        const pair = pairOf((await feed(OWNER)).pairs, 'cand-older-mine');
+        expect(pair).toMatchObject({ group: 'received', needsViewer: true });
     });
 
     it('a request you sent waits on the other side: it goes after everything that waits on you (UX review 2026-11-10)', async () => {
@@ -708,6 +759,43 @@ describe('«Revisar» on a «posible duplicado» notice never lands on an empty 
 
         const { pairs } = await feed(MATE, true);
         expect(pairs).toContainEqual(expect.objectContaining({ candidateId: 'flag-w', source: 'flagged', request: expect.objectContaining({ id: 'mr-w', direction: 'received' }) }));
+    });
+});
+
+describe('«Te escribió» lands on the pair, for the requester too (CX review I3)', () => {
+    /** STRANGER asked OWNER's team about `n` pairs: requests STRANGER sent, so «No necesitan nada tuyo». */
+    const sentRequests = (n: number) => {
+        const adopter = sqlite.prepare(`INSERT INTO adopters (id, name, status, added_by, created_at, updated_at) VALUES (?, ?, '5', ?, 100, 100)`);
+        const cand = sqlite.prepare(`INSERT INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, score, confidence, status, detected_at) VALUES (?, ?, ?, '["phone"]', 80, 'high', 'pending', 1)`);
+        const req = sqlite.prepare(`INSERT INTO merge_requests (id, primary_id, secondary_id, candidate_id, requester_email, owner_email, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`);
+        for (let i = 0; i < n; i++) {
+            adopter.run(`m-s-${i}`, `Sara Mía ${i}`, STRANGER);
+            adopter.run(`m-o-${i}`, `Sara Mia ${i}`, OWNER);
+            cand.run(`cand-m-${i}`, `m-o-${i}`, `m-s-${i}`);
+            // Request 0 is the oldest: sorted last among what the requester sent.
+            req.run(`mr-m-${i}`, `m-s-${i}`, `m-o-${i}`, `cand-m-${i}`, STRANGER, OWNER, i === 0 ? 1 : 1000 + i);
+        }
+    };
+
+    it('the owner\'s teammate writes; the requester\'s link opens that pair, even past the 20 «No necesitan nada tuyo» rows', async () => {
+        sentRequests(25);
+        const { createNotification } = await import('./notifications');
+        vi.mocked(createNotification).mockClear();
+        const { sendPairMessage } = await import('./pairMessages');
+        expect(await as(MATE, () => sendPairMessage('mr-m-0', 'Hola, ¿es la misma persona?'))).toEqual({ success: true });
+        const notice = vi.mocked(createNotification).mock.calls.map(c => c[0] as { userId: string; url: string }).find(n => n.userId === STRANGER)!;
+        const url = new URL(notice.url, 'https://x.test');
+        expect(url.hash).toBe('#pendientes');
+        const focus = url.searchParams.get('pair')!;
+        expect(focus).toBe(pairKey('m-s-0', 'm-o-0'));
+
+        // What PendingDedup asks for on that link (page 1 + ?pair=): the pair is on the page, focused (opened,
+        // scrolled to, outlined), in the requester's «Enviados» — not a needs-you row.
+        const r = await as(STRANGER, () => getPendingDuplicatesForUser(1, 10, false, focus));
+        expect(r.focusCandidateId).toBe('cand-m-0');
+        expect(pairOf(r.pairs, 'cand-m-0')).toMatchObject({ group: 'sent', needsViewer: false });
+        // Without the focus, the oldest sent request is past the cap.
+        expect((await feed(STRANGER)).pairs.map(p => p.candidateId)).not.toContain('cand-m-0');
     });
 });
 

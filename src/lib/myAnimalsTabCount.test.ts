@@ -7,7 +7,7 @@ import { myAnimalsTabCount } from './myAnimalsTabCount';
  * PREVIOUS tab's list, so its length must not be shown for the new tab.
  */
 describe('myAnimalsTabCount', () => {
-    const counts = { available: 7, adopted: 12, all: 19, pending: 3 };
+    const counts = { available: 7, adopted: 12, all: 19, pending: 3, solicitudes: 4 };
 
     it('the tab whose list is loaded shows that list length', () => {
         expect(myAnimalsTabCount('available', 'available', 'available', 5, counts)).toBe(5);
@@ -31,6 +31,15 @@ describe('myAnimalsTabCount', () => {
     it('«Todos» reads the all count', () => {
         expect(myAnimalsTabCount('todos', 'available', 'available', 5, counts)).toBe(19);
         expect(myAnimalsTabCount('todos', 'todos', 'todos', 19, counts)).toBe(19);
+    });
+
+    it("'solicitudes' reads counts.solicitudes when not the loaded tab", () => {
+        expect(myAnimalsTabCount('solicitudes', 'available', 'available', 5, counts)).toBe(4);
+        // Switched to it, its list still loading: the count, not the old list's length.
+        expect(myAnimalsTabCount('solicitudes', 'solicitudes', 'available', 5, counts)).toBe(4);
+        // Loaded: what is on screen (the caller passes the cards, «Sin animal elegido» included).
+        expect(myAnimalsTabCount('solicitudes', 'solicitudes', 'solicitudes', 3, counts)).toBe(3);
+        expect(myAnimalsTabCount('solicitudes', 'available', 'available', 5, { available: 1, adopted: 0 })).toBe('...');
     });
 
     it('shows "..." when nothing is known yet', () => {

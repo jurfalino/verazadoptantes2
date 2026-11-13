@@ -19,6 +19,9 @@ vi.mock('./_db', () => ({ getDb: async () => state.db, getUser: mocks.getUser })
 vi.mock('@/lib/db', () => ({ getDb: async () => state.db }));
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn(async () => undefined) }));
 vi.mock('@/lib/background', () => ({ runAfterResponse: vi.fn(async () => undefined) }));
+// The notices' kill switch and email twin are not under test here (createNotification has its own tests).
+vi.mock('@/config/features', () => ({ getFeatureFlag: vi.fn(async () => true) }));
+vi.mock('@/lib/notificationEmail', () => ({ sendNotificationEmail: vi.fn(async () => 'skipped_local') }));
 vi.mock('@/lib/logger', () => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn(() => 'err12345') },
     generateErrorId: () => 'gen12345',
@@ -149,6 +152,40 @@ describe('removeOrganizationMember — the removed person is told (F6)', () => {
         expect(members('org-1')).toEqual([MATE]);
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('removeOrganizationMember'),
             expect.objectContaining({ user: MATE, orgId: 'org-1', memberId: 'm-owner' }));
+    });
+});
+
+/**
+ * Notifications cleanup, Phase 1 (change 4): «Nuevo miembro» goes only to the group
+ * joined. It used to reach every group the joiner belongs to (notifyOrgMembers fans out
+ * by the actor's groups), so the joiner's other group read «X se unió a Michis».
+ */
+describe('joinOrganization — only the group joined is told', () => {
+    const PERRIS_MATE = 'perris-mate@example.com';
+    const told = () => sqlite.prepare("SELECT user_id, body, url FROM notifications WHERE type = 'member_joined' ORDER BY user_id").all();
+
+    beforeEach(() => {
+        vi.mocked(runAfterResponse).mockImplementation(async (_name, task) => { await task(); });
+        vi.mocked(logger.warn).mockClear();
+        // OTHER's own group, Perris, has a second member.
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email, role) VALUES ('m-perris-mate', 'org-2', ?, 'member')`).run(PERRIS_MATE);
+        sqlite.prepare(`INSERT INTO user (id, email, name) VALUES ('u-other', ?, 'Olga Ortiz')`).run(OTHER);
+    });
+    afterEach(() => { vi.mocked(runAfterResponse).mockImplementation(async () => undefined); });
+
+    it("OTHER joins Michis: Michis's members are told, never the joiner nor the joiner's other group", async () => {
+        expect(await as(OTHER, () => joinOrganization('old-link'))).toEqual({ success: true, orgName: 'Michis' });
+        expect(told()).toEqual([MATE, OWNER].sort().map(user_id => ({ user_id, body: 'Olga Ortiz se unió a Michis.', url: '/organizations' })));
+    });
+
+    it('a stranger in no group joins: the same, only the group joined', async () => {
+        expect(await as(STRANGER, () => joinOrganization('old-link'))).toMatchObject({ success: true });
+        expect(told().map(r => r.user_id)).toEqual([MATE, OWNER].sort());
+    });
+
+    it('joining again (already a member) tells nobody', async () => {
+        expect(await as(MATE, () => joinOrganization('old-link'))).toMatchObject({ success: true });
+        expect(told()).toEqual([]);
     });
 });
 

@@ -20,7 +20,7 @@
  */
 
 import { getDb } from '@/lib/db';
-import { notifications } from '@/db/schema';
+import { appConfig, notifications } from '@/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { displayNameFor } from '@/lib/userDisplay';
@@ -28,6 +28,8 @@ import { runAfterResponse } from '@/lib/background';
 import { sendNotificationEmail } from '@/lib/notificationEmail';
 import { renderNotification, type NotificationTemplate } from '@/domain/notificationTemplates';
 import type { NotificationType } from '@/domain/constants';
+import { notificationKillSwitchKey, notificationTypeEnabled } from '@/domain/notificationKillSwitch';
+import { teamCopyDelivery, type AnimalsScope, type TeamCopyDelivery } from '@/domain/animalNotices';
 
 /**
  * Create a notification for a user.
@@ -55,6 +57,8 @@ export async function createNotification(data: {
      * sender created it first; src/lib/profileAdditionNotices.ts merges into it).
      */
     ifAbsent?: boolean;
+    /** This copy stays in the bell, never emailed (a team copy, the admins' copy of a report). */
+    bellOnly?: boolean;
 }): Promise<string | null> {
     try {
         const db = await getDb();
@@ -65,20 +69,17 @@ export async function createNotification(data: {
 
         const type = data.type || 'contract_result';
 
-        // Check global kill switch using cached Edge implementation
+        // The per-type kill switch (/admin/notifications): no row = on, only 'false' turns it off.
+        // A failed read fails open, logged.
         try {
-            const { getFeatureFlag } = await import('@/config/features');
-            // Cast to any to bypass strict type checking for dynamic keys
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const isEnabled = await getFeatureFlag(`NOTIF_ENABLED_${type}` as any) !== false;
-            
-            if (!isEnabled) {
-                logger.info('Notification suppressed by admin config', { type });
+            const row = await db.select({ value: appConfig.value }).from(appConfig)
+                .where(eq(appConfig.key, notificationKillSwitchKey(type))).get() as { value: string | null } | undefined;
+            if (!notificationTypeEnabled(row?.value)) {
+                logger.info('Notification suppressed by admin config', { type, userId: data.userId });
                 return null;
             }
-        } catch {
-            // Fail open if config fails to fetch
-            logger.warn('Failed to evaluate notification kill switch, defaulting to sending', { type });
+        } catch (e) {
+            logger.warn('createNotification: kill switch unreadable, sending', { type, userId: data.userId, error: e instanceof Error ? e.message : String(e) });
         }
 
         const id = data.id || crypto.randomUUID();
@@ -112,9 +113,9 @@ export async function createNotification(data: {
 
         logger.info('Notification created', { id, userId: data.userId, type });
 
-        // Email twin (per-category switches apply). Never affects the bell's result.
+        // Email twin («Avisos» rows apply). Never affects the bell's result.
         await runAfterResponse('notification.email', () => sendNotificationEmail({
-            id, userId: data.userId, type, title, body, url: data.url ?? null, metadata: metadata ?? null,
+            id, userId: data.userId, type, title, body, url: data.url ?? null, metadata: metadata ?? null, bellOnly: data.bellOnly,
         }), { type, notificationId: id });
 
         return id;
@@ -410,6 +411,8 @@ export async function notifyAdmins(opts: {
     template?: NotificationTemplate;
     /** People already told some other way (e.g. as an owner of a flagged profile): never sent this one. Normalized here. */
     skip?: readonly string[];
+    /** The admins' copy stays in the bell (an admin-queue copy of a user-facing type). */
+    bellOnly?: boolean;
 }): Promise<void> {
     try {
         const adminEmails = new Set<string>();
@@ -460,6 +463,7 @@ export async function notifyAdmins(opts: {
                 url: opts.url,
                 icon: opts.icon,
                 metadata: opts.metadata,
+                bellOnly: opts.bellOnly,
                 template: opts.template,
             })
         ));
@@ -473,9 +477,18 @@ export async function notifyAdmins(opts: {
 /**
  * Notify all org members of the actor's organizations, excluding the actor.
  * Uses getOrgMemberEmailsFor() — session-free, safe for public API routes.
+ * With `orgId`, only that organization's members (getMemberEmailsOfOrg): an
+ * event about one group (member_joined) never reaches the actor's other groups.
+ * With `teamCopy` (forms and contracts, «Avisos» 2026-11-11): every copy is bell
+ * only except the one to `teamCopy.emailTo`, and a member who chose «Mis
+ * animales» gets no copy unless they added the animal (src/domain/animalNotices.ts).
+ * A choice that can't be read counts as the whole team (an extra notice, never
+ * a missed one), logged.
  */
 export async function notifyOrgMembers(opts: {
     actorEmail: string;
+    /** Only this organization's members, not every group the actor is in. */
+    orgId?: string;
     type: NotificationType;
     title: string;
     body: string;
@@ -483,16 +496,50 @@ export async function notifyOrgMembers(opts: {
     icon?: string;
     metadata?: Record<string, unknown>;
     template?: NotificationTemplate;
+    /** A team copy of a form or contract: only the copy to `emailTo` may be emailed; `animalOwner` null = no animal of the team. */
+    teamCopy?: { emailTo: string | null; animalOwner: string | null };
+    /** Members who already got their own copy from the caller (compared case-insensitively). */
+    excludeEmails?: readonly string[];
 }): Promise<void> {
     try {
-        const { getOrgMemberEmailsFor } = await import('@/lib/orgMembership');
-        const emails = await getOrgMemberEmailsFor(opts.actorEmail);
+        const { getOrgMemberEmailsFor, getMemberEmailsOfOrg } = await import('@/lib/orgMembership');
+        const emails = opts.orgId ? await getMemberEmailsOfOrg(opts.orgId) : await getOrgMemberEmailsFor(opts.actorEmail);
 
-        // Exclude the actor
-        const recipients = emails.filter((e: string) => e !== opts.actorEmail);
+        // Exclude the actor, and whoever the caller already notified
+        const excluded = new Set([opts.actorEmail, ...(opts.excludeEmails ?? [])].map(e => e.trim().toLowerCase()));
+        // One copy per person: the same member may appear in two groups with different capitals.
+        const seen = new Set<string>();
+        const recipients = emails.filter((e: string) => {
+            const key = e.trim().toLowerCase();
+            if (excluded.has(key) || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
         if (recipients.length === 0) return;
 
-        await Promise.all(recipients.map((email: string) =>
+        // Forms and contracts: each member's «Formularios, contratos y controles de:» choice.
+        const delivery = new Map<string, TeamCopyDelivery>();
+        if (opts.teamCopy) {
+            const teamCopy = opts.teamCopy;
+            const { getAnimalsScopeForEmail } = await import('@/lib/animalsScope');
+            const db = await getDb();
+            await Promise.all(recipients.map(async (email: string) => {
+                let scope: AnimalsScope = 'team';
+                try {
+                    if (!db) throw new Error('Database not available');
+                    scope = await getAnimalsScopeForEmail(db, email);
+                } catch (e) {
+                    logger.warn('notifyOrgMembers: animals scope unreadable, the whole team assumed', { type: opts.type, recipient: email, error: e instanceof Error ? e.message : String(e) });
+                }
+                delivery.set(email, teamCopyDelivery({ recipient: email, emailTo: teamCopy.emailTo, animalOwner: teamCopy.animalOwner, scope }));
+            }));
+        }
+        const told = recipients.filter((email: string) => delivery.get(email) !== 'skip');
+        if (told.length < recipients.length) {
+            logger.info('notifyOrgMembers: «Mis animales» members skipped', { type: opts.type, recipients: recipients.length, kept: told.length });
+        }
+
+        await Promise.all(told.map((email: string) =>
             createNotification({
                 userId: email,
                 type: opts.type,
@@ -502,12 +549,13 @@ export async function notifyOrgMembers(opts: {
                 icon: opts.icon,
                 metadata: opts.metadata,
                 template: opts.template,
+                ...(delivery.get(email) === 'bell' ? { bellOnly: true } : {}),
             })
         ));
 
-        logger.info('Org member notifications sent', { type: opts.type, count: recipients.length });
+        logger.info('Org member notifications sent', { type: opts.type, count: told.length });
     } catch (error) {
-        logger.warn('notifyOrgMembers failed (non-critical)', { error: error instanceof Error ? error.message : String(error) });
+        logger.warn('notifyOrgMembers failed (non-critical)', { type: opts.type, orgId: opts.orgId, error: error instanceof Error ? error.message : String(error) });
     }
 }
 

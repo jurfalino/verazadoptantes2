@@ -147,3 +147,63 @@ describe('H3: «El responsable quitó tu acceso» lives on the profile (notice d
         expect((await ctx()).requestState.accessRevokedAt).toBeNull();
     });
 });
+
+/**
+ * Notifications cleanup, Phase 1 (change 2): «answer once, cleared everywhere» for
+ * contact-access requests. When ANY approver approves or denies, every approver's
+ * `pii_access_request` notice about that request is read — the owner's and each
+ * editor's. Other requests, and the requester's own answer, are untouched.
+ */
+describe('a request answered by one approver is cleared for every approver', () => {
+    const { MATE } = mocks;
+    const readOf = (id: string) => sqlite.prepare('SELECT read FROM notifications WHERE id = ?').get(id)!.read;
+    const notice = (id: string, userId: string, requestId: string, type = 'pii_access_request') =>
+        sqlite.prepare(`INSERT INTO notifications (id, user_id, type, title, body, url, read, metadata) VALUES (?, ?, ?, 't', 'b', '/adopter/p1', 0, ?)`)
+            .run(id, userId, type, JSON.stringify({ adopterId: 'p1', requestId }));
+
+    async function pendingRequest(): Promise<string> {
+        // MATE edited the profile and is OWNER's teammate: an approver (loadApprovers).
+        sqlite.prepare(`INSERT INTO adopter_history (id, adopter_id, changed_by, kind, changes, changed_at) VALUES ('h-mate', 'p1', ?, 'edit', '{}', 1000)`).run(MATE);
+        expect((await as(STRANGER, () => requestPiiAccess('p1', { justification: 'adoptante en común' }))).status).toBe('created');
+        const reqId = sqlite.prepare(`SELECT id FROM pii_access_requests WHERE adopter_id = 'p1'`).get()!.id as string;
+        // createNotification is mocked here: the two approvers' copies, as the writer stores them.
+        notice('n-owner', OWNER, reqId);
+        notice('n-mate', MATE, reqId);
+        notice('n-other-request', OWNER, 'another-request');
+        notice('n-old-answer', STRANGER, reqId, 'pii_access_denied');
+        return reqId;
+    }
+
+    it.each(['approved', 'denied'] as const)('the teammate %s → the owner\'s copy is read too', async (decision) => {
+        const reqId = await pendingRequest();
+        expect(await as(MATE, () => resolvePiiAccessRequest(reqId, decision))).toEqual({ ok: true });
+        expect(readOf('n-owner')).toBe(1);
+        expect(readOf('n-mate')).toBe(1);
+        expect(readOf('n-other-request')).toBe(0);
+        expect(readOf('n-old-answer')).toBe(0);
+    });
+
+    it('an admin answers → every approver\'s copy is read', async () => {
+        const reqId = await pendingRequest();
+        expect(await as(ADMIN, () => resolvePiiAccessRequest(reqId, 'approved'))).toEqual({ ok: true });
+        expect([readOf('n-owner'), readOf('n-mate')]).toEqual([1, 1]);
+    });
+
+    it('a refused answer clears nothing', async () => {
+        const reqId = await pendingRequest();
+        expect((await as(STRANGER, () => resolvePiiAccessRequest(reqId, 'approved'))).ok).toBe(false);
+        expect([readOf('n-owner'), readOf('n-mate')]).toEqual([0, 0]);
+    });
+
+    it('clearing failing never blocks the answer: still ok, the grant is written, logged at warn with context', async () => {
+        const { logger } = await import('@/lib/logger');
+        vi.mocked(logger.warn).mockClear();
+        const reqId = await pendingRequest();
+        sqlite.prepare('DROP TABLE notifications').run();
+        expect(await as(OWNER, () => resolvePiiAccessRequest(reqId, 'approved'))).toEqual({ ok: true });
+        expect(sqlite.prepare(`SELECT status FROM pii_access_requests WHERE id = ?`).get(reqId)!.status).toBe('approved');
+        expect(sqlite.prepare(`SELECT COUNT(*) AS n FROM pii_access_grants WHERE request_id = ?`).get(reqId)!.n).toBe(1);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('clearPiiRequestNotices'),
+            expect.objectContaining({ requestId: reqId, adopterId: 'p1', actor: OWNER }));
+    });
+});

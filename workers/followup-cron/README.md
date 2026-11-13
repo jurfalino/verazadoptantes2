@@ -4,10 +4,15 @@ Daily reminder Worker for the follow-up feature (animal-timeline PR4). Cloudflar
 **Pages has no cron**, so this standalone Worker runs `0 12 * * *` UTC (09:00 AR)
 on the app's D1 and inserts `follow_up_due` rows into `notifications`.
 
-- **Shares the pure domain**: imports `src/domain/followups.ts` by relative path.
+- **Shares the pure domain**: imports `src/domain/followups.ts`, `animalNotices.ts`
+  and `notificationKillSwitch.ts` by relative path (no `@/` imports in them).
   Never import anything from `src/app`, `src/db` or `'use server'` files here.
 - **Gates**: bails unless `app_config.ENABLE_FOLLOWUPS = 'true'`, and honors the
-  admin kill switch `NOTIF_ENABLED_follow_up_due = 'false'`.
+  admin kill switch `NOTIF_ENABLED_follow_up_due = 'false'` (the same rule as
+  createNotification: `notificationTypeEnabled`).
+- **Who** (Configuración → Avisos, 2026-11-11, `followupDelivery`): the owner and
+  their teammates get the bell; a teammate who chose «Mis animales»
+  (`user_profiles.animals_scope = 'mine'`) gets nothing for animals they didn't add.
 - **Dedup**: only `due` slots (never `missed` — the window is the anti-storm
   guard), plus a per-(placement, slot) `dedupKey` in `notifications.metadata`
   checked before every insert. A slot notifies at most once, ever.
@@ -33,9 +38,10 @@ Manual deploy (if CI is down):
 
 ## Email delivery (v2.55.19, opt-in)
 
-When a recipient has «Recibir recordatorios también por e-mail» enabled in
-Configuración → Seguimientos (`followup_settings.emailReminders`), the Worker
-also emails them. Bells stay per-slot (each is individually actionable); email
+When the person who added the animal has «Toca un control de seguimiento» on in
+Configuración → Avisos (`followup_settings.emailReminders`; since 2026-11-12 the
+only place it is switched — Seguimientos links there), the Worker also emails
+them. The footer links to `/settings#avisos`. Teammates' copies are bell only (since 2026-11-11). Bells stay per-slot (each is individually actionable); email
 is **digested**: one message per recipient per run, listing every reminder that
 fired. Items are queued only for slots that actually inserted a notification, so
 the digest inherits the same once-ever (placement, slot, recipient) dedup, and a

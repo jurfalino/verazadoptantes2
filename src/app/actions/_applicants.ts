@@ -17,8 +17,10 @@ import { computeAvgRating } from '@/domain/ratings';
 import { buildFlags } from '@/domain/flags';
 import { NO_PERIOD_ALERTS, periodAlerts } from '@/domain/periodAlerts';
 import { NO_HOUSEMATE_ALERT } from '@/domain/households';
-import { RECORD_TYPES } from '@/domain/constants';
-import { applicantScopeWhere } from '@/lib/applicantScope';
+import { APPLICATION_ORIGINS, APPLICATION_STATES, RECORD_TYPES, type ApplicationState, type ApplicationCloseReason } from '@/domain/constants';
+import { applicationStatus, panelOrder, type InvitationLike } from '@/domain/applications';
+import { healMissingApplications } from '@/lib/applicationWrites';
+import { applicantScopeWhere, generalScopeWhere, isInTeamScope, normalizeTeamScope, teammateVisibleAnimal } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
 import type { ApplicantSummary, ApplicantAdopterContext } from './applicants';
 import type { FormSubmissionRef, FormSubmissionAccessDeps } from '@/lib/formSubmissionAccess';
@@ -113,69 +115,54 @@ export async function formSubmissionAccessLookups(db: Db): Promise<Omit<FormSubm
 }
 
 /**
- * Memoised `getTeamEmails` per animal owner, for one request. /my-animals
- * shows many animals from a handful of owners (self + org-mates); resolving
- * each owner's team once keeps the org queries flat instead of per card.
- */
-export function createOwnerTeamResolver(): (ownerEmail: string | null | undefined) => Promise<string[]> {
-    const cache = new Map<string, Promise<string[]>>();
-    return (ownerEmail) => {
-        const key = (ownerEmail ?? '').trim().toLowerCase();
-        if (!key) return Promise.resolve([]);
-        let hit = cache.get(key);
-        if (!hit) {
-            hit = import('@/lib/orgMembership').then(m => m.getTeamEmails(key));
-            cache.set(key, hit);
-        }
-        return hit;
-    };
-}
-
-/**
- * Submission ids only — what the /my-animals card needs for its count. One
- * query per animal, same WHERE as the full list. Fails closed to [] (no
- * query) when the team scope is empty.
+ * Application + submission ids only — what the /my-animals card needs for its
+ * count. One query per animal, same WHERE as the full list; «replaced» rows
+ * (superseded by a merge) never count. Fails closed to [] (no query) when the
+ * team scope is empty.
  */
 export async function listApplicantIdsForAnimal(
     db: Db,
     animalId: string,
     teamEmails: readonly string[],
-): Promise<Array<{ submissionId: string }>> {
+): Promise<Array<{ submissionId: string; applicationId: string }>> {
     const where = applicantScopeWhere(animalId, teamEmails);
     if (!where) return [];
-    const { formSubmissions } = await import('@/db/schema');
-    const rows = await db.select({ id: formSubmissions.id })
-        .from(formSubmissions)
+    const { applications, formSubmissions } = await import('@/db/schema');
+    const { eq } = await import('drizzle-orm');
+    const rows = await db.select({ applicationId: applications.id, submissionId: applications.submissionId })
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
         .where(where)
-        .all() as Array<{ id: string }>;
-    return rows.map(r => ({ submissionId: r.id }));
+        .all() as Array<{ applicationId: string; submissionId: string }>;
+    return rows.map(r => ({ submissionId: r.submissionId, applicationId: r.applicationId }));
 }
 
-/**
- * The full, enriched applicant list for one animal within `teamEmails` (the
- * animal OWNER's team). The caller has already authorized the viewer.
- *
- * D1-safe: per-row enrichment uses Promise.all with one `eq(id)` each
- * (per CLAUDE.md, no `inArray`).
- */
-export async function loadApplicantsForAnimal(
-    db: Db,
-    animal: { id: string; adopterId: string | null },
-    teamEmails: readonly string[],
-    /** Who is looking: the housemate chips are read as this viewer's search card reads them. */
-    viewerEmail: string | null | undefined,
-): Promise<ApplicantSummary[]> {
-    const animalId = animal.id;
-    const where = applicantScopeWhere(animalId, teamEmails);
-    if (!where) {
-        logger.warn('loadApplicantsForAnimal: empty team scope — failing closed', { animalId });
-        return [];
-    }
+type ApplicationRow = {
+    applicationId: string; origin: string; askedAnimalId: string | null; animalId: string | null;
+    proposedApplicationId: string | null; replacedByApplicationId: string | null;
+    state: string; closeReason: string | null; closedAt: number | null;
+    id: string; name: string;
+    email: string | null; phone: string | null; address: string | null;
+    selfieUrl: string | null; photoKeys: string | null; latitude: string | null; longitude: string | null;
+    intent: string | null; species: string | null; lifeStage: string | null;
+    household: string | null; answersJson: string | null;
+    linkedAdopterId: string | null; autoAdopterId: string | null; createdAt: Date | null;
+};
 
-    const { formSubmissions, adopters, adoptions, contractInvitations, adopterFlags } = await import('@/db/schema');
-    const { eq, and, isNull } = await import('drizzle-orm');
-
-    const rows = await db.select({
+/** The application columns every list reads, joined to its form (the scope already drops «replaced» rows). */
+async function selectApplicationRows(db: Db, where: unknown): Promise<ApplicationRow[]> {
+    const { applications, formSubmissions } = await import('@/db/schema');
+    const { eq } = await import('drizzle-orm');
+    return await db.select({
+        applicationId: applications.id,
+        origin: applications.origin,
+        askedAnimalId: applications.askedAnimalId,
+        animalId: applications.animalId,
+        proposedApplicationId: applications.proposedApplicationId,
+        replacedByApplicationId: applications.replacedByApplicationId,
+        state: applications.state,
+        closeReason: applications.closeReason,
+        closedAt: applications.closedAt,
         id: formSubmissions.id,
         name: formSubmissions.name,
         email: formSubmissions.email,
@@ -191,20 +178,68 @@ export async function loadApplicantsForAnimal(
         household: formSubmissions.household,
         answersJson: formSubmissions.answersJson,
         linkedAdopterId: formSubmissions.linkedAdopterId,
+        autoAdopterId: formSubmissions.autoAdopterId,
         createdAt: formSubmissions.createdAt,
     })
-        .from(formSubmissions)
-        .where(where)
-        .all() as Array<{
-            id: string; name: string;
-            email: string | null; phone: string | null; address: string | null;
-            selfieUrl: string | null; photoKeys: string | null; latitude: string | null; longitude: string | null;
-            intent: string | null; species: string | null; lifeStage: string | null;
-            household: string | null; answersJson: string | null;
-            linkedAdopterId: string | null; createdAt: Date | null;
-        }>;
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .where(where as never)
+        .all() as ApplicationRow[];
+}
 
+type EnrichCtx = { op: string; animalId: string | null; teamEmails: readonly string[]; viewerEmail: string | null | undefined };
+
+/**
+ * The full, enriched applicant list for one animal within `teamEmails` (the
+ * animal OWNER's team): to evaluate first, then contract sent, then outcomes.
+ * The caller has already authorized the viewer.
+ */
+export async function loadApplicantsForAnimal(
+    db: Db,
+    animal: { id: string; adopterId: string | null },
+    teamEmails: readonly string[],
+    /** Who is looking: the housemate chips are read as this viewer's search card reads them. */
+    viewerEmail: string | null | undefined,
+): Promise<ApplicantSummary[]> {
+    const where = applicantScopeWhere(animal.id, teamEmails);
+    if (!where) {
+        logger.warn('loadApplicantsForAnimal: empty team scope — failing closed', { animalId: animal.id });
+        return [];
+    }
+    await healMissingApplications(db, teamEmails);
+    const rows = await selectApplicationRows(db, where);
+    return panelOrder(await enrichApplicantRows(db, rows, { op: 'loadApplicantsForAnimal', animalId: animal.id, teamEmails, viewerEmail }));
+}
+
+/**
+ * The viewer's team's general applications (forms with no animal, or for an
+ * animal that was already adopted), enriched like an animal's list.
+ */
+export async function loadGeneralApplications(
+    db: Db,
+    teamEmails: readonly string[],
+    viewerEmail: string | null | undefined,
+): Promise<ApplicantSummary[]> {
+    const where = generalScopeWhere(teamEmails);
+    if (!where) {
+        logger.warn('loadGeneralApplications: empty team scope — failing closed', { viewer: viewerEmail ?? null });
+        return [];
+    }
+    await healMissingApplications(db, teamEmails);
+    const rows = await selectApplicationRows(db, where);
+    return panelOrder(await enrichApplicantRows(db, rows, { op: 'loadGeneralApplications', animalId: null, teamEmails, viewerEmail }));
+}
+
+/**
+ * Per-row enrichment shared by both lists. D1-safe — no inArray: each linked
+ * adopter gets parallel lookups, and an animal row one invitations read.
+ */
+async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCtx): Promise<ApplicantSummary[]> {
     if (rows.length === 0) return [];
+    const { adopters, adoptions, applications, contractInvitations, adopterFlags } = await import('@/db/schema');
+    const { eq, and } = await import('drizzle-orm');
+    const { animalId, viewerEmail } = ctx;
+    const nowSec = Math.floor(Date.now() / 1000);
 
     const parseHousehold = (raw: string | null): string[] | null => {
         if (!raw) return null;
@@ -232,18 +267,26 @@ export async function loadApplicantsForAnimal(
         let requestCount = 0;
         let flags: AdopterFlags | null = null;
         let adopterContext: ApplicantAdopterContext | null = null;
+        // The profile the form sits on, when it is LIVE: a soft-deleted or missing one reads as unlinked (no
+        // to-do — `isToDo`), as the counts' `openOnProfile` reads it (applicationCounts.ts).
+        let profileId: string | null = null;
 
+        type LinkedRecord = { rating: number | null; recordType: string | null; date: Date | number | null; addedBy: string | null; identityVerified: number | null; deliveredToHome: number | null; verifiedAddress: string | null };
+        let records: LinkedRecord[] = [];
+        let flagRows: Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }> = [];
         if (row.linkedAdopterId) {
-            const [adopter, records, flagRows] = await Promise.all([
+            let adopter: { name: string; addedBy: string | null; source: string | null; country: string | null; deletedAt: unknown } | undefined;
+            [adopter, records, flagRows] = await Promise.all([
                 db.select({
                     name: adopters.name,
                     addedBy: adopters.addedBy,
                     source: adopters.source,
                     country: adopters.country,
+                    deletedAt: adopters.deletedAt,
                 })
                     .from(adopters)
                     .where(eq(adopters.id, row.linkedAdopterId))
-                    .get() as Promise<{ name: string; addedBy: string | null; source: string | null; country: string | null } | undefined>,
+                    .get() as Promise<{ name: string; addedBy: string | null; source: string | null; country: string | null; deletedAt: unknown } | undefined>,
                 db.select({ rating: adoptions.rating, recordType: adoptions.recordType, date: adoptions.date, addedBy: adoptions.addedBy, identityVerified: adoptions.identityVerified, deliveredToHome: adoptions.deliveredToHome, verifiedAddress: adoptions.verifiedAddress })
                     .from(adoptions)
                     .where(eq(adoptions.adopterId, row.linkedAdopterId))
@@ -253,7 +296,8 @@ export async function loadApplicantsForAnimal(
                     .where(eq(adopterFlags.adopterId, row.linkedAdopterId))
                     .all() as Promise<Array<{ reason: string | null; targetAdopterId: string | null; details: string | null }>>,
             ]);
-            if (adopter) {
+            if (adopter && !adopter.deletedAt) {
+                profileId = row.linkedAdopterId;
                 adopterName = adopter.name;
                 adopterContext = {
                     addedBy: adopter.addedBy,
@@ -262,6 +306,8 @@ export async function loadApplicantsForAnimal(
                     country: adopter.country,
                 };
             }
+        }
+        if (profileId) {
             adopterRating = computeAvgRating(records);
             for (const r of records) {
                 if (r.recordType === 'adoption') adoptionCount++;
@@ -272,36 +318,86 @@ export async function loadApplicantsForAnimal(
             // surfaces flag pills, not the system-duplicate badge). If we ever
             // surface it, add a third parallel query above.
             // The period alerts are filled in below, once per list (P2), and only when read.
-            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: row.linkedAdopterId!, ...f })), 0, records), ...NO_PERIOD_ALERTS };
-            recordsByAdopter.set(row.linkedAdopterId, records);
+            flags = { ...buildFlags(flagRows.map(f => ({ adopterId: profileId!, ...f })), 0, records), ...NO_PERIOD_ALERTS };
+            recordsByAdopter.set(profileId, records);
         }
 
-        // Already signed? — the animal is adopted by this specific adopter.
-        const isSigned = !!(animal.adopterId && row.linkedAdopterId && animal.adopterId === row.linkedAdopterId);
-
-        // Outstanding invitation? — exists in contract_invitations for this animal+adopter
-        // and has not been used yet.
-        let hasInvite = false;
-        if (row.linkedAdopterId && !isSigned) {
-            const inv = await db.select({ token: contractInvitations.token })
+        // Every invitation of this animal + adopter: the status (contract sent / retired link) reads them.
+        let invitations: InvitationLike[] = [];
+        if (row.animalId && profileId) {
+            invitations = await db.select({
+                createdAt: contractInvitations.createdAt,
+                expiresAt: contractInvitations.expiresAt,
+                usedAt: contractInvitations.usedAt,
+            })
                 .from(contractInvitations)
-                .where(and(
-                    eq(contractInvitations.animalId, animalId),
-                    eq(contractInvitations.adopterId, row.linkedAdopterId),
-                    isNull(contractInvitations.usedAt),
-                ))
-                .get();
-            hasInvite = !!inv;
+                .where(and(eq(contractInvitations.animalId, row.animalId), eq(contractInvitations.adopterId, profileId)))
+                .all() as InvitationLike[];
+        }
+        const status = applicationStatus(
+            { state: row.state as ApplicationState, closeReason: row.closeReason as ApplicationCloseReason | null, closedAt: row.closedAt },
+            invitations, nowSec,
+        );
+
+        // «Pidió a …» / «Propuesta para …» / «También pidió a …»: only an animal of the viewer's team is named.
+        // `allowUnnamed`: a proposal's animal is the team's own by construction (proposeAnimal gates it) —
+        // an unnamed one is still returned (blank name; the panel says «Sin nombre»), never another team's.
+        const teamAnimal = async (animalId: string, what: string, opts: { allowUnnamed?: boolean } = {}): Promise<ApplicantSummary['askedAnimal']> => {
+            try {
+                const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy })
+                    .from(adoptions)
+                    .where(eq(adoptions.id, animalId))
+                    .get() as { id: string; name: string | null; sex: string | null; owner: string | null } | undefined;
+                if (!a) return null;
+                if (opts.allowUnnamed && !a.name?.trim()) {
+                    return a.owner && isInTeamScope(a.owner, normalizeTeamScope(ctx.teamEmails)) ? { id: a.id, name: '', sex: a.sex } : null;
+                }
+                const visible = teammateVisibleAnimal({ id: a.id, name: a.name, owner: a.owner }, ctx.teamEmails);
+                return visible ? { id: visible.id, name: visible.name, sex: a.sex } : null;
+            } catch (e) {
+                logger.warn(`${ctx.op}: ${what} lookup fallback`, {
+                    applicationId: row.applicationId, animalId, error: e instanceof Error ? e.message : String(e),
+                });
+                return null;
+            }
+        };
+        const askedAnimal = row.origin === APPLICATION_ORIGINS.ADOPTED_ANIMAL && row.askedAnimalId
+            ? await teamAnimal(row.askedAnimalId, 'asked-animal')
+            : null;
+        // The application a general one led to: the proposal, or the same person's application for an animal.
+        const ledTo = row.state === APPLICATION_STATES.PROPOSED ? row.proposedApplicationId
+            : row.state === APPLICATION_STATES.ALSO_APPLIED ? row.replacedByApplicationId
+                : null;
+        let outcomeAnimal: ApplicantSummary['outcomeAnimal'] = null;
+        if (ledTo) {
+            try {
+                const target = await db.select({ animalId: applications.animalId })
+                    .from(applications)
+                    .where(eq(applications.id, ledTo))
+                    .get() as { animalId: string | null } | undefined;
+                if (target?.animalId) outcomeAnimal = await teamAnimal(target.animalId, 'outcome-animal', { allowUnnamed: row.state === APPLICATION_STATES.PROPOSED });
+            } catch (e) {
+                logger.warn(`${ctx.op}: outcome-animal lookup fallback`, {
+                    applicationId: row.applicationId, ledTo, error: e instanceof Error ? e.message : String(e),
+                });
+            }
         }
 
         return {
+            applicationId: row.applicationId,
+            origin: row.origin as ApplicantSummary['origin'],
+            status,
+            askedAnimal,
+            outcomeAnimal,
             submissionId: row.id,
-            adopterId: row.linkedAdopterId,
+            adopterId: profileId,
             adopterName,
             adopterRating,
+            profileFromThisForm: !!row.linkedAdopterId && row.linkedAdopterId === row.autoAdopterId,
             appliedAt: row.createdAt ? Math.floor(row.createdAt.getTime() / 1000) : null,
-            hasInvite,
-            isSigned,
+            hasInvite: status.kind === 'contract_sent',
+            // A foster holder's own application is not «Firmado»: only the adopter's adopted application is.
+            isSigned: status.kind === 'adopted',
             flags,
             alertsChecked: false,
             housemateAlert: NO_HOUSEMATE_ALERT,
@@ -334,7 +430,7 @@ export async function loadApplicantsForAnimal(
     if (linkedIds.length > 0) {
         const alertsCtx = { animalId, viewer: viewerEmail ?? null, applicants: linkedIds.length };
         const warnFailed = (half: string) => (e: unknown) => {
-            logger.warn(`loadApplicantsForAnimal: ${half} alerts lookup failed, the panel claims no «Sin alertas»`, {
+            logger.warn(`${ctx.op}: ${half} alerts lookup failed, the panel claims no «Sin alertas»`, {
                 ...alertsCtx, error: e instanceof Error ? e.message : String(e),
             });
             return null;
@@ -345,7 +441,7 @@ export async function loadApplicantsForAnimal(
                 const [{ getAdoptionConfig }, { loadRescueKeys, withRescueKeys }] = await Promise.all([import('./config'), import('@/lib/rescueKeys')]);
                 const [config, keys] = await Promise.all([
                     getAdoptionConfig({ strict: true }),
-                    needKeys ? loadRescueKeys(db, 'loadApplicantsForAnimal') : Promise.resolve(new Map<string, string>()),
+                    needKeys ? loadRescueKeys(db, ctx.op) : Promise.resolve(new Map<string, string>()),
                 ]);
                 return (adopterId: string) => periodAlerts(withRescueKeys(recordsByAdopter.get(adopterId) ?? [], keys), config);
             })().catch(warnFailed('period')),
@@ -377,14 +473,12 @@ export async function loadApplicantsForAnimal(
             }
         } catch (e) {
             // Names degrade to the email handle at render; never lose the list.
-            logger.warn('getApplicantsForAnimal: addedBy name lookup fallback', {
+            logger.warn(`${ctx.op}: addedBy name lookup fallback`, {
                 animalId, count: addedByEmails.length,
                 error: e instanceof Error ? e.message : String(e),
             });
         }
     }
 
-    // Newest first.
-    enriched.sort((a, b) => (b.appliedAt ?? 0) - (a.appliedAt ?? 0));
     return enriched;
 }

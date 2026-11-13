@@ -14,16 +14,24 @@ vi.mock('@/lib/teamChangeAudience', async (orig) => {
     } };
 });
 
-import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom } from './settings';
+// saveFollowupSettings uses the raw D1 binding: a D1-shaped shim over the same sqlite.
+vi.mock('@/lib/requestContext', () => ({
+    getRequestContext: () => ({ env: { DB: { prepare: (q: string) => ({ bind: (...a: unknown[]) => ({
+        first: async () => sqlite.prepare(q).get(...a) ?? null,
+        run: async () => sqlite.prepare(q).run(...a),
+    }) }) } } }),
+}));
+
+import { getEmailPrefs, saveEmailPref, saveProfileChangesFrom, saveFollowupSettings } from './settings';
 
 type Sqlite = { prepare: (s: string) => { get: (...a: unknown[]) => Record<string, unknown> | undefined; run: (...a: unknown[]) => unknown } };
 let sqlite: Sqlite;
 
 const storedPrefs = () =>
     (sqlite.prepare(`SELECT email_prefs AS p FROM user_profiles WHERE user_id = 'u1'`).get() as { p: string | null } | undefined)?.p;
-const addKey = (id: string, revoked: boolean) =>
-    sqlite.prepare(`INSERT INTO api_keys (id, owner_email, name, key_hash, key_prefix, scopes, created_by, revoked_at)
-        VALUES (?, ?, 'k', ?, 'p', '[]', ?, ?)`).run(id, OWNER, `hash-${id}`, OWNER, revoked ? 1000 : null);
+const storedFollowups = () =>
+    (sqlite.prepare(`SELECT followup_settings AS f FROM user_profiles WHERE user_id = 'u1'`).get() as { f: string | null } | undefined)?.f;
+const DEFAULTS = { prefs: {}, followupEmail: false, animalsScope: 'team', profileChangesFrom: 'outside' };
 
 beforeEach(() => {
     const m = migratedDb();
@@ -34,15 +42,15 @@ beforeEach(() => {
     sqlite.prepare(`INSERT INTO user (id, email) VALUES ('u1', ?)`).run(OWNER);
 });
 
-describe('email prefs actions', () => {
-    it('no profile row: empty prefs, no api key', async () => {
-        expect(await getEmailPrefs()).toEqual({ prefs: {}, hasApiKey: false, profileChangesFrom: 'outside' });
+describe('«Avisos» actions', () => {
+    it('no profile row: the defaults', async () => {
+        expect(await getEmailPrefs()).toEqual(DEFAULTS);
     });
 
     it('the choice unreadable: the email switches still show, the choice reads as the default (review M6)', async () => {
-        await saveEmailPref('forms', false);
+        await saveEmailPref('form', false);
         fromFails.on = true;
-        expect(await getEmailPrefs()).toEqual({ prefs: { forms: false }, hasApiKey: false, profileChangesFrom: 'outside' });
+        expect(await getEmailPrefs()).toEqual({ ...DEFAULTS, prefs: { form: false } });
     });
 
     it('signed out: null', async () => {
@@ -50,43 +58,58 @@ describe('email prefs actions', () => {
         expect(await getEmailPrefs()).toBeNull();
     });
 
-    it('saves a switch and keeps earlier ones', async () => {
-        expect(await saveEmailPref('forms', false)).toEqual({ success: true });
-        expect((await getEmailPrefs())?.prefs.forms).toBe(false);
-        expect((await saveEmailPref('merges', false)).success).toBe(true);
-        expect((await getEmailPrefs())?.prefs).toEqual({ forms: false, merges: false });
-        expect((await saveEmailPref('forms', true)).success).toBe(true);
-        expect((await getEmailPrefs())?.prefs).toEqual({ forms: true, merges: false });
+    it('saves a row switch and keeps earlier ones', async () => {
+        expect(await saveEmailPref('form', false)).toEqual({ success: true });
+        expect((await getEmailPrefs())?.prefs.form).toBe(false);
+        expect((await saveEmailPref('duplicates', true)).success).toBe(true);
+        expect((await getEmailPrefs())?.prefs).toEqual({ form: false, duplicates: true });
+        expect((await saveEmailPref('form', true)).success).toBe(true);
+        expect((await getEmailPrefs())?.prefs).toEqual({ form: true, duplicates: true });
     });
 
-    it('refuses the always-on category and unknown values', async () => {
-        const r = await saveEmailPref('requests', false);
-        expect(r.success).toBe(false);
-        expect(r.errorId).toBeTruthy();
-        expect((await saveEmailPref('bogus' as never, false)).success).toBe(false);
-        expect((await saveEmailPref('forms', 'no' as never)).success).toBe(false);
+    it('refuses the «Siempre» rows, old categories and unknown values', async () => {
+        for (const bad of ['merge_request', 'pii_request', 'pair_message', 'forms', 'requests', 'bogus']) {
+            const r = await saveEmailPref(bad as never, false);
+            expect(r.success, bad).toBe(false);
+            expect(r.errorId).toBeTruthy();
+        }
+        expect((await saveEmailPref('form', 'no' as never)).success).toBe(false);
         expect(storedPrefs()).toBeUndefined();
     });
 
-    it('revoked key: hasApiKey false; live key: true', async () => {
-        addKey('k1', true);
-        expect((await getEmailPrefs())?.hasApiKey).toBe(false);
-        addKey('k2', false);
-        expect((await getEmailPrefs())?.hasApiKey).toBe(true);
+    it("«Toca un control de seguimiento» writes followup_settings.emailReminders, keeping the schedule", async () => {
+        sqlite.prepare(`INSERT INTO user_profiles (user_id, followup_settings) VALUES ('u1', '{"version":1,"checkins":[{"offsetDays":10}],"messages":{"neuter":"Hola"}}')`).run();
+        expect(await saveEmailPref('followups', true)).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual({ version: 1, checkins: [{ offsetDays: 10 }], messages: { neuter: 'Hola' }, emailReminders: true });
+        expect((await getEmailPrefs())?.followupEmail).toBe(true);
+        expect(await saveEmailPref('followups', false)).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual({ version: 1, checkins: [{ offsetDays: 10 }], messages: { neuter: 'Hola' } });
+        expect((await getEmailPrefs())?.followupEmail).toBe(false);
+        // The row switches are a different column: untouched.
+        expect(storedPrefs()).toBeNull();
+    });
+
+    it('«Formularios, contratos y controles de:»: animals_mine true = «Mis animales», false = the whole team', async () => {
+        expect(await saveEmailPref('animals_mine', true)).toEqual({ success: true });
+        expect((await getEmailPrefs())?.animalsScope).toBe('mine');
+        expect(await saveEmailPref('animals_mine', false)).toEqual({ success: true });
+        expect((await getEmailPrefs())?.animalsScope).toBe('team');
     });
 
     it('malformed stored JSON reads as {} and the save overwrites it cleanly', async () => {
         sqlite.prepare(`INSERT INTO user_profiles (user_id, email_prefs) VALUES ('u1', '{not json')`).run();
         expect((await getEmailPrefs())?.prefs).toEqual({});
-        expect((await saveEmailPref('other', false)).success).toBe(true);
-        expect(JSON.parse(storedPrefs()!)).toEqual({ other: false });
+        expect((await saveEmailPref('group', true)).success).toBe(true);
+        expect(JSON.parse(storedPrefs()!)).toEqual({ group: true });
     });
 
     it('save for a user with no user row fails with an errorId', async () => {
         session.user = 'ghost@example.com';
-        const r = await saveEmailPref('forms', false);
-        expect(r.success).toBe(false);
-        expect(r.errorId).toBeTruthy();
+        for (const key of ['form', 'followups', 'animals_mine'] as const) {
+            const r = await saveEmailPref(key, false);
+            expect(r.success, key).toBe(false);
+            expect(r.errorId).toBeTruthy();
+        }
     });
 });
 
@@ -95,18 +118,18 @@ const storedFrom = () =>
 
 describe('«Avisame de cambios hechos por:» (saveProfileChangesFrom)', () => {
     it("saves «… y mi equipo» and back; getEmailPrefs returns it; the email switches are untouched", async () => {
-        await saveEmailPref('forms', false);
+        await saveEmailPref('form', false);
         expect(await saveProfileChangesFrom('team')).toEqual({ success: true });
         expect(storedFrom()).toBe('team');
-        expect(await getEmailPrefs()).toMatchObject({ profileChangesFrom: 'team', prefs: { forms: false } });
+        expect(await getEmailPrefs()).toMatchObject({ profileChangesFrom: 'team', prefs: { form: false } });
         expect(await saveProfileChangesFrom('outside')).toEqual({ success: true });
         expect((await getEmailPrefs())?.profileChangesFrom).toBe('outside');
     });
 
-    it('works while the «Cambios en tus perfiles» email switch is off (the choice is the bell too)', async () => {
-        await saveEmailPref('profile_changes', false);
+    it('works whatever the profile-change rows\' email switches say (the choice is the bell too)', async () => {
+        await saveEmailPref('content', false);
         expect(await saveProfileChangesFrom('team')).toEqual({ success: true });
-        expect(await getEmailPrefs()).toMatchObject({ profileChangesFrom: 'team', prefs: { profile_changes: false } });
+        expect(await getEmailPrefs()).toMatchObject({ profileChangesFrom: 'team', prefs: { content: false } });
     });
 
     it('refuses anything but outside|team, with an errorId; nothing stored', async () => {
@@ -123,5 +146,25 @@ describe('«Avisame de cambios hechos por:» (saveProfileChangesFrom)', () => {
         expect(await saveProfileChangesFrom('team')).toMatchObject({ success: false, errorId: expect.any(String) });
         session.user = 'ghost@example.com';
         expect(await saveProfileChangesFrom('team')).toMatchObject({ success: false, errorId: expect.any(String) });
+    });
+});
+
+describe('«Guardar» in Seguimientos keeps the check-up email (one place: Avisos, CX review I5)', () => {
+    const schedule = { version: 1 as const, checkins: [{ offsetDays: 10 }], fosterIntervalDays: 21 };
+    it('switched on in Avisos, then a schedule saved with a stale false: still on, schedule saved', async () => {
+        expect(await saveEmailPref('followups', true)).toEqual({ success: true });
+        expect(await saveFollowupSettings({ ...schedule, emailReminders: false })).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual({ ...schedule, emailReminders: true });
+        expect((await getEmailPrefs())?.followupEmail).toBe(true);
+    });
+    it('off in Avisos: a screen sending true does not switch it on', async () => {
+        expect(await saveFollowupSettings({ ...schedule, emailReminders: true })).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual(schedule);
+        expect((await getEmailPrefs())?.followupEmail).toBe(false);
+    });
+    it('«Restaurar» (null) keeps it on', async () => {
+        await saveEmailPref('followups', true);
+        expect(await saveFollowupSettings(null)).toEqual({ success: true });
+        expect(JSON.parse(storedFollowups()!)).toEqual({ version: 1, emailReminders: true });
     });
 });

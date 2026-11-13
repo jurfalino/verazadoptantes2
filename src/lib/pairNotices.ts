@@ -16,7 +16,8 @@ import { logger } from '@/lib/logger';
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 /** Every notice type about a pair (merge requests carry primaryId/secondaryId; flags adopterId/targetAdopterId). */
-export const PAIR_NOTICE_TYPES = ['merge_request', 'duplicate_flagged', 'merge_request_resolved'] as const;
+/** `same_person_question` («No sé» asked the other side) carries primaryId/secondaryId too: answering clears it. */
+export const PAIR_NOTICE_TYPES = ['merge_request', 'duplicate_flagged', 'merge_request_resolved', 'same_person_question'] as const;
 export type PairNoticeType = typeof PAIR_NOTICE_TYPES[number];
 
 // CASE, not `json_valid(...) AND …`: SQLite doesn't promise to test json_valid first, and json_extract raises on invalid JSON.
@@ -75,6 +76,26 @@ export async function clearPairNotices(db: Db, a: string, b: string, opts: {
         logger.warn('clearPairNotices: pair notices left unread', {
             ...opts.ctx, primaryId: a, secondaryId: b, types: opts.types.join(','), userId: opts.userId,
             error: e instanceof Error ? e.message : String(e),
+        });
+    }
+}
+
+/**
+ * The reverse of clearPairNotices for one question type: a «No sé» withdrawn and answered again the same
+ * day puts the existing question back as unread (no second notice or email). Best-effort, logged.
+ */
+export async function reopenPairNotices(db: Db, a: string, b: string, opts: {
+    types: readonly PairNoticeType[];
+    ctx?: Record<string, unknown>;
+}): Promise<void> {
+    if (!a || !b || a === b || opts.types.length === 0) return;
+    try {
+        await db.update(notifications)
+            .set({ read: 0 })
+            .where(and(eq(notifications.read, 1), or(...opts.types.map(t => eq(notifications.type, t)))!, aboutPair(a, b)));
+    } catch (e) {
+        logger.warn('reopenPairNotices: question left read', {
+            ...opts.ctx, primaryId: a, secondaryId: b, types: opts.types.join(','), error: e instanceof Error ? e.message : String(e),
         });
     }
 }

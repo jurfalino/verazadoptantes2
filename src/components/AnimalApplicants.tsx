@@ -11,15 +11,17 @@
  * computed URL instead of building one from a contract base + animalId.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Home, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { createContractInvitation } from '@/app/actions/contract';
+import { getApplicantsForAnimal } from '@/app/actions/applicants';
+import { applicantsOrThrow } from '@/lib/applicantsLoad';
 import { zarazTrack } from '@/lib/zaraz';
-import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
+import ApplicantDetailPanel, { sendOutcome } from '@/components/ApplicantDetailPanel';
 import { AdopterName } from '@/components/AdopterName';
 import { FlagSummary } from '@/components/AlertPill';
 import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
@@ -32,7 +34,8 @@ import { adopterDisplayName } from '@/lib/adopterDisplay';
 
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import { formatShortDate } from '@/lib/dates';
-import { useTimezone } from '@/context/TimezoneContext';
+import { useDateFormat, useTimezone } from '@/context/TimezoneContext';
+import { statusLineText } from '@/components/evaluation/ApplicationStatusLine';
 import { RatingBadge } from '@/components/RatingBadge';
 export type ApplicantRow = ApplicantSummary;
 
@@ -190,16 +193,69 @@ function MiniShareModal({
     );
 }
 
+/**
+ * The row's own action: «Enviar contrato» / «Reenviar» only while the application is still being
+ * decided (to evaluate, or a live contract). An outcome reads as its status line instead — a
+ * declined or closed candidate must not get a fresh link («No avanzar» just voided theirs).
+ */
+export function ApplicantRowAction({ applicant: a, animal, busy, onSend }: {
+    applicant: ApplicantRow;
+    animal: { id: string; name: string; sex: string | null };
+    busy: boolean;
+    onSend: () => void;
+}) {
+    const { t } = useLanguage();
+    const { formatShortDate } = useDateFormat();
+    if (a.isSigned) {
+        return <span className="text-[11px] px-2 py-1 rounded-lg bg-teal-100 text-teal-800 font-semibold">✓ {t('myAnimals.applicants_signed') || 'Firmado'}</span>;
+    }
+    if (a.status.kind !== 'to_evaluate' && a.status.kind !== 'contract_sent') {
+        const line = statusLineText(a.status, { animal, outcomeAnimal: a.outcomeAnimal }, t, formatShortDate);
+        return line ? <span className="block max-w-[10rem] text-right text-[11px] text-stone-500 [overflow-wrap:anywhere]" data-testid="applicant-row-outcome">{line}</span> : null;
+    }
+    if (!a.adopterId) {
+        return (
+            <Link
+                href={`/form-results/${a.submissionId}?from=animal:${encodeURIComponent(animal.id)}`}
+                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 transition-colors inline-block"
+                title={t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.'}
+            >
+                {t('myAnimals.applicants_view_form') || 'Ver formulario'}
+            </Link>
+        );
+    }
+    return (
+        <button
+            type="button"
+            onClick={onSend}
+            disabled={busy}
+            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
+        >
+            {busy
+                ? (t('common.processing') || '...')
+                : a.hasInvite
+                    ? (t('myAnimals.applicants_resend') || 'Reenviar')
+                    : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
+        </button>
+    );
+}
+
 export default function AnimalApplicants({
     animalId,
     animalName,
-    applicants,
+    animalSex = null,
+    applicants: initialApplicants,
 }: {
     animalId: string;
     animalName: string;
+    /** For the sex-agreeing lines of the panel («Cerrada: Luna fue adoptada…»). */
+    animalSex?: string | null;
     applicants: ApplicantRow[];
 }) {
     const { t, locale } = useLanguage();
+    // Re-read after an outcome in the panel, so the list under it is not stale.
+    const [applicants, setApplicants] = useState(initialApplicants);
+    useEffect(() => { setApplicants(initialApplicants); }, [initialApplicants]);
     const timeZone = useTimezone();
     const toast = useShowToast();
     const [expanded, setExpanded] = useState(false);
@@ -218,11 +274,22 @@ export default function AnimalApplicants({
         setBusySubmissionId(applicant.submissionId);
         try {
             const result = await createContractInvitation(animalId, applicant.adopterId, locale);
-            if (result.success && result.url) {
+            const next = sendOutcome(result);
+            if (next === 'share' && result.url) {
                 zarazTrack('contract_issued', { surface: 'applicants_list' });
                 setShareUrl({ url: result.url, adopterName: applicant.adopterName });
+            } else if (next === 'refresh') {
+                // Decided meanwhile (a teammate): re-read, so the row shows its outcome instead of the button.
+                // A failed re-read throws with its errorId (the catch below toasts it).
+                const fresh = applicantsOrThrow(await getApplicantsForAnimal(animalId), 'AnimalApplicants: re-read');
+                if (fresh.length > 0) setApplicants(fresh);
+            } else if (next === 'same_person') {
+                // «¿Es la misma persona?» first (Jon 2026-11-12): open this person's evaluation, where the question is.
+                toast.info(t('samePerson.question'), t('samePerson.gate_refused'));
+                const idx = applicants.findIndex(a => a.submissionId === applicant.submissionId);
+                if (idx !== -1) setPanelIndex(idx);
             } else {
-                const message = result.error === 'not_allowed'
+                const message = next === 'not_allowed'
                     ? (t('errors.contract_invite_not_allowed') || 'You can only send the contract to someone who applied for this animal.')
                     : (t('errors.contract_invite_failed') || 'Could not issue invitation');
                 toast.error(t('errors.generic') || 'Error', message, result.errorId ?? resolveErrorId(new Error(`createContractInvitation: ${result.error}`), 'AnimalApplicants'));
@@ -296,30 +363,12 @@ export default function AnimalApplicants({
                                         )}
                                     </div>
                                     <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-                                        {a.isSigned ? (
-                                            <span className="text-[11px] px-2 py-1 rounded-lg bg-teal-100 text-teal-800 font-semibold">✓ {t('myAnimals.applicants_signed') || 'Firmado'}</span>
-                                        ) : !a.adopterId ? (
-                                            <Link
-                                                href={`/form-results/${a.submissionId}?from=animal:${encodeURIComponent(animalId)}`}
-                                                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-stone-100 text-stone-700 hover:bg-stone-200 transition-colors inline-block"
-                                                title={t('myAnimals.applicants_no_adopter') || 'This applicant has no linked adopter yet.'}
-                                            >
-                                                {t('myAnimals.applicants_view_form') || 'Ver formulario'}
-                                            </Link>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleSend(a)}
-                                                disabled={busySubmissionId === a.submissionId}
-                                                className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50 transition-colors"
-                                            >
-                                                {busySubmissionId === a.submissionId
-                                                    ? (t('common.processing') || '...')
-                                                    : a.hasInvite
-                                                        ? (t('myAnimals.applicants_resend') || 'Reenviar')
-                                                        : (t('myAnimals.applicants_send_contract') || 'Enviar contrato')}
-                                            </button>
-                                        )}
+                                        <ApplicantRowAction
+                                            applicant={a}
+                                            animal={{ id: animalId, name: animalName, sex: animalSex }}
+                                            busy={busySubmissionId === a.submissionId}
+                                            onSend={() => handleSend(a)}
+                                        />
                                     </div>
                                 </li>
                             );
@@ -339,9 +388,15 @@ export default function AnimalApplicants({
                 <ApplicantDetailPanel
                     applicants={applicants}
                     initialIndex={panelIndex}
-                    animalId={animalId}
-                    animalName={animalName}
+                    animal={{ id: animalId, name: animalName, sex: animalSex }}
                     onClose={() => setPanelIndex(null)}
+                    onOutcome={async () => {
+                        // A refusal is an empty list (close the panel); a failure throws with its errorId (the panel toasts it).
+                        const fresh = applicantsOrThrow(await getApplicantsForAnimal(animalId), 'AnimalApplicants: re-read');
+                        if (fresh.length === 0) return null;
+                        setApplicants(fresh);
+                        return fresh;
+                    }}
                 />
             )}
         </>

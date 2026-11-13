@@ -35,6 +35,8 @@ import { showableCount } from '@/domain/animalAccess';
 import { isSaveBusyError } from '@/domain/fieldCollab';
 import { FieldConflictNotice, UpdatedByBadge } from '@/components/collab/FieldConflictNotice';
 import { updatedByOtherMessage, needsReviewMessage } from '@/lib/collabCopy';
+import AnimalDeleteWarning from '@/components/evaluation/AnimalDeleteWarning';
+import { candidatesLostOnDelete } from '@/domain/applications';
 import DueNowBlock, { useDueSlotCopy } from '@/components/DueNowBlock';
 
 function placeholderFor(species: string | null): string {
@@ -44,9 +46,11 @@ function placeholderFor(species: string | null): string {
     return '/placeholders/paw.png';
 }
 
-export default function AnimalProfile({ profile, applicants, userId }: {
+export default function AnimalProfile({ profile, applicants, applicantsErrorId = null, userId }: {
     profile: AnimalProfileData;
     applicants: ApplicantSummary[];
+    /** The applicants read failed (logged with this id): say so where the list would be, never an empty silence. */
+    applicantsErrorId?: string | null;
     /** session user id (ShareFormMenu links). */
     userId: string;
 }) {
@@ -342,9 +346,14 @@ export default function AnimalProfile({ profile, applicants, userId }: {
             <DueNowBlock slots={dueSlots} placementId={activePlacement?.id} onRegister={registerSlot} anchorId="next-action" className="mt-4" />
 
             {/* applicants — only while the animal still needs a home */}
+            {seeking && applicantsErrorId && (
+                <p className="mt-4 text-sm text-stone-600" data-testid="animal-applicants-error">
+                    {t('homeModules.load_failed')} <span className="text-xs text-stone-500">({t('homeModules.error_code')}: {applicantsErrorId})</span>
+                </p>
+            )}
             {seeking && applicants.length > 0 && (
                 <div className="mt-4 bg-white rounded-2xl border border-stone-200 shadow-sm p-3" id="applicants">
-                    <AnimalApplicants animalId={animal.id} animalName={animal.name || 'Animal'} applicants={applicants} />
+                    <AnimalApplicants animalId={animal.id} animalName={animal.name || 'Animal'} animalSex={animal.sex ?? null} applicants={applicants} />
                 </div>
             )}
 
@@ -453,7 +462,8 @@ export default function AnimalProfile({ profile, applicants, userId }: {
                 <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !busy && setConfirmDelete(false)} role="presentation">
                     <div className="bg-white rounded-2xl border border-stone-200 shadow-xl w-full max-w-sm p-4" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
                         <h3 className="text-base font-bold text-stone-900 mb-1">{(t('animalProfile.delete_confirm_title') || '¿Eliminar a {name}?').replace('{name}', animal.name || '')}</h3>
-                        <p className="text-sm text-stone-600 mb-4">{t('animalProfile.delete_confirm_body') || 'Se borra el animal con toda su línea de vida: tenencias, eventos y fotos. Esta acción no se puede deshacer.'}</p>
+                        <p className="text-sm text-stone-600 mb-3">{t('animalProfile.delete_confirm_body') || 'Se borra el animal con toda su línea de vida: tenencias, eventos y fotos. Esta acción no se puede deshacer.'}</p>
+                        <AnimalDeleteWarning animalName={animal.name || ''} count={applicantsErrorId ? null : candidatesLostOnDelete(applicants)} />
                         <div className="flex gap-2">
                             <button
                                 type="button" onClick={handleDelete} disabled={busy}

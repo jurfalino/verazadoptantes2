@@ -225,7 +225,8 @@ test.describe('Pendientes de revisar (layout D)', () => {
             const message = rows(`SELECT metadata, body, url FROM notifications WHERE user_id = '${owner.email}' AND type = 'pair_message' AND metadata LIKE '%${requestId}%'`)[0];
             const meta = JSON.parse(String(message.metadata));
             expect(meta).toMatchObject({ requestId, replyTo: requester.email });
-            expect(String(message.url)).toBe('/my-adopters#pendientes');
+            // It opens the pair itself (CX review I3).
+            expect(String(message.url)).toBe(`/my-adopters?pair=${encodeURIComponent(pairKey(MINE, THEIRS))}#pendientes`);
 
             // ── «Quitar de la lista»: gone from her list, and only hers.
             await row.getByTestId('dedup-hide').click();

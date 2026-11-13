@@ -5,6 +5,7 @@
  */
 
 import type { ProjectedFollowup } from '../../../src/domain/followups';
+import { followupDigestLink } from '../../../src/domain/notificationTracking';
 
 /** Stable per-(placement, slot, recipient) dedup key stored in
  *  notifications.metadata — v2.55.18 notifies the WHOLE team, each member
@@ -84,9 +85,15 @@ export const EMAIL_DIGEST_MAX_ITEMS = 25;
  * points at /my-animals — the triage board whose «N pendientes» badges are
  * the list version of the same information. Pure: unit-testable, no Worker APIs.
  */
-export function buildFollowupEmail(items: FollowupEmailItem[], listUrl?: string): { subject: string; html: string; text: string } {
+/**
+ * `recipientUserId`: tags every link with whose email this is (u), so a click names the recipient.
+ * `settingsUrl`: where the footer's «Configuración → Avisos» links (/settings#avisos, the one place
+ * the check-up email is switched — CX review I5).
+ */
+export function buildFollowupEmail(items: FollowupEmailItem[], listUrl?: string, recipientUserId?: string, settingsUrl?: string): { subject: string; html: string; text: string } {
     const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const shown = items.slice(0, EMAIL_DIGEST_MAX_ITEMS);
+    // Every link is tagged so the landing reports `notification_email_clicked` (kind=follow_up_digest).
+    const shown = items.slice(0, EMAIL_DIGEST_MAX_ITEMS).map(i => ({ ...i, url: followupDigestLink(i.url, recipientUserId) }));
     const overflow = items.length - shown.length;
     const single = items.length === 1;
 
@@ -98,23 +105,25 @@ export function buildFollowupEmail(items: FollowupEmailItem[], listUrl?: string)
     const bodyHtml = single
         ? `  <p style="margin:0 0 20px;">${esc(shown[0].body)}</p>\n`
         : shown.map(i =>
-            `  <p style="margin:0 0 12px;"><a href="${i.url}" style="color:#0f766e;font-weight:700;text-decoration:none;">${esc(i.animalName || 'Animal')}</a> — ${esc(i.body)}</p>\n`
+            `  <p style="margin:0 0 12px;"><a href="${esc(i.url)}" style="color:#0f766e;font-weight:700;text-decoration:none;">${esc(i.animalName || 'Animal')}</a> — ${esc(i.body)}</p>\n`
         ).join('') + (overflow > 0 ? `  <p style="margin:0 0 12px;color:#57534e;">…y ${overflow} más.</p>\n` : '');
 
-    const ctaUrl = single ? shown[0].url : (listUrl || shown[0]?.url || '');
+    const ctaUrl = single ? shown[0].url : (listUrl ? followupDigestLink(listUrl, recipientUserId) : shown[0]?.url || '');
     const ctaLabel = single ? 'Ver en BuenAdoptante' : 'Ver mis animales';
+    const where = 'Configuración → Avisos';
+    const whereHtml = settingsUrl ? `<a href="${esc(settingsUrl)}" style="color:#57534e;">${where}</a>` : where;
 
     const html = `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;">
   <h2 style="color:#134e4a;margin:0 0 16px;">BuenAdoptante</h2>
   <p style="margin:0 0 8px;font-weight:700;">${esc(lead)}</p>
-${bodyHtml}  <p style="margin:0 0 20px;"><a href="${ctaUrl}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 24px;font-weight:700;">${ctaLabel}</a></p>
-  <p style="margin:0;font-size:13px;color:#57534e;">Recibís este correo porque activaste los recordatorios por e-mail en Configuración → Seguimientos. Podés desactivarlos ahí cuando quieras.</p>
+${bodyHtml}  <p style="margin:0 0 20px;"><a href="${esc(ctaUrl)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 24px;font-weight:700;">${ctaLabel}</a></p>
+  <p style="margin:0;font-size:13px;color:#57534e;">Recibís este correo porque activaste el email de los controles en ${whereHtml}. Podés desactivarlo ahí cuando quieras.</p>
 </div>`;
 
     const bodyText = single
         ? shown[0].body
         : shown.map(i => `- ${i.animalName || 'Animal'} — ${i.body}\n  ${i.url}`).join('\n')
             + (overflow > 0 ? `\n…y ${overflow} más.` : '');
-    const text = `${lead}\n\n${bodyText}\n\n${ctaUrl}\n\nRecibís este correo porque activaste los recordatorios por e-mail en Configuración → Seguimientos.`;
+    const text = `${lead}\n\n${bodyText}\n\n${ctaUrl}\n\nRecibís este correo porque activaste el email de los controles en ${where}${settingsUrl ? `: ${settingsUrl}` : ''}. Podés desactivarlo ahí cuando quieras.`;
     return { subject, html, text };
 }

@@ -1,7 +1,6 @@
 export const runtime = 'edge';
 
 import { selfieUrlColumn } from '@/lib/selfieLink';
-import type { OpenFlagKind } from '@/domain/flags';
 import { photoLinks } from '@/domain/formPhotos';
 import { redirect, notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
@@ -18,10 +17,8 @@ import { formBackLink } from '@/domain/formBackLink';
 import Link from 'next/link';
 import { formLinkKind } from '@/domain/formLink';
 import { computeAvgRating } from '@/domain/ratings';
-import { maskMatchCardsForViewer } from '@/lib/piiAccessServer';
-import { householdLinesFor, HOUSEHOLD_LINE_CARDS } from '@/lib/households';
-import { countsFor } from '@/lib/profileSummary';
-import { isMinor, type CardHousehold } from '@/domain/households';
+import { loadFormMatchCards } from '@/lib/formMatchCards';
+import type { FormResultMatchCardProps } from '@/components/FormResultMatchCard';
 
 interface MatchedAdopter {
     id: string;
@@ -197,44 +194,20 @@ export default async function FormResultsPage({ params, searchParams }: { params
     } else if (linkKind === 'unlinked') {
         matchList = (metadata.matchedAdopters ?? []).map(a => ({ ...a, candidateId: null, canAnswer: false }));
     }
-    const matchIds = matchList.map(a => a.id);
-    const profileIds = [...new Set([...matchIds, ...(linkedId ? [linkedId] : [])])];
-
-    type ProfileRow = {
-        id: string; name: string; contactInfo: string | null; contactEntries: string | null; addressInfo: string | null; status: string | null; profileImageUrl: string | null;
-        /** Final fix P2: «Menor de edad» and the household line, as on every card showing one person. */
-        isMinor?: boolean; households?: CardHousehold;
-        /** Their own standing on the match card (audit B6). */
-        rating?: number | null; openFlags?: OpenFlagKind[];
-    };
-    let matchedProfiles: ProfileRow[] = [];
+    // The match cards (profile reads, masking, households, standing) are the
+    // ones the applicant panel shows too (src/lib/formMatchCards.ts). The
+    // linked profile, for the banner, is usually one of them; else (the
+    // auto-created profile) it is read on its own, in the same wave.
+    let matchedProfiles: FormResultMatchCardProps['profile'][] = [];
     let linkedProfile: { id: string; name: string; profileImageUrl: string | null; avgRating: number | null } | null = null;
-    if (profileIds.length > 0) {
-        // OR-of-eq id filters, never `inArray`: D1 does NOT expand array params
-        // in IN clauses (it binds `IN (?)` with a single value and silently
-        // returns wrong results — see docs/D1_COMPATIBILITY.md).
-        const [rows, imageRows, linkedRatings] = await Promise.all([
-            db
-                .select({
-                    id: adopters.id, name: adopters.name, status: adopters.status, deletedAt: adopters.deletedAt,
-                    // Masking inputs only — never forwarded to the client.
-                    addedBy: adopters.addedBy, isPublic: adopters.isPublic,
-                    contactInfo: adopters.contactInfo, contactEntries: adopters.contactEntries, addressInfo: adopters.addressInfo,
-                    age: adopters.age, ageAsOf: adopters.ageAsOf, isMinor: adopters.isMinor,
-                })
-                .from(adopters)
-                .where(or(...profileIds.map(id => eq(adopters.id, id)))!)
-                .all(),
-            // v2.26.1: profile-level OR the flagged profile picture (an activity/
-            // observation photo can be the avatar); isProfilePicture DESC wins.
-            db
-                .select({ adopterId: adopterImages.adopterId, url: adopterImages.url, isProfilePicture: adopterImages.isProfilePicture })
-                .from(adopterImages)
-                .where(and(
-                    or(...profileIds.map(id => eq(adopterImages.adopterId, id)))!,
-                    or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1)),
-                ))
-                .orderBy(sql`${adopterImages.isProfilePicture} DESC`, sql`${adopterImages.uploadedAt} DESC`),
+    if (matchList.length > 0 || linkedId) {
+        const linkedIsMatch = !!linkedId && matchList.some(m => m.id === linkedId);
+        const [cards, linkedOwn, linkedRatings] = await Promise.all([
+            loadFormMatchCards(db, currentUser, matchList, {
+                submissionId,
+                typed: [metadata.submittedData?.phone, metadata.submittedData?.email],
+            }),
+            linkedId && !linkedIsMatch ? readLinkedProfile(db, linkedId) : Promise.resolve(null),
             // The chosen person's rating, for the "Solicitud vinculada a X"
             // banner — the trust signal the rescuer is here to read. Same
             // computation as the profile and /my-adopters (computeAvgRating
@@ -248,72 +221,17 @@ export default async function FormResultsPage({ params, searchParams }: { params
                     })
                 : Promise.resolve(null),
         ]);
-        const imageByAdopter = new Map<string, string>();
-        for (const row of imageRows) {
-            if (!imageByAdopter.has(row.adopterId)) imageByAdopter.set(row.adopterId, row.url);
-        }
-        type Row = {
-            id: string; name: string; status: string | null; deletedAt: Date | null;
-            addedBy: string | null; isPublic: number | null;
-            contactInfo: string | null; contactEntries: string | null; addressInfo: string | null;
-            age: number | null; ageAsOf: string | null; isMinor: number | null;
-        };
-        // Another rescuer's protected profile must not reach this page raw
-        // (props are serialized into the RSC payload): contact and address go
-        // through the same masking discovery search applies, and only the
-        // values this applicant typed are unlocked. Built field by field — never
-        // spread a DB row into the props.
-        const liveRows = (rows as Row[]).filter(r => !r.deletedAt);
-        const masked = await maskMatchCardsForViewer(
-            currentUser,
-            liveRows,
-            [metadata.submittedData?.phone, metadata.submittedData?.email],
-            { submissionId },
-        );
-        const withImage = (r: Row): ProfileRow => ({
-            id: r.id,
-            name: r.name,
-            contactInfo: masked.get(r.id)?.contactInfo ?? null,
-            contactEntries: masked.get(r.id)?.contactEntries ?? null,
-            addressInfo: masked.get(r.id)?.addressInfo ?? null,
-            status: r.status,
-            profileImageUrl: imageByAdopter.get(r.id) ?? null,
-            ...(isMinor(r) ? { isMinor: true } : {}),
-        });
-
-        // Soft-deleted (merged-away) matches are dropped at read time, so a
-        // notification recorded before a merge still renders correctly.
-        // Sort by match strength (more matchTypes first), preserving order of metadata.matchedAdopters for ties
-        const order = new Map(matchList.map((a, i) => [a.id, { count: a.matchTypes?.length ?? 0, index: i }]));
-        matchedProfiles = (rows as Row[])
-            .filter(r => order.has(r.id) && !r.deletedAt)
-            .map(withImage)
-            .sort((a, b) => {
-                const ac = order.get(a.id) ?? { count: 0, index: 999 };
-                const bc = order.get(b.id) ?? { count: 0, index: 999 };
-                return bc.count !== ac.count ? bc.count - ac.count : ac.index - bc.index;
-            });
-        // Who each one lives with (never throws; the first HOUSEHOLD_LINE_CARDS cards).
-        if (matchedProfiles.length) {
-            // Every card its housemate chips; the first HOUSEHOLD_LINE_CARDS their list whatever it says.
-            const homes = await householdLinesFor(db, currentUser, matchedProfiles.map(p => p.id), { listCards: HOUSEHOLD_LINE_CARDS });
-            matchedProfiles = matchedProfiles.map(p => (homes[p.id] ? { ...p, households: homes[p.id] } : p));
-            // Each card's own rating and alerts (audit B6), the same counts a household line shows; countsFor
-            // never throws (a failure logs and shows «Sin calificación»). One query per card, capped like the lines.
-            const standing = await Promise.all(matchedProfiles.slice(0, HOUSEHOLD_LINE_CARDS).map(p => countsFor(db, p.id, { submissionId, user: currentUser }, { activity: false })));
-            matchedProfiles = matchedProfiles.map((p, i) => (standing[i] ? { ...p, rating: standing[i].rating, openFlags: standing[i].openFlags } : p));
-        }
+        // `addedByName` / `isMine` are the panel's «Cargado por» / «Tuyo»; this page does not show them.
+        matchedProfiles = cards.map(({ profile: { addedByName: _addedByName, isMine: _isMine, ...profile } }) => profile);
 
         // A form linked to a profile that was later merged away (before merges
         // carried form links along, v2.56.129) has no live profile to name —
         // the banner falls back to its generic wording then.
-        const linkedRow = (rows as Row[]).find(r => r.id === linkedId && !r.deletedAt);
-        if (linkedRow) {
-            const p = withImage(linkedRow);
+        const linkedCard = linkedIsMatch ? cards.find(c => c.profile.id === linkedId)?.profile : null;
+        const linked = linkedCard ? { id: linkedCard.id, name: linkedCard.name, profileImageUrl: linkedCard.profileImageUrl ?? null } : linkedOwn;
+        if (linked) {
             linkedProfile = {
-                id: p.id,
-                name: p.name,
-                profileImageUrl: p.profileImageUrl,
+                ...linked,
                 avgRating: linkedRatings ? computeAvgRating(linkedRatings as Array<{ rating: number | null }>) : null,
             };
         }
@@ -378,6 +296,22 @@ export default async function FormResultsPage({ params, searchParams }: { params
             linkedProfile={linkedProfile}
         />
     );
+}
+
+/** The banner's linked profile when it is not one of the match cards (the profile auto-created from this form). */
+async function readLinkedProfile(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, adopterId: string): Promise<{ id: string; name: string; profileImageUrl: string | null } | null> {
+    const [row, image] = await Promise.all([
+        db.select({ name: adopters.name, deletedAt: adopters.deletedAt }).from(adopters).where(eq(adopters.id, adopterId)).get(),
+        // Same picture rule as the cards: profile-level OR the flagged profile picture.
+        db.select({ url: adopterImages.url })
+            .from(adopterImages)
+            .where(and(eq(adopterImages.adopterId, adopterId), or(isNull(adopterImages.adoptionId), eq(adopterImages.isProfilePicture, 1))))
+            .orderBy(sql`${adopterImages.isProfilePicture} DESC`, sql`${adopterImages.uploadedAt} DESC`)
+            .limit(1)
+            .get(),
+    ]);
+    if (!row || row.deletedAt) return null;
+    return { id: adopterId, name: row.name, profileImageUrl: image?.url ?? null };
 }
 
 function ErrorState({ message, errorId }: { message: string; errorId?: string }) {

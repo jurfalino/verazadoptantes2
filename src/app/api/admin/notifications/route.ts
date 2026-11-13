@@ -8,6 +8,7 @@ import { logAudit } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { resolveDisplayNames } from '@/app/actions/notifications';
 import { notificationSeenState } from '@/domain/notificationState';
+import { notificationTypeEnabled } from '@/domain/notificationKillSwitch';
 
 import { getRequestContext } from '@/lib/requestContext';
 
@@ -87,8 +88,8 @@ export async function GET() {
                 LIMIT 10
             `).bind(type).all() as any;
 
-            // Default state for a type is implicitly 'true' unless strictly 'false' in the DB
-            const isEnabled = configMap.get(type) !== 'false';
+            // No row = on; only 'false' turns it off (the same rule createNotification applies).
+            const isEnabled = notificationTypeEnabled(configMap.get(type));
 
             return {
                 type,

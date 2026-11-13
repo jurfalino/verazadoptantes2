@@ -1,17 +1,20 @@
 /**
  * Signed one-click unsubscribe links for notification emails. The signature
- * is an HMAC over email + category, so a link can only switch off the one
- * category it was issued for. Always-on categories are never unsubscribable.
+ * is an HMAC over email + «Avisos» row key, so a link can only switch off the
+ * one row it was issued for. The rows someone waits on («Siempre») are never
+ * unsubscribable. Links from before «Avisos» carry an old category, signed the
+ * same way; they still verify and switch off the rows that category maps to
+ * (src/domain/noticeRows.ts: unsubscribeRows).
  */
-import { ALWAYS_ON_CATEGORIES, EMAIL_CATEGORIES, type EmailCategory } from '@/domain/emailCategories';
+import { unsubscribeRows, type SwitchableRowKey } from '@/domain/noticeRows';
 import { hashOtpCode } from '@/lib/otp';
 
-function payload(email: string, category: string): string {
-    return `unsub:v1:${email.toLowerCase()}:${category}`;
+function payload(email: string, row: string): string {
+    return `unsub:v1:${email.toLowerCase()}:${row}`;
 }
 
-export async function signUnsubscribe(email: string, category: EmailCategory, secret: string): Promise<string> {
-    return hashOtpCode(payload(email, category), secret);
+export async function signUnsubscribe(email: string, row: SwitchableRowKey, secret: string): Promise<string> {
+    return hashOtpCode(payload(email, row), secret);
 }
 
 /** Compares without short-circuiting on the first differing char. */
@@ -22,22 +25,15 @@ function constantTimeEqual(a: string, b: string): boolean {
     return diff === 0;
 }
 
-/** The category when it may be unsubscribed from, else null. */
-export function unsubscribableCategory(category: string): EmailCategory | null {
-    const c = EMAIL_CATEGORIES.find((x) => x === category);
-    if (!c || ALWAYS_ON_CATEGORIES.has(c)) return null;
-    return c;
-}
-
-export async function verifyUnsubscribe(email: string, category: string, sig: string, secret: string): Promise<boolean> {
-    const c = unsubscribableCategory(category);
-    if (!c || !email || !sig) return false;
-    const expected = await signUnsubscribe(email, c, secret);
+/** `key` is a row key, or an old category from an email sent before «Avisos». */
+export async function verifyUnsubscribe(email: string, key: string, sig: string, secret: string): Promise<boolean> {
+    if (!unsubscribeRows(key) || !email || !sig) return false;
+    const expected = await hashOtpCode(payload(email, key), secret);
     return constantTimeEqual(expected, sig);
 }
 
-export async function unsubscribeUrl(baseUrl: string, email: string, category: EmailCategory, secret: string): Promise<string> {
-    const s = await signUnsubscribe(email, category, secret);
-    const q = new URLSearchParams({ e: email, c: category, s });
+export async function unsubscribeUrl(baseUrl: string, email: string, row: SwitchableRowKey, secret: string): Promise<string> {
+    const s = await signUnsubscribe(email, row, secret);
+    const q = new URLSearchParams({ e: email, c: row, s });
     return `${baseUrl}/email/unsubscribe?${q.toString()}`;
 }

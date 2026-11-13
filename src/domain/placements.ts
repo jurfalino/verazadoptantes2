@@ -78,3 +78,21 @@ export function deriveEndedPlacement(
         recordedBy,
     };
 }
+
+/**
+ * Whether a contract link can still be sent for this animal: false only for an
+ * active ADOPTION (held by someone) — it is already adopted.
+ */
+export function takesContract(animal: { adopterId: string | null; recordType: string | null }): boolean {
+    return !(animal.adopterId && animal.recordType === 'adoption');
+}
+
+/**
+ * Whether a contract signature must be refused for this animal. A personal
+ * invitation (token) signs anything `takesContract` accepts — including a
+ * fostered animal, where it ends the foster. The tokenless open link keeps the
+ * old rule (any holder refuses): its holders must not be able to end a foster.
+ */
+export function signRefused(args: { invitation: unknown; animal: { adopterId: string | null; recordType: string | null } }): boolean {
+    return args.invitation ? !takesContract(args.animal) : !!args.animal.adopterId;
+}

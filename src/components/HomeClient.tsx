@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useAuthContext } from '@/context/AuthContext';
 import HomeModules, { GuestFirstSteps } from '@/components/home/HomeModules';
+import HomeShareFormRow from '@/components/home/HomeShareFormRow';
 import PendingSearchesDeck from '@/components/PendingSearchesDeck';
 import ContactPickerLauncher, { useContactPickerSupported } from '@/components/ContactPickerLauncher';
 import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLauncher';
@@ -123,6 +124,9 @@ export default function HomeClient({ initialConfig, userEmail }: { initialConfig
                 <div id="search-section">
                     <SearchSection locale={locale} showCardMetadata={appConfig.ENABLE_SEARCH_CARD_METADATA !== 'false'} />
                 </div>
+
+                {/* «Compartir formulario» right under the search (Jon 2026-11-13, option B), signed in only. */}
+                {session?.user?.id && <HomeShareFormRow userId={session.user.id} />}
 
                 {/* Social proof + milestone — below search for mobile-first.
                     MilestoneBadge gated by ENABLE_MILESTONE_BADGE (admin-toggleable, default ON). */}

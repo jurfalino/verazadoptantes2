@@ -85,3 +85,11 @@ describe('displayNameFor (audit C2: one person, one name, never an email)', () =
         expect(displayNameFor('ana@example.com', '@patitas')).toBe('@patitas');
     });
 });
+
+describe('actorLabel — automatic application closes', () => {
+    it("shows 'application-auto' as «Automático», never the raw code", () => {
+        expect(actorLabel('application-auto', null, tEs)).toBe('Automático');
+        expect(actorLabel('application-auto', null, tEn)).toBe('Automatic');
+        expect(actorLabel('application-auto', null, tEs)).toBe(tEs('common.actor_automatic'));
+    });
+});

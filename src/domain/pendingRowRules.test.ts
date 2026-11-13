@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { combineTheirsSide, movesToOtherList, needsViewer, type RowPair } from './pendingRowRules';
+import { combineTheirsSide, deferredToEvaluation, movesToOtherList, needsViewer, type RowPair } from './pendingRowRules';
 
 const pair = (over: Partial<RowPair> & { mineNew?: boolean; mineExisting?: boolean } = {}): RowPair => ({
     group: 'pair',
@@ -66,5 +66,19 @@ describe('needsViewer — the next move is the viewer\'s (Jon 2026-11-09)', () =
 
     it('declined, seen by the requester with only «Quitar de la lista» left (e.g. a pair rebuilt from the request): no', () => {
         expect(needsViewer(pair({ group: 'declined', request: { direction: 'sent', keepId: 'n' }, actionByKeep: { new: null, existing: null } }))).toBe(false);
+    });
+});
+
+describe('deferredToEvaluation (Q6)', () => {
+    const inEvaluation = new Set(['n']);
+    it('a plain possible duplicate with a side in evaluation → true; with neither → false', () => {
+        expect(deferredToEvaluation({ group: 'pair', adopter1Id: 'n', adopter2Id: 'e' }, inEvaluation)).toBe(true);
+        expect(deferredToEvaluation({ group: 'pair', adopter1Id: 'x', adopter2Id: 'n' }, inEvaluation)).toBe(true);
+        expect(deferredToEvaluation({ group: 'pair', adopter1Id: 'x', adopter2Id: 'e' }, inEvaluation)).toBe(false);
+    });
+    it('a request (received, sent, declined) is its own move: never deferred', () => {
+        for (const group of ['received', 'sent', 'declined'] as const) {
+            expect(deferredToEvaluation({ group, adopter1Id: 'n', adopter2Id: 'e' }, inEvaluation)).toBe(false);
+        }
     });
 });

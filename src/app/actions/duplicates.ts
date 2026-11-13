@@ -1,11 +1,13 @@
 'use server';
 
-import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandidates, auditLog, mergeRequests, pendingPairHidden } from '@/db/schema';
+import { adopters, adopterFlags, adopterStats, duplicateTokens, duplicateCandidates, auditLog, mergeRequests, pairMessages, pendingPairHidden } from '@/db/schema';
+import { pairMessageViews, type PairMessageView } from '@/domain/pairMessages';
 import { eq, or, and, inArray, sql, isNull, asc, desc } from 'drizzle-orm';
 import { logger, generateErrorId } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { decideDedupAction, isOpenDuplicateFlag, keepByAge, KEPT_SEPARATE_FLAG_DETAILS_PREFIX, MERGED_FLAG_DETAILS_PREFIX, orderPair, pairChoices, pairKey, realOwner, type DedupSide, type KeepAction, type KeepSide, type PairVerdict } from '@/domain/dedupPair';
-import { needsViewer } from '@/domain/pendingRowRules';
+import { deferredToEvaluation, needsViewer } from '@/domain/pendingRowRules';
+import { toEvaluateAdopterIds } from '@/lib/applicationCounts';
 import { needsIdentityChoice } from '@/domain/identityChoice';
 import { matchBreakdown, summarizeBreakdown, type BreakdownField } from '@/domain/matchBreakdown';
 import { deserializeContactEntries, parseBlobToContactEntries } from '@/lib/contactEntries';
@@ -509,7 +511,39 @@ function requestView(
         canMessage: !!r.ownerEmail && (direction === 'sent' || teamKeys.has(normEmail(r.ownerEmail))),
         declinedAt: declined && r.resolvedAt ? Math.floor(r.resolvedAt.getTime() / 1000) : null,
         declinedByName: decliner && normEmail(decliner) !== normEmail(actorEmail) ? nameOf(decliner) : null,
+        // Filled after the page is built (loadPairMessages): one query per request on the page.
+        messages: [],
     };
+}
+
+/** The most messages one pair shows (oldest first). */
+const MAX_PAIR_MESSAGES = 100;
+
+/**
+ * «Mensajes (N)» on each pair's request (2026-11-11): one bounded query per
+ * request on the page, no IN-array. A failed read shows none, logged (never
+ * the text).
+ */
+async function loadPairMessages(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, pairs: PendingDedupPair[], viewer: string): Promise<void> {
+    await Promise.all(pairs.map(async (p) => {
+        if (!p.request) return;
+        const requestId = p.request.id;
+        const rows = await db.select({
+            id: pairMessages.id, senderEmail: pairMessages.senderEmail, senderName: pairMessages.senderName,
+            body: pairMessages.body, createdAt: pairMessages.createdAt,
+        }).from(pairMessages)
+            .where(eq(pairMessages.requestId, requestId))
+            .orderBy(asc(pairMessages.createdAt))
+            .limit(MAX_PAIR_MESSAGES)
+            .catch((e: unknown) => {
+                logger.warn('getPendingDuplicatesForUser: pair messages D1 fallback hit', { actorEmail: viewer, requestId, error: e instanceof Error ? e.message : String(e) });
+                return [];
+            });
+        p.request.messages = pairMessageViews(rows.map((r: { id: string; senderEmail: string; senderName: string | null; body: string; createdAt: Date | null }) => ({
+            id: r.id, senderEmail: r.senderEmail, senderName: r.senderName, body: r.body,
+            createdAt: r.createdAt ? Math.floor(r.createdAt.getTime() / 1000) : 0,
+        })), viewer);
+    }));
 }
 
 /** A side's contact as the card shows it to this viewer (masked typed list, else the visible text). */
@@ -633,6 +667,8 @@ export interface PendingDedupPair {
         declinedByName: string | null;
         /** The profile the requester chose to keep (the request's survivor, D24): «Se conserva» on the row. */
         keepId: string;
+        /** «Escribirle» messages on this request, oldest first (names only, never an address). */
+        messages: PairMessageView[];
     };
 }
 
@@ -1036,6 +1072,15 @@ export async function getPendingDuplicatesForUser(
                 .where(and(byTeam(adopters.addedBy), isNull(adopters.deletedAt))).all() as Array<{ id: string }>)();
         ownRowsP.catch(() => { /* awaited below — the outer catch logs it */ });
         const flagsP = loadOpenDuplicateFlags();
+        // The team's applicants still to evaluate: a plain possible duplicate on one of them is not a second
+        // to-do (Q6). A failed read counts every row, as before. The home (needs_viewer) reads without the
+        // heal write on its path — loadHomeAnimals heals after the response; /my-adopters heals first.
+        const toEvaluateP: Promise<Set<string>> = toEvaluateAdopterIds(db, teamList, Math.floor(Date.now() / 1000), { heal: !onlyNeedsViewer }).catch((e) => {
+            logger.warn('getPendingDuplicatesForUser: to-evaluate applicants read failed, counting every pair', {
+                actorEmail: viewer, error: e instanceof Error ? e.message : String(e),
+            });
+            return new Set<string>();
+        });
 
         /** Open duplicate flags the viewer may see (see the block that reads them below); [] if the read fails. */
         type FlagRow = { id: string; adopterId: string; targetAdopterId: string | null; reason: string | null; details: string | null; createdAt: Date | null };
@@ -1332,8 +1377,10 @@ export async function getPendingDuplicatesForUser(
         // are a handful (DECLINED_REQUESTS_CAP bounds them): two adopter reads
         // and the verdict per row.
         const needs = new Set<string>();
+        const toEvaluate = await toEvaluateP;
         await Promise.all(eligible.map(async (c) => {
             const group = groupOf(c);
+            if (deferredToEvaluation({ group, adopter1Id: c.adopter1Id, adopter2Id: c.adopter2Id }, toEvaluate)) return;
             const r = requests.get(pairKey(c.adopter1Id, c.adopter2Id));
             if (group !== 'declined' || !r || normEmail(r.requesterEmail) !== normEmail(viewer)) {
                 if (needsViewer({ group, newAdopter: { id: '', teamOwned: false }, existingAdopter: { id: '', teamOwned: false }, actionByKeep: { new: null, existing: null }, request: r ? { direction: 'received', keepId: r.primaryId } : null })) needs.add(c.candidateId);
@@ -1380,11 +1427,15 @@ export async function getPendingDuplicatesForUser(
         // a handful, capped) follows on EVERY page, so it's never buried 7 pages in (UX review
         // 2026-11-10). `total` = the paged rows, so the pager and «N esperan tu respuesta» agree.
         const waiting = eligible.filter(c => needs.has(c.candidateId));
-        const others = onlyNeedsViewer ? [] : eligible.filter(c => !needs.has(c.candidateId)).slice(0, MAX_OTHERS_SHOWN);
+        const allOthers = onlyNeedsViewer ? [] : eligible.filter(c => !needs.has(c.candidateId));
+        const others = allOthers.slice(0, MAX_OTHERS_SHOWN);
         const total = waiting.length;
         const focusIndex = focusPair ? waiting.findIndex(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : -1;
         if (focusIndex >= 0) page = Math.floor(focusIndex / pageSize) + 1;
-        const focusOther = focusPair && focusIndex < 0 ? others.find(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : undefined;
+        // A focused pair that doesn't wait on the viewer (a request they sent, linked from «Te escribió») is
+        // shown even past the cap: the link must land on it (CX review I3).
+        const focusOther = focusPair && focusIndex < 0 ? allOthers.find(c => pairKey(c.adopter1Id, c.adopter2Id) === focusPair) : undefined;
+        if (focusOther && !others.includes(focusOther)) others.push(focusOther);
         const focusCandidateId = focusIndex >= 0 ? waiting[focusIndex].candidateId : focusOther?.candidateId;
         const start = Math.max(0, (page - 1) * pageSize);
         const pageCandidates = [...waiting.slice(start, start + pageSize), ...others];
@@ -1529,6 +1580,8 @@ export async function getPendingDuplicatesForUser(
             });
         }
 
+        await loadPairMessages(db, pairs, viewer);
+
         // Final fix P2: each side's homes, as on search cards (one batched read per call: every side gets
         // its chips, the first HOUSEHOLD_LINE_CARDS sides in the order shown their list; never throws).
         const sidesShown = [...new Set(pairs.flatMap(p => [p.newAdopter.id, p.existingAdopter.id]))];
@@ -1563,6 +1616,57 @@ export async function getPendingDuplicatesForUser(
 const PAIR_KEY_MAX = 200;
 
 /**
+ * «No sé» on a form's «¿Es la misma persona?» (Jon 2026-11-12): an answer that keeps the profiles
+ * separate and asks the other profile's people (src/lib/pairUnsure.ts). It unlocks «Enviar contrato».
+ * `asked` says who was asked, so the card can say so. Signed out → `not_authorized`.
+ */
+export async function answerSamePersonUnsure(candidateId: string): Promise<
+    { success: true; asked: 'outside' | 'team' | 'none' }
+    | { success: false; code: 'not_found' | 'already_resolved' | 'not_authorized' | 'failed'; errorId?: string }
+> {
+    let actorEmail: string | null = null;
+    try {
+        if (typeof candidateId !== 'string' || !candidateId || candidateId.length > 100) return { success: false, code: 'not_found' };
+        const { getUser } = await import('./_db');
+        try { actorEmail = await getUser(); } catch (e) {
+            logger.warn('answerSamePersonUnsure: refused — no session', { candidateId, authError: e instanceof Error ? e.message : String(e) });
+            return { success: false, code: 'not_authorized' };
+        }
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        const { answerPairUnsure } = await import('@/lib/pairUnsure');
+        const res = await answerPairUnsure(db, candidateId, actorEmail);
+        return res.ok ? { success: true, asked: res.asked } : { success: false, code: res.code };
+    } catch (e) {
+        const errorId = logger.error('answerSamePersonUnsure failed', e, { candidateId, actorEmail });
+        return { success: false, code: 'failed', errorId };
+    }
+}
+
+/** «Cambiar mi respuesta» after «No sé»: the pair is unanswered again (the contract waits again). */
+export async function undoSamePersonUnsure(candidateId: string): Promise<
+    { success: true } | { success: false; code: 'not_found' | 'already_resolved' | 'not_authorized' | 'failed'; errorId?: string }
+> {
+    let actorEmail: string | null = null;
+    try {
+        if (typeof candidateId !== 'string' || !candidateId || candidateId.length > 100) return { success: false, code: 'not_found' };
+        const { getUser } = await import('./_db');
+        try { actorEmail = await getUser(); } catch (e) {
+            logger.warn('undoSamePersonUnsure: refused — no session', { candidateId, authError: e instanceof Error ? e.message : String(e) });
+            return { success: false, code: 'not_authorized' };
+        }
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        const { clearPairUnsure } = await import('@/lib/pairUnsure');
+        const res = await clearPairUnsure(db, candidateId, actorEmail);
+        return res.ok ? { success: true } : { success: false, code: res.code };
+    } catch (e) {
+        const errorId = logger.error('undoSamePersonUnsure failed', e, { candidateId, actorEmail });
+        return { success: false, code: 'failed', errorId };
+    }
+}
+
+/**
  * «Quitar de la lista» (D27): take a pair off the viewer's own «Pendientes de
  * revisar» — offered on declined rows. Writes `pending_pair_hidden` for the
  * session's user only; nobody else's list changes, nothing about the pair
@@ -1595,7 +1699,7 @@ export async function hidePendingPair(key: string): Promise<{ success: boolean; 
         logger.info('hidePendingPair: hidden', { actorEmail, pairKey: normalized });
         // Their «rechazó unir» notice about it is done too (only theirs: hiding is personal).
         const { clearPairNotices } = await import('@/lib/pairNotices');
-        await clearPairNotices(db, ids[0], ids[1], { types: ['merge_request_resolved'], userId: actorEmail, ctx: { op: 'hidePendingPair' } });
+        await clearPairNotices(db, ids[0], ids[1], { types: ['merge_request_resolved', 'same_person_question'], userId: actorEmail, ctx: { op: 'hidePendingPair' } });
         return { success: true };
     } catch (e) {
         const errorId = logger.error('hidePendingPair failed', e, { actorEmail });
@@ -1673,6 +1777,8 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
             return { success: true };
         }
 
+        const { unsureAskersOf, tellUnsureAskers } = await import('@/lib/pairUnsure');
+        const askers = await unsureAskersOf(db, ids.a, ids.b, { op: 'dismissDuplicateCandidate', candidateId });
         await db.update(duplicateCandidates).set({
             status: 'dismissed',
             resolvedAt: new Date(),
@@ -1682,6 +1788,7 @@ export async function dismissDuplicateCandidate(candidateId: string): Promise<{
         logger.info('Duplicate candidate dismissed by user', { candidateId, user: actorEmail });
         const { clearPairNotices, PAIR_NOTICE_TYPES } = await import('@/lib/pairNotices');
         await clearPairNotices(db, ids.a, ids.b, { types: PAIR_NOTICE_TYPES, ctx: { op: 'dismissDuplicateCandidate', candidateId, actorEmail } });
+        await tellUnsureAskers(db, askers, { a: ids.a, b: ids.b, actor: actorEmail, answer: 'different', ctx: { op: 'dismissDuplicateCandidate', candidateId } });
         return { success: true };
     } catch (error) {
         logger.warn('dismissDuplicateCandidate failed', {

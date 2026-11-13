@@ -61,17 +61,54 @@ export const IMPORT_FLAGS = {
  * follow-up cron). The bell and /notificaciones label and draw each one (components/NotificationTypeIcon,
  * `notifications.types.<type>` in es/en/pt) — a type missing here shows a generic bell and the raw key
  * (audit B4: «household_contribution», «merge_request»… had no label).
+ *
+ * Retired (no writer): `system`, `household_link_removed`, `household_link_disputed`,
+ * `profile_age_changed` (notifications cleanup Phase 1). Old rows of a retired type
+ * still show their stored text with the generic bell and no label.
  */
 export const NOTIFICATION_TYPES = [
     'contract_result', 'contract_attached', 'form_submission', 'form_attached',
     'api_record', 'api_access', 'api_access_requested',
-    'profile_renamed', 'profile_rename_undone', 'profile_age_changed', 'profile_content_added',
+    'profile_renamed', 'profile_rename_undone', 'profile_content_added',
     'pii_access_request', 'pii_access_approved', 'pii_access_denied', 'pii_access_revoked',
     'contact_entry_added', 'follow_up_due', 'ownership_transferred', 'adopter_flagged', 'duplicate_flagged', 'inaccuracy_reported', 'deletion_request', 'member_joined', 'member_removed',
     'adopter_login_blocked',
-    'adopter_merged', 'merge_request', 'merge_request_resolved', 'merge_disputed', 'merge_dispute_resolved', 'pair_message',
-    'household_linked', 'household_link_removed', 'household_link_disputed', 'household_contribution',
+    'adopter_merged', 'merge_request', 'merge_request_resolved', 'merge_disputed', 'merge_dispute_resolved', 'pair_message', 'same_person_question', 'same_person_answered',
+    'household_linked', 'household_contribution',
     'household_also_lives_with', 'household_relationship_changed', 'household_member_removed', 'household_member_disputed',
-    'system',
 ] as const;
 export type NotificationType = typeof NOTIFICATION_TYPES[number];
+
+/** Lifecycle of an adoption application (an `applications` row). */
+export const APPLICATION_STATES = {
+    OPEN: 'open',
+    DECLINED: 'declined',
+    CLOSED: 'closed',
+    ADOPTED: 'adopted',
+    PROPOSED: 'proposed',
+    REPLACED: 'replaced',
+    ALSO_APPLIED: 'also_applied',
+} as const;
+export type ApplicationState = typeof APPLICATION_STATES[keyof typeof APPLICATION_STATES];
+
+/** How an application came to exist. */
+export const APPLICATION_ORIGINS = { FORM: 'form', PROPOSED: 'proposed', ADOPTED_ANIMAL: 'adopted_animal' } as const;
+export type ApplicationOrigin = typeof APPLICATION_ORIGINS[keyof typeof APPLICATION_ORIGINS];
+
+/** Why a `closed` application closed. */
+/** ANIMAL_DELETED: the animal was deleted (softDeleteAnimal) — nobody can evaluate for it any more. */
+export const APPLICATION_CLOSE_REASONS = { ADOPTED_OTHER: 'adopted_other', ADOPTED_OPEN_LINK: 'adopted_open_link', ANIMAL_DELETED: 'animal_deleted' } as const;
+export type ApplicationCloseReason = typeof APPLICATION_CLOSE_REASONS[keyof typeof APPLICATION_CLOSE_REASONS];
+
+/** «No avanzar»: the editable first line and the required reason (spec: neither may be blank). The dialog caps its fields at these; the action refuses longer. */
+export const DECLINE_TEXT_MAX = 500;
+export const DECLINE_REASON_MAX = 2000;
+
+/** Days a contract link stays valid. Moved from contract.ts (a sync export from a 'use server' file fails the build). */
+export const INVITATION_TTL_DAYS = 30;
+
+/** adopter_history.changed_by / applications.closed_by for automatic closes. */
+export const APPLICATION_AUTO_ACTOR = 'application-auto';
+
+/** «Prefiere» life stage from an animal's estimated birth date (my call — no rule existed). */
+export const LIFE_STAGE_YEARS = { PUPPY_UNDER: 1, SENIOR_FROM: 8 } as const;

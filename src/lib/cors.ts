@@ -10,6 +10,10 @@ const EXACT_ORIGINS = [
 const EXACT_PROD_ORIGINS = [
     'https://adoptions.pages.dev',           // production contract-app
     'https://adoptions-staging.pages.dev',   // staging contract-app
+    // The public site's own domain (Jon 2026-11-11); the pages.dev names above 301 there once switched on.
+    'https://enadopcion.org',
+    'https://www.enadopcion.org',
+    'https://staging.enadopcion.org',
 ];
 
 /** Suffix patterns: any origin ending with these is allowed */
@@ -28,6 +32,7 @@ function isAllowedOrigin(origin: string): boolean {
 export function withCors(response: NextResponse, requestOrigin: string | null): NextResponse {
     const origin = requestOrigin && isAllowedOrigin(requestOrigin) ? requestOrigin : EXACT_ORIGINS[0];
     response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.append('Vary', 'Origin');
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
     response.headers.set('Access-Control-Max-Age', '86400');

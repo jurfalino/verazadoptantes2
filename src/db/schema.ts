@@ -521,6 +521,23 @@ export const pendingPairHidden = sqliteTable("pending_pair_hidden", {
     pk: primaryKey({ columns: [table.viewerEmail, table.pairKey] }),
 }));
 
+// pair_unsure — «No sé» on a form's «¿Es la misma persona?» (Jon 2026-11-12, drizzle/0109). One row per
+// pair (pairKey: sorted ids, so it survives the Scan rebuilding duplicate_candidates) and per rescuer who
+// answered it. The pair stays pending; the answer counts for the asker's group only. `withdrawn` = 1 after
+// «Cambiar mi respuesta» (the row stays, so answering again doesn't ask the other side again at once);
+// `askedAt` = when the other side was last asked. Rows go once the pair is settled as two people.
+export const pairUnsure = sqliteTable("pair_unsure", {
+    pairKey: text("pair_key").notNull(),
+    askerEmail: text("asker_email").notNull(),
+    answeredAt: integer("answered_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+    askedAt: integer("asked_at", { mode: "timestamp" }),
+    withdrawn: integer("withdrawn").notNull().default(0),
+    /** Who on the other side answered «Sí» (a join request or a join): the asker was told. */
+    sameBy: text("same_by"),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.pairKey, table.askerEmail] }),
+}));
+
 // household_links — a household member with their own profile (D44, drizzle/0094).
 // The reverse index behind «Convive con»; the host's household_members JSON stays
 // the source of truth (a row shows only while the member still points here).
@@ -774,6 +791,9 @@ export const userProfiles = sqliteTable("user_profiles", {
     // «Avisame de cambios hechos por:» (src/domain/teamChangeAudience.ts):
     // NULL/'outside' = other rescuers only (default), 'team' = also my team. Bell and email.
     profileChangesFrom: text("profile_changes_from"),
+    // «Formularios, contratos y controles de:» (src/domain/animalNotices.ts): NULL/'team' = the
+    // whole team's animals (default), 'mine' = only the animals I added. Bell and email. Migration 0107.
+    animalsScope: text("animals_scope"),
     // Mis adoptantes: the filters this person pinned onto the main screen — JSON array of
     // FilterKey (src/domain/adopterListView.ts), at most PIN_MAX. NULL = the defaults.
     adopterListPins: text("adopter_list_pins"),
@@ -868,6 +888,20 @@ export const notifications = sqliteTable("notifications", {
 }, (table) => ({
     userIdx: index("idx_notif_user").on(table.userId, table.read, table.createdAt),
     typeIdx: index("idx_notif_type").on(table.type, table.createdAt),
+}));
+
+// «Te escribió» on the pair (2026-11-11, migration 0108): one row per message sent
+// with «Escribirle a …» on a merge request. Shown in the open pair in «Pendientes de
+// revisar» to everyone who sees that pair; the body is never logged.
+export const pairMessages = sqliteTable("pair_messages", {
+    id: text("id").primaryKey(),
+    requestId: text("request_id").notNull(), // merge_requests.id
+    senderEmail: text("sender_email").notNull(),
+    senderName: text("sender_name"), // display name at send time
+    body: text("body").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    requestIdx: index("idx_pair_messages_request").on(table.requestId, table.createdAt),
 }));
 
 // User-submitted error reports from /auth-error (v2.14.9-14). The page hides
@@ -981,6 +1015,33 @@ export const contractInvitations = sqliteTable("contract_invitations", {
     locale: text("locale"),
 }, (table) => ({
     animalIdx: index("idx_contract_inv_animal").on(table.animalId),
+}));
+
+// ── Evaluar solicitudes (2026-11) ───────────────────────────────
+// One row per (form, animal) application. The adopter is
+// form_submissions.linked_adopter_id through submissionId — no adopter_id here.
+// Values of state / origin / closeReason: APPLICATION_* in src/domain/constants.ts.
+// Hand-written migration: drizzle/0106_applications.sql.
+export const applications = sqliteTable("applications", {
+    id: text("id").primaryKey(),
+    submissionId: text("submission_id").notNull(),
+    animalId: text("animal_id"),
+    origin: text("origin").notNull().default("form"),
+    askedAnimalId: text("asked_animal_id"),
+    state: text("state").notNull().default("open"),
+    closeReason: text("close_reason"),
+    declineRecordId: text("decline_record_id"),
+    proposedApplicationId: text("proposed_application_id"),
+    replacedByApplicationId: text("replaced_by_application_id"),
+    offerDoneAt: integer("offer_done_at"),
+    closedAt: integer("closed_at"),
+    closedBy: text("closed_by"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+    animalStateIdx: index("idx_applications_animal_state").on(table.animalId, table.state),
+    submissionIdx: index("idx_applications_submission").on(table.submissionId),
+    onePerFormIdx: uniqueIndex("idx_applications_one_per_form").on(table.submissionId).where(sql`origin <> 'proposed'`),
+    oneProposalIdx: uniqueIndex("idx_applications_one_proposal").on(table.submissionId, table.animalId).where(sql`origin = 'proposed'`),
 }));
 
 // ── Custom Adoption Docs (2026-09) ──────────────────────────────

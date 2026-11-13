@@ -512,7 +512,8 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
 
         const org = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, invite.orgId)).get();
 
-        // Notify existing org members about the new member (after the response, kept alive — see src/lib/background.ts)
+        // Notify the members of THIS group about the new member — not the joiner's other groups
+        // (after the response, kept alive — see src/lib/background.ts)
         await runAfterResponse('joinOrganization.notifyOrgMembers', async () => {
             const [{ notifyOrgMembers, resolveDisplayName }, { notificationContent }] = await Promise.all([
                 import('@/app/actions/notifications'), import('@/domain/notificationTemplates'),
@@ -520,6 +521,7 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
             const displayName = await resolveDisplayName(user);
             await notifyOrgMembers({
                 actorEmail: user,
+                orgId: invite.orgId,
                 type: 'member_joined',
                 ...notificationContent({ key: 'member_joined', params: { memberName: displayName, ...(org?.name ? { orgName: org.name } : {}) } }),
                 url: '/organizations',

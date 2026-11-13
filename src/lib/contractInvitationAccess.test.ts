@@ -21,11 +21,11 @@ vi.mock('@/lib/orgMembership', () => ({ isOrgMate: orgMateMock, isOwnerOrOrgMate
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }));
 
 import { resolveInvitationAccess } from './contractInvitationAccess';
-import { animals, appConfig, formSubmissions, piiAccessGrants } from '@/db/schema';
+import { animals, appConfig, applications, piiAccessGrants } from '@/db/schema';
 
 type Grant = { scope: string; entryRef: string | null; revokedAt: null };
 
-/** Gating + public-profiles flags read `flag`; form_submissions → `submissions`; pii_access_grants → `grants`. */
+/** Gating + public-profiles flags read `flag`; applications ⨝ form_submissions → `submissions`; pii_access_grants → `grants`. */
 function fakeDb(
     flag: string,
     submissions: Array<{ email: string | null; phone: string | null }>,
@@ -36,17 +36,18 @@ function fakeDb(
     return {
         flag,
         select: () => ({
-            from: (table: unknown) => ({
-                where: () => {
+            from: (table: unknown) => {
+                const where = () => {
                     const rows = table === piiAccessGrants ? grants : [];
                     return {
                         get: async () => (table === appConfig ? { value: flag } : table === animals ? (animal ?? undefined) : undefined),
-                        all: async () => (table === formSubmissions ? submissions : []),
+                        all: async () => (table === applications ? submissions : []),
                         limit: async () => [],
                         then: (res: (v: unknown[]) => unknown) => Promise.resolve(rows).then(res),
                     };
-                },
-            }),
+                };
+                return { where, innerJoin: () => ({ where }) };
+            },
         }),
     };
 }
@@ -81,6 +82,13 @@ describe('resolveInvitationAccess', () => {
         expect((await run(fakeDb('true', applied, [], null))).allowed).toBe(false);
         // Sanity: the same applicant with a live animal in the team IS allowed.
         expect((await run(fakeDb('true', applied))).allowed).toBe(true);
+    });
+
+    it('a person proposed for the animal counts as an applicant', async () => {
+        // A proposed application is an `applications` row like any other: the join returns it.
+        const a = await run(fakeDb('true', [{ email: 'propuesta@example.com', phone: null }]));
+        expect(a).toMatchObject({ allowed: true, via: 'applicant' });
+        expect(a.submitted).toEqual(['propuesta@example.com']);
     });
 
     it('foreign adopter who never applied for this animal: refused', async () => {
@@ -128,5 +136,64 @@ describe('resolveInvitationAccess', () => {
 
     it('gating off (applicant): full access for the pre-fill, signing merges', async () => {
         expect(await run(fakeDb('false', applied))).toMatchObject({ allowed: true, fullAccess: true, overwriteOnSign: false });
+    });
+});
+
+describe('resolveInvitationAccess on the real schema (proposed / forged / replaced)', () => {
+    // migratedDb is the SYNC better-sqlite3 driver; D1 returns promises and callers chain .catch on them.
+    function asyncDb<T extends object>(target: T): T {
+        return new Proxy(target, {
+            get(t, p, r) {
+                const v = Reflect.get(t, p, r);
+                if (typeof v !== 'function') return v;
+                return (...args: unknown[]) => {
+                    const out = (v as (...a: unknown[]) => unknown).apply(t, args);
+                    if (p === 'get' || p === 'all' || p === 'run' || p === 'values') return Promise.resolve(out);
+                    return out && typeof out === 'object' && p !== 'then' ? asyncDb(out as object) : out;
+                };
+            },
+        });
+    }
+
+    beforeEach(() => {
+        orgMateMock.mockReset().mockResolvedValue(false);
+        ownerOrMateMock.mockReset().mockResolvedValue(false);
+        adminMock.mockReset().mockResolvedValue(false);
+        teamMock.mockReset().mockResolvedValue([B, 'teammate@example.com']);
+    });
+
+    async function access(rows: Array<{ id: string; userId: string; origin?: string; state?: string; animal?: string | null }>) {
+        const { migratedDb } = await import('@/test-utils/migratedDb');
+        const m = migratedDb();
+        const db = asyncDb(m.db);
+        m.sqlite.prepare("INSERT INTO animals (id, name, added_by, created_at, updated_at) VALUES ('animal-1', 'Luna', ?, 1, 1)").run(B);
+        for (const r of rows) {
+            m.sqlite.prepare('INSERT INTO form_submissions (id, user_id, name, email, linked_adopter_id, created_at) VALUES (?, ?, ?, ?, ?, 1700000000)')
+                .run(r.id, r.userId, r.id, `${r.id}@example.com`, 'adopter-a');
+            m.sqlite.prepare('INSERT INTO applications (id, submission_id, animal_id, origin, state) VALUES (?, ?, ?, ?, ?)')
+                .run(`app-${r.id}`, r.id, r.animal === undefined ? 'animal-1' : r.animal, r.origin ?? 'form', r.state ?? 'open');
+        }
+        getDbMock.mockResolvedValue(db);
+        flags.ENABLE_PII_ACCESS_GATING = true;
+        flags.ENABLE_PUBLIC_PROFILES = true;
+        return resolveInvitationAccess(db as never, B, 'animal-1', foreign);
+    }
+
+    it('a person proposed for the animal (team link, origin proposed) is an applicant', async () => {
+        const a = await access([{ id: 's1', userId: B, origin: 'proposed' }]);
+        expect(a).toMatchObject({ allowed: true, via: 'applicant' });
+        expect(a.submitted).toEqual(['s1@example.com']);
+    });
+
+    it('a forged row through an outsider\'s link is refused', async () => {
+        expect((await access([{ id: 's2', userId: 'stranger@example.com' }])).allowed).toBe(false);
+    });
+
+    it('a replaced application is refused', async () => {
+        expect((await access([{ id: 's3', userId: B, state: 'replaced' }])).allowed).toBe(false);
+    });
+
+    it('an application for another animal is refused', async () => {
+        expect((await access([{ id: 's4', userId: B, animal: 'animal-2' }])).allowed).toBe(false);
     });
 });

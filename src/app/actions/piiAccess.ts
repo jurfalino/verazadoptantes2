@@ -38,6 +38,7 @@ import { createNotification, resolveDisplayName, resolveDisplayNames } from './n
 import { notificationContent } from '@/domain/notificationTemplates';
 import { requestPiiAccessSchema, resolvePiiRequestSchema, verifyKnownInfoSchema } from './validation';
 import { loadApprovers, fileAccessRequestFor, sameApprover, loadViewerRequestState } from '@/lib/piiAccessRequest';
+import { clearPiiRequestNotices } from '@/lib/piiRequestNotices';
 
 type PiiRequest = typeof piiAccessRequests.$inferSelect;
 type PiiGrant = typeof piiAccessGrants.$inferSelect;
@@ -139,6 +140,9 @@ export async function resolvePiiAccessRequest(
                 createdAt: new Date(),
             });
         }
+
+        // Answered once, cleared for every approver (owner, editors) — logged, never blocks the answer.
+        await clearPiiRequestNotices(db, requestId, { op: 'resolvePiiAccessRequest', adopterId: req.adopterId, actor, decision });
 
         const adopter = await db.select({ name: adopters.name })
             .from(adopters).where(eq(adopters.id, req.adopterId)).get();

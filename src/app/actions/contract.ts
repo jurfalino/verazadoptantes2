@@ -22,19 +22,22 @@
 import { logger, generateErrorId } from '@/lib/logger';
 import { auth } from '@/auth';
 import { getDb } from './_db';
+import { INVITATION_TTL_DAYS } from '@/domain/constants';
+import { takesContract } from '@/domain/placements';
 
 export interface CreateInvitationResult {
     success: boolean;
     token?: string;
     url?: string;
     /** `'not_allowed'` when the adopter is neither an applicant for this animal
-     *  nor a profile the caller fully sees; otherwise a free-text failure. */
+     *  nor a profile the caller fully sees; `'already_decided'` when the team turned
+     *  them down for this animal and none of their applications is still open
+     *  (a teammate's «No avanzar» while this panel was open); `'same_person_unanswered'` when a
+     *  possible duplicate of the profile the form created still waits for «¿Es la misma persona?»;
+     *  otherwise a free-text failure. */
     error?: string;
     errorId?: string;
 }
-
-/** Days a token stays valid. */
-const INVITATION_TTL_DAYS = 30;
 
 export async function createContractInvitation(
     animalId: string,
@@ -59,6 +62,7 @@ export async function createContractInvitation(
             id: adoptions.id,
             addedBy: adoptions.addedBy,
             adopterId: adoptions.adopterId,
+            recordType: adoptions.recordType,
         }).from(adoptions).where(eq(adoptions.id, animalId)).get();
         if (!animal) return { success: false, error: 'Animal not found' };
         // v2.55.18: org-mates get full parity on team animals. Admins too, like
@@ -66,7 +70,7 @@ export async function createContractInvitation(
         // next step from that list.
         const { isOwnerOrgMateOrAdmin } = await import('./_applicants');
         if (!(await isOwnerOrgMateOrAdmin(userEmail, animal.addedBy))) return { success: false, error: 'Not authorized for this animal' };
-        if (animal.adopterId) return { success: false, error: 'Animal already adopted' };
+        if (!takesContract(animal)) return { success: false, error: 'Animal already adopted' };
 
         // Confirm the adopter exists and is not soft-deleted.
         const adopter = await db.select({ id: adopters.id, deletedAt: adopters.deletedAt, addedBy: adopters.addedBy, isPublic: adopters.isPublic })
@@ -88,6 +92,30 @@ export async function createContractInvitation(
                 animalId, adopterId, createdBy: userEmail, errorId,
             });
             return { success: false, error: 'not_allowed', errorId };
+        }
+        // An applicant the team turned down («No avanzar») for this animal, with no open application left, gets
+        // no contract: the panel that offered the button was read before the decline. Refused BEFORE the
+        // retirement below, so another applicant's live link survives. Candidates closed by an adoption stay
+        // sendable (the animal may have come back), and a profile with no application keeps the full-access path.
+        if (access.via === 'applicant' && !access.hasOpenApplication && access.hasDeclinedApplication) {
+            logger.info('createContractInvitation: refused — the application already has an outcome', { animalId, adopterId, createdBy: userEmail });
+            return { success: false, error: 'already_decided' };
+        }
+        // «¿Es la misma persona?» first (Jon 2026-11-12): a profile a form created gets no contract while a
+        // possible duplicate the caller may answer has no answer («No sé» counts). The panel locks the button;
+        // this refuses the list's button and a panel read before the lock changed. (A tab from an older build
+        // is forwarded to its own deployment, which has no lock, until that build leaves the deploy map.)
+        // Refused BEFORE the retirement below.
+        try {
+            const { unansweredForContract } = await import('@/lib/samePersonGate');
+            const waiting = await unansweredForContract(db, animalId, adopterId, userEmail);
+            if (waiting > 0) {
+                logger.info('createContractInvitation: refused — «¿Es la misma persona?» unanswered', { animalId, adopterId, createdBy: userEmail, waiting });
+                return { success: false, error: 'same_person_unanswered' };
+            }
+        } catch (e) {
+            const errorId = logger.error('createContractInvitation: same-person check failed', e, { animalId, adopterId, createdBy: userEmail });
+            return { success: false, error: 'failed', errorId };
         }
 
         // Retire any prior unused invitations for this animal so only the
@@ -121,6 +149,12 @@ export async function createContractInvitation(
         // Stamp ?lang= so the contract-app has the language immediately (before
         // its by-token fetch resolves); the persisted column is the backstop.
         const url = validLocale ? `${base}/c/${token}?lang=${validLocale}` : `${base}/c/${token}`;
+
+        // A contract sent answers their application(s): the forms' bell notices read, for everyone (best-effort, logged).
+        const { clearFormNotices } = await import('@/lib/formNotices');
+        for (const submissionId of access.submissionIds) {
+            await clearFormNotices(db, submissionId, { op: 'createContractInvitation', animalId, adopterId, createdBy: userEmail });
+        }
 
         logger.info('Contract invitation created', { animalId, adopterId, createdBy: userEmail, via: access.via });
         return { success: true, token, url };
