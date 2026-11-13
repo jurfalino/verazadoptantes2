@@ -494,7 +494,24 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              availableWhere: available or fostered, added by the caller or an org-mate),
 //                              with name, species, sex, colour, lead photo and the count of open
 //                              applications — what /my-animals already shows that caller. Read-only.
-const EXPECTED_ACTIONS = 191;
+// 194 (2026-11-13, group branding — «Personalizar» on a group card): the three exports of
+// src/app/actions/groupBranding.ts, imported by GroupBrandingSection. MEASURED (npm run build): 191 → 194.
+// What a stranger can do with them — all three read the caller from the session (signed out → generic,
+// logged), refuse with `disabled` while ENABLE_GROUP_BRANDING is off, and refuse with `forbidden`
+// unless `orgId` is a string naming a group the caller is a member of (getMemberOrgIds), before
+// anything else is read or written:
+//   getGroupBranding(orgId)    reads only: that group's theme, accent, links, image URLs and who changed
+//                              them last — what any member sees on the card.
+//   saveGroupBranding(orgId, input)  theme and accent must be one of the fixed values; each link goes
+//                              through normalizeSocialLink (instagram/facebook hosts only, website http(s)
+//                              only, javascript:/data: refused, length-capped) — a bad value is refused
+//                              with its field named and nothing is stored. Writes only that group's row; audited.
+//   setGroupImage(orgId, kind, dataUrl|null)  kind must be logo|banner; a data URL must be ≤ 750 000 chars,
+//                              declared JPEG/PNG/WEBP AND carry matching magic bytes (checkOrgImageDataUrl) —
+//                              SVG, GIF and HTML are refused. Stored at orgs/<orgId>/<kind>-<uuid> in the
+//                              public bucket (membership checked first, so no stranger picks the key); null
+//                              clears the URL. Audited.
+const EXPECTED_ACTIONS = 194;
 
 let manifest;
 try {

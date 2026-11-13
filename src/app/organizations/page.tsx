@@ -22,6 +22,8 @@ import Link from 'next/link';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { fetchCustomAdoptionDocsFlag } from '@/lib/adoptionDocsFlag';
+import { fetchGroupBrandingFlag } from '@/lib/groupBrandingFlag';
+import GroupBrandingSection from '@/components/GroupBrandingSection';
 
 
 export default function OrganizationsPage() {
@@ -37,6 +39,8 @@ export default function OrganizationsPage() {
     const [showCreateForm, setShowCreateForm] = useState(false);
     // ENABLE_CUSTOM_ADOPTION_DOCS: shows the per-group "Formulario y contrato" button.
     const [docsEnabled, setDocsEnabled] = useState(false);
+    // ENABLE_GROUP_BRANDING: shows the «Personalizar» section on each group card.
+    const [brandingEnabled, setBrandingEnabled] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -44,6 +48,10 @@ export default function OrganizationsPage() {
             .then(on => { if (!cancelled) setDocsEnabled(on); })
             // Unreadable flag → button stays hidden (the default); report it.
             .catch(error => { resolveErrorId(error, 'OrganizationsPage.docsFlag'); });
+        fetchGroupBrandingFlag()
+            .then(on => { if (!cancelled) setBrandingEnabled(on); })
+            // Unreadable flag → section stays hidden (the default); report it.
+            .catch(error => { resolveErrorId(error, 'OrganizationsPage.brandingFlag'); });
         return () => { cancelled = true; };
     }, []);
 
@@ -188,7 +196,7 @@ export default function OrganizationsPage() {
             ) : (
                 <div className="space-y-4">
                     {orgs.map((org) => (
-                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} docsEnabled={docsEnabled} currentEmail={session?.user?.email ?? ''} />
+                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} docsEnabled={docsEnabled} brandingEnabled={brandingEnabled} currentEmail={session?.user?.email ?? ''} />
                     ))}
                 </div>
             )}
@@ -243,7 +251,7 @@ function InfoBanner() {
     );
 }
 
-function OrgCard({ org, onRefresh, docsEnabled, currentEmail }: { org: Organization; onRefresh: () => void; docsEnabled: boolean; currentEmail: string }) {
+function OrgCard({ org, onRefresh, docsEnabled, brandingEnabled, currentEmail }: { org: Organization; onRefresh: () => void; docsEnabled: boolean; brandingEnabled: boolean; currentEmail: string }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [editing, setEditing] = useState(false);
@@ -457,6 +465,7 @@ function OrgCard({ org, onRefresh, docsEnabled, currentEmail }: { org: Organizat
                 </ul>
             </div>
 
+            {brandingEnabled && <GroupBrandingSection orgId={org.id} orgName={org.name} />}
 
             {/* Invite link (if generated) */}
             {inviteUrl && (
