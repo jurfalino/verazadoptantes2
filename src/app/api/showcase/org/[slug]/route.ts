@@ -7,6 +7,8 @@ import { eq, and } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, availableAnimalsOrder, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal } from '@/lib/showcase';
 import { showableCount } from '@/domain/animalAccess';
+import { getFeatureFlag } from '@/config/features';
+import { resolveBrandingForOrgSlug } from '@/lib/groupBrandingRepo';
 
 /** GET /api/showcase/org/[slug] — public list of an org's available animals.
  *  Scoping: org slug → org id → members emails → adoptions.addedBy match.
@@ -31,6 +33,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             return withCors(NextResponse.json({ error: 'Org not found' }, { status: 404 }), origin);
         }
 
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+        const brandingPart = brandingOn ? { branding: await resolveBrandingForOrgSlug(db, org.slug) } : {};
+
         // Member emails for this org
         const members = await db.select({ userEmail: orgMembers.userEmail })
             .from(orgMembers)
@@ -42,6 +47,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             return withCors(NextResponse.json({
                 org: { name: org.name, slug: org.slug },
                 animals: [],
+                ...brandingPart,
             }, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=600' } }), origin);
         }
 
@@ -79,6 +85,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
         return withCors(NextResponse.json({
             org: { name: org.name, slug: org.slug },
             animals,
+            ...brandingPart,
         }, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=600' } }), origin);
     } catch (e) {
         const errorId = logger.error('GET /api/showcase/org/[slug] failed', e, { slug });

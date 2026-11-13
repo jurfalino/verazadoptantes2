@@ -87,12 +87,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
             }
         }
 
+        // Group branding (flag off: key omitted, response unchanged). `?g=` is only a
+        // hint — the repo checks the rescuer is a member of that group.
+        const { resolveBrandingForRescuer } = await import('@/lib/groupBrandingRepo');
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+        const branding = brandingOn
+            ? await resolveBrandingForRescuer(db, user?.email, new URL(request.url).searchParams.get('g'))
+            : null;
+
         return withCors(NextResponse.json({
             valid: !!user,
             userName: user?.name || null,
             formConfig,
             animalSpecies,
             animal,
+            ...(brandingOn ? { branding } : {}),
         }), origin);
     } catch (e) {
         const errorId = logger.error('api/form/[userId] failed', e, { userId });

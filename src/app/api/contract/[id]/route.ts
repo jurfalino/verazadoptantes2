@@ -64,6 +64,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
         const resolved = await resolveDocsForRescuer(db, animal.addedBy);
 
+        // Group branding of the animal's owner (flag off: key omitted).
+        const { getFeatureFlag } = await import('@/config/features');
+        const { resolveBrandingForRescuer } = await import('@/lib/groupBrandingRepo');
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+        const branding = brandingOn ? await resolveBrandingForRescuer(db, animal.addedBy) : null;
+
         // Return only safe public fields (no PII)
         return withCors(NextResponse.json({
             id: animal.id,
@@ -79,6 +85,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             rescuerName: rescuerDisplay,
             images,
             customContract: resolved?.contract ?? null,
+            ...(brandingOn ? { branding } : {}),
         }), origin);
     } catch (error) {
         logger.error('Contract data fetch failed', error);
