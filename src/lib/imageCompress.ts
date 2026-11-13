@@ -12,6 +12,9 @@
  * `background` fills the canvas first: JPEG has no alpha, so without it a
  * transparent PNG (a group logo) comes out on black.
  */
+/** compressImage's rejection when the browser cannot decode the file as an image (a wrong file, not a fault). */
+export const IMAGE_DECODE_FAILED = 'Failed to load image';
+
 export function compressImage(file: Blob, maxSize = 1200, quality = 0.8, background?: string): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -33,7 +36,7 @@ export function compressImage(file: Blob, maxSize = 1200, quality = 0.8, backgro
                 ctx.drawImage(img, 0, 0, width, height);
                 resolve(canvas.toDataURL('image/jpeg', quality));
             };
-            img.onerror = () => reject(new Error('Failed to load image'));
+            img.onerror = () => reject(new Error(IMAGE_DECODE_FAILED));
             img.src = e.target?.result as string;
         };
         reader.onerror = () => reject(new Error('Failed to read file'));

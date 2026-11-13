@@ -16,9 +16,9 @@ import Link from 'next/link';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
 import { useShowToast } from '@/components/ui/Toast';
-import { resolveErrorId } from '@/lib/clientErrorReporter';
+import { reportClientError, resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
-import { compressImage } from '@/lib/imageCompress';
+import { compressImage, IMAGE_DECODE_FAILED } from '@/lib/imageCompress';
 import { getGroupBranding, saveGroupBranding, setGroupImage, type GroupBrandingView } from '@/app/actions/groupBranding';
 import {
     ACCENTS, BANNER_MAX_PX, LOGO_MAX_PX, ORG_IMAGE_MAX_DATA_URL,
@@ -188,9 +188,22 @@ export default function GroupBrandingSection({ orgId, orgName }: { orgId: string
                     const candidate = await compressImage(file, kind === 'logo' ? LOGO_MAX_PX : BANNER_MAX_PX, quality, '#ffffff');
                     if (candidate.length <= ORG_IMAGE_MAX_DATA_URL) { dataUrl = candidate; break; }
                 }
-            } catch {
-                // The browser could not decode it (e.g. an HTML file renamed .png): a wrong file, not a failure.
-                setImageMsg({ kind, text: t('groupBranding.image_type') });
+            } catch (err) {
+                // Logged either way, with what was picked. A file the browser cannot decode (e.g. an HTML file
+                // renamed .png) is the user's wrong file: say so inline. Anything else (no canvas, unreadable
+                // file) is a fault: toast it with its id.
+                const undecodable = err instanceof Error && err.message === IMAGE_DECODE_FAILED;
+                const errorId = crypto.randomUUID().slice(0, 8);
+                void reportClientError({
+                    errorId,
+                    message: `compressImage failed: ${err instanceof Error ? err.message : String(err)}`,
+                    stack: err instanceof Error ? err.stack : undefined,
+                    source: `${SOURCE}.compress`,
+                    extra: { orgId, kind, fileType: file.type, fileSize: file.size },
+                    level: undecodable ? 'warn' : 'error',
+                });
+                if (undecodable) setImageMsg({ kind, text: t('groupBranding.image_type') });
+                else toast.error(t('errors.generic'), t('groupBranding.save_failed'), errorId);
                 return;
             }
             if (!dataUrl) { setImageMsg({ kind, text: t('groupBranding.image_too_big') }); return; }

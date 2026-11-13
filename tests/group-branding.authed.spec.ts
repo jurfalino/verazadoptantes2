@@ -56,6 +56,18 @@ test.describe('Personalizar on a group card', () => {
         expect(isDbNull(row.branding_updated_at)).toBe(true);
     });
 
+    test('a non-image logo is refused in the browser, with nothing stored', async ({ page }) => {
+        const s = await openSection(page);
+        const input = s.getByTestId('group-branding-logo-input');
+        // An HTML file renamed .png: the type says image, the browser cannot decode it.
+        await input.setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from('<html><body>not an image</body></html>') });
+        await expect(s.getByTestId('group-branding-logo-error')).toBeVisible({ timeout: 30000 });
+        // An SVG: refused by type before any decoding.
+        await input.setInputFiles({ name: 'logo.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>') });
+        await expect(s.getByTestId('group-branding-logo-error')).toBeVisible();
+        expect(isDbNull(rows(`SELECT logo_url FROM organizations WHERE id = '${ORG_ID}'`)[0].logo_url)).toBe(true);
+    });
+
     test('Claro + Turquesa + Instagram are saved, shown back normalised, and public', async ({ page, request }) => {
         const s = await openSection(page);
         await s.locator('input[name^="group-theme-"][value="light"]').check();
