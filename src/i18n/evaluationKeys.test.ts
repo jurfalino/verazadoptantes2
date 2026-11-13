@@ -53,7 +53,7 @@ describe('hidden-animal outcome lines (the animal has a name this viewer cannot 
             closed_other_hidden: ['el animal fue adoptado por otra persona', 'the animal was adopted by someone else', 'o animal foi adotado por outra pessoa'],
             closed_open_link_hidden: ['el animal fue adoptado', 'the animal was adopted', 'o animal foi adotado'],
             status_adopted_hidden: ['Adoptó', 'Adopted', 'Adotou'],
-            status_proposed_hidden: ['Propuesta para otro animal', 'Proposed for another animal', 'Proposta para outro animal'],
+            status_proposed_hidden: ['En los candidatos de otro animal', 'Among another animal\'s candidates', 'Entre os candidatos de outro animal'],
         } as const;
         for (const [k, [e, n, p]] of Object.entries(want)) {
             const key = k as keyof typeof want;

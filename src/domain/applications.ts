@@ -6,7 +6,6 @@ import {
     APPLICATION_STATES, APPLICATION_ORIGINS, APPLICATION_CLOSE_REASONS, INVITATION_TTL_DAYS, LIFE_STAGE_YEARS,
     type ApplicationState, type ApplicationOrigin, type ApplicationCloseReason,
 } from './constants';
-import { GENERAL_ROW_ID } from './homeModules';
 
 const DAY_SEC = 86_400;
 
@@ -165,7 +164,9 @@ export function submissionApplication(selectedAnimalId: string | null, animal: {
 export function formNoticeUrl(n: { submissionId: string; applicationId: string | null; animalId: string | null; animalInTeam: boolean; animalsOn: boolean }): string {
     const form = `/form-results/${n.submissionId}`;
     if (!n.animalsOn || !n.applicationId || (n.animalId && !n.animalInTeam)) return form;
-    return `/my-animals?view=solicitudes&animal=${encodeURIComponent(n.animalId ?? GENERAL_ROW_ID)}&solicitud=${encodeURIComponent(n.applicationId)}`;
+    // A general form is a person to evaluate: it opens alone in «Mis adoptantes» (Jon 2026-11-13).
+    if (!n.animalId) return requestHref(n.applicationId);
+    return `/my-animals?view=solicitudes&animal=${encodeURIComponent(n.animalId)}&solicitud=${encodeURIComponent(n.applicationId)}`;
 }
 
 /** «Cargar un animal» from «Proponer un animal» (Jon 2026-11-13): «Agregar animal», proposing to this application on save. */
@@ -173,9 +174,27 @@ export function proposeNewAnimalHref(applicationId: string): string {
     return `/my-animals/new?proponer=${encodeURIComponent(applicationId)}`;
 }
 
-/** A general application's request on /my-animals (the panel opens on it). */
+/**
+ * A general form's request, opened alone in «Mis adoptantes» → «Pendientes de revisar» (Jon 2026-11-13:
+ * general forms are people, not an animal card). The bell notice, the email and «Cargar un animal»'s
+ * return all lead here; old /my-animals links redirect here.
+ */
+export function requestHref(applicationId: string): string {
+    return `/my-adopters?solicitud=${encodeURIComponent(applicationId)}#pendientes`;
+}
+
+/** Kept for its callers: the general request's link is `requestHref`. */
 export function generalRequestHref(applicationId: string): string {
-    return `/my-animals?view=solicitudes&animal=${GENERAL_ROW_ID}&solicitud=${encodeURIComponent(applicationId)}`;
+    return requestHref(applicationId);
+}
+
+/**
+ * «Cambiar animal» / «Quitar de …» on a team-added candidate: only while nothing happened on the animal's
+ * side for that person — the candidacy still open (no «No avanzar», not adopted or closed) and no contract
+ * link ever issued (the person would have been told).
+ */
+export function proposalUndoable(f: { candidacyState: string; invitationsEver: number }): boolean {
+    return f.candidacyState === APPLICATION_STATES.OPEN && f.invitationsEver === 0;
 }
 
 /** `?proponer=` as read from the address: an id's shape, or nothing. */

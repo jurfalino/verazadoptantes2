@@ -261,7 +261,7 @@ describe('Mis animales — applications to evaluate and the offer to tell the ot
     it('«Sin animal elegido · 2 solicitudes por evaluar» row', () => {
         const html = render(data([general(2), row({ toEvaluate: 1 })], { solicitudesCount: 2 }));
         const r = button(html, 'home-animals-general');
-        expect(plain(r)).toBe('Sin animal elegido 2 solicitudes por evaluar');
+        expect(plain(r)).toBe('Formulario general 2 solicitudes por evaluar');
         expect(r).toContain('aria-haspopup="dialog"');
         expect(r).toContain('text-amber-700');
         // The general row is first, before the animals.

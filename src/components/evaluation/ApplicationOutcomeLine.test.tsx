@@ -36,7 +36,7 @@ describe('ApplicationOutcomeLine (a «Solicitud» on the profile)', () => {
         expect(text(render({ kind: 'declined', at: 1 }))).toBe('No avanzó · 10 nov');
     });
     it('proposed / replaced / also applied / adopted', () => {
-        expect(text(render({ kind: 'proposed' }, null, LUNA))).toBe('Propuesta para Luna');
+        expect(text(render({ kind: 'proposed' }, null, LUNA))).toBe('En los candidatos de Luna');
         expect(text(render({ kind: 'replaced' }))).toBe('Reemplazada por un formulario más nuevo');
         expect(text(render({ kind: 'also_applied' }, null, LUNA))).toBe('También pidió a Luna');
         expect(text(render({ kind: 'adopted' }))).toBe('Adoptó a Luna');
@@ -45,13 +45,13 @@ describe('ApplicationOutcomeLine (a «Solicitud» on the profile)', () => {
         expect(text(render({ kind: 'closed', reason: 'adopted_other' }, null))).toBe('Cerrada: el animal fue adoptado por otra persona');
         expect(text(render({ kind: 'closed', reason: 'adopted_open_link' }, null))).toBe('Cerrada: el animal fue adoptado');
         expect(text(render({ kind: 'adopted' }, null))).toBe('Adoptó');
-        expect(text(render({ kind: 'proposed' }, null, null))).toBe('Propuesta para otro animal');
+        expect(text(render({ kind: 'proposed' }, null, null))).toBe('En los candidatos de otro animal');
     });
     it('a known but unnamed animal (own team) still reads «Sin nombre»', () => {
         const NONAME = { name: '', sex: null };
         expect(text(render({ kind: 'closed', reason: 'adopted_other' }, NONAME))).toContain('Sin nombre');
         expect(text(render({ kind: 'adopted' }, NONAME))).toBe('Adoptó a Sin nombre');
-        expect(text(render({ kind: 'proposed' }, null, NONAME))).toBe('Propuesta para Sin nombre');
+        expect(text(render({ kind: 'proposed' }, null, NONAME))).toBe('En los candidatos de Sin nombre');
     });
     it('still open: no line', () => {
         expect(render({ kind: 'to_evaluate', note: null })).toBe('');

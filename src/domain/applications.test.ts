@@ -198,8 +198,8 @@ describe('formNoticeUrl — where a form\'s bell notice leads', () => {
     it('opens that application on «Con solicitudes por evaluar»', () => {
         expect(formNoticeUrl(base)).toBe('/my-animals?view=solicitudes&animal=luna&solicitud=app-s-1');
     });
-    it('a general application (no animal, or an adopted one asked for) opens «Sin animal elegido»', () => {
-        expect(formNoticeUrl({ ...base, animalId: null, animalInTeam: false })).toBe('/my-animals?view=solicitudes&animal=general&solicitud=app-s-1');
+    it('a general application (no animal, or an adopted one asked for) opens the request alone in «Mis adoptantes»', () => {
+        expect(formNoticeUrl({ ...base, animalId: null, animalInTeam: false })).toBe('/my-adopters?solicitud=app-s-1#pendientes');
     });
     it('ids are encoded', () => {
         expect(formNoticeUrl({ ...base, animalId: 'a b&c', applicationId: 'app-x?y' })).toBe('/my-animals?view=solicitudes&animal=a%20b%26c&solicitud=app-x%3Fy');
@@ -227,7 +227,7 @@ describe('«Cargar un animal» from «Proponer un animal» (Jon 2026-11-13)', ()
     it('opens «Agregar animal» for the application, and comes back to its request', async () => {
         const { proposeNewAnimalHref, generalRequestHref, proposeParam } = await import('./applications');
         expect(proposeNewAnimalHref('app-1')).toBe('/my-animals/new?proponer=app-1');
-        expect(generalRequestHref('app-1')).toBe('/my-animals?view=solicitudes&animal=general&solicitud=app-1');
+        expect(generalRequestHref('app-1')).toBe('/my-adopters?solicitud=app-1#pendientes');
         expect(proposeNewAnimalHref('a b/c')).toBe('/my-animals/new?proponer=a%20b%2Fc');
     });
     it('reads only a well-formed id from the address', async () => {
@@ -237,5 +237,22 @@ describe('«Cargar un animal» from «Proponer un animal» (Jon 2026-11-13)', ()
         expect(proposeParam('')).toBeNull();
         expect(proposeParam('../x')).toBeNull();
         expect(proposeParam('x'.repeat(65))).toBeNull();
+    });
+});
+
+describe('a general request is a person: one link, and an undo only while nothing happened (Jon 2026-11-13)', () => {
+    it('requestHref opens the request alone in «Mis adoptantes»', async () => {
+        const { requestHref, generalRequestHref } = await import('./applications');
+        expect(requestHref('app-1')).toBe('/my-adopters?solicitud=app-1#pendientes');
+        expect(requestHref('a b?c')).toBe('/my-adopters?solicitud=a%20b%3Fc#pendientes');
+        expect(generalRequestHref('app-1')).toBe(requestHref('app-1'));
+    });
+    it('proposalUndoable: only an open candidacy that never had a contract link', async () => {
+        const { proposalUndoable } = await import('./applications');
+        expect(proposalUndoable({ candidacyState: 'open', invitationsEver: 0 })).toBe(true);
+        expect(proposalUndoable({ candidacyState: 'open', invitationsEver: 1 })).toBe(false);
+        expect(proposalUndoable({ candidacyState: 'declined', invitationsEver: 0 })).toBe(false);
+        expect(proposalUndoable({ candidacyState: 'adopted', invitationsEver: 0 })).toBe(false);
+        expect(proposalUndoable({ candidacyState: 'closed', invitationsEver: 0 })).toBe(false);
     });
 });

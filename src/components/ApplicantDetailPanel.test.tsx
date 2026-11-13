@@ -152,7 +152,7 @@ describe('ApplicantDetailPanel — the evaluation (outcome, footer, answers)', (
             [{ status: { kind: 'closed', reason: 'adopted_other' } }, LUNA, 'Cerrada: Luna fue adoptada por otra persona'],
             [{ status: { kind: 'closed', reason: 'adopted_open_link' } }, { id: 'toby', name: 'Toby', sex: 'macho' }, 'Cerrada: Toby fue adoptado'],
             [{ status: { kind: 'adopted' }, isSigned: true }, LUNA, 'Adoptó a Luna'],
-            [{ status: { kind: 'proposed' }, outcomeAnimal: { id: 'mora', name: 'Mora', sex: 'hembra' } }, null, 'Propuesta para Mora'],
+            [{ status: { kind: 'proposed' }, outcomeAnimal: { id: 'mora', name: 'Mora', sex: 'hembra' } }, null, 'En los candidatos de Mora'],
             [{ status: { kind: 'replaced' } }, LUNA, 'Reemplazada por un formulario más nuevo'],
             [{ status: { kind: 'also_applied' }, outcomeAnimal: { id: 'mora', name: 'Mora', sex: 'hembra' } }, null, 'También pidió a Mora'],
         ];
@@ -165,9 +165,9 @@ describe('ApplicantDetailPanel — the evaluation (outcome, footer, answers)', (
         }
     });
 
-    it('a proposal to an unnamed animal: «Propuesta para Sin nombre»', () => {
+    it('a proposal to an unnamed animal: «En los candidatos de Sin nombre»', () => {
         const html = render(applicant({ status: { kind: 'proposed' }, outcomeAnimal: { id: 'nube', name: '', sex: null } }), { animal: null });
-        expect(text(html)).toContain(`Propuesta para ${es.homeModules.unnamed_animal}`);
+        expect(text(html)).toContain(`En los candidatos de ${es.homeModules.unnamed_animal}`);
     });
 
     it('also_applied for an animal the viewer cannot name: «También pidió otro animal»', () => {

@@ -46,6 +46,7 @@ import { formatRating } from '@/domain/ratings';
 import { nextToEvaluateIndex, type ApplicationStatus } from '@/domain/applications';
 import { Button, buttonClasses } from '@/components/ui/Button';
 import { handledAsStale } from '@/lib/errorMessage';
+import { firstName } from '@/lib/householdCopy';
 import { ApplicationStatusLine, animalLine } from '@/components/evaluation/ApplicationStatusLine';
 import { ApplicationAnswersSummary } from '@/components/evaluation/ApplicationAnswersSummary';
 import { ApplicationDuplicate } from '@/components/evaluation/ApplicationDuplicate';
@@ -285,6 +286,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     // Still to decide: to evaluate, or a contract sent (Q1: «No avanzar» voids the live link).
     const deciding = applicant.status.kind === 'to_evaluate' || applicant.status.kind === 'contract_sent';
     const personName = adopterDisplayName({ name: applicant.adopterName }, t('adopter.nameless'));
+    // The name the «Sumar a un animal» copy uses, as the sheet does (gender-neutral: no pronoun).
+    const personFirst = firstName(personName) || personName;
 
     // Giving an animal waits for «¿Es la misma persona?» (src/domain/samePersonGate.ts): locked while the
     // section reads or while a pair has no answer. «No avanzar» never waits.
@@ -309,8 +312,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         {giveLocked && samePersonBlocking != null && (
             <p id="evaluate-same-person-hint" className="text-xs text-stone-600" data-testid="evaluate-same-person-hint">
                 {samePersonBlocking > 1
-                    ? t(animal ? 'samePerson.gate_hint_contract_many' : 'samePerson.gate_hint_propose_many').replace('{n}', String(samePersonBlocking))
-                    : t(animal ? 'samePerson.gate_hint_contract' : 'samePerson.gate_hint_propose')}{' '}
+                    ? t(animal ? 'samePerson.gate_hint_contract_many' : 'samePerson.gate_hint_propose_many').replace('{n}', String(samePersonBlocking)).replace('{name}', personFirst)
+                    : t(animal ? 'samePerson.gate_hint_contract' : 'samePerson.gate_hint_propose').replace('{name}', personFirst)}{' '}
                 <button type="button" onClick={goToQuestion}
                     className="inline-flex items-center gap-1 min-h-11 font-semibold text-teal-700 underline-offset-2 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
                     {t('samePerson.gate_go')}
@@ -630,7 +633,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         onSamePerson={() => {
                             // Same calm notice + jump as «Enviar contrato»'s refusal (UX review), after the sheet closes.
                             setDialog(null);
-                            toast.info(t('samePerson.gate_hint_propose'));
+                            toast.info(t('samePerson.gate_hint_propose').replace('{name}', personFirst));
                             requestAnimationFrame(goToQuestion);
                         }}
                     />
