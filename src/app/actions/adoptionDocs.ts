@@ -371,7 +371,7 @@ export async function setAdoptionDocsSource(source: string): Promise<{ success: 
             .bind(actorEmail).first<{ id: string }>();
         if (!user) throw new Error('User not found');
 
-        const value = serializeDocsSource(parsed); // null for self, 'org:<id>' for org
+        const value = serializeDocsSource(parsed); // 'self' for self, 'org:<id>' for org
         await env.DB.prepare(
             `INSERT INTO user_profiles (user_id, adoption_docs_source) VALUES (?, ?)
              ON CONFLICT(user_id) DO UPDATE SET adoption_docs_source = excluded.adoption_docs_source`

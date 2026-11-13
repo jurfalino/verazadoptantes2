@@ -258,8 +258,19 @@ export function parseDocsSource(raw: string | null | undefined): DocsSource {
     return { type: 'self' };
 }
 
-export function serializeDocsSource(s: DocsSource): string | null {
-    return s.type === 'org' ? `org:${s.orgId}` : null;
+/** 'self' is stored explicitly: «Los míos» chosen on purpose is not the same as never having chosen (null). */
+export function serializeDocsSource(s: DocsSource): string {
+    return s.type === 'org' ? `org:${s.orgId}` : 'self';
+}
+
+/**
+ * The source actually in effect. Never chosen (null) + a sole group + the
+ * default on → that group; any stored choice (including 'self') wins. A stored
+ * org the user left is handled downstream (resolveDocsOwner falls back).
+ */
+export function effectiveDocsSource(raw: string | null | undefined, memberOrgIds: readonly string[], soleGroupDefault: boolean): DocsSource {
+    if (raw == null && soleGroupDefault && memberOrgIds.length === 1) return { type: 'org', orgId: memberOrgIds[0] };
+    return parseDocsSource(raw);
 }
 
 export type DocsOwner = { ownerType: 'user' | 'org'; ownerId: string };
