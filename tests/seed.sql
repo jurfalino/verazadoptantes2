@@ -501,3 +501,40 @@ INSERT OR REPLACE INTO adopters (id, name, contact_info, status, added_by, creat
 
 INSERT OR REPLACE INTO duplicate_candidates (id, adopter1_id, adopter2_id, match_types, match_values, score, confidence, status, detected_at) VALUES
 ('test-dup-fixture-team', 'test-adopter-fixture-team-a', 'test-adopter-fixture-team-b', '["phone","name_word"]', '{}', 70, 'high', 'pending', strftime('%s','now','-1 days'));
+
+-- ============================================================
+-- GROUP BRANDING FIXTURES (migration 0110)
+-- ENABLE_GROUP_BRANDING is registered in code by a later task; this row turns
+-- it on for e2e. test-org-fixture-brand is a branded group (light + naranja).
+--   brand-solo : only member of it, source NULL (defaults to the group)
+--   brand-two  : member of it AND test-org-fixture-1, chose the OTHER group
+--   brand-left : chose the branded group but has no membership (left it)
+-- ============================================================
+INSERT OR REPLACE INTO app_config (key, value, updated_at, updated_by) VALUES
+('ENABLE_GROUP_BRANDING', 'true', strftime('%s','now'), 'test-seed');
+
+INSERT OR REPLACE INTO organizations (id, name, created_by, created_at, slug, logo_url, brand_theme, brand_accent, instagram_url, website_url) VALUES
+('test-org-fixture-brand', 'Refugio Marca E2E', 'e2e-brand-solo@example.com', strftime('%s','now'), 'refugio-marca-e2e', 'https://example.com/logo.jpg', 'light', 'naranja', 'https://instagram.com/refugiomarcae2e', 'https://example.com');
+
+INSERT OR REPLACE INTO user (id, name, email, emailVerified, image) VALUES
+('test-user-fixture-brand-solo', 'Marca Solo E2E', 'e2e-brand-solo@example.com', strftime('%s','now'), NULL),
+('test-user-fixture-brand-two', 'Marca Dos E2E', 'e2e-brand-two@example.com', strftime('%s','now'), NULL),
+('test-user-fixture-brand-left', 'Marca Salio E2E', 'e2e-brand-left@example.com', strftime('%s','now'), NULL);
+
+INSERT OR REPLACE INTO user_profiles (user_id, country, country_confirmed, terms_version, terms_accepted_at, adoption_docs_source) VALUES
+('test-user-fixture-brand-solo', 'AR', 1, 1, strftime('%s','now'), NULL),
+('test-user-fixture-brand-two', 'AR', 1, 1, strftime('%s','now'), 'org:test-org-fixture-1'),
+('test-user-fixture-brand-left', 'AR', 1, 1, strftime('%s','now'), 'org:test-org-fixture-brand');
+
+INSERT OR REPLACE INTO org_members (id, org_id, user_email, role, joined_at) VALUES
+('test-orgm-fixture-brand-1', 'test-org-fixture-brand', 'e2e-brand-solo@example.com', 'owner', strftime('%s','now')),
+('test-orgm-fixture-brand-2', 'test-org-fixture-brand', 'e2e-brand-two@example.com', 'member', strftime('%s','now')),
+('test-orgm-fixture-brand-3', 'test-org-fixture-1', 'e2e-brand-two@example.com', 'member', strftime('%s','now'));
+
+-- Available + listed + photo, like the catalogue fixtures (animals row with
+-- listed NULL = listed, no placement, scope='animal' photo).
+INSERT OR REPLACE INTO animals (id, name, species, details, sex, color, neutered, added_by, created_at, updated_at) VALUES
+('test-animal-fixture-brand', 'Marquita', 'cat', 'Fixture del catálogo de un grupo con marca', 'hembra', 'naranja', 1, 'e2e-brand-solo@example.com', strftime('%s','now','-9 days'), strftime('%s','now'));
+
+INSERT OR REPLACE INTO adopter_images (id, adopter_id, adoption_id, url, caption, uploaded_at, added_by, is_profile_picture, is_primary, media_type, scope) VALUES
+('test-img-fixture-brand', '__available__', 'test-animal-fixture-brand', 'https://api.dicebear.com/7.x/shapes/svg?seed=marquita', 'Marquita', strftime('%s','now','-9 days'), 'e2e-brand-solo@example.com', 0, 1, 'image', 'animal');
