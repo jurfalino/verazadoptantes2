@@ -54,6 +54,10 @@ import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
+import GeneralRequestsGroup, { requestsToEvaluate } from '@/components/pendientes/GeneralRequestsGroup';
+import HomeApplicantsPanel from '@/components/home/HomeApplicantsPanel';
+import { getGeneralApplications } from '@/app/actions/applications';
+import type { ApplicantSummary } from '@/app/actions/applicants';
 
 /** The section's anchor: request notifications link to /my-adopters#pendientes. */
 const SECTION_ID = 'pendientes';
@@ -106,6 +110,10 @@ export default function PendingDedup({ home }: {
     // closed), when the link says #pendientes or someone is waiting on the
     // viewer's answer to a merge request.
     const [open, setOpen] = useState(false);
+    // «Formularios generales» (Jon 2026-11-13): the requests waiting, listed first and never paginated;
+    // `requestOpen` is the one opened alone (a row, or `?solicitud=` from a notice, an email or a redirect).
+    const [requests, setRequests] = useState<ApplicantSummary[]>([]);
+    const [requestOpen, setRequestOpen] = useState<string | null>(null);
     const autoOpened = useRef(false);
     const scrollToSection = useRef(false);
     const sectionRef = useRef<HTMLElement | null>(null);
@@ -157,9 +165,21 @@ export default function PendingDedup({ home }: {
             return;
         }
         if (loadedByFocus.current === page) { loadedByFocus.current = null; return; }
+        // The general requests, read alongside the pairs: a failure is shown with its id and never hides the pairs.
+        const requestsRead = getGeneralApplications()
+            .then((res) => {
+                if (res.ok) return requestsToEvaluate(res.applicants);
+                toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'), res.errorId);
+                return [] as ApplicantSummary[];
+            })
+            .catch((e: unknown) => {
+                if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'), resolveErrorId(e, 'PendingDedup:requests'));
+                return [] as ApplicantSummary[];
+            });
         try {
             const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
-            const data = await getPendingDuplicatesForUser(page, PAGE_SIZE, false, focusPair);
+            const [data, waiting] = await Promise.all([getPendingDuplicatesForUser(page, PAGE_SIZE, false, focusPair), requestsRead]);
+            setRequests(waiting);
             if (data.errorId) toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, data.errorId);
             if (data.page && data.page !== page) { loadedByFocus.current = data.page; setPage(data.page); }
             setPairs(data.pairs);
@@ -180,9 +200,12 @@ export default function PendingDedup({ home }: {
                 const focused = data.focusCandidateId;
                 if (focused) setFocusId(focused);
                 if (focused ?? firstReceived) setOpenId((focused ?? firstReceived!.candidateId));
-                if (linked || focused || firstReceived) {
+                const linkedRequest = new URLSearchParams(window.location.search).get('solicitud');
+                if (linkedRequest) setRequestOpen(linkedRequest);
+                // A general form waiting opens the section too (Jon 2026-11-13 + CX: never hidden behind a closed header).
+                if (linked || focused || firstReceived || waiting.length > 0 || linkedRequest) {
                     setOpen(true);
-                    scrollToSection.current = linked || !!focused;
+                    scrollToSection.current = linked || !!focused || !!linkedRequest;
                 }
             }
         } catch (e) {
@@ -571,7 +594,13 @@ export default function PendingDedup({ home }: {
     );
     // A pair just combined keeps the section on screen (D52), even the last one.
     // `total` counts what waits on the viewer; the section stays while anything is listed (a sent request too).
-    if (total === 0 && pairs.length === 0 && merged.length === 0) return null;
+    if (total === 0 && pairs.length === 0 && merged.length === 0 && requests.length === 0 && !requestOpen) return null;
+    const closeRequest = () => {
+        setRequestOpen(null);
+        // Drop ?solicitud= so a reload doesn't reopen it (the hash stays).
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('solicitud')) { url.searchParams.delete('solicitud'); window.history.replaceState(null, '', url.toString()); }
+    };
 
 
     return (
@@ -591,9 +620,9 @@ export default function PendingDedup({ home }: {
                     {t('myAdopters.pending_dedup_title') || 'Pendientes de revisar'}
                     {/* «· N esperan tu respuesta» (Jon 2026-11-09): what waits on the viewer (needsViewer) — the
                         home card's number. Sent requests are listed, not counted. */}
-                    {needs > 0 && (
+                    {needs + requests.length > 0 && (
                         <span data-testid="pending-dedup-needs" className="text-sm font-semibold text-[var(--status-warning-text)]">
-                            · {fill(t(needs === 1 ? 'myAdopters.pending_d_needs_one' : 'myAdopters.pending_d_needs_many'), { n: String(needs) })}
+                            · {fill(t(needs + requests.length === 1 ? 'myAdopters.pending_d_needs_one' : 'myAdopters.pending_d_needs_many'), { n: String(needs + requests.length) })}
                         </span>
                     )}
                 </h2>
@@ -605,6 +634,7 @@ export default function PendingDedup({ home }: {
                 <>
                     {/* Rows are the list's direct <div> children; group headers are <h3>s between them. */}
                     <div id="pending-dedup-list" className="rounded-2xl bg-white border border-[var(--border-default)] shadow-sm overflow-hidden">
+                        <GeneralRequestsGroup requests={requests} onOpen={setRequestOpen} t={t} locale={locale} />
                         {(() => { let othersShown = false; return pendientesSections(pairs, merged).flatMap(section => {
                             // Combined on this visit (D52): their own section at the end, never under
                             // «Te piden unir» — nothing is left to answer (audit C7).
@@ -682,6 +712,9 @@ export default function PendingDedup({ home }: {
             )}
 
             {dialogs}
+            {requestOpen && (
+                <HomeApplicantsPanel target={{ request: requestOpen }} onClose={closeRequest} onChanged={() => { void load(); }} testId="request-panel" />
+            )}
         </section>
     );
 }
