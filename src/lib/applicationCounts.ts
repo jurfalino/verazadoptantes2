@@ -8,8 +8,8 @@
  * Not a `'use server'` module: callers authorize and pass the team in.
  */
 
-import { and, count, eq, isNotNull, isNull, or, gt, sql } from 'drizzle-orm';
-import { animals, applications, formSubmissions, contractInvitations } from '@/db/schema';
+import { and, count, desc, eq, isNotNull, isNull, or, gt, sql } from 'drizzle-orm';
+import { adopters, animals, applications, formSubmissions, contractInvitations } from '@/db/schema';
 import { APPLICATION_STATES, APPLICATION_CLOSE_REASONS, RECORD_TYPES } from '@/domain/constants';
 import { generalScopeWhere, teamApplicationsWhere } from '@/lib/applicantScope';
 import { healMissingApplications } from '@/lib/applicationWrites';
@@ -111,6 +111,35 @@ export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string
         .where(openOnProfile(scope))
         .get() as { n: number } | undefined;
     return row?.n ?? 0;
+}
+
+/**
+ * The team's general forms still to evaluate, newest first — the «Mis adoptantes» home rows (Jon 2026-11-13).
+ * Same rows as `countGeneralToEvaluate`. The person's name is their profile's, else the form's; a form that
+ * asked for an adopted animal carries that animal (D1-safe: one read per such row).
+ */
+export async function listGeneralToEvaluate(db: Db, viewerTeam: readonly string[], limit: number, opts: CountOpts = {}): Promise<Array<{ applicationId: string; name: string; askedAnimal: { name: string; sex: string | null } | null }>> {
+    const scope = generalScopeWhere(viewerTeam);
+    if (!scope) return [];
+    if (opts.heal !== false) await healOnce(db, viewerTeam);
+    const rows = await db.select({ id: applications.id, askedAnimalId: applications.askedAnimalId, formName: formSubmissions.name, profileName: adopters.name })
+        .from(applications)
+        .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
+        .leftJoin(adopters, eq(adopters.id, formSubmissions.linkedAdopterId))
+        .where(openOnProfile(scope))
+        .orderBy(desc(applications.createdAt))
+        .limit(limit)
+        .all() as Array<{ id: string; askedAnimalId: string | null; formName: string | null; profileName: string | null }>;
+    return Promise.all(rows.map(async (r) => {
+        const asked = r.askedAnimalId
+            ? await db.select({ name: animals.name, sex: animals.sex }).from(animals).where(eq(animals.id, r.askedAnimalId)).get() as { name: string | null; sex: string | null } | undefined
+            : undefined;
+        return {
+            applicationId: r.id,
+            name: (r.profileName || r.formName || '').trim(),
+            askedAnimal: asked?.name ? { name: asked.name, sex: asked.sex } : null,
+        };
+    }));
 }
 
 /**

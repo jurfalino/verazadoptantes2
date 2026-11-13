@@ -103,6 +103,7 @@ export const en = {
         request_more_many: "{n} more general forms to evaluate",
         requests_group: "General forms",
         request_action: "Evaluate",
+        to_evaluate_short: "to evaluate",
     },
     attribution: {
         created_by: 'Created by',

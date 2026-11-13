@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { es } from '@/i18n/locales/es';
 import { en } from '@/i18n/locales/en';
 import { pt } from '@/i18n/locales/pt';
-import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeGeneralRow, HomePendingItem } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomePendingItem } from '@/types/homeModules';
 
 vi.mock('@/app/actions/homeModules', () => ({ getHomeModules: vi.fn() }));
 vi.mock('@/context/LanguageContext', () => ({ useLanguage: () => ({ t: (k: string) => k, locale: 'es' }) }));
@@ -30,7 +30,7 @@ const t = (path: string): string => {
 };
 const rel = () => 'hace 1 día';
 
-const adopters = (pendingReview: number): HomeAdoptersData => ({ total: 4, pendingReview, pending: [], recent: [] });
+const adopters = (pendingReview: number): HomeAdoptersData => ({ total: 4, pendingReview, pending: [], recent: [], requestsToEvaluate: 0, requests: [] });
 const animals = (dueCount: number): HomeAnimalsData => ({ available: 1, adopted: 2, total: 3, dueCount, moreDue: 0, solicitudesCount: 0, moreApplications: 0, rows: [] });
 
 /** A string as a literal inside a RegExp: every metacharacter escaped, backslash included (CodeQL js/incomplete-sanitization). */
@@ -118,7 +118,7 @@ describe('Mis adoptantes / Mis animales — same 4 slots, so side by side they a
         id: `p${i}`, name: `Persona ${i}`, thumbnail: null, avgRating: null,
         createdAt: 0, viaForm: false, creatorIsSelf: true, creatorName: null, groupName: null,
     });
-    const people = (pendingReview: number, total = 10): HomeAdoptersData => ({ total, pendingReview, pending: [], recent: [1, 2, 3, 4].map(person) });
+    const people = (pendingReview: number, total = 10): HomeAdoptersData => ({ total, pendingReview, pending: [], recent: [1, 2, 3, 4].map(person), requestsToEvaluate: 0, requests: [] });
     const renderAdopters = (data: HomeAdoptersData, contacts: ReactNode = null) =>
         renderToStaticMarkup(<AdoptersCard section={{ ok: true, data }} contacts={contacts} t={t} rel={rel} />);
     const n = (html: string, id: string) => (html.match(new RegExp(`data-testid="${id}"`, 'g')) ?? []).length;
@@ -198,7 +198,7 @@ describe('Mis adoptantes — each row that waits on you is its own row, like Mis
         summary: { same: ['phone', 'email'], diff: [], flagged: false }, ...over,
     });
     const person = (i: number) => ({ id: `p${i}`, name: `Persona ${i}`, thumbnail: null, avgRating: null, createdAt: 0, viaForm: false, creatorIsSelf: true, creatorName: null, groupName: null });
-    const data = (items: HomePendingItem[], n: number): HomeAdoptersData => ({ total: 10, pendingReview: n, pending: items, recent: [1, 2, 3, 4].map(person) });
+    const data = (items: HomePendingItem[], n: number): HomeAdoptersData => ({ total: 10, pendingReview: n, pending: items, recent: [1, 2, 3, 4].map(person), requestsToEvaluate: 0, requests: [] });
     const render = (d: HomeAdoptersData) =>
         renderToStaticMarkup(<AdoptersCard section={{ ok: true, data: d }} contacts={null} t={t} rel={rel} onOpenPending={() => {}} />);
     const rows = (html: string) => html.match(/<button[^>]*data-testid="home-adopters-pending"[^>]*>[\s\S]*?<\/button>/g) ?? [];
@@ -237,7 +237,6 @@ describe('Mis animales — applications to evaluate and the offer to tell the ot
         id: 'luna', name: 'Luna', photo: null, species: 'cat', sex: 'hembra', status: 'available', personName: null,
         applicants: 3, due: null, toEvaluate: 0, offer: 0, ...over,
     });
-    const general = (n: number): HomeGeneralRow => ({ id: 'general', general: true, toEvaluate: n });
     const data = (rows: HomeAnimalsData['rows'], over: Partial<HomeAnimalsData> = {}): HomeAnimalsData =>
         ({ ...animals(0), total: 9, rows, ...over });
     const render = (d: HomeAnimalsData) => renderToStaticMarkup(
@@ -258,14 +257,11 @@ describe('Mis animales — applications to evaluate and the offer to tell the ot
         expect(plain(button(render(data([row({ toEvaluate: 1 })])), 'home-animals-applications'))).toBe('Luna 1 solicitud por evaluar');
     });
 
-    it('«Sin animal elegido · 2 solicitudes por evaluar» row', () => {
-        const html = render(data([general(2), row({ toEvaluate: 1 })], { solicitudesCount: 2 }));
-        const r = button(html, 'home-animals-general');
-        expect(plain(r)).toBe('Formulario general 2 solicitudes por evaluar');
-        expect(r).toContain('aria-haspopup="dialog"');
-        expect(r).toContain('text-amber-700');
-        // The general row is first, before the animals.
-        expect(html.indexOf('home-animals-general')).toBeLessThan(html.indexOf('home-animals-applications'));
+    it('general forms are not an animal: «Mis animales» has no «Formulario general» / «Sin animal elegido» row (Jon 2026-11-13)', () => {
+        const html = render(data([row({ toEvaluate: 1 })], { solicitudesCount: 1 }));
+        expect(html).not.toContain('home-animals-general');
+        expect(plain(html)).not.toContain(es.evaluation.general_title);
+        expect(plain(html)).not.toContain('Sin animal elegido');
     });
 
     it('offer row «Luna fue adoptada · avisá a 2 candidatos» (hembra) / «adoptado» otherwise', () => {
@@ -301,15 +297,14 @@ describe('Mis animales — applications to evaluate and the offer to tell the ot
         expect(html).not.toContain('data-testid="home-animals-applications"');
     });
 
-    it('«Ver los N animales» counts animals, never the «Sin animal elegido» row', () => {
+    it('«Ver los N animales» counts animals', () => {
         const three = [row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })];
-        expect(anchor(render(data([general(1), ...three], { total: 3 })), 'home-animals-more')).toBe('');
-        expect(anchor(render(data([general(1), ...three], { total: 4 })), 'home-animals-more')).toContain('href="/my-animals?view=todos"');
+        expect(anchor(render(data(three, { total: 3 })), 'home-animals-more')).toBe('');
+        expect(anchor(render(data(three, { total: 4 })), 'home-animals-more')).toContain('href="/my-animals?view=todos"');
     });
 
     it('without the panels, the rows link to the pages they summarize', () => {
-        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: data([general(2), row({ toEvaluate: 1 }), row({ id: 'sol', status: 'adopted', offer: 1 })]) }} t={t} />);
-        expect(anchor(html, 'home-animals-general')).toContain('href="/my-animals?view=solicitudes"');
+        const html = renderToStaticMarkup(<AnimalsCard section={{ ok: true, data: data([row({ toEvaluate: 1 }), row({ id: 'sol', status: 'adopted', offer: 1 })]) }} t={t} />);
         expect(anchor(html, 'home-animals-applications')).toContain('href="/my-animals/luna"');
         expect(anchor(html, 'home-animals-offer')).toContain('href="/my-animals/sol"');
     });
@@ -348,5 +343,39 @@ describe('signed-out home: the same «Para empezar» card a new rescuer sees (Jo
         expect(guestStepHref('adopters')).toBe('/adopter/create');
         expect(guestStepHref('animals')).toBe('/my-animals/new');
         expect(guestStepHref('posts')).toBe('/import');
+    });
+});
+
+describe('«Mis adoptantes» — general forms are people (Jon 2026-11-13)', () => {
+    const person = (i: number) => ({ id: `p${i}`, name: `Persona ${i}`, thumbnail: null, avgRating: null, createdAt: 0, viaForm: false, creatorIsSelf: true, creatorName: null, groupName: null });
+    const pair = (i: number): HomePendingItem => ({ group: 'pair', names: [`Ana ${i}`, `Ana G. ${i}`], ids: [`n${i}`, `e${i}`], by: null, summary: { same: ['phone'], diff: [], flagged: false } });
+    const req = (i: number, asked = false) => ({ applicationId: `app-${i}`, name: `Pedro ${i}`, askedAnimal: asked ? { name: 'Toby', sex: 'macho' } : null });
+    const data = (requests: number, pairs: number): HomeAdoptersData => ({
+        total: 10, pendingReview: pairs, pending: Array.from({ length: Math.min(pairs, 4) }, (_, i) => pair(i)), recent: [1, 2, 3, 4].map(person),
+        requestsToEvaluate: requests, requests: Array.from({ length: Math.min(requests, 4) }, (_, i) => req(i, i === 1)),
+    });
+    const render = (d: HomeAdoptersData) => renderToStaticMarkup(<AdoptersCard section={{ ok: true, data: d }} contacts={null} t={t} rel={rel} onOpenPending={() => {}} onOpenRequest={() => {}} />);
+    const count = (html: string, id: string) => (html.match(new RegExp(`data-testid="${id}"`, 'g')) ?? []).length;
+
+    it('2 requests + 1 pair: request rows first («Formulario general · por evaluar» / «Pidió a Toby (ya adoptado) · por evaluar»), then the pair; no «más» row', () => {
+        const html = render(data(2, 1));
+        expect(count(html, 'home-adopters-request')).toBe(2);
+        expect(count(html, 'home-adopters-pending')).toBe(1);
+        expect(html.indexOf('home-adopters-request')).toBeLessThan(html.indexOf('home-adopters-pending'));
+        expect(text(html)).toContain(es.evaluation.request_line_general);
+        expect(text(html)).toContain('Pidió a Toby (ya adoptado) · por evaluar');
+        expect(count(html, 'home-adopters-pending-more')).toBe(0);
+    });
+
+    it('5 requests + 2 pairs: 3 request rows and one «4 más esperan tu respuesta» row', () => {
+        const html = render(data(5, 2));
+        expect(count(html, 'home-adopters-request')).toBe(3);
+        expect(count(html, 'home-adopters-pending')).toBe(0);
+        expect(text(html)).toContain(es.homeModules.more_pending_many.replace('{n}', '4'));
+    });
+
+    it('without the panel a request row links to its request in «Mis adoptantes»', () => {
+        const html = renderToStaticMarkup(<AdoptersCard section={{ ok: true, data: data(1, 0) }} contacts={null} t={t} rel={rel} />);
+        expect(html).toContain('href="/my-adopters?solicitud=app-0#pendientes"');
     });
 });

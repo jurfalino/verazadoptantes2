@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { orderHomeModules, HOME_CARD_SLOTS, homeAnimalRows, homePendingRows, isPostRecord, postsCardLive } from './homeModules';
+import { orderHomeModules, HOME_CARD_SLOTS, homeAnimalRows, homePendingRows, homeAdopterSlots, isPostRecord, postsCardLive } from './homeModules';
 
 describe('orderHomeModules', () => {
     it('a brand-new account gets no cards, only «Para empezar» with every step', () => {
@@ -163,4 +163,18 @@ describe('postsCardLive', () => {
         expect(postsCardLive(now - 31 * day, now, 30)).toBe(false);
         expect(postsCardLive(null, now, 30)).toBe(false);
     });
+});
+
+describe('homeAdopterSlots — general forms first, then «¿Es la misma persona?», one «N más» row (Jon 2026-11-13)', () => {
+    it('everything fits: all shown, no «más»', () => {
+        expect(homeAdopterSlots(2, 1)).toEqual({ requests: 2, pending: 1, more: 0 });
+        expect(homeAdopterSlots(0, 4)).toEqual({ requests: 0, pending: 4, more: 0 });
+        expect(homeAdopterSlots(4, 0)).toEqual({ requests: 4, pending: 0, more: 0 });
+    });
+    it('too many: the 4th slot is one «N más esperan tu respuesta» row, requests take the others first', () => {
+        expect(homeAdopterSlots(5, 2)).toEqual({ requests: 3, pending: 0, more: 4 });
+        expect(homeAdopterSlots(2, 3)).toEqual({ requests: 2, pending: 1, more: 2 });
+        expect(homeAdopterSlots(0, 6)).toEqual({ requests: 0, pending: 3, more: 3 });
+    });
+    it('the slot count is a parameter', () => expect(homeAdopterSlots(3, 0, 2)).toEqual({ requests: 1, pending: 0, more: 2 }));
 });

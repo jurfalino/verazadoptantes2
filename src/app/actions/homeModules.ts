@@ -48,6 +48,24 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
     // Only the rows whose next move is the viewer's (needsViewer, Jon
     // 2026-11-09), and the first of them — one card row each, like the due
     // animals (option b).
+    // General forms to evaluate (Jon 2026-11-13): «Mis adoptantes» rows, before the «¿Es la misma persona?» ones.
+    // A failure leaves the card without them (logged), never without the card.
+    const generalRequests = (async () => {
+        try {
+            const [{ getTeamEmails }, { countGeneralToEvaluate, listGeneralToEvaluate }] = await Promise.all([
+                import('@/lib/orgMembership'), import('@/lib/applicationCounts'),
+            ]);
+            const team = await getTeamEmails(email);
+            const [count, items] = await Promise.all([
+                countGeneralToEvaluate(db, team, { heal: false }),
+                listGeneralToEvaluate(db, team, HOME_CARD_SLOTS, { heal: false }),
+            ]);
+            return { count, items };
+        } catch (e) {
+            logger.warn('getHomeModules: general requests fallback', { email, error: e instanceof Error ? e.message : String(e) });
+            return { count: 0, items: [] };
+        }
+    })();
     const pendingReview = (async () => {
         const t0 = Date.now();
         try {
@@ -65,7 +83,7 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
     })();
 
     const [adopters, animals, posts] = await Promise.all([
-        section('adopters', async () => loadHomeAdopters(db, email, await members, pendingReview)),
+        section('adopters', async () => loadHomeAdopters(db, email, await members, pendingReview, generalRequests)),
         animalsOn ? section('animals', () => loadHomeAnimals(db, email)) : Promise.resolve(null),
         postsOn ? section('posts', async () => loadHomePosts(db, email, await members)) : Promise.resolve(null),
     ]);

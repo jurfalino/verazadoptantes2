@@ -57,6 +57,20 @@ export const HOME_CARD_SLOTS = 4;
  * «N más esperan tu respuesta» amber row takes the last slot. `more` counts
  * every pending row not listed (also any the feed couldn't build).
  */
+/**
+ * «Mis adoptantes» rows that wait on the viewer (Jon 2026-11-13): general forms to evaluate first, then the
+ * «¿Es la misma persona?» items, within the card's slots. When they don't all fit, the last slot is one
+ * «N más esperan tu respuesta» row (never one «más» row per kind).
+ */
+export function homeAdopterSlots(requests: number, pending: number, slots: number = HOME_CARD_SLOTS): { requests: number; pending: number; more: number } {
+    const total = requests + pending;
+    if (total <= slots) return { requests, pending, more: 0 };
+    const room = slots - 1;
+    const r = Math.min(requests, room);
+    const p = Math.min(pending, room - r);
+    return { requests: r, pending: p, more: total - r - p };
+}
+
 export function homePendingRows<T>(pending: readonly T[], total: number, slots: number = HOME_CARD_SLOTS): { shown: T[]; more: number } {
     const limit = total > slots ? slots - 1 : slots;
     const shown = pending.slice(0, Math.min(limit, total));

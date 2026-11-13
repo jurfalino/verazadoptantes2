@@ -104,6 +104,7 @@ export const es = {
         request_more_many: "{n} formularios generales más por evaluar",
         requests_group: "Formularios generales",
         request_action: "Evaluar",
+        to_evaluate_short: "por evaluar",
     },
     attribution: {
         created_by: 'Creada por',

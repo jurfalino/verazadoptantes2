@@ -103,6 +103,7 @@ export const pt = {
         request_more_many: "Mais {n} formulários gerais para avaliar",
         requests_group: "Formulários gerais",
         request_action: "Avaliar",
+        to_evaluate_short: "para avaliar",
     },
     attribution: {
         created_by: 'Criada por',
