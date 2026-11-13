@@ -108,9 +108,8 @@ export default function MyAnimalsPage() {
     const [tabCounts, setTabCounts] = useState<MyAnimalsTabCounts | null>(null);
     /** «Con controles pendientes»: comes with every tab's list (x-pending-count), not with ?counts=1. */
     const [pendingCount, setPendingCount] = useState<number | null>(null);
-    /** «Con solicitudes por evaluar»: its cards («Sin animal elegido» included), with every tab's list (x-solicitudes-count). */
+    /** «Con solicitudes por evaluar»: its animal cards (general forms live in «Mis adoptantes»), with every tab's list (x-solicitudes-count). */
     const [solicitudesCount, setSolicitudesCount] = useState<number | null>(null);
-    /** «Sin animal elegido»: the team's general applications to evaluate (x-general-to-evaluate). */
     /** The tab's list failed (its errorId): «Con solicitudes por evaluar» then says so instead of «nothing to evaluate». */
     const [listError, setListError] = useState<{ view: string; errorId: string } | null>(null);
     const counts: MyAnimalsTabCounts | null = tabCounts ? {
@@ -276,7 +275,6 @@ export default function MyAnimalsPage() {
 
     /** «N solicitudes por evaluar» («1 solicitud por evaluar»). */
     const toEvaluateLine = (n: number) => interpolate(t(n === 1 ? 'evaluation.to_evaluate_one' : 'evaluation.to_evaluate_many'), { n });
-    /** «Sin animal elegido» is the first card of «Con solicitudes por evaluar», and only there (it is not an animal). */
     /** The amber row of a card: the same look as the due badge, a 44px tap target, opening a panel over the page. */
     const amberRow = 'flex items-center gap-1.5 w-full min-h-11 px-2.5 py-1.5 rounded-lg text-left text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors';
 
@@ -389,8 +387,8 @@ export default function MyAnimalsPage() {
                         </Link>
                     )}
                     {/* «Con solicitudes por evaluar»: where the homepage's «N animales más con
-                        solicitudes» lands — the animals with applications to evaluate, and
-                        «Sin animal elegido». Only while there is one (or you are on it). */}
+                        solicitudes» lands — the animals with applications to evaluate. Only
+                        while there is one (or you are on it). */}
                     {(view === 'solicitudes' || (solicitudesCount ?? 0) > 0) && (
                         <Link
                             href="/my-animals?view=solicitudes"

@@ -58,7 +58,7 @@ const PATHS = {
     copy: 'M8 8h12v12H8zM4 16V4h12',
     inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
     plus: 'M12 5v14m-7-7h14',
-    // lucide FileText: «Sin animal elegido» (the general applications) has a form, not a photo.
+    // lucide FileText: a general form (a request row in «Mis adoptantes») has a form, not a photo.
     form: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8',
 } as const;
 
