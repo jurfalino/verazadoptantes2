@@ -91,13 +91,23 @@ export function nextToEvaluateIndex(statuses: readonly ApplicationStatus[], from
 
 export type AdoptionVia = 'invitation' | 'in_app' | 'open_link';
 
-/** Who gets what when an animal is adopted: the adopter's own application → adopted; every other open one → closed. */
-export function planAdoptionClose(open: ReadonlyArray<{ id: string; adopterId: string | null }>, adopterId: string, via: AdoptionVia):
+/**
+ * Who gets what when an animal is adopted: the adopter's own application →
+ * adopted; every other open one → closed. The adopter is recognised on either
+ * profile of the form — the one it sits on or the one it created (review S3:
+ * a link sent to the auto-created profile, signed after a «Sí» linked the form
+ * elsewhere). On the open link (no token — anyone who knows the animal can
+ * sign it) only the signer's own application moves: the others stay open, so a
+ * prank or a mistaken signature never loses the team's candidates (review S1).
+ */
+export function planAdoptionClose(open: ReadonlyArray<{ id: string; adopterIds: ReadonlyArray<string | null> }>, adopterId: string, via: AdoptionVia):
     Array<{ id: string; state: 'closed' | 'adopted'; closeReason: ApplicationCloseReason | null }> {
-    const reason = via === 'open_link' ? APPLICATION_CLOSE_REASONS.ADOPTED_OPEN_LINK : APPLICATION_CLOSE_REASONS.ADOPTED_OTHER;
-    return open.map((a) => (a.adopterId === adopterId
-        ? { id: a.id, state: 'adopted' as const, closeReason: null }
-        : { id: a.id, state: 'closed' as const, closeReason: reason }));
+    type Step = { id: string; state: 'closed' | 'adopted'; closeReason: ApplicationCloseReason | null };
+    return open.flatMap((a): Step[] => {
+        if (a.adopterIds.includes(adopterId)) return [{ id: a.id, state: 'adopted' as const, closeReason: null }];
+        if (via === 'open_link') return [];
+        return [{ id: a.id, state: 'closed' as const, closeReason: APPLICATION_CLOSE_REASONS.ADOPTED_OTHER }];
+    });
 }
 
 export type MergeApp = { id: string; animalId: string | null; state: ApplicationState; createdAt: number; formOwner: string };

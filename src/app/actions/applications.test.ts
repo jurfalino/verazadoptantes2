@@ -137,6 +137,31 @@ describe('declineApplication («No avanzar»)', () => {
         expect(appRow('app-s-luna')).toMatchObject({ state: 'declined', decline_record_id: 'decline-app-s-luna', closed_by: MATE });
     });
 
+    it('a stranger who squats the pre-seeded id (any signed-in account can save a record with a chosen id) never decides: the team\'s decline is written under a fresh id (review S2)', async () => {
+        // The applicant, signed in, saved a 5★ observation on someone else with the decline id of their own form.
+        sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, details, recorded_by, created_at)
+            VALUES ('decline-app-s-luna', 'beto', 'observation', 5, 'todo bien', ?, 1000)`).run(STRANGER);
+        const squatted = events('decline-app-s-luna');
+        const res = await declineApplication('app-s-luna', DECLINE);
+        expect(res).toMatchObject({ ok: true });
+        const recordId = (res as { recordId: string }).recordId;
+        expect(recordId).not.toBe('decline-app-s-luna');
+        expect(recordId.startsWith('decline-app-s-luna-')).toBe(true);
+        // The team's observation landed on Ana with its rating; the squatted row is untouched.
+        expect(events(recordId)[0]).toMatchObject({ adopter_id: 'ana', event_type: 'observation', rating: 4, recorded_by: OWNER });
+        expect(events('decline-app-s-luna')).toEqual(squatted);
+        expect(appRow('app-s-luna')).toMatchObject({ state: 'declined', decline_record_id: recordId, closed_by: OWNER });
+    });
+
+    it('a record on the decline id that is not an observation on this person is never «theirs», even by a teammate (review S2)', async () => {
+        sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, details, recorded_by, created_at)
+            VALUES ('decline-app-s-luna', 'beto', 'observation', 3, 'otro perfil', ?, 1000)`).run(MATE);
+        const res = await declineApplication('app-s-luna', DECLINE);
+        expect(res).toMatchObject({ ok: true });
+        expect((res as { recordId: string }).recordId).not.toBe('decline-app-s-luna');
+        expect(appRow('app-s-luna')).toMatchObject({ state: 'declined', closed_by: OWNER });
+    });
+
     it('the first decliner, whose close another tap finished with ITS OWN observation, is told it worked (final review M8)', async () => {
         // Between this call's observation and its close, a teammate's call finished the decline with that observation.
         const real = (state.db as { update: (t: unknown) => unknown }).update.bind(state.db);
@@ -261,6 +286,27 @@ describe('declineApplication («No avanzar»)', () => {
         vi.useRealTimers();
         const list = await loadApplicantsForAnimal(state.db, { id: 'luna', adopterId: null }, [OWNER, MATE], OWNER);
         expect(list.find(a => a.applicationId === 'app-s-luna')!.status).toMatchObject({ kind: 'declined' });
+    });
+
+    it('a declined person can no longer open a link sent to the profile their form created, once a «Sí» linked the form elsewhere (review S3)', async () => {
+        // Ana's form created «ana-auto»; a link went there; then «Sí» linked the form to Ana's existing profile.
+        adopter(sqlite, 'ana-auto', 'Ana Pérez', OWNER);
+        sqlite.prepare("UPDATE form_submissions SET auto_adopter_id = 'ana-auto' WHERE id = 's-luna'").run();
+        invitation(sqlite, 't-auto', 'luna', 'ana-auto', NOW + 29 * DAY);
+        const ask = (token: string) => contractByToken(new Request(`http://localhost/api/contract/by-token/${token}`), { params: Promise.resolve({ token }) });
+        expect((await ask('t-auto')).status).toBe(200);
+
+        expect(await declineApplication('app-s-luna', DECLINE)).toMatchObject({ ok: true });
+        // The decline retires the auto-created profile's link too, and the same second already reads as expired.
+        expect(sqlite.prepare("SELECT expires_at FROM contract_invitations WHERE token = 't-auto'").get()!.expires_at as number)
+            .toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
+        expect((await ask('t-auto')).status).toBe(410);
+
+        // A link the retire missed (sent from an old tab after the decline) is refused by the same rule as «Enviar contrato».
+        invitation(sqlite, 't-late', 'luna', 'ana-auto', NOW + 29 * DAY);
+        const late = await ask('t-late');
+        expect(late.status).toBe(410);
+        expect(((await late.json()) as { code?: string }).code).toBe('not_allowed');
     });
 
     it('declineApplication refuses rating 0, rating 6, a blank reason', async () => {

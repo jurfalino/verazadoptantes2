@@ -93,10 +93,21 @@ describe('nextToEvaluateIndex', () => {
 
 describe('planAdoptionClose', () => {
     it("the adopter's own → adopted; others → closed", () => {
-        expect(planAdoptionClose([{ id: 'a', adopterId: 'juan' }, { id: 'b', adopterId: 'ana' }, { id: 'c', adopterId: null }], 'juan', 'invitation'))
+        expect(planAdoptionClose([{ id: 'a', adopterIds: ['juan', null] }, { id: 'b', adopterIds: ['ana', null] }, { id: 'c', adopterIds: [null, null] }], 'juan', 'invitation'))
             .toEqual([{ id: 'a', state: 'adopted', closeReason: null }, { id: 'b', state: 'closed', closeReason: 'adopted_other' }, { id: 'c', state: 'closed', closeReason: 'adopted_other' }]);
-        expect(planAdoptionClose([{ id: 'b', adopterId: 'ana' }], 'new-signer', 'open_link')).toEqual([{ id: 'b', state: 'closed', closeReason: 'adopted_open_link' }]);
-        expect(planAdoptionClose([{ id: 'b', adopterId: 'ana' }], 'juan', 'in_app')).toEqual([{ id: 'b', state: 'closed', closeReason: 'adopted_other' }]);
+        expect(planAdoptionClose([{ id: 'b', adopterIds: ['ana', null] }], 'juan', 'in_app')).toEqual([{ id: 'b', state: 'closed', closeReason: 'adopted_other' }]);
+    });
+
+    it('the open link (no token, anyone can sign it) never closes the other candidates — only the signer\'s own is adopted (review S1)', () => {
+        expect(planAdoptionClose([{ id: 'b', adopterIds: ['ana', null] }], 'new-signer', 'open_link')).toEqual([]);
+        expect(planAdoptionClose([{ id: 'a', adopterIds: ['juan', null] }, { id: 'b', adopterIds: ['ana', null] }], 'juan', 'open_link'))
+            .toEqual([{ id: 'a', state: 'adopted', closeReason: null }]);
+    });
+
+    it('the adopter is recognised on either profile of the form: the one it sits on, or the one it created (review S3)', () => {
+        // A link sent to the auto-created profile, signed after a «Sí» linked the form to an existing profile.
+        expect(planAdoptionClose([{ id: 'a', adopterIds: ['existing', 'auto'] }, { id: 'b', adopterIds: ['ana', null] }], 'auto', 'invitation'))
+            .toEqual([{ id: 'a', state: 'adopted', closeReason: null }, { id: 'b', state: 'closed', closeReason: 'adopted_other' }]);
     });
 });
 

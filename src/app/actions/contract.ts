@@ -97,7 +97,8 @@ export async function createContractInvitation(
         // no contract: the panel that offered the button was read before the decline. Refused BEFORE the
         // retirement below, so another applicant's live link survives. Candidates closed by an adoption stay
         // sendable (the animal may have come back), and a profile with no application keeps the full-access path.
-        if (access.via === 'applicant' && !access.hasOpenApplication && access.hasDeclinedApplication) {
+        const { refusedAsDecided } = await import('@/lib/contractInvitationAccess');
+        if (refusedAsDecided(access)) {
             logger.info('createContractInvitation: refused — the application already has an outcome', { animalId, adopterId, createdBy: userEmail });
             return { success: false, error: 'already_decided' };
         }

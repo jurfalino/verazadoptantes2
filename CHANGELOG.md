@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.12] - 2026-11-13
+
+### Fixed — independent pre-production review of «Evaluar solicitudes» (Jon 2026-11-13)
+- A signature on an animal's open contract link (no personal code — anyone who knows the animal can sign it)
+  no longer closes the other candidates: only the signer's own request becomes «adoptada». A prank or a
+  mistaken signature never loses the team's candidates.
+- «No avanzar» can't be taken over: a record someone else saved under the request's reserved id never counts
+  as the team's decision (the team's observation is saved under a fresh id), and the browser can't create a
+  record under such an id.
+- A person turned down for an animal can't open or sign a contract link for it, including one sent to the
+  profile their form created before a «Sí» linked the form to an existing profile. «No avanzar» retires the
+  links on both profiles, a link reads as expired from the second it was retired, and the person who signs is
+  recognised on either profile.
+
 ## [2.59.11] - 2026-11-13
 
 ### Fixed — independent review of 2.59.10 (engineering + UI audits, Jon 2026-11-13)

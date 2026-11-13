@@ -88,11 +88,11 @@ describe('fostered animals take contracts', () => {
         });
     });
 
-    it('an open-link signature closes the other candidates as adopted_open_link with offer_done_at set', async () => {
+    it('an open-link signature leaves the other candidates open (anyone can sign it — review S1)', async () => {
         const res = await sign('a', false);
-        expect(res.closedApplications).toBe(1);
-        expect(app('app-sc')).toMatchObject({ state: 'closed', close_reason: 'adopted_open_link' });
-        expect(app('app-sc').offer_done_at).toEqual(expect.any(Number));
+        expect(res.closedApplications ?? 0).toBe(0);
+        expect(app('app-sc')).toMatchObject({ state: 'open', close_reason: null });
+        expect(app('app-sc').offer_done_at).toBeNull();
     });
 
     it('an invitation signature closes the other candidates as adopted_other', async () => {

@@ -3,7 +3,7 @@ import { logger } from '@/lib/logger';
 import { withCors, corsPreflightResponse } from '@/lib/cors';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { buildContractPrefill, tokenRef, type ContractPrefill } from '@/lib/contractInvitation';
-import { resolveInvitationAccess } from '@/lib/contractInvitationAccess';
+import { resolveInvitationAccess, refusedAsDecided } from '@/lib/contractInvitationAccess';
 import { takesContract } from '@/domain/placements';
 
 export const runtime = 'edge';
@@ -62,7 +62,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
         if (invite.usedAt) {
             return withCors(NextResponse.json({ error: 'Invitation already used', code: 'used' }, { status: 410 }), origin);
         }
-        if (invite.expiresAt && invite.expiresAt < nowSec) {
+        if (invite.expiresAt && invite.expiresAt <= nowSec) {
             return withCors(NextResponse.json({ error: 'Invitation expired', code: 'expired' }, { status: 410 }), origin);
         }
 
@@ -85,6 +85,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             logger.warn('Contract by-token: invitation no longer allowed', {
                 token: tokenRef(token), animalId: invite.animalId, adopterId: invite.adopterId, createdBy: invite.createdBy,
             });
+            return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
+        }
+        // Turned down for this animal (review S3): the same rule as «Enviar contrato», answered like any link that is no longer valid.
+        if (refusedAsDecided(access)) {
+            logger.info('contract/by-token: refused — the applicant was declined for this animal', { animalId: invite.animalId, adopterId: adopter.id });
             return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
         }
 

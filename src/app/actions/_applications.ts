@@ -139,12 +139,16 @@ export async function liveAdopterExists(db: Db, adopterId: string | null): Promi
  * the same retirement a newer send does (`createContractInvitation`), so the
  * link answers «expired». Used links are history and stay as they are.
  */
-export async function retireLiveLink(db: Db, animalId: string, adopterId: string, nowSec: number): Promise<void> {
+export async function retireLiveLink(db: Db, animalId: string, adopterIds: ReadonlyArray<string | null>, nowSec: number): Promise<void> {
+    // Both profiles of the form (review S3): the one it sits on and the one it created — a link sent to the
+    // auto-created profile stays live after a «Sí» links the form to an existing one.
+    const ids = [...new Set(adopterIds.filter((x): x is string => !!x))];
+    if (ids.length === 0) return;
     await db.update(contractInvitations)
         .set({ expiresAt: nowSec })
         .where(and(
             eq(contractInvitations.animalId, animalId),
-            eq(contractInvitations.adopterId, adopterId),
+            or(...ids.map(id => eq(contractInvitations.adopterId, id))),
             isNull(contractInvitations.usedAt),
             or(isNull(contractInvitations.expiresAt), gt(contractInvitations.expiresAt, nowSec)),
         ));
@@ -160,6 +164,19 @@ export async function declineRecordAuthor(db: Db, recordId: string): Promise<str
     const row = await db.select({ recordedBy: adopterEvents.recordedBy }).from(adopterEvents)
         .where(eq(adopterEvents.id, recordId)).get() as { recordedBy: string | null } | undefined;
     return row ? row.recordedBy : undefined;
+}
+
+/**
+ * Whether the record on the pre-seeded «No avanzar» id is a real decline of this application (review S2):
+ * an observation on the form's profile, written by someone who may evaluate this application. The id is
+ * guessable and any signed-in account can save a record with a chosen id, so anything else is a squat —
+ * never «their decision».
+ */
+export async function isTeamDeclineRecord(db: Db, recordId: string, applicationId: string, adopterId: string): Promise<boolean> {
+    const row = await db.select({ recordedBy: adopterEvents.recordedBy, eventType: adopterEvents.eventType, adopterId: adopterEvents.adopterId })
+        .from(adopterEvents).where(eq(adopterEvents.id, recordId)).get() as { recordedBy: string | null; eventType: string | null; adopterId: string | null } | undefined;
+    if (!row || row.eventType !== RECORD_TYPES.OBSERVATION || row.adopterId !== adopterId || !row.recordedBy) return false;
+    return (await loadAuthorizedApplication(db, applicationId, row.recordedBy)) !== null;
 }
 
 /** The application ended «No avanzó» with this observation — whoever's call closed it. */

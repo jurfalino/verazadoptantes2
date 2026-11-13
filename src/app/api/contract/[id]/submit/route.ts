@@ -75,7 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 return withCors(NextResponse.json({ error: 'Invitation already used' }, { status: 410 }), origin);
             }
             const nowSec = Math.floor(Date.now() / 1000);
-            if (invitation.expiresAt && invitation.expiresAt < nowSec) {
+            if (invitation.expiresAt && invitation.expiresAt <= nowSec) {
                 return withCors(NextResponse.json({ error: 'Invitation expired' }, { status: 410 }), origin);
             }
             // The token's animalId takes precedence over the URL param (which the
@@ -98,12 +98,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             if (!row || row.deletedAt) {
                 return withCors(NextResponse.json({ error: 'Adopter record unavailable' }, { status: 410 }), origin);
             }
-            const { resolveInvitationAccess } = await import('@/lib/contractInvitationAccess');
+            const { resolveInvitationAccess, refusedAsDecided } = await import('@/lib/contractInvitationAccess');
             const access = await resolveInvitationAccess(db, invitation.createdBy, animalId, row);
             if (!access.allowed) {
                 logger.warn('Contract submit: invitation no longer allowed', {
                     animalId, adopterId: invitation.adopterId, createdBy: invitation.createdBy,
                 });
+                return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
+            }
+            // Turned down for this animal (review S3): the same rule as «Enviar contrato».
+            if (refusedAsDecided(access)) {
+                logger.info('contract submit: refused — the applicant was declined for this animal', { animalId, adopterId: row.id });
                 return withCors(NextResponse.json({ error: 'Invitation not valid', code: 'not_allowed' }, { status: 410 }), origin);
             }
             signOverwrite = access.overwriteOnSign;

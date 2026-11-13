@@ -148,7 +148,7 @@ export async function declineApplication(applicationId: string, input: { text: s
     try {
         viewer = await sessionViewer();
         if (!viewer) return fail('unauthorized');
-        const { isId, parseDecline, loadAuthorizedApplication, liveAdopterExists, declineRecordId, retireLiveLink, markDeclined, declineRecordAuthor, isDeclinedWith } = await import('./_applications');
+        const { isId, parseDecline, loadAuthorizedApplication, liveAdopterExists, declineRecordId, retireLiveLink, markDeclined, declineRecordAuthor, isDeclinedWith, isTeamDeclineRecord } = await import('./_applications');
         if (!isId(applicationId)) return fail('invalid');
         const decline = parseDecline(input);
         if (!decline) return fail('invalid');
@@ -156,7 +156,7 @@ export async function declineApplication(applicationId: string, input: { text: s
         const auth = await loadAuthorizedApplication(db, applicationId, viewer);
         if (!auth) return fail('not_found');
         const { app, submission, animal } = auth;
-        const recordId = declineRecordId(applicationId);
+        let recordId = declineRecordId(applicationId);
         const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
         if (app.state !== APPLICATION_STATES.OPEN) {
             // This viewer's own decline already landed (a retry after a timeout the client saw): it worked —
@@ -174,7 +174,7 @@ export async function declineApplication(applicationId: string, input: { text: s
         const finishTheirs = async (author: string | null) => {
             const finishedBy = author || viewer!;
             const nowSec = Math.floor(Date.now() / 1000);
-            if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
+            if (app.animalId) await retireLiveLink(db, app.animalId, [adopterId, submission.autoAdopterId], nowSec);
             if (await markDeclined(db, applicationId, recordId, finishedBy, nowSec)) {
                 const { clearFormNotices } = await import('@/lib/formNotices');
                 await clearFormNotices(db, submission.id, { op: 'declineApplication', applicationId, viewer, finishedFor: finishedBy });
@@ -182,7 +182,15 @@ export async function declineApplication(applicationId: string, input: { text: s
             logger.info("declineApplication: another rescuer's observation decides it — this one not saved", { applicationId, viewer, author });
             return fail('already_decided');
         };
-        const author = await declineRecordAuthor(db, recordId);
+        let author = await declineRecordAuthor(db, recordId);
+        if (author !== undefined && !(await isTeamDeclineRecord(db, recordId, applicationId, adopterId))) {
+            // Squatted (review S2): someone saved another record under this guessable id. It never decides;
+            // the team's decline goes under a fresh id and the squat is left for an admin to see.
+            logger.error('declineApplication: the decline id holds a record that is not this team\'s observation — writing under a fresh id',
+                new Error('squatted decline id'), { applicationId, viewer, recordId, squatAuthor: author });
+            recordId = `${recordId}-${crypto.randomUUID().slice(0, 8)}`;
+            author = undefined;
+        }
         if (author !== undefined && norm(author) !== norm(viewer)) return finishTheirs(author);
 
         // 1. The observation, through the one record save (visibility, history, notices as any observation).
@@ -211,7 +219,7 @@ export async function declineApplication(applicationId: string, input: { text: s
 
         const nowSec = Math.floor(Date.now() / 1000);
         // 2. Their live contract link for this animal, if any, stops working.
-        if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
+        if (app.animalId) await retireLiveLink(db, app.animalId, [adopterId, submission.autoAdopterId], nowSec);
         // 3. The application ends, only if it is still open (a concurrent decision wins) — unless the call that
         //    won closed it with THIS observation (a teammate finishing it, step 0): then this one did land.
         if (!(await markDeclined(db, applicationId, saved.id, viewer, nowSec)) && !(await isDeclinedWith(db, applicationId, saved.id))) {

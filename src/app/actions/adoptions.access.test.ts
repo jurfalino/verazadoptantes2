@@ -80,6 +80,19 @@ describe('saveAdoption — edits are gated, adds are open', () => {
         const res = await saveAdoption({ adopterId: 'ad1', recordType: 'observation', details: 'La vi en la plaza' } as never);
         expect(res.success).toBe(true);
     });
+
+    it('nobody creates a record under a «No avanzar» id from the browser — only the decline itself writes those (review S2)', async () => {
+        session.user = STRANGER;
+        await expect(saveAdoption({ id: 'decline-app-s1', adopterId: 'ad1', recordType: 'observation', rating: 5, details: 'todo bien' } as never)).rejects.toThrow();
+        expect(sqlite.prepare("SELECT COUNT(*) AS n FROM adopter_events WHERE id LIKE 'decline-%'").get()!.n).toBe(0);
+    });
+
+    it('an existing «No avanzar» observation can still be edited by its author from the profile', async () => {
+        sqlite.prepare(`INSERT INTO adopter_events (id, adopter_id, event_type, rating, details, recorded_by, created_at)
+            VALUES ('decline-app-s1', 'ad1', 'observation', 2, 'texto', ?, 1000)`).run(OWNER);
+        const res = await saveAdoption({ id: 'decline-app-s1', adopterId: 'ad1', recordType: 'observation', rating: 3, details: 'texto corregido' } as never);
+        expect(res.success).toBe(true);
+    });
 });
 
 describe('getAdoptions — signed-in only', () => {
