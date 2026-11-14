@@ -132,3 +132,27 @@ None.
 ## Left to the builder
 
 Column names and storage (group fields; no new user-profile field — reuse `adoption_docs_source`), upload endpoint, the form's branding endpoint and how branding is added to the other public responses, the URL parameter that carries the group, the token mapping for the light theme, the exact palette values, the swatch names, image size limits, link validation/normalisation (accept a handle or a full URL), and the loading screen's look.
+
+## Release steps
+
+Before turning `ENABLE_GROUP_BRANDING` on in production (a D1 write: needs per-call approval; idempotent):
+
+1. Re-run the 0110 «explicit self» backfill, immediately before flipping the flag. Why: `migrate-production`
+   applies 0110 before `deploy-production`, and the old build keeps serving (and, through deploy-skew forwarding,
+   keeps answering saves from old tabs) until the deploy finishes — indefinitely if e2e fails after the migration.
+   In that window the old `setAdoptionDocsSource` still stores «Los míos» as `NULL` (with a `'self'` audit row).
+   With the flag on, `NULL` + exactly one group reads as "never chose" → that group's form, contract and look
+   would override the explicit choice. The statement, exactly as in `drizzle/0110_group_branding.sql`:
+
+   ```sql
+   UPDATE user_profiles SET adoption_docs_source = 'self'
+   WHERE adoption_docs_source IS NULL AND user_id IN (
+     SELECT u.id FROM user u JOIN audit_log a ON lower(a.user_email) = lower(u.email)
+     WHERE a.action = 'adoption_docs_source_changed' AND json_extract(a.details, '$.source') = 'self');
+   ```
+
+   ```bash
+   npx wrangler d1 execute pet-adoption-db --remote --command "<the statement above>"
+   ```
+
+2. Then switch the flag on in Admin → Config.
