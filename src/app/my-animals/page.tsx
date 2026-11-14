@@ -28,6 +28,7 @@ import { interpolate } from '@/lib/interpolate';
 import HomeApplicantsPanel, { applicantsTargetKey, type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
 import { AdoptionOfferSheet } from '@/components/evaluation/AdoptionOfferSheet';
 import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
+import { AnimalGridSkeleton, AnimalSearchSkeleton } from '@/components/skeletons/ListSkeletons';
 
 interface AnimalImage {
     id: string;
@@ -278,14 +279,6 @@ export default function MyAnimalsPage() {
     /** The amber row of a card: the same look as the due badge, a 44px tap target, opening a panel over the page. */
     const amberRow = 'flex items-center gap-1.5 w-full min-h-11 px-2.5 py-1.5 rounded-lg text-left text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors';
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
-                <div className="text-stone-500">{t('common.loading')}</div>
-            </div>
-        );
-    }
-
     if (error) {
         return (
             <div className="min-h-screen bg-stone-50 py-12 px-4 flex items-center justify-center">
@@ -404,7 +397,8 @@ export default function MyAnimalsPage() {
                     )}
                 </div>
 
-                {/* Search & Filters */}
+                {/* Search & Filters. First load: its placeholder, since most rescuers have animals. */}
+                {animals.length === 0 && loading && <AnimalSearchSkeleton />}
                 {animals.length > 0 && (
                     <div className="flex flex-col sm:flex-row gap-3 mb-6">
                         {/* Text search */}
@@ -459,7 +453,11 @@ export default function MyAnimalsPage() {
                     </p>
                 )}
 
-                {view === 'solicitudes' && listError?.view === view ? (
+                {/* Loading (first visit or a tab switch): card skeletons in the list's place;
+                    the header, hint, tabs and search stay put. */}
+                {loading ? (
+                    <AnimalGridSkeleton />
+                ) : view === 'solicitudes' && listError?.view === view ? (
                     // Its list (or a count it is built from) failed: say so, never «nothing to evaluate».
                     <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm" data-testid="solicitudes-error">
                         <p className="text-sm text-stone-600">

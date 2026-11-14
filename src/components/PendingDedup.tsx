@@ -629,12 +629,7 @@ export default function PendingDedup({ home }: {
 
     // Not loaded yet: hold the header's place (it used to pop in seconds after the list and push it
     // down ~90px under a finger). If nothing turns out to be pending, the placeholder goes.
-    if (pairs === null) return reserved === 0 ? null : (
-        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse" style={reserved ? { height: reserved } : undefined}>
-            <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
-            <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
-        </section>
-    );
+    if (pairs === null) return reserved === 0 ? null : <PendingDedupPlaceholder height={reserved} />;
     // A pair just combined keeps the section on screen (D52), even the last one.
     // `total` counts what waits on the viewer; the section stays while anything is listed (a sent request too).
     if (total === 0 && pairs.length === 0 && merged.length === 0 && requests.length === 0 && !requestOpen) return null;
@@ -752,6 +747,20 @@ export default function PendingDedup({ home }: {
             {requestOpen && (
                 <HomeApplicantsPanel target={{ request: requestOpen }} onClose={closeRequest} onChanged={requestChanged} testId="request-panel" />
             )}
+        </section>
+    );
+}
+
+/**
+ * The section's place while it loads. Also painted by /my-adopters/loading.tsx
+ * (before the page's code arrives), so the hand-off to the real component
+ * keeps this block exactly where it was.
+ */
+export function PendingDedupPlaceholder({ height }: { height?: number | null } = {}) {
+    return (
+        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse" style={height ? { height } : undefined}>
+            <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
+            <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
         </section>
     );
 }
