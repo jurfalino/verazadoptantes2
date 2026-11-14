@@ -29,7 +29,7 @@ export default function MyAdoptersLoading() {
                     </div>
                     <SkeletonBar className="h-9 w-40 rounded-lg" />
                 </div>
-                <PendingDedupPlaceholder />
+                <PendingDedupPlaceholder remembered />
                 <AdopterListSkeleton />
             </div>
         </div>

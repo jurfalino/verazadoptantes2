@@ -21,7 +21,7 @@
  * click (pairChoices, decideMergeRequestAnswer).
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useDateFormat } from '@/context/TimezoneContext';
@@ -55,12 +55,16 @@ import { ChevronRight } from 'lucide-react';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { readBoth } from '@/components/pendientes/readBoth';
-import { readReservedHeight, saveReservedHeight } from '@/lib/pendientesHeight';
+import { APPLY_RESERVED_HEIGHT_SCRIPT, readReservedHeight, saveReservedHeight } from '@/lib/pendientesHeight';
+
 import { REQUEST_LINK_EVENT } from '@/components/pendientes/RequestLinkWatcher';
 import GeneralRequestsGroup from '@/components/pendientes/GeneralRequestsGroup';
 import type { GeneralRequestRow } from '@/lib/applicationCounts';
 import HomeApplicantsPanel from '@/components/home/HomeApplicantsPanel';
 import { getGeneralRequestRows } from '@/app/actions/applications';
+
+// useLayoutEffect warns on the server (same guard as AnchoredMenu).
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 /** The section's anchor: request notifications link to /my-adopters#pendientes. */
 const SECTION_ID = 'pendientes';
@@ -124,7 +128,9 @@ export default function PendingDedup({ home }: {
     // the server render has no storage), measured once per page load when the first read settles.
     const [reserved, setReserved] = useState<number | null>(null);
     const measured = useRef(false);
-    useEffect(() => { if (!home) setReserved(readReservedHeight()); }, [home]);
+    // Layout effect: applied before the browser paints, so the placeholder never shows the default height for a frame
+    // when the page replaces the route skeleton (whose inline script already applied the stored one).
+    useIsoLayoutEffect(() => { if (!home) setReserved(readReservedHeight()); }, [home]);
     /** One row open at a time (D21). */
     const [openId, setOpenId] = useState<string | null>(null);
     /** «¿Cuál se conserva?» per row; absent = the feed's defaultKeep. */
@@ -629,7 +635,7 @@ export default function PendingDedup({ home }: {
 
     // Not loaded yet: hold the header's place (it used to pop in seconds after the list and push it
     // down ~90px under a finger). If nothing turns out to be pending, the placeholder goes.
-    if (pairs === null) return reserved === 0 ? null : <PendingDedupPlaceholder height={reserved} />;
+    if (pairs === null) return reserved === 0 ? null : <PendingDedupPlaceholder height={reserved} remembered={!home} />;
     // A pair just combined keeps the section on screen (D52), even the last one.
     // `total` counts what waits on the viewer; the section stays while anything is listed (a sent request too).
     if (total === 0 && pairs.length === 0 && merged.length === 0 && requests.length === 0 && !requestOpen) return null;
@@ -756,11 +762,16 @@ export default function PendingDedup({ home }: {
  * (before the page's code arrives), so the hand-off to the real component
  * keeps this block exactly where it was.
  */
-export function PendingDedupPlaceholder({ height }: { height?: number | null } = {}) {
+export function PendingDedupPlaceholder({ height, remembered = false }: { height?: number | null; remembered?: boolean } = {}) {
     return (
-        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse" style={height ? { height } : undefined}>
-            <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
-            <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
-        </section>
+        <>
+            {/* suppressHydrationWarning: the inline script below may already have set the stored height. */}
+            <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse" style={height ? { height } : undefined} suppressHydrationWarning>
+                <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
+                <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
+            </section>
+            {/* Mis adoptantes: last visit's height from the first paint (UX review S5), not only after hydration. */}
+            {remembered && <script dangerouslySetInnerHTML={{ __html: APPLY_RESERVED_HEIGHT_SCRIPT }} />}
+        </>
     );
 }

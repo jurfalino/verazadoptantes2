@@ -20,3 +20,12 @@ export function readReservedHeight(): number | null {
 export function saveReservedHeight(px: number): void {
     try { window.localStorage.setItem(KEY, String(Math.max(0, Math.round(px)))); } catch { /* storage blocked: the default placeholder next time */ }
 }
+
+/**
+ * Inline script placed right after the placeholder in the server HTML: applies the stored height before the
+ * first paint, so the route skeleton and the server-rendered page already hold it (the effect that reads it runs
+ * only after hydration, and the list skeleton below would jump down then). 0 = hide, as the component does.
+ */
+export const APPLY_RESERVED_HEIGHT_SCRIPT =
+    `try{var e=document.currentScript.previousElementSibling,v=localStorage.getItem(${JSON.stringify(KEY)});` +
+    `if(e&&v!=null&&/^\\d+$/.test(v)){v=Math.min(${MAX},+v);if(v===0)e.style.display='none';else e.style.height=v+'px'}}catch(_){}`;
