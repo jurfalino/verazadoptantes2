@@ -494,8 +494,19 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              availableWhere: available or fostered, added by the caller or an org-mate),
 //                              with name, species, sex, colour, lead photo and the count of open
 //                              applications — what /my-animals already shows that caller. Read-only.
-// 194 (2026-11-13, group branding — «Personalizar» on a group card): the three exports of
-// src/app/actions/groupBranding.ts, imported by GroupBrandingSection. MEASURED (npm run build): 191 → 194.
+// 193 (Jon 2026-11-13, «Sumar a un animal» is reversible): two exports in src/app/actions/applications.ts,
+// imported by ApplicantDetailPanel. What a stranger can do with them:
+//   withdrawProposal(generalApplicationId)  session required (signed out → unauthorized); the id is shape-checked;
+//                              the caller must pass loadAuthorizedApplication (the form link's team, or the animal
+//                              owner's team, or admin) — else not_found, nothing written. Only acts on a general form
+//                              in state «proposed»: deletes its team-added candidacy ONLY while it is still open and
+//                              no contract link was ever issued for that animal to either profile of the form (one
+//                              statement), then reopens the form. Writes no observation, history or notice.
+//   changeProposedAnimal(generalApplicationId, animalId)  the same gate plus the «¿Es la misma persona?» lock, then
+//                              the same withdraw and the existing proposeAuthorized (animal in the caller's and the
+//                              form link's team, takes contracts). On refusal it restores the first animal.
+// 196 (2026-11-13, group branding — «Personalizar» on a group card): the three exports of
+// src/app/actions/groupBranding.ts, imported by GroupBrandingSection. MEASURED (npm run build): 191 → 194 on its branch; 193 → 196 after merging staging.
 // What a stranger can do with them — all three read the caller from the session (signed out → generic,
 // logged), refuse with `disabled` while ENABLE_GROUP_BRANDING is off, and refuse with `forbidden`
 // unless `orgId` is a string naming a group the caller is a member of (getMemberOrgIds), before
@@ -511,7 +522,7 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              SVG, GIF and HTML are refused. Stored at orgs/<orgId>/<kind>-<uuid> in the
 //                              public bucket (membership checked first, so no stranger picks the key); null
 //                              clears the URL. Audited.
-const EXPECTED_ACTIONS = 194;
+const EXPECTED_ACTIONS = 196;
 
 let manifest;
 try {

@@ -13,7 +13,7 @@ import { isFemaleAnimal } from '@/domain/animalSex';
 import { APPLICATION_CLOSE_REASONS } from '@/domain/constants';
 import type { ApplicationStatus } from '@/domain/applications';
 
-export type NamedAnimal = { name: string; sex: string | null };
+export type NamedAnimal = { name: string; sex: string | null; /** A proposal's animal adopted since: «(ya adoptado)». */ adopted?: boolean };
 
 /** `{animal}` filled, with the sex-agreeing variant of `<key>_f` / `<key>_m`. */
 export function animalLine(t: (k: string) => string, key: string, animal: NamedAnimal): string {
@@ -53,7 +53,9 @@ export function statusLineText(
             return t('evaluation.status_closed').replace('{reason}', reason);
         }
         case 'adopted': return named('evaluation.status_adopted', ctx.animal);
-        case 'proposed': return named('evaluation.status_proposed', ctx.outcomeAnimal);
+        case 'proposed': return ctx.outcomeAnimal?.adopted
+            ? animalLine(t, 'evaluation.status_proposed_adopted', { name: nameOf(ctx.outcomeAnimal), sex: ctx.outcomeAnimal.sex })
+            : named('evaluation.status_proposed', ctx.outcomeAnimal);
         case 'replaced': return t('evaluation.status_replaced');
         // Another team's animal (or an unnamed one) is never named here.
         case 'also_applied': return ctx.outcomeAnimal?.name.trim()

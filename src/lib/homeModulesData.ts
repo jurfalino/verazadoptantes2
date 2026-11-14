@@ -17,9 +17,9 @@ import { adopters, adoptions, adopterEvents, adopterImages } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
-import { homeAnimalRows, HOME_CARD_SLOTS, GENERAL_ROW_ID } from '@/domain/homeModules';
+import { homeAnimalRows, HOME_CARD_SLOTS } from '@/domain/homeModules';
 import { takesContract } from '@/domain/placements';
-import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomeGeneralRow, HomePendingItem, HomePostsData, HomePersonRow } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomePendingItem, HomePostsData, HomePersonRow, HomeRequestItem } from '@/types/homeModules';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Drizzle D1/better-sqlite3 union getDb() returns
 type Db = any;
@@ -55,7 +55,7 @@ async function personBits(db: Db, ids: string[], log: Record<string, unknown>): 
     return out;
 }
 
-export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: string[], pendingReview: Promise<{ count: number; items: HomePendingItem[] }>): Promise<HomeAdoptersData> {
+export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: string[], pendingReview: Promise<{ count: number; items: HomePendingItem[] }>, generalRequests: Promise<{ count: number; items: HomeRequestItem[] }>): Promise<HomeAdoptersData> {
     const log = { userEmail, op: 'loadHomeAdopters' };
     const scope = adopterScope(memberEmails);
     const [{ getOrgsForEmail, pickAttributionOrg }, { resolveDisplayName }] = await Promise.all([
@@ -95,12 +95,16 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
         }));
     })();
 
-    const [totalRow, recent, pending] = await Promise.all([
+    const [totalRow, recent, pending, requests] = await Promise.all([
         db.select({ n: sql<number>`count(*)` }).from(adopters).where(scope).get(),
         rowsP,
         pendingReview,
+        generalRequests,
     ]);
-    return { total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending.count, pending: pending.items, recent };
+    return {
+        total: Number((totalRow as { n: number } | undefined)?.n ?? 0), pendingReview: pending.count, pending: pending.items, recent,
+        requestsToEvaluate: requests.count, requests: requests.items,
+    };
 }
 
 export async function loadHomePosts(db: Db, userEmail: string, memberEmails: string[]): Promise<HomePostsData> {
@@ -150,7 +154,7 @@ export async function loadHomePosts(db: Db, userEmail: string, memberEmails: str
 
 export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAnimalsData> {
     const log = { userEmail, op: 'loadHomeAnimals' };
-    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { listApplicantIdsForAnimal }, { createOwnerTeamResolver }, { animalPrimaryFirst }, { countToEvaluateByAnimal, countGeneralToEvaluate, offerCountsByAnimal, healApplicationsOnce }, { normalizeTeamScope }, { runAfterResponse }] = await Promise.all([
+    const [{ myAnimalsScope }, { loadAnimalActivityBulk, loadFollowupCtx, withDueFollowups, byRecentActivity }, { listApplicantIdsForAnimal }, { createOwnerTeamResolver }, { animalPrimaryFirst }, { countToEvaluateByAnimal, offerCountsByAnimal, healApplicationsOnce }, { normalizeTeamScope }, { runAfterResponse }] = await Promise.all([
         import('@/lib/myAnimalsScope'),
         import('@/lib/animalFollowupsDue'),
         import('@/app/actions/_applicants'),
@@ -229,21 +233,16 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
             return { toEvaluate: takesContract(a) ? c.toEvaluate.get(a.id) ?? 0 : 0, offer: c.offer.get(a.id) ?? 0 };
         };
     });
-    const generalP: Promise<number> = countGeneralToEvaluate(db, scopeEmails, noHeal)
-        .catch((e: unknown) => { logger.warn('loadHomeAnimals: D1 fallback hit (general)', { ...log, error: errMsg(e) }); return 0; });
-
-    const [available, adopted, total, due, recent, countsOf, general] = await Promise.all([
-        countOf(availableWhere), countOf(adoptedWhere), countOf(allWhere), dueP, recentP, countsP, generalP,
+    const [available, adopted, total, due, recent, countsOf] = await Promise.all([
+        countOf(availableWhere), countOf(adoptedWhere), countOf(allWhere), dueP, recentP, countsP,
     ]);
     // The reads are done: heal each team's missing application rows after the response.
     const heals = [...toHeal].map(([key, team]) => runAfterResponse('loadHomeAnimals: heal missing applications',
         () => healApplicationsOnce(db, team), { ...log, team: key }));
     const offers = recent.filter(a => countsOf(a).offer > 0);
-    // «Sin animal elegido» first, then the animals with the most waiting (then by name).
-    const withApplications = recent.filter(a => countsOf(a).toEvaluate > 0)
+    // The animals with the most waiting first (then by name). General forms are people: «Mis adoptantes» (Jon 2026-11-13).
+    const applications = recent.filter(a => countsOf(a).toEvaluate > 0)
         .sort((a, b) => countsOf(b).toEvaluate - countsOf(a).toEvaluate || (a.animalName ?? '').localeCompare(b.animalName ?? ''));
-    const generalRow: HomeGeneralRow | null = general > 0 ? { id: GENERAL_ROW_ID, general: true, toEvaluate: general } : null;
-    const applications: Array<Animal | HomeGeneralRow> = [...(generalRow ? [generalRow] : []), ...withApplications];
     const shown = homeAnimalRows({ offers, due, applications }, recent);
 
     // Only the rows shown are enriched, as the /my-animals card is: photo
@@ -278,10 +277,10 @@ export async function loadHomeAnimals(db: Db, userEmail: string): Promise<HomeAn
     const rows = await Promise.all([
         ...shown.offers.map(a => enrich(a, null)),
         ...shown.due.map(a => enrich(a, { dueFollowups: a.dueFollowups, dueTop: a.dueTop })),
-        ...shown.applications.map(a => ('general' in a ? Promise.resolve(a) : enrich(a, null))),
+        ...shown.applications.map(a => enrich(a, null)),
         ...shown.recent.map(a => enrich(a, null)),
     ]);
-    const solicitudesCount = recent.filter(a => countsOf(a).toEvaluate > 0).length + (generalRow ? 1 : 0);
+    const solicitudesCount = recent.filter(a => countsOf(a).toEvaluate > 0).length;
     // Resolves at once where the platform keeps the worker alive (waitUntil); local dev waits, in parallel with the reads above.
     await Promise.all(heals);
     return {

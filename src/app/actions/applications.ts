@@ -27,7 +27,7 @@ import type { ApplicantsLoad } from '@/lib/applicantsLoad';
  * `observation_saved_already_decided` («No avanzar» only): the observation WAS saved, but the application
  * already had another outcome by the time it was to close (review M1) — never «No se guardó tu observación».
  */
-export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'observation_saved_already_decided' | 'already_candidate' | 'animal_adopted' | 'same_person_unanswered' | 'failed';
+export type ApplicationActionError = 'unauthorized' | 'not_found' | 'not_allowed' | 'invalid' | 'already_decided' | 'observation_saved_already_decided' | 'already_candidate' | 'animal_adopted' | 'same_person_unanswered' | 'already_acted' | 'failed';
 export type Fail = { ok: false; error: ApplicationActionError; errorId?: string };
 
 const fail = (error: Exclude<ApplicationActionError, 'failed'>): Fail => ({ ok: false, error });
@@ -47,17 +47,25 @@ async function requireDb() {
     return db;
 }
 
-/** The viewer's team's general applications («Sin animal elegido»), in panel order; empty signed out; a failure carries its errorId. */
-export async function getGeneralApplications(): Promise<ApplicantsLoad> {
+/**
+ * The viewer's team's general applications (formularios generales), in panel order; empty signed out; a failure
+ * carries its errorId. `scope`: one request by id (a link opening it alone), or only the open ones (the
+ * «Formularios generales» group) — never the whole history when a page needs less (review I4).
+ */
+export async function getGeneralApplications(scope?: { applicationId?: string; openOnly?: boolean }): Promise<ApplicantsLoad> {
     let viewer: string | null = null;
+    const applicationId = scope && typeof scope === 'object' && typeof scope.applicationId === 'string' ? scope.applicationId : undefined;
+    const openOnly = !!(scope && typeof scope === 'object' && scope.openOnly === true);
     try {
         viewer = await sessionViewer();
         if (!viewer) return { ok: true, applicants: [] };
+        const { isId } = await import('./_applications');
+        if (applicationId !== undefined && !isId(applicationId)) return { ok: true, applicants: [] };
         const db = await requireDb();
         const [{ getTeamEmails }, { loadGeneralApplications }] = await Promise.all([import('@/lib/orgMembership'), import('./_applicants')]);
-        return { ok: true, applicants: await loadGeneralApplications(db, await getTeamEmails(viewer), viewer) };
+        return { ok: true, applicants: await loadGeneralApplications(db, await getTeamEmails(viewer), viewer, { applicationId, openOnly }) };
     } catch (e) {
-        const errorId = logger.error('getGeneralApplications failed', e, { viewer });
+        const errorId = logger.error('getGeneralApplications failed', e, { viewer, applicationId: applicationId ?? null, openOnly });
         return { ok: false, errorId };
     }
 }
@@ -148,7 +156,7 @@ export async function declineApplication(applicationId: string, input: { text: s
     try {
         viewer = await sessionViewer();
         if (!viewer) return fail('unauthorized');
-        const { isId, parseDecline, loadAuthorizedApplication, liveAdopterExists, declineRecordId, retireLiveLink, markDeclined, declineRecordAuthor, isDeclinedWith } = await import('./_applications');
+        const { isId, parseDecline, loadAuthorizedApplication, liveAdopterExists, declineRecordId, retireLiveLink, markDeclined, declineRecordAuthor, isDeclinedWith, isTeamDeclineRecord } = await import('./_applications');
         if (!isId(applicationId)) return fail('invalid');
         const decline = parseDecline(input);
         if (!decline) return fail('invalid');
@@ -156,7 +164,7 @@ export async function declineApplication(applicationId: string, input: { text: s
         const auth = await loadAuthorizedApplication(db, applicationId, viewer);
         if (!auth) return fail('not_found');
         const { app, submission, animal } = auth;
-        const recordId = declineRecordId(applicationId);
+        let recordId = declineRecordId(applicationId);
         const norm = (e: string | null | undefined) => (e ?? '').trim().toLowerCase();
         if (app.state !== APPLICATION_STATES.OPEN) {
             // This viewer's own decline already landed (a retry after a timeout the client saw): it worked —
@@ -174,7 +182,7 @@ export async function declineApplication(applicationId: string, input: { text: s
         const finishTheirs = async (author: string | null) => {
             const finishedBy = author || viewer!;
             const nowSec = Math.floor(Date.now() / 1000);
-            if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
+            if (app.animalId) await retireLiveLink(db, app.animalId, [adopterId, submission.autoAdopterId], nowSec);
             if (await markDeclined(db, applicationId, recordId, finishedBy, nowSec)) {
                 const { clearFormNotices } = await import('@/lib/formNotices');
                 await clearFormNotices(db, submission.id, { op: 'declineApplication', applicationId, viewer, finishedFor: finishedBy });
@@ -182,7 +190,15 @@ export async function declineApplication(applicationId: string, input: { text: s
             logger.info("declineApplication: another rescuer's observation decides it — this one not saved", { applicationId, viewer, author });
             return fail('already_decided');
         };
-        const author = await declineRecordAuthor(db, recordId);
+        let author = await declineRecordAuthor(db, recordId);
+        if (author !== undefined && !(await isTeamDeclineRecord(db, recordId, applicationId, adopterId))) {
+            // Squatted (review S2): someone saved another record under this guessable id. It never decides;
+            // the team's decline goes under a fresh id and the squat is left for an admin to see.
+            logger.error('declineApplication: the decline id holds a record that is not this team\'s observation — writing under a fresh id',
+                new Error('squatted decline id'), { applicationId, viewer, recordId, squatAuthor: author });
+            recordId = `${recordId}-${crypto.randomUUID().slice(0, 8)}`;
+            author = undefined;
+        }
         if (author !== undefined && norm(author) !== norm(viewer)) return finishTheirs(author);
 
         // 1. The observation, through the one record save (visibility, history, notices as any observation).
@@ -211,7 +227,7 @@ export async function declineApplication(applicationId: string, input: { text: s
 
         const nowSec = Math.floor(Date.now() / 1000);
         // 2. Their live contract link for this animal, if any, stops working.
-        if (app.animalId) await retireLiveLink(db, app.animalId, adopterId, nowSec);
+        if (app.animalId) await retireLiveLink(db, app.animalId, [adopterId, submission.autoAdopterId], nowSec);
         // 3. The application ends, only if it is still open (a concurrent decision wins) — unless the call that
         //    won closed it with THIS observation (a teammate finishing it, step 0): then this one did land.
         if (!(await markDeclined(db, applicationId, saved.id, viewer, nowSec)) && !(await isDeclinedWith(db, applicationId, saved.id))) {
@@ -243,7 +259,9 @@ export async function getProposalAnimals(applicationId: string): Promise<{ ok: t
         const auth = await loadAuthorizedApplication(db, applicationId, viewer);
         if (!auth) return fail('not_found');
         if (auth.app.animalId) return fail('not_allowed');
-        if (auth.app.state !== APPLICATION_STATES.OPEN) return fail('already_decided');
+        // Open: «Sumar a un animal». Proposed: «Cambiar animal» lists the others (its current animal is left out as
+        // one this person already has an open application for).
+        if (auth.app.state !== APPLICATION_STATES.OPEN && auth.app.state !== APPLICATION_STATES.PROPOSED) return fail('already_decided');
         return { ok: true, ...(await loadProposalAnimals(db, viewer, auth)) };
     } catch (e) {
         const errorId = logger.error('getProposalAnimals failed', e, { applicationId, viewer });
@@ -297,6 +315,76 @@ export async function proposeAnimal(applicationId: string, animalId: string): Pr
         return res;
     } catch (e) {
         const errorId = logger.error('proposeAnimal failed', e, { applicationId, animalId, viewer });
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * «Quitar de …» (Jon 2026-11-13): the general form `generalApplicationId`, added to an animal, goes back to
+ * «por evaluar» — only while nothing happened on the animal's side (else `already_acted`). Team-internal: the
+ * person is not told and no observation is written.
+ */
+export async function withdrawProposal(generalApplicationId: string): Promise<{ ok: true } | Fail> {
+    let viewer: string | null = null;
+    try {
+        viewer = await sessionViewer();
+        if (!viewer) return fail('unauthorized');
+        const { isId, loadAuthorizedApplication, withdrawProposalAuthorized } = await import('./_applications');
+        if (!isId(generalApplicationId)) return fail('invalid');
+        const db = await requireDb();
+        const auth = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        if (!auth) return fail('not_found');
+        const res = await withdrawProposalAuthorized(db, viewer, auth);
+        if (!res.ok) {
+            logger.info('withdrawProposal: refused', { applicationId: generalApplicationId, viewer, error: res.error });
+            return fail(res.error);
+        }
+        logger.info('withdrawProposal: done', { applicationId: generalApplicationId, candidacyId: res.candidacyId, animalId: res.animalId, viewer });
+        return { ok: true };
+    } catch (e) {
+        const errorId = logger.error('withdrawProposal failed', e, { applicationId: generalApplicationId, viewer });
+        return { ok: false, error: 'failed', errorId };
+    }
+}
+
+/**
+ * «Cambiar animal»: the same withdraw, then «Sumar a un animal» with `animalId`. When the new animal can't take
+ * it, the first animal is added back, so the person is never left with neither.
+ */
+export async function changeProposedAnimal(generalApplicationId: string, animalId: string): Promise<{ ok: true; applicationId: string } | Fail> {
+    let viewer: string | null = null;
+    try {
+        viewer = await sessionViewer();
+        if (!viewer) return fail('unauthorized');
+        const { isId, loadAuthorizedApplication, withdrawProposalAuthorized, proposeAuthorized } = await import('./_applications');
+        if (!isId(generalApplicationId) || !isId(animalId)) return fail('invalid');
+        const db = await requireDb();
+        const auth = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        if (!auth) return fail('not_found');
+        const { unansweredForSubmission } = await import('@/lib/samePersonGate');
+        if ((await unansweredForSubmission(db, auth.submission, viewer)) > 0) return fail('same_person_unanswered');
+
+        const out = await withdrawProposalAuthorized(db, viewer, auth);
+        if (!out.ok) return fail(out.error);
+        const reopened = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        if (!reopened) return fail('not_found');
+        const res = await proposeAuthorized(db, viewer, reopened, animalId);
+        if (res.ok) {
+            logger.info('changeProposedAnimal: moved', { applicationId: generalApplicationId, from: out.animalId, to: animalId, viewer });
+            return res;
+        }
+        // Put the first animal back (best effort): never leave the person with neither.
+        const again = await loadAuthorizedApplication(db, generalApplicationId, viewer);
+        const back = again ? await proposeAuthorized(db, viewer, again, out.animalId) : { ok: false as const, error: 'not_found' as const };
+        if (!back.ok) {
+            logger.error('changeProposedAnimal: the new animal refused and the first could not be restored', new Error(back.error),
+                { applicationId: generalApplicationId, from: out.animalId, to: animalId, viewer, refused: res.error });
+        } else {
+            logger.info('changeProposedAnimal: refused, first animal restored', { applicationId: generalApplicationId, from: out.animalId, to: animalId, viewer, refused: res.error });
+        }
+        return fail(res.error);
+    } catch (e) {
+        const errorId = logger.error('changeProposedAnimal failed', e, { applicationId: generalApplicationId, animalId, viewer });
         return { ok: false, error: 'failed', errorId };
     }
 }

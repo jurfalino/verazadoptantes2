@@ -23,8 +23,9 @@ import { myAnimalsTabCount, type MyAnimalsTabCounts } from '@/lib/myAnimalsTabCo
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
 import { GENERAL_ROW_ID } from '@/domain/homeModules';
+import { requestHref } from '@/domain/applications';
 import { interpolate } from '@/lib/interpolate';
-import HomeApplicantsPanel, { type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
+import HomeApplicantsPanel, { applicantsTargetKey, type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
 import { AdoptionOfferSheet } from '@/components/evaluation/AdoptionOfferSheet';
 import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
 
@@ -107,10 +108,8 @@ export default function MyAnimalsPage() {
     const [tabCounts, setTabCounts] = useState<MyAnimalsTabCounts | null>(null);
     /** «Con controles pendientes»: comes with every tab's list (x-pending-count), not with ?counts=1. */
     const [pendingCount, setPendingCount] = useState<number | null>(null);
-    /** «Con solicitudes por evaluar»: its cards («Sin animal elegido» included), with every tab's list (x-solicitudes-count). */
+    /** «Con solicitudes por evaluar»: its animal cards (general forms live in «Mis adoptantes»), with every tab's list (x-solicitudes-count). */
     const [solicitudesCount, setSolicitudesCount] = useState<number | null>(null);
-    /** «Sin animal elegido»: the team's general applications to evaluate (x-general-to-evaluate). */
-    const [generalToEvaluate, setGeneralToEvaluate] = useState(0);
     /** The tab's list failed (its errorId): «Con solicitudes por evaluar» then says so instead of «nothing to evaluate». */
     const [listError, setListError] = useState<{ view: string; errorId: string } | null>(null);
     const counts: MyAnimalsTabCounts | null = tabCounts ? {
@@ -145,8 +144,6 @@ export default function MyAnimalsPage() {
                     if (pending != null) setPendingCount(Number(pending));
                     const solicitudes = res.headers.get('x-solicitudes-count');
                     if (solicitudes != null) setSolicitudesCount(Number(solicitudes));
-                    const general = res.headers.get('x-general-to-evaluate');
-                    if (general != null) setGeneralToEvaluate(Number(general));
                 } else {
                     const body = await res.json().catch(() => ({})) as { error?: string; errorId?: string };
                     const errorId = body.errorId ?? resolveErrorId(new Error(`my-animals list: ${res.status}`), 'MyAnimalsPage');
@@ -199,12 +196,13 @@ export default function MyAnimalsPage() {
     const openedLink = useRef<string | null>(null);
     useEffect(() => {
         if (!linkAnimal) { openedLink.current = null; return; }
+        // A general form is a person (Jon 2026-11-13): old links from notices and emails land on it in «Mis adoptantes».
+        if (linkAnimal === GENERAL_ROW_ID) { router.replace(linkApplication ? requestHref(linkApplication) : '/my-adopters#pendientes'); return; }
         if (loadedView !== view) return;
         const key = `${linkAnimal}|${linkApplication ?? ''}`;
         if (openedLink.current === key) return;
         openedLink.current = key;
         const applicationId = linkApplication;
-        if (linkAnimal === GENERAL_ROW_ID) { setApplicantsPanel({ target: 'general', applicationId }); return; }
         const listed = animals.find(a => a.id === linkAnimal);
         if (listed) { setApplicantsPanel({ target: { animal: panelAnimal(listed) }, applicationId }); return; }
         void (async () => {
@@ -227,7 +225,7 @@ export default function MyAnimalsPage() {
         })();
         // The list re-reads in place; `openedLink` keeps one link from opening twice.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [linkAnimal, linkApplication, loadedView, view, animals]);
+    }, [linkAnimal, linkApplication, loadedView, view, animals, router]);
 
     // Derive unique species from data
     const speciesList = Array.from(new Set(animals.map(a => (a.species || 'unknown').toLowerCase()))).sort();
@@ -277,8 +275,6 @@ export default function MyAnimalsPage() {
 
     /** «N solicitudes por evaluar» («1 solicitud por evaluar»). */
     const toEvaluateLine = (n: number) => interpolate(t(n === 1 ? 'evaluation.to_evaluate_one' : 'evaluation.to_evaluate_many'), { n });
-    /** «Sin animal elegido» is the first card of «Con solicitudes por evaluar», and only there (it is not an animal). */
-    const showGeneral = view === 'solicitudes' && generalToEvaluate > 0;
     /** The amber row of a card: the same look as the due badge, a 44px tap target, opening a panel over the page. */
     const amberRow = 'flex items-center gap-1.5 w-full min-h-11 px-2.5 py-1.5 rounded-lg text-left text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors';
 
@@ -391,8 +387,8 @@ export default function MyAnimalsPage() {
                         </Link>
                     )}
                     {/* «Con solicitudes por evaluar»: where the homepage's «N animales más con
-                        solicitudes» lands — the animals with applications to evaluate, and
-                        «Sin animal elegido». Only while there is one (or you are on it). */}
+                        solicitudes» lands — the animals with applications to evaluate. Only
+                        while there is one (or you are on it). */}
                     {(view === 'solicitudes' || (solicitudesCount ?? 0) > 0) && (
                         <Link
                             href="/my-animals?view=solicitudes"
@@ -403,7 +399,7 @@ export default function MyAnimalsPage() {
                                 }`}
                         >
                             <FileText className="w-3.5 h-3.5" aria-hidden="true" />
-                            {t('evaluation.tab')} ({myAnimalsTabCount('solicitudes', view, loadedView, animals.length + (showGeneral ? 1 : 0), counts)})
+                            {t('evaluation.tab')} ({myAnimalsTabCount('solicitudes', view, loadedView, animals.length, counts)})
                         </Link>
                     )}
                 </div>
@@ -470,7 +466,7 @@ export default function MyAnimalsPage() {
                             {t('homeModules.load_failed')} <span className="text-xs text-stone-500">({t('homeModules.error_code')}: {listError.errorId})</span>
                         </p>
                     </div>
-                ) : filteredAnimals.length === 0 && !showGeneral ? (
+                ) : filteredAnimals.length === 0 ? (
                     view === 'solicitudes' ? (
                         <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-sm" data-testid="solicitudes-empty">
                             <h3 className="text-xl font-semibold text-stone-900">{t('evaluation.tab_empty')}</h3>
@@ -518,29 +514,6 @@ export default function MyAnimalsPage() {
                             </div>
                         )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {showGeneral && group.key === 'all' && (
-                            <div className="bg-white rounded-xl shadow-sm border border-stone-200" data-testid="general-card">
-                                {/* The form icon in place of a photo: this card is the general applications, not an animal. */}
-                                <div className="aspect-video bg-stone-50 rounded-t-xl flex items-center justify-center text-stone-400">
-                                    <FileText className="w-16 h-16" strokeWidth={1.5} aria-hidden="true" />
-                                </div>
-                                <div className="p-4">
-                                    <h3 className="font-semibold text-stone-900 text-lg mb-1">{t('evaluation.general_title')}</h3>
-                                    <p className="text-sm text-stone-500 mb-3">{t('evaluation.general_body')}</p>
-                                    <div className="pt-3 border-t border-stone-100">
-                                        <button
-                                            type="button"
-                                            onClick={() => setApplicantsPanel({ target: 'general', applicationId: null })}
-                                            aria-haspopup="dialog"
-                                            className={amberRow}
-                                            data-testid="general-card-badge"
-                                        >
-                                            {toEvaluateLine(generalToEvaluate)}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                         {group.animals.map((animal) => {
                             // A fostered ("Tránsito") animal carries an adopterId
                             // (the foster home) but recordType='foster'. It lives
@@ -792,7 +765,7 @@ export default function MyAnimalsPage() {
             </div>
             {applicantsPanel && (
                 <HomeApplicantsPanel
-                    key={applicantsPanel.target === 'general' ? GENERAL_ROW_ID : applicantsPanel.target.animal.id}
+                    key={applicantsTargetKey(applicantsPanel.target)}
                     target={applicantsPanel.target}
                     applicationId={applicantsPanel.applicationId}
                     returnLabel

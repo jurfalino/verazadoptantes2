@@ -14,7 +14,7 @@ vi.mock('@/components/ApplicantDetailPanel', () => ({ default: () => null }));
 vi.mock('@/lib/clientErrorReporter', () => ({ resolveErrorId: vi.fn(() => 'err12345') }));
 vi.mock('@/lib/errorMessage', () => ({ handledAsStale: (e: unknown) => e instanceof Error && e.message === 'stale deploy' }));
 
-const { readPanel } = await import('./HomeApplicantsPanel');
+const { readPanel, emptyNotice } = await import('./HomeApplicantsPanel');
 const { resolveErrorId } = await import('@/lib/clientErrorReporter');
 
 const app = (id: string, kind: ApplicantSummary['status']['kind']) =>
@@ -58,5 +58,12 @@ describe('HomeApplicantsPanel — one read of the list', () => {
     it('an older tab: «stale» (the page reloads itself); any other failure: the errorId', async () => {
         expect(await readPanel(async () => { throw new Error('stale deploy'); })).toEqual({ kind: 'stale' });
         expect(await readPanel(async () => { throw new Error('boom'); })).toEqual({ kind: 'error', errorId: 'err12345' });
+    });
+});
+
+describe('a request link that no longer resolves (review M11)', () => {
+    it('one request opened alone and gone: says so; a list emptied meanwhile still closes quietly', () => {
+        expect(emptyNotice('app-1')).toBe('evaluation.request_gone');
+        expect(emptyNotice(null)).toBeNull();
     });
 });

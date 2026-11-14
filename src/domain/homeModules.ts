@@ -57,20 +57,34 @@ export const HOME_CARD_SLOTS = 4;
  * «N más esperan tu respuesta» amber row takes the last slot. `more` counts
  * every pending row not listed (also any the feed couldn't build).
  */
+/**
+ * «Mis adoptantes» rows that wait on the viewer (Jon 2026-11-13): general forms to evaluate first, then the
+ * «¿Es la misma persona?» items, within the card's slots. When they don't all fit, the last slot is one
+ * «N más esperan tu respuesta» row (never one «más» row per kind).
+ */
+export function homeAdopterSlots(requests: number, pending: number, slots: number = HOME_CARD_SLOTS): { requests: number; pending: number; more: number } {
+    const total = requests + pending;
+    if (total <= slots) return { requests, pending, more: 0 };
+    const room = slots - 1;
+    const r = Math.min(requests, room);
+    const p = Math.min(pending, room - r);
+    return { requests: r, pending: p, more: total - r - p };
+}
+
 export function homePendingRows<T>(pending: readonly T[], total: number, slots: number = HOME_CARD_SLOTS): { shown: T[]; more: number } {
     const limit = total > slots ? slots - 1 : slots;
     const shown = pending.slice(0, Math.min(limit, total));
     return { shown, more: Math.max(0, total - shown.length) };
 }
 
-/** The id of the «Sin animal elegido» row (general applications): never an animal id. */
+/** `animal=general` in old «Sin animal elegido» links (notices, emails sent before 2.59.13): /my-animals redirects them to the request in «Mis adoptantes». Never an animal id. */
 export const GENERAL_ROW_ID = 'general';
 
 /**
  * The homepage animals card's rows. What waits on the rescuer comes first,
  * one row each: the offers to tell the other candidates, the animals with a
- * check-up due (most overdue first), the applications to evaluate (the
- * «Sin animal elegido» row, then animals by how many wait). An animal is
+ * check-up due (most overdue first), the applications to evaluate (animals
+ * by how many wait; general forms are rows of «Mis adoptantes»). An animal is
  * listed once, as its first kind (a check-up due wins over its applications —
  * spec «Calls I made»). When they fit, the most recently updated fill the
  * card. Otherwise one fewer is listed and an amber «N más» row takes the

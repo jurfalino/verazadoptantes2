@@ -93,10 +93,21 @@ describe('nextToEvaluateIndex', () => {
 
 describe('planAdoptionClose', () => {
     it("the adopter's own → adopted; others → closed", () => {
-        expect(planAdoptionClose([{ id: 'a', adopterId: 'juan' }, { id: 'b', adopterId: 'ana' }, { id: 'c', adopterId: null }], 'juan', 'invitation'))
+        expect(planAdoptionClose([{ id: 'a', adopterIds: ['juan', null] }, { id: 'b', adopterIds: ['ana', null] }, { id: 'c', adopterIds: [null, null] }], 'juan', 'invitation'))
             .toEqual([{ id: 'a', state: 'adopted', closeReason: null }, { id: 'b', state: 'closed', closeReason: 'adopted_other' }, { id: 'c', state: 'closed', closeReason: 'adopted_other' }]);
-        expect(planAdoptionClose([{ id: 'b', adopterId: 'ana' }], 'new-signer', 'open_link')).toEqual([{ id: 'b', state: 'closed', closeReason: 'adopted_open_link' }]);
-        expect(planAdoptionClose([{ id: 'b', adopterId: 'ana' }], 'juan', 'in_app')).toEqual([{ id: 'b', state: 'closed', closeReason: 'adopted_other' }]);
+        expect(planAdoptionClose([{ id: 'b', adopterIds: ['ana', null] }], 'juan', 'in_app')).toEqual([{ id: 'b', state: 'closed', closeReason: 'adopted_other' }]);
+    });
+
+    it('the open link (no token, anyone can sign it) never closes the other candidates — only the signer\'s own is adopted (review S1)', () => {
+        expect(planAdoptionClose([{ id: 'b', adopterIds: ['ana', null] }], 'new-signer', 'open_link')).toEqual([]);
+        expect(planAdoptionClose([{ id: 'a', adopterIds: ['juan', null] }, { id: 'b', adopterIds: ['ana', null] }], 'juan', 'open_link'))
+            .toEqual([{ id: 'a', state: 'adopted', closeReason: null }]);
+    });
+
+    it('the adopter is recognised on either profile of the form: the one it sits on, or the one it created (review S3)', () => {
+        // A link sent to the auto-created profile, signed after a «Sí» linked the form to an existing profile.
+        expect(planAdoptionClose([{ id: 'a', adopterIds: ['existing', 'auto'] }, { id: 'b', adopterIds: ['ana', null] }], 'auto', 'invitation'))
+            .toEqual([{ id: 'a', state: 'adopted', closeReason: null }, { id: 'b', state: 'closed', closeReason: 'adopted_other' }]);
     });
 });
 
@@ -187,8 +198,8 @@ describe('formNoticeUrl — where a form\'s bell notice leads', () => {
     it('opens that application on «Con solicitudes por evaluar»', () => {
         expect(formNoticeUrl(base)).toBe('/my-animals?view=solicitudes&animal=luna&solicitud=app-s-1');
     });
-    it('a general application (no animal, or an adopted one asked for) opens «Sin animal elegido»', () => {
-        expect(formNoticeUrl({ ...base, animalId: null, animalInTeam: false })).toBe('/my-animals?view=solicitudes&animal=general&solicitud=app-s-1');
+    it('a general application (no animal, or an adopted one asked for) opens the request alone in «Mis adoptantes»', () => {
+        expect(formNoticeUrl({ ...base, animalId: null, animalInTeam: false })).toBe('/my-adopters?solicitud=app-s-1#pendientes');
     });
     it('ids are encoded', () => {
         expect(formNoticeUrl({ ...base, animalId: 'a b&c', applicationId: 'app-x?y' })).toBe('/my-animals?view=solicitudes&animal=a%20b%26c&solicitud=app-x%3Fy');
@@ -216,7 +227,7 @@ describe('«Cargar un animal» from «Proponer un animal» (Jon 2026-11-13)', ()
     it('opens «Agregar animal» for the application, and comes back to its request', async () => {
         const { proposeNewAnimalHref, generalRequestHref, proposeParam } = await import('./applications');
         expect(proposeNewAnimalHref('app-1')).toBe('/my-animals/new?proponer=app-1');
-        expect(generalRequestHref('app-1')).toBe('/my-animals?view=solicitudes&animal=general&solicitud=app-1');
+        expect(generalRequestHref('app-1')).toBe('/my-adopters?solicitud=app-1#pendientes');
         expect(proposeNewAnimalHref('a b/c')).toBe('/my-animals/new?proponer=a%20b%2Fc');
     });
     it('reads only a well-formed id from the address', async () => {
@@ -226,5 +237,22 @@ describe('«Cargar un animal» from «Proponer un animal» (Jon 2026-11-13)', ()
         expect(proposeParam('')).toBeNull();
         expect(proposeParam('../x')).toBeNull();
         expect(proposeParam('x'.repeat(65))).toBeNull();
+    });
+});
+
+describe('a general request is a person: one link, and an undo only while nothing happened (Jon 2026-11-13)', () => {
+    it('requestHref opens the request alone in «Mis adoptantes»', async () => {
+        const { requestHref, generalRequestHref } = await import('./applications');
+        expect(requestHref('app-1')).toBe('/my-adopters?solicitud=app-1#pendientes');
+        expect(requestHref('a b?c')).toBe('/my-adopters?solicitud=a%20b%3Fc#pendientes');
+        expect(generalRequestHref('app-1')).toBe(requestHref('app-1'));
+    });
+    it('proposalUndoable: only an open candidacy that never had a contract link', async () => {
+        const { proposalUndoable } = await import('./applications');
+        expect(proposalUndoable({ candidacyState: 'open', invitationsEver: 0 })).toBe(true);
+        expect(proposalUndoable({ candidacyState: 'open', invitationsEver: 1 })).toBe(false);
+        expect(proposalUndoable({ candidacyState: 'declined', invitationsEver: 0 })).toBe(false);
+        expect(proposalUndoable({ candidacyState: 'adopted', invitationsEver: 0 })).toBe(false);
+        expect(proposalUndoable({ candidacyState: 'closed', invitationsEver: 0 })).toBe(false);
     });
 });

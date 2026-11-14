@@ -273,12 +273,13 @@ export default function AnimalApplicants({
         if (busySubmissionId) return;
         setBusySubmissionId(applicant.submissionId);
         try {
-            const result = await createContractInvitation(animalId, applicant.adopterId, locale);
+            const result = await createContractInvitation(animalId, applicant.adopterId, locale, applicant.applicationId);
             const next = sendOutcome(result);
             if (next === 'share' && result.url) {
                 zarazTrack('contract_issued', { surface: 'applicants_list' });
                 setShareUrl({ url: result.url, adopterName: applicant.adopterName });
-            } else if (next === 'refresh') {
+            } else if (next === 'refresh' || next === 'removed') {
+                if (next === 'removed') toast.info(t('evaluation.contract_removed').replace('{person}', applicant.adopterName).replace('{animal}', animalName));
                 // Decided meanwhile (a teammate): re-read, so the row shows its outcome instead of the button.
                 // A failed re-read throws with its errorId (the catch below toasts it).
                 const fresh = applicantsOrThrow(await getApplicantsForAnimal(animalId), 'AnimalApplicants: re-read');

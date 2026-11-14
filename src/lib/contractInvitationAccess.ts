@@ -95,3 +95,13 @@ export async function resolveInvitationAccess(
         hasDeclinedApplication: submissions.some(s => s.state === APPLICATION_STATES.DECLINED),
     };
 }
+
+/**
+ * An applicant the team turned down («No avanzar») for this animal, with no open application left, gets no
+ * contract — neither a new link («Enviar contrato») nor a signature on one already out (review S3: a link on
+ * the profile the form created survives a «Sí» that linked the form elsewhere). Candidates closed by an
+ * adoption stay sendable (the animal may have come back); full access (no application) is not affected.
+ */
+export function refusedAsDecided(access: Pick<InvitationAccess, 'via' | 'hasOpenApplication' | 'hasDeclinedApplication'>): boolean {
+    return access.via === 'applicant' && !access.hasOpenApplication && access.hasDeclinedApplication;
+}

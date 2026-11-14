@@ -2,6 +2,60 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.15] - 2026-11-13
+
+### Fixed — open findings of the general-forms review (Jon 2026-11-13)
+- «Enviar contrato» for someone a teammate just took out with «Quitar» sends nothing and says
+  «{persona} ya no está entre los candidatos de {animal}: no se envió el contrato.»
+- «Quitar» never removes a person who, after a «misma persona» merge, had also applied to that animal directly;
+  the button isn't offered then.
+- If the «¿Es la misma persona?» pairs fail to load, the general forms (and a request's link) still show.
+- If «Cambiar animal» fails, the request re-reads, so it never shows an animal the person is no longer on.
+- «Mis adoptantes» and the home count the same general forms (forms with no profile don't count in either).
+- A bell or email link to a request that no longer exists says «Esta solicitud ya no existe» instead of closing silently.
+- New end-to-end tests: two pages of pairs keep the general forms first and complete; a contract after «Quitar».
+- Leftovers of the old «Sin animal elegido» card removed (code, unused text, comments).
+
+## [2.59.14] - 2026-11-13
+
+### Fixed
+- 2.59.13 didn't deploy: a mobile test still paged through the removed «Sin animal elegido» card. It now checks
+  the new behaviour at 390px — an old link lands on the request alone in «Mis adoptantes», and 25 general forms
+  all list without overflowing.
+
+## [2.59.13] - 2026-11-13
+
+### Changed — general forms are people, not an animal card (Jon 2026-11-13)
+- A form sent without choosing an animal («Formulario general») now lives in «Mis adoptantes»: first in
+  «Pendientes de revisar», all of them listed, never paginated. The section opens by itself when one waits.
+  A row — or the bell, the email and «Agregar y sumar» — opens that request alone, with no «Anterior / Siguiente».
+- «Sin animal elegido» is gone from «Mis animales»; its old links open the request in «Mis adoptantes».
+- «Proponer» is now «Sumar a un animal», gender-neutral about the person. It stays internal to the team, and it
+  can be undone — «Cambiar animal» / «Quitar de {animal}» — while nothing happened on the animal's side (no
+  contract link yet). If the animal was adopted since, the request reads «En los candidatos de Luna (ya adoptada)»
+  and «Quitar» still works.
+- Home card: general forms show among the requests waiting; the overflow row is «N más esperan tu respuesta».
+
+### Fixed — independent review of the above
+- «Quitar» can't leave a request stuck as «added» if the app fails halfway: both steps happen together or not at all.
+- «Quitar» / «Cambiar» only work on an animal the person's team can see.
+- «Mis adoptantes» reads only the open general forms, and a link reads only its own request (busy teams stay fast).
+- Portuguese: «{proposer} adicionou · formulário geral».
+
+## [2.59.12] - 2026-11-13
+
+### Fixed — independent pre-production review of «Evaluar solicitudes» (Jon 2026-11-13)
+- A signature on an animal's open contract link (no personal code — anyone who knows the animal can sign it)
+  no longer closes the other candidates: only the signer's own request becomes «adoptada». A prank or a
+  mistaken signature never loses the team's candidates.
+- «No avanzar» can't be taken over: a record someone else saved under the request's reserved id never counts
+  as the team's decision (the team's observation is saved under a fresh id), and the browser can't create a
+  record under such an id.
+- A person turned down for an animal can't open or sign a contract link for it, including one sent to the
+  profile their form created before a «Sí» linked the form to an existing profile. «No avanzar» retires the
+  links on both profiles, a link reads as expired from the second it was retired, and the person who signs is
+  recognised on either profile.
+
 ## [2.59.11] - 2026-11-13
 
 ### Fixed — independent review of 2.59.10 (engineering + UI audits, Jon 2026-11-13)

@@ -11,10 +11,10 @@
  * «replaced» application is in no access decision. Anything else is
  * «not found» — never a hint that it exists.
  */
-import { and, eq, isNotNull, isNull, ne, or, gt, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne, notExists, or, gt, sql } from 'drizzle-orm';
 import { adopterEvents, adopterImages, adopters, adoptions, animals, applications, contractInvitations, formSubmissions, placements } from '@/db/schema';
 import { APPLICATION_CLOSE_REASONS, APPLICATION_ORIGINS, APPLICATION_STATES, DECLINE_REASON_MAX, DECLINE_TEXT_MAX, RECORD_TYPES } from '@/domain/constants';
-import { rankProposalAnimals } from '@/domain/applications';
+import { proposalUndoable, rankProposalAnimals } from '@/domain/applications';
 import { sortShareAnimals, type ShareAnimal } from '@/domain/shareFormAnimals';
 import { takesContract } from '@/domain/placements';
 import { applicantScopeWhere, isInTeamScope, normalizeTeamScope } from '@/lib/applicantScope';
@@ -26,6 +26,7 @@ import { getTeamEmails } from '@/lib/orgMembership';
 import { animalPrimaryFirst } from '@/lib/showcase';
 import { canAccessFormSubmission, isOwnerOrgMateOrAdmin } from './_applicants';
 import { createOwnerTeamResolver } from '@/lib/ownerTeamResolver';
+import { runBatch } from '@/lib/dbBatch';
 import type { getDb } from '@/lib/db';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -139,12 +140,16 @@ export async function liveAdopterExists(db: Db, adopterId: string | null): Promi
  * the same retirement a newer send does (`createContractInvitation`), so the
  * link answers «expired». Used links are history and stay as they are.
  */
-export async function retireLiveLink(db: Db, animalId: string, adopterId: string, nowSec: number): Promise<void> {
+export async function retireLiveLink(db: Db, animalId: string, adopterIds: ReadonlyArray<string | null>, nowSec: number): Promise<void> {
+    // Both profiles of the form (review S3): the one it sits on and the one it created — a link sent to the
+    // auto-created profile stays live after a «Sí» links the form to an existing one.
+    const ids = [...new Set(adopterIds.filter((x): x is string => !!x))];
+    if (ids.length === 0) return;
     await db.update(contractInvitations)
         .set({ expiresAt: nowSec })
         .where(and(
             eq(contractInvitations.animalId, animalId),
-            eq(contractInvitations.adopterId, adopterId),
+            or(...ids.map(id => eq(contractInvitations.adopterId, id))),
             isNull(contractInvitations.usedAt),
             or(isNull(contractInvitations.expiresAt), gt(contractInvitations.expiresAt, nowSec)),
         ));
@@ -160,6 +165,19 @@ export async function declineRecordAuthor(db: Db, recordId: string): Promise<str
     const row = await db.select({ recordedBy: adopterEvents.recordedBy }).from(adopterEvents)
         .where(eq(adopterEvents.id, recordId)).get() as { recordedBy: string | null } | undefined;
     return row ? row.recordedBy : undefined;
+}
+
+/**
+ * Whether the record on the pre-seeded «No avanzar» id is a real decline of this application (review S2):
+ * an observation on the form's profile, written by someone who may evaluate this application. The id is
+ * guessable and any signed-in account can save a record with a chosen id, so anything else is a squat —
+ * never «their decision».
+ */
+export async function isTeamDeclineRecord(db: Db, recordId: string, applicationId: string, adopterId: string): Promise<boolean> {
+    const row = await db.select({ recordedBy: adopterEvents.recordedBy, eventType: adopterEvents.eventType, adopterId: adopterEvents.adopterId })
+        .from(adopterEvents).where(eq(adopterEvents.id, recordId)).get() as { recordedBy: string | null; eventType: string | null; adopterId: string | null } | undefined;
+    if (!row || row.eventType !== RECORD_TYPES.OBSERVATION || row.adopterId !== adopterId || !row.recordedBy) return false;
+    return (await loadAuthorizedApplication(db, applicationId, row.recordedBy)) !== null;
 }
 
 /** The application ended «No avanzó» with this observation — whoever's call closed it. */
@@ -296,6 +314,80 @@ export async function loadShareFormAnimals(db: Db, viewer: string): Promise<Shar
         };
     }));
     return sortShareAnimals(animalsOut);
+}
+
+/**
+ * Deletes a team-added candidacy that nothing touched: still open, origin «proposed», and — in the same
+ * statement, so a concurrent «Enviar contrato» can't slip in between — no contract link ever issued for
+ * this animal to either profile of the form. True when it was deleted.
+ */
+function untouchedCandidacyWhere(db: Db, candidacyId: string, animalId: string, adopterIds: ReadonlyArray<string | null>) {
+    const ids = [...new Set(adopterIds.filter((x): x is string => !!x))];
+    const noLink = ids.length === 0 ? undefined : notExists(
+        db.select({ one: sql`1` }).from(contractInvitations)
+            .where(and(eq(contractInvitations.animalId, animalId), or(...ids.map(id => eq(contractInvitations.adopterId, id))))),
+    );
+    return and(
+        eq(applications.id, candidacyId),
+        eq(applications.state, APPLICATION_STATES.OPEN),
+        eq(applications.origin, APPLICATION_ORIGINS.PROPOSED),
+        ...(noLink ? [noLink] : []),
+        // A merge may have pointed another application at it (an older direct one `replaced`, a second form
+        // `also_applied`): deleting it would hide that application for good (review M2).
+        sql`NOT EXISTS (SELECT 1 FROM applications AS r WHERE r.replaced_by_application_id = ${candidacyId})`,
+    );
+}
+
+export async function deleteUntouchedCandidacy(db: Db, candidacyId: string, animalId: string, adopterIds: ReadonlyArray<string | null>): Promise<boolean> {
+    const gone = await db.delete(applications)
+        .where(untouchedCandidacyWhere(db, candidacyId, animalId, adopterIds))
+        .returning({ id: applications.id }) as Array<{ id: string }>;
+    return gone.length > 0;
+}
+
+export type WithdrawOutcome = { ok: true; candidacyId: string; animalId: string } | { ok: false; error: 'not_found' | 'not_allowed' | 'already_acted' };
+
+/**
+ * «Quitar de …» (Jon 2026-11-13): a general form added to an animal goes back to «por evaluar». Only while
+ * nothing happened on the animal's side (`proposalUndoable`): the untouched candidacy is deleted — so the same
+ * animal can be added again — and the general form reopens. No observation, history or notice: it was internal.
+ */
+export async function withdrawProposalAuthorized(db: Db, viewer: string, auth: AuthorizedApplication): Promise<WithdrawOutcome> {
+    const { app, submission } = auth;
+    if (app.animalId || app.state !== APPLICATION_STATES.PROPOSED) return { ok: false, error: 'not_allowed' };
+    const general = await db.select({ proposedApplicationId: applications.proposedApplicationId })
+        .from(applications).where(eq(applications.id, app.id)).get() as { proposedApplicationId: string | null } | undefined;
+    const candidacy = general?.proposedApplicationId
+        ? await db.select({ id: applications.id, animalId: applications.animalId, state: applications.state, origin: applications.origin })
+            .from(applications).where(eq(applications.id, general.proposedApplicationId))
+            .get() as { id: string; animalId: string | null; state: string; origin: string } | undefined
+        : undefined;
+    if (!candidacy || !candidacy.animalId || candidacy.origin !== APPLICATION_ORIGINS.PROPOSED) return { ok: false, error: 'not_allowed' };
+    // Both sides (review I3): the form is the viewer's team's, and so must the animal be — never a delete in an animal list they can't see.
+    if (!(await loadAuthorizedAnimal(db, candidacy.animalId, viewer))) return { ok: false, error: 'not_found' };
+
+    const profiles = [submission.linkedAdopterId, submission.autoAdopterId];
+    const linkIds = [...new Set(profiles.filter((x): x is string => !!x))];
+    const links = linkIds.length === 0 ? 0 : (await Promise.all(linkIds.map(id => db.select({ n: sql<number>`count(*)` }).from(contractInvitations)
+        .where(and(eq(contractInvitations.animalId, candidacy.animalId!), eq(contractInvitations.adopterId, id))).get() as Promise<{ n: number } | undefined>)))
+        .reduce((sum, r) => sum + (r?.n ?? 0), 0);
+    if (!proposalUndoable({ candidacyState: candidacy.state, invitationsEver: links })) return { ok: false, error: 'already_acted' };
+
+    // All or nothing (review I2): the delete (guarded — a link issued meanwhile keeps the candidacy) and the
+    // reopen (only once the candidacy is gone) in one batch, so a failure never leaves the form «added» to a
+    // deleted row.
+    await runBatch(db, [
+        db.delete(applications).where(untouchedCandidacyWhere(db, candidacy.id, candidacy.animalId, profiles)),
+        db.update(applications)
+            .set({ state: APPLICATION_STATES.OPEN, proposedApplicationId: null, closedAt: null, closedBy: null })
+            .where(and(
+                eq(applications.id, app.id), eq(applications.state, APPLICATION_STATES.PROPOSED), eq(applications.proposedApplicationId, candidacy.id),
+                sql`NOT EXISTS (SELECT 1 FROM applications WHERE id = ${candidacy.id})`,
+            )),
+    ]);
+    const still = await db.select({ id: applications.id }).from(applications).where(eq(applications.id, candidacy.id)).get();
+    if (still) return { ok: false, error: 'already_acted' };
+    return { ok: true, candidacyId: candidacy.id, animalId: candidacy.animalId };
 }
 
 export type ProposeOutcome = { ok: true; applicationId: string } | { ok: false; error: 'not_found' | 'not_allowed' | 'animal_adopted' | 'already_candidate' | 'already_decided' };

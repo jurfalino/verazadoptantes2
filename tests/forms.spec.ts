@@ -86,10 +86,9 @@ test.describe('External Form & Notifications Lifecycle', () => {
             await notificationItem.click();
         }).toPass({ timeout: 30000 });
 
-        // 7. The notice opens that application on Mis animales' «Con solicitudes por evaluar»
-        // (a general form: «Sin animal elegido»), in the applicant panel.
-        await expect(pageA).toHaveURL(new RegExp(`/my-animals\\?view=solicitudes&animal=general&solicitud=app-${submissionId}`), { timeout: 30000 });
-        await expect(pageA.getByTestId('my-animals-applicants-panel').locator('#applicant-panel-title')).toContainText(testName, { timeout: 60000 });
+        // 7. A general form is a person (2026-11-13): the notice opens that request alone in «Mis adoptantes».
+        await expect(pageA).toHaveURL(new RegExp(`/my-adopters\\?solicitud=app-${submissionId}`), { timeout: 30000 });
+        await expect(pageA.getByTestId('request-panel').locator('#applicant-panel-title')).toContainText(testName, { timeout: 60000 });
 
         // 8. Assert the form results page displays the submitted data properly
         await pageA.goto(`/form-results/${submissionId}`);

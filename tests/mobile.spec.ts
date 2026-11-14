@@ -122,8 +122,9 @@ test.describe('Mobile Responsive', () => {
         });
     });
 
-    // Many applications (the «Sin animal elegido» list grows): the paging stays on screen at 390px.
-    test.describe('applicant panel with 25 applications at 390px', () => {
+    // Many general forms (Jon 2026-11-13: they are people in «Mis adoptantes», listed — never paged — and each opens
+    // alone): at 390px every row and the request's «← Volver» stay on screen, and an old «Sin animal elegido» link still lands.
+    test.describe('25 general forms at 390px', () => {
         const USER = 'testuser@example.com';
         const stamp = Date.now();
         const N = 25;
@@ -147,25 +148,26 @@ test.describe('Mobile Responsive', () => {
             ]));
         });
 
-        test('«Siguiente →» and «← Volver» stay within 390px; a «i / N» counter replaces the dots', async ({ page }) => {
+        test('an old «Sin animal elegido» link opens the request alone; «← Volver» and all 25 rows stay within 390px', async ({ page }) => {
             test.setTimeout(180_000);
-            // The oldest of them: the list runs oldest first, so newer ones follow and «Siguiente» is enabled.
             const first = people[N - 1];
             await page.goto(`/my-animals?view=solicitudes&animal=general&solicitud=${first.app}`);
             await dismissCountryBanner(page);
-            const panel = page.getByTestId('my-animals-applicants-panel');
-            await expect(panel.locator('#applicant-panel-title')).toContainText(first.name, { timeout: 60_000 });
-            const counter = panel.getByTestId('applicant-panel-counter');
-            await expect(counter).toHaveText(/^\d+ \/ \d+$/);
-            expect(Number((await counter.textContent())!.split('/')[1])).toBeGreaterThanOrEqual(N);
-            for (const button of [panel.getByRole('button', { name: /Siguiente|Next|Próximo/ }), panel.getByTestId('applicant-panel-back')]) {
-                const box = await button.boundingBox();
-                expect(box && box.x >= 0 && box.x + box.width <= 390, `${await button.textContent()} inside 390px: ${JSON.stringify(box)}`).toBe(true);
-            }
-            // It still pages.
-            const before = await counter.textContent();
-            await panel.getByRole('button', { name: /Siguiente|Next|Próximo/ }).click();
-            await expect(counter).not.toHaveText(before!);
+            await expect(page).toHaveURL(new RegExp(`/my-adopters\\?solicitud=${first.app}`), { timeout: 60_000 });
+            const panel = page.getByTestId('request-panel');
+            await expect(panel).toContainText(first.name, { timeout: 60_000 });
+            await expect(panel.getByRole('button', { name: /Siguiente|Next|Próximo/ })).toHaveCount(0);
+            const back = panel.getByTestId('applicant-panel-back').first();
+            const box = await back.boundingBox();
+            expect(box && box.x >= 0 && box.x + box.width <= 390, `«← Volver» inside 390px: ${JSON.stringify(box)}`).toBe(true);
+
+            await back.click();
+            const rows = page.getByTestId('general-request-row').filter({ hasText: String(stamp) });
+            await expect(rows).toHaveCount(N, { timeout: 30_000 });
+            const outside = await rows.evaluateAll(els => els
+                .map(e => { const r = e.getBoundingClientRect(); return { r, sw: e.scrollWidth, cw: e.clientWidth }; })
+                .filter(({ r, sw, cw }) => r.x < 0 || r.right > 390 || sw > cw).length);
+            expect(outside, 'rows overflowing 390px').toBe(0);
         });
     });
 });

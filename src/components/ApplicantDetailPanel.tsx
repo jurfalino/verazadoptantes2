@@ -12,7 +12,7 @@
  * as the same side-by-side compare every same-person screen uses, the answers
  * that need a look, and the two ways an evaluation ends — «No avanzar» plus
  * «Enviar contrato» for an animal, «No avanzar» plus «Proponer un animal» for a
- * general application (`animal` null, «Sin animal elegido»). After an outcome
+ * general form (`animal` null, opened alone — `single`). After an outcome
  * the list is re-read (`onOutcome`) and the panel moves to the next one to
  * evaluate, or closes when none is left.
  *
@@ -46,16 +46,18 @@ import { formatRating } from '@/domain/ratings';
 import { nextToEvaluateIndex, type ApplicationStatus } from '@/domain/applications';
 import { Button, buttonClasses } from '@/components/ui/Button';
 import { handledAsStale } from '@/lib/errorMessage';
+import { firstName } from '@/lib/householdCopy';
 import { ApplicationStatusLine, animalLine } from '@/components/evaluation/ApplicationStatusLine';
 import { ApplicationAnswersSummary } from '@/components/evaluation/ApplicationAnswersSummary';
 import { ApplicationDuplicate } from '@/components/evaluation/ApplicationDuplicate';
 import { DeclineApplicationDialog } from '@/components/evaluation/DeclineApplicationDialog';
 import { ProposeAnimalSheet } from '@/components/evaluation/ProposeAnimalSheet';
+import { WithdrawProposalDialog } from '@/components/evaluation/WithdrawProposalDialog';
 
 interface Props {
     applicants: ApplicantSummary[];
     initialIndex: number;
-    /** The animal evaluated for; null = «Sin animal elegido» (general applications). */
+    /** The animal evaluated for; null = a general form (formulario general). */
     animal: { id: string; name: string; sex: string | null } | null;
     onClose: () => void;
     /** After an outcome: re-read the list; the panel moves to nextToEvaluateIndex or closes on -1. */
@@ -66,6 +68,11 @@ interface Props {
     onContractIssued?: (url: string, applicant: ApplicantSummary) => void;
     /** The dialog's data-testid (the home opens it as `home-applicants-panel`). */
     testId?: string;
+    /**
+     * One general form opened alone (Jon 2026-11-13: a general form is a person, not a list to page
+     * through): «← Volver» and «Formulario general», no Anterior/Siguiente/dots.
+     */
+    single?: boolean;
 }
 
 /**
@@ -83,9 +90,11 @@ export function indexAfterOutcome(statuses: readonly ApplicationStatus[], decide
  * happened); `same_person` when «¿Es la misma persona?» still waits for an answer (Jon 2026-11-12); otherwise
  * an error toast (`not_allowed` has its own words).
  */
-export function sendOutcome(result: CreateInvitationResult): 'share' | 'refresh' | 'not_allowed' | 'same_person' | 'failed' {
+export function sendOutcome(result: CreateInvitationResult): 'share' | 'refresh' | 'removed' | 'not_allowed' | 'same_person' | 'failed' {
     if (result.success && result.url) return 'share';
     if (result.error === 'already_decided') return 'refresh';
+    // A teammate's «Quitar» took the person out of this animal's candidates meanwhile: nothing was sent (review I1).
+    if (result.error === 'removed') return 'removed';
     if (result.error === 'same_person_unanswered') return 'same_person';
     return result.error === 'not_allowed' ? 'not_allowed' : 'failed';
 }
@@ -109,7 +118,7 @@ function FlagBadge({ icon, label, tone }: { icon: string; label: string; tone: '
 /** Paging dots up to this many applicants; more get a «{i} / {N}» counter. */
 const MAX_PAGING_DOTS = 8;
 
-export default function ApplicantDetailPanel({ applicants, initialIndex, animal, onClose, onOutcome, returnLabel = false, onContractIssued, testId }: Props) {
+export default function ApplicantDetailPanel({ applicants, initialIndex, animal, onClose, onOutcome, returnLabel = false, onContractIssued, testId, single = false }: Props) {
     const { formatShortDate } = useDateFormat();
     const { t, locale } = useLanguage();
     const toast = useShowToast();
@@ -119,7 +128,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     const [busy, setBusy] = useState(false);
     const [shareUrl, setShareUrl] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
-    const [dialog, setDialog] = useState<'decline' | 'propose' | null>(null);
+    const [dialog, setDialog] = useState<'decline' | 'propose' | 'change' | 'withdraw' | null>(null);
     const [allAnswersOpen, setAllAnswersOpen] = useState(false);
     // «¿Es la misma persona?» still to answer, per application (Jon 2026-11-12): null while reading.
     const [samePersonGate, setSamePersonGate] = useState<{ applicationId: string; blocking: number | null } | null>(null);
@@ -182,8 +191,9 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         }
         resetPerApplicant();
         setList(fresh);
-        // A link or a refresh stays on the same application (its new status line shows); an outcome moves on.
-        if (mode !== 'outcome') {
+        // A link or a refresh stays on the same application (its new status line shows); an outcome moves on —
+        // except in a request opened alone: there is nothing to move to, so the result (and «Cambiar / Quitar») shows.
+        if (mode !== 'outcome' || single) {
             const same = fresh.findIndex(a => a.applicationId === decidedId);
             if (same !== -1) {
                 setIndex(same);
@@ -212,13 +222,16 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         if (!animal || !applicant.adopterId || busy) return;
         setBusy(true);
         try {
-            const result = await createContractInvitation(animal.id, applicant.adopterId, locale);
+            const result = await createContractInvitation(animal.id, applicant.adopterId, locale, applicant.applicationId);
             const next = sendOutcome(result);
             if (next === 'share' && result.url) {
                 zarazTrack('contract_issued', { surface: 'applicant_detail' });
                 setShareUrl(result.url);
                 onContractIssued?.(result.url, applicant);
             } else if (next === 'refresh') {
+                await afterChange('refresh');
+            } else if (next === 'removed') {
+                toast.info(t('evaluation.contract_removed').replace('{person}', personName).replace('{animal}', animal.name));
                 await afterChange('refresh');
             } else if (next === 'same_person') {
                 // Someone withdrew a «No sé» (or a new pair appeared) since this panel read: say so, go to the question.
@@ -285,6 +298,10 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
     // Still to decide: to evaluate, or a contract sent (Q1: «No avanzar» voids the live link).
     const deciding = applicant.status.kind === 'to_evaluate' || applicant.status.kind === 'contract_sent';
     const personName = adopterDisplayName({ name: applicant.adopterName }, t('adopter.nameless'));
+    // The name the «Sumar a un animal» copy uses, as the sheet does (gender-neutral: no pronoun).
+    const personFirst = firstName(personName) || personName;
+    // The animal a general form was added to: named on the general form; the panel's own animal on the candidacy.
+    const proposalAnimalName = applicant.proposal?.animal?.name || animal?.name || t('homeModules.unnamed_animal');
 
     // Giving an animal waits for «¿Es la misma persona?» (src/domain/samePersonGate.ts): locked while the
     // section reads or while a pair has no answer. «No avanzar» never waits.
@@ -309,8 +326,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         {giveLocked && samePersonBlocking != null && (
             <p id="evaluate-same-person-hint" className="text-xs text-stone-600" data-testid="evaluate-same-person-hint">
                 {samePersonBlocking > 1
-                    ? t(animal ? 'samePerson.gate_hint_contract_many' : 'samePerson.gate_hint_propose_many').replace('{n}', String(samePersonBlocking))
-                    : t(animal ? 'samePerson.gate_hint_contract' : 'samePerson.gate_hint_propose')}{' '}
+                    ? t(animal ? 'samePerson.gate_hint_contract_many' : 'samePerson.gate_hint_propose_many').replace('{n}', String(samePersonBlocking)).replace('{name}', personFirst)
+                    : t(animal ? 'samePerson.gate_hint_contract' : 'samePerson.gate_hint_propose').replace('{name}', personFirst)}{' '}
                 <button type="button" onClick={goToQuestion}
                     className="inline-flex items-center gap-1 min-h-11 font-semibold text-teal-700 underline-offset-2 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
                     {t('samePerson.gate_go')}
@@ -371,6 +388,21 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                 ].join(' ')}
                 onClick={(e) => e.stopPropagation()}
             >
+                {single ? (
+                    <div className="sticky top-0 z-10 bg-white border-b border-stone-200 px-4 py-3 flex items-center justify-between gap-2" data-testid="applicant-panel-single-header">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            data-testid="applicant-panel-back"
+                            className="min-h-11 px-3 rounded-xl text-sm font-semibold text-teal-700 hover:bg-stone-100 whitespace-nowrap"
+                        >
+                            {t('evaluation.back')}
+                        </button>
+                        <span className="text-xs font-semibold text-stone-500">{t('evaluation.general_title')}</span>
+                        <span className="w-11 h-11" aria-hidden="true" />
+                    </div>
+                ) : (
+                <>
                 {/* Sticky header — paging + close */}
                 <div className="sticky top-0 z-10 bg-white border-b border-stone-200 px-4 py-3 flex items-center justify-between gap-2">
                     <button
@@ -425,6 +457,8 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         </button>
                     )}
                 </div>
+                </>
+                )}
 
                 {/* Scrolling body */}
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
@@ -436,6 +470,13 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         {applicant.askedAnimal && (
                             <p className="text-sm text-stone-600 mt-0.5 [overflow-wrap:anywhere]" data-testid="applicant-asked-animal">
                                 {animalLine(t, 'evaluation.asked_adopted', applicant.askedAnimal)}
+                            </p>
+                        )}
+                        {applicant.origin === 'proposed' && applicant.proposal && (
+                            <p className="text-sm text-stone-600 mt-0.5 [overflow-wrap:anywhere]" data-testid="applicant-added-by">
+                                {applicant.proposal.byName
+                                    ? t('evaluation.added_by_line').replace('{proposer}', applicant.proposal.byName)
+                                    : t('evaluation.general_title')}
                             </p>
                         )}
                         <div className="flex items-center flex-wrap gap-2 mt-1.5">
@@ -458,6 +499,25 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                     </div>
 
                     <ApplicationStatusLine status={applicant.status} animal={animal} outcomeAnimal={applicant.outcomeAnimal} />
+                    {/* «Sumar a un animal» is internal and reversible (Jon 2026-11-13): on the general form and on the candidacy it made. */}
+                    {applicant.proposal && (applicant.status.kind === 'proposed' || applicant.origin === 'proposed') && (
+                        <div className="space-y-2 -mt-2" data-testid="applicant-proposal">
+                            {applicant.status.kind === 'proposed' && (
+                                <p className="text-sm text-stone-600">{t('evaluation.proposed_hidden_note').replace('{name}', personFirst)}</p>
+                            )}
+                            {/* A contract link just issued here ends it too (the server refuses after any link; the list isn't re-read so the link stays shown). */}
+                            {applicant.proposal.canUndo && !shareUrl && (
+                                <div className="flex flex-wrap gap-2">
+                                    <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('change')} data-testid="applicant-undo-change">
+                                        {t('evaluation.undo_change')}
+                                    </Button>
+                                    <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('withdraw')} data-testid="applicant-undo-quit">
+                                        {t('evaluation.undo_quit').replace('{animal}', proposalAnimalName)}
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* PERFIL section */}
                     <section>
@@ -621,6 +681,30 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         onDone={() => { void afterChange('outcome'); }}
                     />
                 )}
+                {dialog === 'withdraw' && applicant.proposal && (
+                    <WithdrawProposalDialog
+                        generalApplicationId={applicant.proposal.generalApplicationId}
+                        personName={personFirst}
+                        animalName={proposalAnimalName}
+                        onClose={() => setDialog(null)}
+                        onDone={() => { setDialog(null); void afterChange('outcome'); }}
+                    />
+                )}
+                {dialog === 'change' && applicant.proposal && (
+                    <ProposeAnimalSheet
+                        applicationId={applicant.proposal.generalApplicationId}
+                        change
+                        fromAnimal={proposalAnimalName}
+                        personName={personName}
+                        onClose={() => setDialog(null)}
+                        onDone={() => { setDialog(null); void afterChange('outcome'); }}
+                        onSamePerson={() => {
+                            setDialog(null);
+                            toast.info(t('samePerson.gate_hint_propose').replace('{name}', personFirst));
+                            requestAnimationFrame(goToQuestion);
+                        }}
+                    />
+                )}
                 {dialog === 'propose' && (
                     <ProposeAnimalSheet
                         applicationId={applicant.applicationId}
@@ -630,7 +714,7 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                         onSamePerson={() => {
                             // Same calm notice + jump as «Enviar contrato»'s refusal (UX review), after the sheet closes.
                             setDialog(null);
-                            toast.info(t('samePerson.gate_hint_propose'));
+                            toast.info(t('samePerson.gate_hint_propose').replace('{name}', personFirst));
                             requestAnimationFrame(goToQuestion);
                         }}
                     />

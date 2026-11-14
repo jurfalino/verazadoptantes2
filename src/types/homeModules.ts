@@ -1,5 +1,4 @@
 import type { DueTop } from '@/lib/animalFollowupsDue';
-import type { GENERAL_ROW_ID } from '@/domain/homeModules';
 
 /** One card's data, or the errorId of why it could not load (shown, never hidden). */
 export type HomeSection<T> = { ok: true; data: T } | { ok: false; errorId: string };
@@ -37,6 +36,10 @@ export type HomeAdoptersData = {
     pendingReview: number;
     /** The first of them (up to HOME_CARD_SLOTS), one row each, like Mis animales' due animals (option b). */
     pending: HomePendingItem[];
+    /** General forms to evaluate (the team's), shown before `pending` (homeAdopterSlots). */
+    requestsToEvaluate: number;
+    /** The newest of them, up to HOME_CARD_SLOTS. */
+    requests: HomeRequestItem[];
     /** Newest created first, as /my-adopters lists them. */
     recent: Array<HomePersonRow & {
         createdAt: number;
@@ -70,8 +73,11 @@ export type HomeAnimalRow = {
     offer: number;
 };
 
-/** «Sin animal elegido · N solicitudes por evaluar»: the team's general applications, as one row. */
-export type HomeGeneralRow = { id: typeof GENERAL_ROW_ID; general: true; toEvaluate: number };
+/**
+ * A general form waiting to be evaluated, as a «Mis adoptantes» row (Jon 2026-11-13: a person, not an animal
+ * row): «Formulario general · por evaluar», or «Pidió a … (ya adoptada/adoptado)» when it asked for an adopted animal.
+ */
+export type HomeRequestItem = { applicationId: string; name: string; askedAnimal: { name: string; sex: string | null } | null };
 
 export type HomeAnimalsData = {
     /** «Disponibles» tab count (available + in foster). */
@@ -84,7 +90,7 @@ export type HomeAnimalsData = {
     dueCount: number;
     /** Due animals not listed: «N animales más con controles pendientes» (homeAnimalRows). */
     moreDue: number;
-    /** «Con solicitudes por evaluar» tab count: animals with applications to evaluate, + 1 when general ones wait. */
+    /** «Con solicitudes por evaluar» tab count: animals with applications to evaluate (general forms live in «Mis adoptantes»). */
     solicitudesCount: number;
     /** Application rows not listed: «N animales más con solicitudes» (homeAnimalRows). */
     moreApplications: number;
@@ -93,7 +99,7 @@ export type HomeAnimalsData = {
      * check-up due (most overdue first), the applications to evaluate, then the most recently
      * updated (homeAnimalRows).
      */
-    rows: Array<HomeAnimalRow | HomeGeneralRow>;
+    rows: HomeAnimalRow[];
 };
 
 export type HomePostsData = {

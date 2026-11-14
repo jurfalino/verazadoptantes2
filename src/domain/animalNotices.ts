@@ -52,8 +52,8 @@ export function formNoticeRecipients(c: { linkOwner: string; animalOwner: string
 
 /**
  * The animal owner a form's notices are planned for: the owner of the APPLICATION's animal. A form for an
- * animal that is already adopted (or gone) became a general application — the link owner's to evaluate under
- * «Sin animal elegido» — so it has no animal owner and the link owner is emailed (review M9).
+ * animal that is already adopted (or gone) became a general application — the link owner's to evaluate in
+ * «Mis adoptantes» — so it has no animal owner and the link owner is emailed (review M9).
  * `applicationAnimalId` is submissionApplication(...).animalId.
  */
 export function formNoticeAnimalOwner(applicationAnimalId: string | null, selectedAnimalOwner: string | null): string | null {

@@ -56,7 +56,21 @@ export interface ApplicantSummary {
     /** The adopted animal a form asked for (origin adopted_animal); named only when it is the viewer's team's own. */
     askedAnimal: { id: string; name: string; sex: string | null } | null;
     /** The animal a general application led to — «Propuesta para …» (proposed) / «También pidió a …» (also_applied); named only when it is the viewer's team's own. */
-    outcomeAnimal: { id: string; name: string; sex: string | null } | null;
+    outcomeAnimal: { id: string; name: string; sex: string | null; /** A proposal's animal now adopted (someone signed its open link): «(ya adoptado)». Absent otherwise. */ adopted?: boolean } | null;
+    /**
+     * A general form added to an animal (Jon 2026-11-13, «Sumar a un animal»): set on the general form (state
+     * proposed) AND on the candidacy it made (origin proposed). `canUndo`: «Cambiar animal» / «Quitar de …» —
+     * only while nothing happened on the animal's side (proposalUndoable). Absent/null otherwise.
+     */
+    proposal?: {
+        generalApplicationId: string;
+        candidacyId: string;
+        /** The animal it was added to (the general form's side); null on the candidacy (the panel's own animal). */
+        animal: { id: string; name: string; sex: string | null } | null;
+        /** Who added the person: the general form's closer, as a display name. */
+        byName: string | null;
+        canUndo: boolean;
+    } | null;
     submissionId: string;
     adopterId: string | null;
     adopterName: string;

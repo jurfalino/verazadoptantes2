@@ -289,7 +289,7 @@ test.describe.serial('Evaluating applicants, end to end', () => {
         expect(res.status(), await res.text()).toBe(200);
     });
 
-    test('a form for an adopted animal lands in «Sin animal elegido» with «Pidió a … (ya adoptada)»', async ({ page, request }) => {
+    test('a form for an adopted animal is a general form in «Mis adoptantes» with «Pidió a … (ya adoptada)»', async ({ page, request }) => {
         test.setTimeout(180_000);
         const name = `Pide Adoptada ${stamp}`;
         const res = await request.post(`/api/form/${ADMIN_USER_ID}/submit`, {
@@ -306,12 +306,15 @@ test.describe.serial('Evaluating applicants, end to end', () => {
         expect(app.asked_animal_id).toBe(ADOPTED.id);
         expect(app.state).toBe('open');
 
-        const panel = await openPanelAt(page, 'general', `app-${submissionId}`, name, 'solicitudes');
+        await page.goto(`/my-adopters?solicitud=app-${submissionId}#pendientes`);
+        await dismissCountryBanner(page);
+        const panel = page.getByTestId('request-panel');
+        await expect(panel.locator('#applicant-panel-title')).toContainText(name, { timeout: 60_000 });
         await expect(panel.getByTestId('applicant-asked-animal')).toHaveText(
             new RegExp(`^(Pidió a|Asked for|Pediu) ${ADOPTED.name} \\((ya adoptada|already adopted|já adotada)\\)$`));
         await expect(panel.getByTestId('evaluate-propose')).toBeVisible();
-        // «← Volver»: the tab, where it counts on «Sin animal elegido».
+        // «← Volver»: back on «Mis adoptantes», where it waits under «Formularios generales».
         await panel.getByTestId('applicant-panel-back').click();
-        await expect(page.getByTestId('general-card')).toBeVisible({ timeout: 60_000 });
+        await expect(page.getByTestId('general-request-row').filter({ hasText: name })).toBeVisible({ timeout: 60_000 });
     });
 });

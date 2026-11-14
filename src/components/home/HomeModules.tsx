@@ -25,14 +25,15 @@ import GoogleContactsPickerLauncher from '@/components/GoogleContactsPickerLaunc
 // Plain imports, never next/dynamic: on the Cloudflare build (next-on-pages) a dynamic chunk in this edge
 // page crashed the homepage («async__chunk_… is not defined», v2.58.43 CI). Both render only once opened.
 import HomeDuePanel from '@/components/home/HomeDuePanel';
-import HomeApplicantsPanel, { type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
+import HomeApplicantsPanel, { applicantsTargetKey, type HomeApplicantsTarget } from '@/components/home/HomeApplicantsPanel';
 import { AdoptionOfferSheet } from '@/components/evaluation/AdoptionOfferSheet';
 import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
+import { requestHref } from '@/domain/applications';
 import PendingDedup from '@/components/PendingDedup';
 import { summaryLine } from '@/components/pendientes/summaryLine';
 import { pairKey } from '@/domain/dedupPair';
 import { getHomeModules } from '@/app/actions/homeModules';
-import { orderHomeModules, homePendingRows, HOME_CARD_SLOTS, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
+import { orderHomeModules, homeAdopterSlots, HOME_CARD_SLOTS, postsCardLive, type HomeModuleKey, type HomeModuleState } from '@/domain/homeModules';
 import { HOME_POSTS_WINDOW_DAYS } from '@/config/constants';
 import { followupBadgeLabel } from '@/lib/followupBadgeLabel';
 import { adopterDisplayName } from '@/lib/adopterDisplay';
@@ -40,7 +41,7 @@ import { interpolate } from '@/lib/interpolate';
 import { detectSocialPlatform, SOCIAL_PLATFORMS } from '@/lib/contactEntries';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
-import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeGeneralRow, HomeModulesData, HomePendingItem, HomePostsData, HomeSection } from '@/types/homeModules';
+import type { HomeAdoptersData, HomeAnimalRow, HomeAnimalsData, HomeModulesData, HomePendingItem, HomePostsData, HomeRequestItem, HomeSection } from '@/types/homeModules';
 
 type T = (key: string) => string;
 
@@ -57,7 +58,7 @@ const PATHS = {
     copy: 'M8 8h12v12H8zM4 16V4h12',
     inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
     plus: 'M12 5v14m-7-7h14',
-    // lucide FileText: «Sin animal elegido» (the general applications) has a form, not a photo.
+    // lucide FileText: a general form (a request row in «Mis adoptantes») has a form, not a photo.
     form: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8',
 } as const;
 
@@ -144,26 +145,19 @@ function TodoRow({ children, href, testId, className = '' }: { children: ReactNo
  * it — amber when something waits (a check-up due, applications to evaluate,
  * the offer to tell the others). With `onOpen` the row opens its panel over
  * the home (HomeDuePanel, HomeApplicantsPanel, the offer sheet) instead of
- * going to the page; it looks the same either way. `formIcon`: the
- * «Sin animal elegido» row, which is no animal.
+ * going to the page; it looks the same either way.
  */
-function AnimalRow({ href, testId, name, photo, species, line, due = false, onOpen, formIcon = false }: {
-    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean; onOpen?: () => void; formIcon?: boolean;
+function AnimalRow({ href, testId, name, photo, species, line, due = false, onOpen }: {
+    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean; onOpen?: () => void;
 }) {
     const rowClass = `flex items-center gap-3 min-h-11 py-2 group ${SLOT_ROW}`;
     const body = (
         <>
-            {formIcon ? (
-                <span className="w-10 h-10 shrink-0 rounded-lg border bg-amber-50 border-amber-200 text-amber-700 flex items-center justify-center">
-                    <Icon name="form" className="w-5 h-5" />
-                </span>
-            ) : (
-                <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
-                    {photo
-                        ? <img src={photo} alt="" className="w-full h-full object-cover" />
-                        : <img src={`/placeholders/${species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
-                </span>
-            )}
+            <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
+                {photo
+                    ? <img src={photo} alt="" className="w-full h-full object-cover" />
+                    : <img src={`/placeholders/${species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
+            </span>
             <span className="flex-1 min-w-0">
                 <span title={name} className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere] md:truncate">{name}</span>
                 <span title={line} className={`block text-xs [overflow-wrap:anywhere] md:truncate ${due ? 'font-semibold text-amber-700' : 'text-stone-500'}`}>{keepNumberWithUnit(line)}</span>
@@ -267,40 +261,43 @@ function SectionError({ errorId, t }: { errorId: string; t: T }) {
 
 /** What Mis adoptantes lists — shared by the card and the desktop layout. */
 function adopterParts(d: HomeAdoptersData, hasContacts: boolean) {
-    const hasTodo = d.pendingReview > 0;
-    // Waiting on the viewer first, one row each (option b) — as Mis animales lists its due animals.
-    const { shown: pending, more: morePending } = homePendingRows(d.pending, d.pendingReview);
+    const hasTodo = d.pendingReview > 0 || d.requestsToEvaluate > 0;
+    // Waiting on the viewer first, one row each (option b): general forms, then «¿Es la misma persona?» (Jon 2026-11-13).
+    const fit = homeAdopterSlots(d.requestsToEvaluate, d.pendingReview);
+    const requests = d.requests.slice(0, fit.requests);
+    const pending = d.pending.slice(0, fit.pending);
+    // Everything waiting that has no row of its own: requests and pairs beyond the slots, or not loaded as rows.
+    const morePending = (d.requestsToEvaluate - requests.length) + (d.pendingReview - pending.length);
     const showContacts = !hasTodo && hasContacts;
-    const used = pending.length + (morePending > 0 ? 1 : 0) + (showContacts ? 1 : 0);
+    const used = requests.length + pending.length + (morePending > 0 ? 1 : 0) + (showContacts ? 1 : 0);
     const rows = d.recent.slice(0, Math.max(0, HOME_CARD_SLOTS - used));
-    return { hasTodo, showContacts, pending, morePending, rows, more: d.total > rows.length, slots: rows.length + used };
+    return { hasTodo, showContacts, requests, pending, morePending, rows, more: d.total > rows.length, slots: rows.length + used };
 }
 
 /** What Mis animales lists — shared by the card and the desktop layout. */
 function animalParts(d: HomeAnimalsData) {
     const { moreDue, moreApplications } = d;
-    // «Ver los N animales» counts animals: «Sin animal elegido» is not one.
-    const animalsListed = d.rows.filter(r => !isGeneral(r)).length;
+    const animalsListed = d.rows.length;
     return { moreDue, moreApplications, more: d.total > animalsListed, slots: d.rows.length + (moreDue > 0 ? 1 : 0) + (moreApplications > 0 ? 1 : 0) };
 }
 
-const isGeneral = (r: HomeAnimalRow | HomeGeneralRow): r is HomeGeneralRow => 'general' in r;
-
 /** Mis animales waits on the rescuer: a check-up due, applications to evaluate, or an offer to tell the others. */
 export function animalsTodo(d: HomeAnimalsData): boolean {
-    return d.dueCount > 0 || d.solicitudesCount > 0 || d.rows.some(r => !isGeneral(r) && r.offer > 0);
+    return d.dueCount > 0 || d.solicitudesCount > 0 || d.rows.some(r => r.offer > 0);
 }
 
-export function AdoptersCard({ section, contacts, t, rel, className, onOpenPending }: {
+export function AdoptersCard({ section, contacts, t, rel, className, onOpenPending, onOpenRequest }: {
     section: HomeSection<HomeAdoptersData>; contacts: ReactNode; t: T; rel: (ms: number) => string; className?: string;
     /** Opens a pending row over the home (PendingDedup's home mode). Without it, pending rows link to the list. */
     onOpenPending?: (item: HomePendingItem) => void;
+    /** Opens a general form alone over the home (HomeApplicantsPanel `{ request }`). Without it, the row links to it. */
+    onOpenRequest?: (applicationId: string) => void;
 }) {
     if (!section.ok) {
         return <ModuleShell icon="people" title={t('homeModules.adopters_title')} href="/my-adopters" testId="home-adopters" className={className}><SectionError errorId={section.errorId} t={t} /></ModuleShell>;
     }
     const d = section.data;
-    const { showContacts, pending, morePending, rows, more } = adopterParts(d, contacts != null);
+    const { showContacts, requests, pending, morePending, rows, more } = adopterParts(d, contacts != null);
     const meta = (r: HomeAdoptersData['recent'][number]) => r.viaForm
         ? interpolate(t('homeModules.via_form'), { when: rel(r.createdAt) })
         : r.creatorIsSelf || !r.creatorName
@@ -312,6 +309,7 @@ export function AdoptersCard({ section, contacts, t, rel, className, onOpenPendi
             {/* One block, so the slots sit at their own fixed spacing (SLOT_*). */}
             <div>
                 <div className={ROWS}>
+                    {requests.map(r => <RequestRow key={r.applicationId} item={r} onOpen={onOpenRequest} t={t} />)}
                     {pending.map(item => onOpenPending
                         ? <PendingRow key={item.ids.join('|')} item={item} onOpen={() => onOpenPending(item)} t={t} />
                         : null)}
@@ -333,6 +331,33 @@ export function AdoptersCard({ section, contacts, t, rel, className, onOpenPendi
             </div>
         </ModuleShell>
     );
+}
+
+/**
+ * A general form to evaluate (Jon 2026-11-13: a person, so a «Mis adoptantes» row): the PendingRow look with
+ * the form icon, «Formulario general · por evaluar» or «Pidió a … (ya adoptada) · por evaluar». It opens the
+ * request alone over the home; without the panel it links to it in «Mis adoptantes».
+ */
+function RequestRow({ item, onOpen, t }: { item: HomeRequestItem; onOpen?: (applicationId: string) => void; t: T }) {
+    const name = item.name || t('adopter.nameless');
+    const line = item.askedAnimal
+        ? `${animalLine(t, 'evaluation.asked_adopted', item.askedAnimal)} · ${t('evaluation.to_evaluate_short')}`
+        : t('evaluation.request_line_general');
+    const face = (
+        <>
+            <span className="w-10 h-10 shrink-0 rounded-full border bg-amber-50 border-amber-200 text-amber-700 flex items-center justify-center">
+                <Icon name="form" className="w-5 h-5" />
+            </span>
+            <span className="flex-1 min-w-0">
+                <span title={name} className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere] md:truncate">{name}</span>
+                <span title={line} className="block text-xs font-semibold text-amber-700 [overflow-wrap:anywhere] md:truncate">{line}</span>
+            </span>
+        </>
+    );
+    const cls = `w-full text-left flex items-center gap-3 min-h-11 py-2 group ${SLOT_ROW}`;
+    return onOpen
+        ? <button type="button" onClick={() => onOpen(item.applicationId)} aria-haspopup="dialog" data-testid="home-adopters-request" className={cls}>{face}</button>
+        : <Link href={requestHref(item.applicationId)} data-testid="home-adopters-request" className={cls}>{face}</Link>;
 }
 
 /**
@@ -394,12 +419,7 @@ export function AnimalsCard({ section, t, className, onOpenDue, onOpenApplicatio
     const { moreDue, moreApplications, more } = animalParts(d);
     const toEvaluate = (n: number) => count(t, n, 'evaluation.to_evaluate_one', 'evaluation.to_evaluate_many');
     // One row per animal, its line by what waits first: the offer, a check-up due, applications — else where it is.
-    const row = (a: HomeAnimalRow | HomeGeneralRow) => {
-        if (isGeneral(a)) {
-            return <AnimalRow key={a.id} href="/my-animals?view=solicitudes" testId="home-animals-general" formIcon
-                name={t('evaluation.general_title')} photo={null} species={null} due line={toEvaluate(a.toEvaluate)}
-                onOpen={onOpenApplications ? () => onOpenApplications('general') : undefined} />;
-        }
+    const row = (a: HomeAnimalRow) => {
         const name = a.name || t('homeModules.unnamed_animal');
         const page = `/my-animals/${encodeURIComponent(a.id)}`;
         if (a.offer > 0) {
@@ -559,7 +579,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     const [failedId, setFailedId] = useState<string | null>(null);
     /** The animal whose «Para hacer ahora» is open over the home. */
     const [duePanel, setDuePanel] = useState<{ id: string; name: string } | null>(null);
-    /** The applications open over the home (one animal's, or «Sin animal elegido»). */
+    /** The panel open over the home: one animal's candidates, or one general form alone. */
     const [applicantsPanel, setApplicantsPanel] = useState<HomeApplicantsTarget | null>(null);
     /** The animal whose offer to tell the other candidates is open over the home. */
     const [offerFor, setOfferFor] = useState<string | null>(null);
@@ -622,7 +642,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
         ? ({ ok: true, data: { ...data.posts.data, people: 0, recent: [] } } as HomeSection<HomePostsData>)
         : data.posts;
     const { cards, steps, firstSteps } = orderHomeModules({
-        adopters: stateOf(data.adopters, d => d.pendingReview > 0, d => d.total > 0),
+        adopters: stateOf(data.adopters, d => d.pendingReview > 0 || d.requestsToEvaluate > 0, d => d.total > 0),
         animals: stateOf(data.animals, animalsTodo, d => d.total > 0),
         posts: stateOf(posts, () => false, d => d.people > 0),
     });
@@ -658,7 +678,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     const spanIf = (k: HomeModuleKey) => (k === taller ? 'md:row-span-2' : '');
 
     const card = (k: HomeModuleKey) => {
-        if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} onOpenPending={item => setPendingFocus(pairKey(item.ids[0], item.ids[1]))} />;
+        if (k === 'adopters') return <AdoptersCard key={k} section={data.adopters} contacts={contacts} t={t} rel={rel} className={spanIf(k)} onOpenPending={item => setPendingFocus(pairKey(item.ids[0], item.ids[1]))} onOpenRequest={id => setApplicantsPanel({ request: id })} />;
         if (k === 'animals' && data.animals) return <AnimalsCard key={k} section={data.animals} t={t} className={spanIf(k)} onOpenDue={setDuePanel} onOpenApplications={setApplicantsPanel} onOpenOffer={setOfferFor} />;
         if (k === 'posts' && posts) return <PostsCard key={k} section={posts} t={t} rel={rel} />;
         return null;
@@ -685,7 +705,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
             </div>
             {duePanel && <HomeDuePanel key={duePanel.id} animalId={duePanel.id} animalName={duePanel.name} onClose={closeDuePanel} onChanged={load} />}
             {applicantsPanel && (
-                <HomeApplicantsPanel key={applicantsPanel === 'general' ? 'general' : applicantsPanel.animal.id}
+                <HomeApplicantsPanel key={applicantsTargetKey(applicantsPanel)}
                     target={applicantsPanel} onClose={closeApplicantsPanel} onChanged={load} />
             )}
             {offerFor && <AdoptionOfferSheet key={offerFor} animalId={offerFor} onClose={closeOffer} onDone={load} />}

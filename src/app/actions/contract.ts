@@ -34,6 +34,7 @@ export interface CreateInvitationResult {
      *  them down for this animal and none of their applications is still open
      *  (a teammate's «No avanzar» while this panel was open); `'same_person_unanswered'` when a
      *  possible duplicate of the profile the form created still waits for «¿Es la misma persona?»;
+     *  `'removed'` when the candidacy it was sent from no longer exists (a teammate's «Quitar»);
      *  otherwise a free-text failure. */
     error?: string;
     errorId?: string;
@@ -45,6 +46,8 @@ export async function createContractInvitation(
     // The sharing rescuer's current UI language, captured client-side at share
     // time. Persisted so the contract-app renders the whole flow in it.
     locale?: string,
+    /** The candidacy the panel sends it from: gone («Quitar» meanwhile) → `removed`, nothing written (review I1). */
+    applicationId?: string,
 ): Promise<CreateInvitationResult> {
     try {
         const session = await auth();
@@ -72,6 +75,20 @@ export async function createContractInvitation(
         if (!(await isOwnerOrgMateOrAdmin(userEmail, animal.addedBy))) return { success: false, error: 'Not authorized for this animal' };
         if (!takesContract(animal)) return { success: false, error: 'Animal already adopted' };
 
+        // Sent from a candidacy that a teammate's «Quitar» removed since the panel read: the person is no longer
+        // among this animal's candidates. Refused before anything is written (Jon 2026-11-13, review I1).
+        if (applicationId !== undefined) {
+            const { applications } = await import('@/db/schema');
+            const still = typeof applicationId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(applicationId)
+                ? await db.select({ id: applications.id }).from(applications)
+                    .where(and(eq(applications.id, applicationId), eq(applications.animalId, animalId))).get()
+                : undefined;
+            if (!still) {
+                logger.info('createContractInvitation: refused — the candidacy was removed', { animalId, adopterId, applicationId, createdBy: userEmail });
+                return { success: false, error: 'removed' };
+            }
+        }
+
         // Confirm the adopter exists and is not soft-deleted.
         const adopter = await db.select({ id: adopters.id, deletedAt: adopters.deletedAt, addedBy: adopters.addedBy, isPublic: adopters.isPublic })
             .from(adopters)
@@ -97,7 +114,8 @@ export async function createContractInvitation(
         // no contract: the panel that offered the button was read before the decline. Refused BEFORE the
         // retirement below, so another applicant's live link survives. Candidates closed by an adoption stay
         // sendable (the animal may have come back), and a profile with no application keeps the full-access path.
-        if (access.via === 'applicant' && !access.hasOpenApplication && access.hasDeclinedApplication) {
+        const { refusedAsDecided } = await import('@/lib/contractInvitationAccess');
+        if (refusedAsDecided(access)) {
             logger.info('createContractInvitation: refused — the application already has an outcome', { animalId, adopterId, createdBy: userEmail });
             return { success: false, error: 'already_decided' };
         }

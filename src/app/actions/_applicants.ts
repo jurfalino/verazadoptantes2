@@ -18,7 +18,7 @@ import { buildFlags } from '@/domain/flags';
 import { NO_PERIOD_ALERTS, periodAlerts } from '@/domain/periodAlerts';
 import { NO_HOUSEMATE_ALERT } from '@/domain/households';
 import { APPLICATION_ORIGINS, APPLICATION_STATES, RECORD_TYPES, type ApplicationState, type ApplicationCloseReason } from '@/domain/constants';
-import { applicationStatus, panelOrder, type InvitationLike } from '@/domain/applications';
+import { applicationStatus, panelOrder, proposalUndoable, type InvitationLike } from '@/domain/applications';
 import { healMissingApplications } from '@/lib/applicationWrites';
 import { applicantScopeWhere, generalScopeWhere, isInTeamScope, normalizeTeamScope, teammateVisibleAnimal } from '@/lib/applicantScope';
 import type { AdopterFlags } from '@/types/adopter';
@@ -140,7 +140,7 @@ export async function listApplicantIdsForAnimal(
 type ApplicationRow = {
     applicationId: string; origin: string; askedAnimalId: string | null; animalId: string | null;
     proposedApplicationId: string | null; replacedByApplicationId: string | null;
-    state: string; closeReason: string | null; closedAt: number | null;
+    state: string; closeReason: string | null; closedAt: number | null; closedBy: string | null;
     id: string; name: string;
     email: string | null; phone: string | null; address: string | null;
     selfieUrl: string | null; photoKeys: string | null; latitude: string | null; longitude: string | null;
@@ -163,6 +163,7 @@ async function selectApplicationRows(db: Db, where: unknown): Promise<Applicatio
         state: applications.state,
         closeReason: applications.closeReason,
         closedAt: applications.closedAt,
+        closedBy: applications.closedBy,
         id: formSubmissions.id,
         name: formSubmissions.name,
         email: formSubmissions.email,
@@ -185,6 +186,44 @@ async function selectApplicationRows(db: Db, where: unknown): Promise<Applicatio
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
         .where(where as never)
         .all() as ApplicationRow[];
+}
+
+type ProposalInfo = NonNullable<ApplicantSummary['proposal']>;
+
+/**
+ * The «Sumar a un animal» link of a row, both sides: a general form in state proposed (→ its candidacy), or a
+ * candidacy of origin proposed (→ the general form that made it). `canUndo` counts every contract link ever
+ * issued for that animal to either profile of the form. Null for any other row.
+ */
+async function proposalOf(db: Db, row: ApplicationRow): Promise<{ info: ProposalInfo; proposerEmail: string | null } | null> {
+    const { applications, contractInvitations } = await import('@/db/schema');
+    const { eq, and, sql } = await import('drizzle-orm');
+    let generalApplicationId: string; let closedBy: string | null; let candidacy: { id: string; animalId: string | null; state: string };
+    if (row.origin === APPLICATION_ORIGINS.PROPOSED) {
+        const g = await db.select({ id: applications.id, closedBy: applications.closedBy }).from(applications)
+            .where(eq(applications.proposedApplicationId, row.applicationId)).get() as { id: string; closedBy: string | null } | undefined;
+        if (!g) return null;
+        generalApplicationId = g.id; closedBy = g.closedBy;
+        candidacy = { id: row.applicationId, animalId: row.animalId, state: row.state };
+    } else if (row.state === APPLICATION_STATES.PROPOSED && row.proposedApplicationId) {
+        const c = await db.select({ id: applications.id, animalId: applications.animalId, state: applications.state }).from(applications)
+            .where(eq(applications.id, row.proposedApplicationId)).get() as { id: string; animalId: string | null; state: string } | undefined;
+        if (!c) return null;
+        generalApplicationId = row.applicationId; closedBy = row.closedBy; candidacy = c;
+    } else {
+        return null;
+    }
+    const profiles = [...new Set([row.linkedAdopterId, row.autoAdopterId].filter((x): x is string => !!x))];
+    const links = !candidacy.animalId ? 0 : (await Promise.all(profiles.map(id => db.select({ n: sql<number>`count(*)` }).from(contractInvitations)
+        .where(and(eq(contractInvitations.animalId, candidacy.animalId!), eq(contractInvitations.adopterId, id))).get() as Promise<{ n: number } | undefined>)))
+        .reduce((sum, r) => sum + (r?.n ?? 0), 0);
+    // Another application a merge pointed at the candidacy keeps it (review M2): no undo offered.
+    const pointedAt = await db.select({ id: applications.id }).from(applications)
+        .where(eq(applications.replacedByApplicationId, candidacy.id)).get() as { id: string } | undefined;
+    return {
+        info: { generalApplicationId, candidacyId: candidacy.id, animal: null, byName: null, canUndo: !pointedAt && proposalUndoable({ candidacyState: candidacy.state, invitationsEver: links }) },
+        proposerEmail: closedBy,
+    };
 }
 
 type EnrichCtx = { op: string; animalId: string | null; teamEmails: readonly string[]; viewerEmail: string | null | undefined };
@@ -219,13 +258,25 @@ export async function loadGeneralApplications(
     db: Db,
     teamEmails: readonly string[],
     viewerEmail: string | null | undefined,
+    /**
+     * What to read (review I4: the whole history grows with every form ever received, and each row costs
+     * several D1 queries): `applicationId` = that one request (a link opens it alone); `openOnly` = the ones
+     * still open («Formularios generales» lists those to evaluate). Neither = every general application.
+     */
+    scope: { applicationId?: string; openOnly?: boolean } = {},
 ): Promise<ApplicantSummary[]> {
-    const where = generalScopeWhere(teamEmails);
-    if (!where) {
+    const team = generalScopeWhere(teamEmails);
+    if (!team) {
         logger.warn('loadGeneralApplications: empty team scope — failing closed', { viewer: viewerEmail ?? null });
         return [];
     }
-    await healMissingApplications(db, teamEmails);
+    const { applications } = await import('@/db/schema');
+    const { and, eq } = await import('drizzle-orm');
+    const where = scope.applicationId ? and(team as never, eq(applications.id, scope.applicationId))
+        : scope.openOnly ? and(team as never, eq(applications.state, APPLICATION_STATES.OPEN))
+            : team;
+    // One request by id already has its row: the heal (forms missing their application) is for the lists.
+    if (!scope.applicationId) await healMissingApplications(db, teamEmails);
     const rows = await selectApplicationRows(db, where);
     return panelOrder(await enrichApplicantRows(db, rows, { op: 'loadGeneralApplications', animalId: null, teamEmails, viewerEmail }));
 }
@@ -260,6 +311,8 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
     // gets parallel lookups for name+context, activity records (for both
     // rating + counts), flag rows, and contract-invite state. Orphan
     // submissions (linkedAdopterId=null) get a zeroed shape.
+    // Who added each proposed person (the general form's closer): names resolved in one batch below.
+    const proposerOf = new Map<string, string>();
     const enriched = await Promise.all(rows.map(async (row): Promise<ApplicantSummary> => {
         let adopterName = row.name;
         let adopterRating: number | null = null;
@@ -342,18 +395,21 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
         // «Pidió a …» / «Propuesta para …» / «También pidió a …»: only an animal of the viewer's team is named.
         // `allowUnnamed`: a proposal's animal is the team's own by construction (proposeAnimal gates it) —
         // an unnamed one is still returned (blank name; the panel says «Sin nombre»), never another team's.
-        const teamAnimal = async (animalId: string, what: string, opts: { allowUnnamed?: boolean } = {}): Promise<ApplicantSummary['askedAnimal']> => {
+        // `allowUnnamed` is the proposal's lookup: it also says whether that animal is adopted by now (Jon 2026-11-13:
+        // the person stays added — «Quitar» still works — but the request shows the animal is no longer available).
+        const teamAnimal = async (animalId: string, what: string, opts: { allowUnnamed?: boolean } = {}): Promise<ApplicantSummary['outcomeAnimal']> => {
             try {
-                const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy })
+                const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy, recordType: adoptions.recordType })
                     .from(adoptions)
                     .where(eq(adoptions.id, animalId))
-                    .get() as { id: string; name: string | null; sex: string | null; owner: string | null } | undefined;
+                    .get() as { id: string; name: string | null; sex: string | null; owner: string | null; recordType: string | null } | undefined;
                 if (!a) return null;
+                const adopted = opts.allowUnnamed && a.recordType === RECORD_TYPES.ADOPTION ? { adopted: true } : {};
                 if (opts.allowUnnamed && !a.name?.trim()) {
-                    return a.owner && isInTeamScope(a.owner, normalizeTeamScope(ctx.teamEmails)) ? { id: a.id, name: '', sex: a.sex } : null;
+                    return a.owner && isInTeamScope(a.owner, normalizeTeamScope(ctx.teamEmails)) ? { id: a.id, name: '', sex: a.sex, ...adopted } : null;
                 }
                 const visible = teammateVisibleAnimal({ id: a.id, name: a.name, owner: a.owner }, ctx.teamEmails);
-                return visible ? { id: visible.id, name: visible.name, sex: a.sex } : null;
+                return visible ? { id: visible.id, name: visible.name, sex: a.sex, ...adopted } : null;
             } catch (e) {
                 logger.warn(`${ctx.op}: ${what} lookup fallback`, {
                     applicationId: row.applicationId, animalId, error: e instanceof Error ? e.message : String(e),
@@ -383,9 +439,24 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
             }
         }
 
+        let proposal: ProposalInfo | null = null;
+        try {
+            const p = await proposalOf(db, row);
+            if (p) {
+                const general = row.state === APPLICATION_STATES.PROPOSED;
+                // An animal this viewer's team can't see (the person was added in another group): named nowhere, never undone from here.
+                proposal = { ...p.info, animal: general ? outcomeAnimal : null, canUndo: p.info.canUndo && (!general || outcomeAnimal !== null) };
+                if (p.proposerEmail) proposerOf.set(row.applicationId, p.proposerEmail);
+            }
+        } catch (e) {
+            // Without it the panel shows no «Cambiar / Quitar»: logged, never a lost list.
+            logger.warn(`${ctx.op}: proposal lookup fallback`, { applicationId: row.applicationId, error: e instanceof Error ? e.message : String(e) });
+        }
+
         return {
             applicationId: row.applicationId,
             origin: row.origin as ApplicantSummary['origin'],
+            proposal,
             status,
             askedAnimal,
             outcomeAnimal,
@@ -455,6 +526,24 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
             if (period) a.flags = { ...a.flags, ...period(a.adopterId) };
             if (housemates) a.housemateAlert = housemates[a.adopterId] ?? NO_HOUSEMATE_ALERT;
             a.alertsChecked = !!period && !!housemates;
+        }
+    }
+
+    // «Sumó …»: the proposer's name, in one batch (D1-safe), degrading to the email handle.
+    if (proposerOf.size > 0) {
+        try {
+            const { resolveDisplayNames } = await import('./notifications');
+            const names = await resolveDisplayNames([...new Set(proposerOf.values())]);
+            for (const a of enriched) {
+                const email = proposerOf.get(a.applicationId);
+                if (a.proposal && email) a.proposal.byName = names.get(email.toLowerCase()) ?? email.split('@')[0];
+            }
+        } catch (e) {
+            logger.warn(`${ctx.op}: proposer name lookup fallback`, { animalId, count: proposerOf.size, error: e instanceof Error ? e.message : String(e) });
+            for (const a of enriched) {
+                const email = proposerOf.get(a.applicationId);
+                if (a.proposal && email) a.proposal.byName = email.split('@')[0];
+            }
         }
     }
 

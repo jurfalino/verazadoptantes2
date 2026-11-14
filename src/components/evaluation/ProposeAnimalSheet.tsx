@@ -16,7 +16,7 @@ import { proposeNewAnimalHref } from '@/domain/applications';
 import { useLanguage } from '@/context/LanguageContext';
 import { useShowToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
-import { getProposalAnimals, proposeAnimal } from '@/app/actions/applications';
+import { changeProposedAnimal, getProposalAnimals, proposeAnimal } from '@/app/actions/applications';
 import type { ProposalAnimal } from '@/app/actions/_applications';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
@@ -94,11 +94,12 @@ export function ProposalAnimalList({ animals, anyAnimals, busyId, onPick, person
 }
 
 /** What the sheet does with proposeAnimal's answer. */
-export function proposeOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>): 'done' | 'already_candidate' | 'same_person' | 'failed' {
+export function proposeOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>, opts: { change?: boolean } = {}): 'done' | 'already_candidate' | 'same_person' | 'failed' | 'failed_reread' {
     if (res.ok || res.error === 'already_decided') return 'done';
     if (res.error === 'already_candidate') return 'already_candidate';
     if (res.error === 'same_person_unanswered') return 'same_person';
-    return 'failed';
+    // «Cambiar animal» moves two rows: after a failure the panel re-reads what is really saved (review M5).
+    return opts.change ? 'failed_reread' : 'failed';
 }
 
 /**
@@ -115,8 +116,12 @@ export function proposeNewOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>
 
 type Load = { state: 'loading' } | { state: 'ok'; animals: ProposalAnimal[]; anyAnimals: boolean } | { state: 'failed'; errorId: string | null };
 
-export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone, onSamePerson }: {
+export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone, onSamePerson, change = false, fromAnimal = '' }: {
     applicationId: string;
+    /** «Cambiar animal» (Jon 2026-11-13): `applicationId` is a general form already added to an animal; picking moves it. */
+    change?: boolean;
+    /** «Cambiar animal»: the animal it is in now (named when the move is refused). */
+    fromAnimal?: string;
     personName: string;
     onClose: () => void;
     /** «¿Es la misma persona?» still waits (a «No sé» withdrawn, or a new match, since the panel read): the panel closes the sheet and goes to the question. */
@@ -154,8 +159,14 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
         setBusyId(animal.id);
         const animalName = animal.name || t('homeModules.unnamed_animal');
         try {
-            const res = await proposeAnimal(applicationId, animal.id);
-            const next = proposeOutcome(res);
+            const res = change ? await changeProposedAnimal(applicationId, animal.id) : await proposeAnimal(applicationId, animal.id);
+            if (!res.ok && res.error === 'already_acted') {
+                // Something happened on the first animal's side meanwhile: it stays; the panel re-reads.
+                toast.info(t('evaluation.undo_refused').replace('{animal}', fromAnimal).replace('{name}', name));
+                onDone();
+                return;
+            }
+            const next = proposeOutcome(res, { change });
             if (next === 'done') { onDone(); return; }
             if (next === 'same_person') { onSamePerson(); return; }
             if (next === 'already_candidate') {
@@ -164,8 +175,12 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
                 return;
             }
             toast.error(t('errors.generic'), t('evaluation.propose_failed'), (!res.ok && res.errorId) || resolveErrorId(new Error(`proposeAnimal: ${res.ok ? 'unknown' : res.error}`), 'ProposeAnimalSheet'));
+            if (next === 'failed_reread') onDone();
         } catch (e) {
-            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('evaluation.propose_failed'), resolveErrorId(e, 'ProposeAnimalSheet'));
+            if (handledAsStale(e)) return;
+            toast.error(t('errors.generic'), t('evaluation.propose_failed'), resolveErrorId(e, 'ProposeAnimalSheet'));
+            // A throw mid-«Cambiar» may have moved either row: re-read rather than show the old animal.
+            if (change) onDone();
         } finally {
             setBusyId(null);
         }
@@ -173,6 +188,7 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
 
     return (
         <Modal title={t('evaluation.propose_title').replace('{name}', name)} onClose={onClose} busy={busyId !== null} testId="propose-sheet">
+            <p className="text-sm text-stone-600" data-testid="propose-note">{t('evaluation.propose_note').split('{name}').join(name)}</p>
             {load.state === 'loading' && <p className="text-sm text-stone-500" aria-busy="true">{t('common.loading')}</p>}
             {load.state === 'failed' && (
                 <p className="text-sm text-stone-600" data-testid="propose-failed">

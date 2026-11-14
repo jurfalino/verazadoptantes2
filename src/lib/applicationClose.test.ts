@@ -125,14 +125,14 @@ describe('an adoption closes the other candidates', () => {
         expect(sqlite.prepare("SELECT COUNT(*) AS n FROM applications WHERE state = 'open'").get()!.n).toBe(3);
     });
 
-    it('via open_link: every open candidate closes with adopted_open_link and offer_done_at set (no offer)', async () => {
+    it('via open_link (anyone can sign it): the other candidates stay open and nothing lands on their profiles (review S1)', async () => {
         const res = await adopt('ad1', { adoptionVia: 'open_link' });
-        expect(res.closedApplications).toBe(2);
+        expect(res.closedApplications ?? 0).toBe(0);
         for (const id of ['app-s2', 'app-s3']) {
-            expect(app(id)).toMatchObject({ state: 'closed', close_reason: 'adopted_open_link' });
-            expect(app(id).offer_done_at).toEqual(expect.any(Number));
+            expect(app(id)).toMatchObject({ state: 'open', close_reason: null });
+            expect(app(id).offer_done_at).toBeNull();
         }
-        expect(JSON.parse(history('ad2')[0].changes as string).application_closed.reason).toBe('adopted_open_link');
+        expect(history('ad2')).toEqual([]);
     });
 
     it('a forged outsider row (form link outside the owner\'s team) is left untouched', async () => {

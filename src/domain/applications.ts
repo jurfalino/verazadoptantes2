@@ -6,7 +6,6 @@ import {
     APPLICATION_STATES, APPLICATION_ORIGINS, APPLICATION_CLOSE_REASONS, INVITATION_TTL_DAYS, LIFE_STAGE_YEARS,
     type ApplicationState, type ApplicationOrigin, type ApplicationCloseReason,
 } from './constants';
-import { GENERAL_ROW_ID } from './homeModules';
 
 const DAY_SEC = 86_400;
 
@@ -91,13 +90,23 @@ export function nextToEvaluateIndex(statuses: readonly ApplicationStatus[], from
 
 export type AdoptionVia = 'invitation' | 'in_app' | 'open_link';
 
-/** Who gets what when an animal is adopted: the adopter's own application → adopted; every other open one → closed. */
-export function planAdoptionClose(open: ReadonlyArray<{ id: string; adopterId: string | null }>, adopterId: string, via: AdoptionVia):
+/**
+ * Who gets what when an animal is adopted: the adopter's own application →
+ * adopted; every other open one → closed. The adopter is recognised on either
+ * profile of the form — the one it sits on or the one it created (review S3:
+ * a link sent to the auto-created profile, signed after a «Sí» linked the form
+ * elsewhere). On the open link (no token — anyone who knows the animal can
+ * sign it) only the signer's own application moves: the others stay open, so a
+ * prank or a mistaken signature never loses the team's candidates (review S1).
+ */
+export function planAdoptionClose(open: ReadonlyArray<{ id: string; adopterIds: ReadonlyArray<string | null> }>, adopterId: string, via: AdoptionVia):
     Array<{ id: string; state: 'closed' | 'adopted'; closeReason: ApplicationCloseReason | null }> {
-    const reason = via === 'open_link' ? APPLICATION_CLOSE_REASONS.ADOPTED_OPEN_LINK : APPLICATION_CLOSE_REASONS.ADOPTED_OTHER;
-    return open.map((a) => (a.adopterId === adopterId
-        ? { id: a.id, state: 'adopted' as const, closeReason: null }
-        : { id: a.id, state: 'closed' as const, closeReason: reason }));
+    type Step = { id: string; state: 'closed' | 'adopted'; closeReason: ApplicationCloseReason | null };
+    return open.flatMap((a): Step[] => {
+        if (a.adopterIds.includes(adopterId)) return [{ id: a.id, state: 'adopted' as const, closeReason: null }];
+        if (via === 'open_link') return [];
+        return [{ id: a.id, state: 'closed' as const, closeReason: APPLICATION_CLOSE_REASONS.ADOPTED_OTHER }];
+    });
 }
 
 export type MergeApp = { id: string; animalId: string | null; state: ApplicationState; createdAt: number; formOwner: string };
@@ -147,15 +156,17 @@ export function submissionApplication(selectedAnimalId: string | null, animal: {
 
 /**
  * Where a form's bell notice leads (spec «Notifications»: its link opens the panel for that
- * application): «Con solicitudes por evaluar» on Mis animales, at that application — `animal=general`
- * for a general one («Sin animal elegido»). The form itself when Mis animales is off, when no
+ * application): «Con solicitudes por evaluar» on Mis animales, at that application — a general form
+ * opens alone in «Mis adoptantes» (`requestHref`). The form itself when Mis animales is off, when no
  * application was written, or when the application's animal is not the link owner's team's (a
  * forged `?animal=`: nobody's to evaluate — `teamApplicationsWhere`).
  */
 export function formNoticeUrl(n: { submissionId: string; applicationId: string | null; animalId: string | null; animalInTeam: boolean; animalsOn: boolean }): string {
     const form = `/form-results/${n.submissionId}`;
     if (!n.animalsOn || !n.applicationId || (n.animalId && !n.animalInTeam)) return form;
-    return `/my-animals?view=solicitudes&animal=${encodeURIComponent(n.animalId ?? GENERAL_ROW_ID)}&solicitud=${encodeURIComponent(n.applicationId)}`;
+    // A general form is a person to evaluate: it opens alone in «Mis adoptantes» (Jon 2026-11-13).
+    if (!n.animalId) return requestHref(n.applicationId);
+    return `/my-animals?view=solicitudes&animal=${encodeURIComponent(n.animalId)}&solicitud=${encodeURIComponent(n.applicationId)}`;
 }
 
 /** «Cargar un animal» from «Proponer un animal» (Jon 2026-11-13): «Agregar animal», proposing to this application on save. */
@@ -163,9 +174,27 @@ export function proposeNewAnimalHref(applicationId: string): string {
     return `/my-animals/new?proponer=${encodeURIComponent(applicationId)}`;
 }
 
-/** A general application's request on /my-animals (the panel opens on it). */
+/**
+ * A general form's request, opened alone in «Mis adoptantes» → «Pendientes de revisar» (Jon 2026-11-13:
+ * general forms are people, not an animal card). The bell notice, the email and «Cargar un animal»'s
+ * return all lead here; old /my-animals links redirect here.
+ */
+export function requestHref(applicationId: string): string {
+    return `/my-adopters?solicitud=${encodeURIComponent(applicationId)}#pendientes`;
+}
+
+/** Kept for its callers: the general request's link is `requestHref`. */
 export function generalRequestHref(applicationId: string): string {
-    return `/my-animals?view=solicitudes&animal=${GENERAL_ROW_ID}&solicitud=${encodeURIComponent(applicationId)}`;
+    return requestHref(applicationId);
+}
+
+/**
+ * «Cambiar animal» / «Quitar de …» on a team-added candidate: only while nothing happened on the animal's
+ * side for that person — the candidacy still open (no «No avanzar», not adopted or closed) and no contract
+ * link ever issued (the person would have been told).
+ */
+export function proposalUndoable(f: { candidacyState: string; invitationsEver: number }): boolean {
+    return f.candidacyState === APPLICATION_STATES.OPEN && f.invitationsEver === 0;
 }
 
 /** `?proponer=` as read from the address: an id's shape, or nothing. */

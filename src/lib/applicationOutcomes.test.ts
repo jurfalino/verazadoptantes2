@@ -92,6 +92,17 @@ describe('attachApplicationOutcomes', () => {
         expect(also).toEqual({ status: { kind: 'also_applied' }, animal: null, outcomeAnimal: null });
     });
 
+    it('a proposal whose animal is now adopted says so on the profile too', async () => {
+        form(sqlite(), 's3', { adopter: 'ana' });
+        application(sqlite(), 'app-prop', 's3', 'luna', { origin: 'proposed', state: 'open' });
+        application(sqlite(), 'app-s3', 's3', null, { state: 'proposed' });
+        sqlite().prepare("UPDATE applications SET proposed_application_id = 'app-prop' WHERE id = 'app-s3'").run();
+        sqlite().prepare("INSERT INTO adopters (id, name, status, added_by) VALUES ('otra', 'Otra', '5', ?)").run(OWNER);
+        sqlite().prepare("INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at) VALUES ('pl-luna', 'luna', 'otra', 'adoption', 1000, NULL)").run();
+        const [proposed] = await outcomeOf([rec('r3', 'form:s3')]);
+        expect(proposed).toEqual({ status: { kind: 'proposed' }, animal: null, outcomeAnimal: { name: 'Luna', sex: 'hembra', adopted: true } });
+    });
+
     it('a failed lookup logs a warning with the adopter and the record gets no outcome', async () => {
         const db = { select: () => { throw new Error('D1 down'); } };
         const out = await attachApplicationOutcomes(db as never, [rec('r1', 'form:s1')], { teamEmails: teamFn, adopterId: 'ana' });

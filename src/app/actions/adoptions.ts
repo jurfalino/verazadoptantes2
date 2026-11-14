@@ -1,6 +1,6 @@
 'use server';
 
-import { adoptions, adopterHistory, adopterImages, animals, placements } from '@/db/schema';
+import { adoptions, adopterEvents, adopterHistory, adopterImages, animals, placements } from '@/db/schema';
 import { eq, sql, and, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { logger } from '@/lib/logger';
@@ -17,6 +17,17 @@ export type { RecordFieldConflict, RecordSaveResult } from '@/lib/recordSave';
 
 /** The browser door to the record save (src/lib/recordSave.ts): always tells the owner's team about an add. */
 export async function saveAdoption(data: typeof adoptions.$inferInsert, opts?: { loaded?: Partial<Record<RecordField, unknown>> }): Promise<RecordSaveResult> {
+    // «No avanzar» ids (`decline-<applicationId>`) are guessable and only the decline writes them: a new
+    // record under one from the browser would squat the team's decision (review S2). Editing an existing
+    // one (its author, from the profile) still goes through the normal edit gate.
+    if (typeof data.id === 'string' && data.id.startsWith('decline-')) {
+        const db = await getDb();
+        const existing = db ? await db.select({ id: adopterEvents.id }).from(adopterEvents).where(eq(adopterEvents.id, data.id)).get() : undefined;
+        if (!existing) {
+            const errorId = logger.error('saveAdoption: refused a new record under a reserved «No avanzar» id', new Error('reserved record id'), { recordId: data.id });
+            throw new Error(`Failed to save adoption (Error ID: ${errorId})`);
+        }
+    }
     return saveRecordFor(data, opts, { notifyOwnerTeam: true });
 }
 

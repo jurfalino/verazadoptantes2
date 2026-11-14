@@ -108,14 +108,17 @@ export async function closeApplicationsOnAdoption(db: Db, input: {
         if (!where) return 0;
         await healMissingApplications(db, team, animalId);
         const open = await db
-            .select({ id: applications.id, adopterId: formSubmissions.linkedAdopterId, submissionId: applications.submissionId })
+            .select({ id: applications.id, adopterId: formSubmissions.linkedAdopterId, autoAdopterId: formSubmissions.autoAdopterId, submissionId: applications.submissionId })
             .from(applications)
             .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
             .where(and(where, eq(applications.state, APPLICATION_STATES.OPEN)));
         const byId = new Map(open.map((r: { id: string; adopterId: string | null }) => [r.id, r.adopterId] as const));
         const submissionOf = new Map<string, string>(open.map((r: { id: string; submissionId: string }) => [r.id, r.submissionId] as const));
         let closed = 0;
-        for (const step of planAdoptionClose(open, adopterId, via)) {
+        const plan = planAdoptionClose(
+            open.map((r: { id: string; adopterId: string | null; autoAdopterId: string | null }) => ({ id: r.id, adopterIds: [r.adopterId, r.autoAdopterId] })),
+            adopterId, via);
+        for (const step of plan) {
             const won = await db.update(applications)
                 .set({
                     state: step.state,
