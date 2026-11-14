@@ -344,7 +344,8 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                 >
                     {branding && (
                         <div className="pb-contract-head" data-testid="contract-brand-head">
-                            {brandLogo && <img src={brandLogo} alt={branding.orgName} width={40} height={40} style={{ width: 40, height: 40 }} />}
+                            {/* alt="": the group's name is right beside it. */}
+                            {brandLogo && <img src={brandLogo} alt="" width={40} height={40} style={{ width: 40, height: 40 }} />}
                             <div className="pb-contract-head__name">{branding.orgName}</div>
                         </div>
                     )}

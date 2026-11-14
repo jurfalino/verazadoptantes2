@@ -33,11 +33,16 @@ export function BrandLinks({ b, labelled = false }: { b: PublicBranding; labelle
     )
 }
 
-/** The logo in its own round white tile; nothing when unset or not https. */
-export function BrandLogo({ b, size = 64 }: { b: PublicBranding; size?: number }) {
+/**
+ * The logo in its own round white tile; nothing when unset or not https.
+ * Decorative by default (`alt=""`): every use sits next to the group's visible
+ * name, which a screen reader would otherwise hear twice. Pass `alt` (e.g. the
+ * group name) where the logo stands alone.
+ */
+export function BrandLogo({ b, size = 64, alt = '' }: { b: PublicBranding; size?: number; alt?: string }) {
     const src = httpsOnly(b.logoUrl)
     if (!src) return null
-    return <img className="pb-logo" src={src} alt={b.orgName} width={size} height={size} style={{ width: size, height: size }} />
+    return <img className="pb-logo" src={src} alt={alt} width={size} height={size} style={{ width: size, height: size }} />
 }
 
 /** Full header: group / personal catalogue pages. */
