@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     ACCENTS, DEFAULT_THEME, DEFAULT_ACCENT_ID, normalizeSocialLink, sanitizeBrandingInput, hasBranding, pickBrandingOrgId, brandingFromOrgRow, ORG_IMAGE_MAX_DATA_URL,
+    type SocialKind,
 } from './groupBranding';
 
 describe('palette', () => {
@@ -33,6 +34,76 @@ describe('normalizeSocialLink', () => {
     it('instagram: rejects a bad handle and a 500-char string', () => {
         expect(normalizeSocialLink('instagram', 'a b')).toEqual({ ok: false });
         expect(normalizeSocialLink('instagram', 'x'.repeat(500))).toEqual({ ok: false });
+    });
+
+    // Final review I1: real-world links that used to be stored truncated.
+    const ok = (url: string) => ({ ok: true, url });
+    it('facebook: /people/<name>/<id> keeps the full path (the URL Facebook gives most new Pages)', () => {
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/people/Refugio-Gatitos/100083123456789/'))
+            .toEqual(ok('https://facebook.com/people/Refugio-Gatitos/100083123456789'));
+        expect(normalizeSocialLink('facebook', 'facebook.com/people/Refugio-Gat%C3%ADtos/100083123456789?mibextid=abc'))
+            .toEqual(ok('https://facebook.com/people/Refugio-Gat%C3%ADtos/100083123456789'));
+        // Accented name typed raw → the parser percent-encodes it; still a working link.
+        expect(normalizeSocialLink('facebook', 'https://facebook.com/people/Refugio-Gatítos/100083123456789'))
+            .toEqual(ok('https://facebook.com/people/Refugio-Gat%C3%ADtos/100083123456789'));
+        // Without the numeric id it is not a page link.
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/people/Refugio-Gatitos/')).toEqual({ ok: false });
+    });
+    it('facebook: /pages/…, /groups/<g>, /share/<code> and /share/g/<code> keep the full path', () => {
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/pages/Refugio/123456')).toEqual(ok('https://facebook.com/pages/Refugio/123456'));
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/pages/category/Nonprofit/Refugio-123456/'))
+            .toEqual(ok('https://facebook.com/pages/category/Nonprofit/Refugio-123456'));
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/groups/refugiogatitos')).toEqual(ok('https://facebook.com/groups/refugiogatitos'));
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/groups/1234567890/?ref=share')).toEqual(ok('https://facebook.com/groups/1234567890'));
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/share/1AbCdEf/')).toEqual(ok('https://facebook.com/share/1AbCdEf'));
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/share/g/1AbCdEf/?mibextid=K35XfP')).toEqual(ok('https://facebook.com/share/g/1AbCdEf'));
+    });
+    it('facebook: profile.php?id=N keeps the id', () => {
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/profile.php?id=100083123456789&mibextid=x'))
+            .toEqual(ok('https://facebook.com/profile.php?id=100083123456789'));
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/profile.php')).toEqual({ ok: false });
+    });
+    it('facebook: a post, photo, video or event link is refused, never truncated', () => {
+        for (const raw of [
+            'https://www.facebook.com/share/p/1AbCdEf/', 'https://www.facebook.com/share/r/1AbCdEf/', 'https://www.facebook.com/share/v/1AbCdEf/',
+            'https://www.facebook.com/watch/?v=123', 'https://www.facebook.com/events/123/', 'https://www.facebook.com/photo/?fbid=1',
+            'https://www.facebook.com/story.php?story_fbid=1&id=2', 'https://www.facebook.com/permalink.php?story_fbid=1',
+            'https://www.facebook.com/groups/', 'https://www.facebook.com/share/', 'https://www.facebook.com/pages/',
+            'people', 'groups', 'profile.php',
+        ]) expect(normalizeSocialLink('facebook', raw), raw).toEqual({ ok: false });
+    });
+    it('instagram: a post/reel link is not the group profile → invalid', () => {
+        for (const raw of [
+            'https://www.instagram.com/p/Cxyz123/', 'https://www.instagram.com/reel/Cxyz123/', 'instagram.com/reels/Cxyz123',
+            'https://www.instagram.com/tv/Cxyz123', 'https://www.instagram.com/stories/refugio/123', 'https://www.instagram.com/explore/tags/gatos/',
+            'p', 'reel',
+        ]) expect(normalizeSocialLink('instagram', raw), raw).toEqual({ ok: false });
+    });
+    it('a bare network host is refused, never stored as instagram.com/instagram.com', () => {
+        for (const raw of ['instagram.com', 'Instagram.com', '@instagram.com', 'www.instagram.com', 'https://instagram.com', 'https://www.instagram.com/', 'facebook.com', 'fb.com'])
+            expect(normalizeSocialLink('instagram', raw), raw).toEqual({ ok: false });
+        for (const raw of ['facebook.com', 'Facebook.com', '@facebook.com', 'www.facebook.com', 'fb.com', 'https://facebook.com', 'https://www.facebook.com/', 'm.facebook.com/', 'instagram.com'])
+            expect(normalizeSocialLink('facebook', raw), raw).toEqual({ ok: false });
+    });
+    it('a facebook path longer than the cap is refused', () => {
+        expect(normalizeSocialLink('facebook', `https://facebook.com/pages/${'a'.repeat(100)}/${'b'.repeat(100)}`)).toEqual({ ok: false });
+    });
+    it('every stored URL normalises to itself (the dashboard re-saves untouched fields)', () => {
+        const inputs: Array<[SocialKind, string]> = [
+            ['instagram', '@michisdeltren'], ['instagram', 'https://www.instagram.com/michis.del_tren/?hl=es'],
+            ['facebook', 'michis.del.tren'], ['facebook', 'https://fb.com/profile.php?id=123'],
+            ['facebook', 'https://www.facebook.com/people/Refugio-Gatítos/100083123456789/'], ['facebook', 'https://www.facebook.com/pages/Refugio/123456'],
+            ['facebook', 'https://www.facebook.com/groups/refugiogatitos'], ['facebook', 'https://www.facebook.com/share/1AbCdEf/'],
+            ['facebook', 'https://www.facebook.com/share/g/1AbCdEf/'],
+            ['website', 'michisdeltren.org'], ['website', 'https://a.org/b/'],
+        ];
+        for (const [kind, raw] of inputs) {
+            const first = normalizeSocialLink(kind, raw);
+            expect(first.ok, raw).toBe(true);
+            const stored = (first as { ok: true; url: string }).url;
+            expect(stored.startsWith('https://'), raw).toBe(true);
+            expect(normalizeSocialLink(kind, stored), raw).toEqual(ok(stored));
+        }
     });
 });
 

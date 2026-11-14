@@ -52,3 +52,24 @@ describe('followInstagramUrl', () => {
         expect(followInstagramUrl({ instagramUrl: null }, undefined)).toBeNull()
     })
 })
+
+// The canonical shapes the dashboard stores (src/domain/groupBranding.ts normalizeSocialLink) render unchanged.
+describe('stored link shapes round-trip to the public page', () => {
+    const stored = [
+        'https://instagram.com/michis.del_tren',
+        'https://facebook.com/michis.del.tren',
+        'https://facebook.com/profile.php?id=100083123456789',
+        'https://facebook.com/people/Refugio-Gat%C3%ADtos/100083123456789',
+        'https://facebook.com/pages/category/Nonprofit/Refugio-123456',
+        'https://facebook.com/groups/refugiogatitos',
+        'https://facebook.com/share/1AbCdEf',
+        'https://facebook.com/share/g/1AbCdEf',
+        'https://michisdeltren.org/adopta?x=1',
+    ]
+    it('httpsOnly keeps every stored link as is', () => {
+        for (const url of stored) expect(httpsOnly(url), url).toBe(url)
+    })
+    it("followInstagramUrl uses the group's stored Instagram as is", () => {
+        expect(followInstagramUrl({ instagramUrl: stored[0] }, 'https://instagram.com/buenadoptante')).toBe(stored[0])
+    })
+})

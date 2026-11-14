@@ -57,33 +57,81 @@ function parseUrl(raw: string): URL | null {
 
 const looksLikeUrl = (raw: string) => /^(https?:\/\/|www\.)/i.test(raw) || raw.includes('/');
 
-function firstSegment(u: URL): string {
-    return u.pathname.split('/').filter(Boolean)[0] ?? '';
+/** A bare network host typed as if it were a handle («instagram.com», «@facebook.com») — never a handle. */
+const isBareHost = (handle: string) => [...IG_HOSTS, ...FB_HOSTS].includes(handle.toLowerCase());
+
+function pathSegments(u: URL): string[] {
+    return u.pathname.split('/').filter(Boolean);
 }
+
+// Instagram paths that are a post/reel/page of the site, not a profile: refused, never stored as `instagram.com/p`.
+const IG_RESERVED = new Set(['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'accounts', 'direct', 'about', 'legal', 's', 'share']);
 
 function normalizeInstagram(raw: string): LinkResult {
     if (!looksLikeUrl(raw)) {
         const handle = raw.replace(/^@/, '');
+        if (isBareHost(handle) || IG_RESERVED.has(handle.toLowerCase())) return BAD;
         return IG_HANDLE.test(handle) ? { ok: true, url: `https://instagram.com/${handle}` } : BAD;
     }
     const u = parseUrl(raw);
     if (!u || !IG_HOSTS.includes(u.hostname.toLowerCase())) return BAD;
-    const handle = firstSegment(u);
+    const handle = pathSegments(u)[0] ?? '';
+    if (IG_RESERVED.has(handle.toLowerCase())) return BAD;
     return IG_HANDLE.test(handle) ? { ok: true, url: `https://instagram.com/${handle}` } : BAD;
+}
+
+// One path segment as the URL parser leaves it (non-ASCII arrives percent-encoded).
+const FB_SEGMENT = /^[A-Za-z0-9._~%-]{1,100}$/;
+const FB_ID = /^\d{1,30}$/;
+// Facebook paths that are not a page/profile (a post, photo, video, event…): refused rather than truncated.
+const FB_RESERVED = new Set([
+    'watch', 'events', 'event', 'photo', 'photo.php', 'photos', 'videos', 'video.php', 'story.php', 'permalink.php',
+    'posts', 'reel', 'reels', 'stories', 'marketplace', 'hashtag', 'search', 'login', 'login.php', 'home.php',
+    'sharer', 'sharer.php', 'l.php', 'dialog', 'plugins', 'help', 'privacy', 'policies', 'settings', 'notifications',
+    'messages', 'friends', 'bookmarks', 'gaming', 'media', 'business', 'ads',
+]);
+// First segments that only mean something with the rest of the path (see facebookFullPath / profile.php).
+const FB_PATH_KINDS = new Set(['people', 'pages', 'groups', 'share']);
+
+/**
+ * Facebook URLs whose page lives in a multi-segment path. The full path is kept (query/hash/trailing slash
+ * dropped); `null` = not one of these shapes or malformed.
+ */
+function facebookFullPath(segs: string[]): string | null {
+    const [head, ...rest] = segs;
+    const kind = head.toLowerCase();
+    if (!rest.every(s => FB_SEGMENT.test(s))) return null;
+    let ok = false;
+    if (kind === 'people') ok = rest.length === 2 && FB_ID.test(rest[1]); // people/<name>/<id>
+    else if (kind === 'pages') ok = rest.length >= 1 && rest.length <= 3; // pages/<name>/<id>, pages/category/<cat>/<name-id>
+    else if (kind === 'groups') ok = rest.length === 1; // groups/<name or id>
+    // share/<code> (a page/profile) and share/g/<code> (a group); share/p|r|v/<code> is a shared post, reel or
+    // video — like an Instagram post, not the group's page — so it is refused.
+    else if (kind === 'share') ok = rest.length === 1 || (rest.length === 2 && rest[0].toLowerCase() === 'g');
+    return ok ? `https://facebook.com/${[kind, ...rest].join('/')}` : null;
 }
 
 function normalizeFacebook(raw: string): LinkResult {
     if (!looksLikeUrl(raw)) {
         const handle = raw.replace(/^@/, '');
+        const lower = handle.toLowerCase();
+        if (isBareHost(handle) || FB_RESERVED.has(lower) || FB_PATH_KINDS.has(lower) || lower === 'profile.php') return BAD;
         return FB_HANDLE.test(handle) ? { ok: true, url: `https://facebook.com/${handle}` } : BAD;
     }
     const u = parseUrl(raw);
     if (!u || !FB_HOSTS.includes(u.hostname.toLowerCase())) return BAD;
-    const seg = firstSegment(u);
-    if (seg === 'profile.php') {
+    const segs = pathSegments(u);
+    const seg = segs[0] ?? '';
+    const head = seg.toLowerCase();
+    if (head === 'profile.php') {
         const id = u.searchParams.get('id');
-        return id && /^\d{1,30}$/.test(id) ? { ok: true, url: `https://facebook.com/profile.php?id=${id}` } : BAD;
+        return id && FB_ID.test(id) ? { ok: true, url: `https://facebook.com/profile.php?id=${id}` } : BAD;
     }
+    if (FB_PATH_KINDS.has(head)) {
+        const url = facebookFullPath(segs);
+        return url && url.length <= WEBSITE_MAX ? { ok: true, url } : BAD;
+    }
+    if (FB_RESERVED.has(head)) return BAD;
     return FB_HANDLE.test(seg) ? { ok: true, url: `https://facebook.com/${seg}` } : BAD;
 }
 
