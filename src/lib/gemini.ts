@@ -385,6 +385,85 @@ export async function aiTransformRows(
 }
 
 /**
+ * «Cargar un animal desde un post» (Jon 2026-11-14): read an ADOPTION post —
+ * one or more animals looking for a home — into the animal form's fields. The
+ * raw JSON goes through `parseAnimalExtraction` (src/domain/animalImport.ts),
+ * which coerces every field; this only asks and parses.
+ */
+function getAnimalExtractionPrompt(language: string, photoCount: number): string {
+    const lang = language === 'en'
+        ? 'Write "color" and "details" in English. Keep names as written.'
+        : language === 'pt'
+            ? 'Escreva "color" e "details" em português. Mantenha os nomes como estão escritos.'
+            : 'Escribí "color" y "details" en español. Los nombres quedan como están escritos.';
+    return `You read a social media post from an animal rescuer that offers one or more animals for adoption
+(text and/or ${photoCount} image(s), numbered 0 to ${Math.max(photoCount - 1, 0)} in the order given).
+Return one entry per animal the post offers for adoption.
+
+CRITICAL ACCURACY RULES:
+- Only what the post STATES in its text or SHOWS as written text in an image. Never infer or guess.
+- "sex": "macho" or "hembra" ONLY if the post says it (words like macho/hembra, "es una nena", "gatita", "perrita",
+  "nene"). Otherwise null. Never deduce sex from a photo.
+- "neutered": true if the post says castrado/a, esterilizado/a, spayed, neutered; false if it says it is NOT yet
+  (e.g. "con compromiso de castración", "a castrar", "sin castrar"); otherwise null.
+- "ageValue" + "ageUnit" ("months" | "years"): only from a stated age ("2 meses", "1 año y medio" = 18 months,
+  "cachorro de 3 meses"). A word like "cachorro" or "adulto" alone is NOT an age: null.
+- "name": the animal's name as written. If the post gives no name, null (do not invent one, do not use "gatito").
+- "species": "dog" | "cat" | "bird", or the species in lowercase Spanish if another (e.g. "conejo").
+- "color": coat colour/markings if stated or clearly visible.
+- "details": a short description for adopters, from the post: personality, health (vaccines, deworming), needs,
+  zone. No phone numbers, no prices, no instructions to contact.
+- "photos": the image numbers that show THIS animal. A photo of several animals together belongs to each of them.
+- "notAnimalPhotos": image numbers that are flyers, text cards, logos or screenshots of text rather than a photo
+  of an animal.
+- "postDate": the date the post was published, YYYY-MM-DD, ONLY if it is written in the content you were given
+  (e.g. "user on November 12, 2026"). Otherwise null.
+- If the post is not offering animals for adoption (a report about a person, a lost pet, a fundraiser),
+  return "animals": [].
+${lang}
+
+Respond ONLY with valid JSON:
+{"animals":[{"name":string|null,"species":string|null,"sex":"macho"|"hembra"|null,"neutered":true|false|null,
+"ageValue":number|null,"ageUnit":"months"|"years"|null,"color":string|null,"details":string|null,"photos":[number]}],
+"notAnimalPhotos":[number],"postDate":string|null}`;
+}
+
+/** Raw JSON from the model, or `{ failed: true }` — never throws for a model or parse error. */
+export async function extractAnimalsFromPost(
+    text: string | undefined,
+    images: Array<{ data: string; mimeType: string }>,
+    modelName: string = 'gemini-flash-latest',
+    language: string = 'es',
+): Promise<{ failed: true; reason: string } | { failed: false; raw: unknown }> {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+    if (!text?.trim() && images.length === 0) throw new Error('No text or images provided');
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+    const parts: Part[] = [{ text: getAnimalExtractionPrompt(language, images.length) }];
+    if (text?.trim()) parts.push({ text: `\n\nPost content:\n${text}` });
+    if (images.length > 0) {
+        parts.push({ text: '\n\nImages from the post:' });
+        images.forEach((img, i) => {
+            parts.push({ text: `Image ${i}:` });
+            parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+        });
+    }
+    try {
+        const result = await model.generateContent(parts);
+        const responseText = (await result.response).text();
+        const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON found in response');
+        return { failed: false, raw: JSON.parse(jsonMatch[0]) };
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.error('Gemini animal extraction failed', error, { model: modelName, images: images.length, hasText: !!text?.trim() });
+        return { failed: true, reason };
+    }
+}
+
+/**
  * Fetch list of available models from Gemini API
  */
 export async function getAvailableModels(): Promise<Array<{ name: string; displayName: string }>> {

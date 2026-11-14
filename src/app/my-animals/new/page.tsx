@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSession } from 'next-auth/react';
@@ -11,7 +11,7 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { getApplicantsForAnimal } from '@/app/actions/applicants';
 import { candidatesLostOnDelete } from '@/domain/applications';
 import { animalDeleteWarningText } from '@/components/evaluation/AnimalDeleteWarning';
-import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
+import { deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/ageUtils';
 import Link from 'next/link';
 import { zarazTrack } from '@/lib/zaraz';
 import { isFemaleAnimal } from '@/domain/animalSex';
@@ -20,6 +20,14 @@ import { changeProposedAnimal, getGeneralApplications, proposeAnimal } from '@/a
 import { proposeNewOutcome } from '@/components/evaluation/ProposeAnimalSheet';
 import { firstName } from '@/lib/householdCopy';
 import { handledAsStale } from '@/lib/errorMessage';
+import AnimalFields, { EMPTY_ANIMAL_FIELDS, type AnimalFieldsValue } from '@/components/animals/AnimalFields';
+import PostSourceBox, { type PostReadResult } from '@/components/animals/PostSourceBox';
+import PostPhotoGrid from '@/components/animals/PostPhotoGrid';
+import LitterReview, { fieldsFromImported } from '@/components/animals/LitterReview';
+import { SamePostNotice, SameNameNotice } from '@/components/animals/ImportMatchNotices';
+import { storePostPhotos, mergeIntoAnimal, birthDateFor } from '@/components/animals/importSave';
+import { findAnimalImportMatches, type AnimalImportMatches } from '@/app/actions/animalImport';
+import { takeSharedImages } from '@/lib/shareTargetCache';
 
 /** Compress image to max 1200px and JPEG 80% */
 function compressImage(file: File): Promise<string> {
@@ -77,7 +85,13 @@ export default function NewAnimalPage() {
     }, [legacyEditId, router]);
 
     if (legacyEditId) return null;
-    return <CreateAnimalForm proposeTo={proposeParam(searchParams.get('proponer'))} />;
+    // From the phone's share sheet, via «¿Qué hay en este post?» on /import.
+    const sharedUrl = searchParams.get('shared_url') || '';
+    const sharedText = searchParams.get('shared_text') || '';
+    const share = sharedUrl || sharedText || searchParams.get('shared_images') === 'true' || searchParams.get('shared_images_lost') === 'true'
+        ? { url: sharedUrl, text: sharedText, withImages: searchParams.get('shared_images') === 'true', imagesLost: searchParams.get('shared_images_lost') === 'true' }
+        : null;
+    return <CreateAnimalForm proposeTo={proposeParam(searchParams.get('proponer'))} share={share} />;
 }
 
 /**
@@ -89,7 +103,7 @@ export default function NewAnimalPage() {
  * person to the new animal («Agregar y pasar a {name}»). Otherwise (decided meanwhile, not the viewer's team)
  * it is the plain page — `newAnimalProposeMode`.
  */
-function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
+function CreateAnimalForm({ proposeTo, share }: { proposeTo: string | null; share: { url: string; text: string; withImages: boolean; imagesLost: boolean } | null }) {
     const router = useRouter();
     const editId: string | null = null;
     const isEditMode = false;
@@ -133,19 +147,93 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
     const [deleting, setDeleting] = useState(false);
     const [pendingImages, setPendingImages] = useState<string[]>([]);
     const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
-    const [customSpecies, setCustomSpecies] = useState(false);
-    const [ageValue, setAgeValue] = useState('');
-    const [ageUnit, setAgeUnit] = useState<'months' | 'years'>('months');
-    const [formData, setFormData] = useState({
-        animalName: '',
-        species: 'cat',
-        details: '',
-        comments: '',
-        sex: '',
-        neutered: '' as '' | '1' | '0',
-        color: '',
-        microchip: '',
-    });
+    const [formData, setFormData] = useState<AnimalFieldsValue>(EMPTY_ANIMAL_FIELDS);
+
+    // ── «Cargar desde un post» (Jon 2026-11-14) ──
+    /** What the post filled. One animal → this form; several → LitterReview. */
+    const [post, setPost] = useState<PostReadResult | null>(null);
+    /** The post's link — kept even when it could not be read, to save with a hand-filled animal. */
+    const [postSourceUrl, setPostSourceUrl] = useState('');
+    const [postSel, setPostSel] = useState<Set<number>>(new Set());
+    const [matches, setMatches] = useState<Extract<AnimalImportMatches, { ok: true }> | null>(null);
+    const [samePostOk, setSamePostOk] = useState(false);
+    const [nameMatchAnswered, setNameMatchAnswered] = useState(false);
+    const [merging, setMerging] = useState(false);
+    const [shareStart, setShareStart] = useState<{ url: string; text: string; images: Array<{ data: string; mimeType: string }> } | null>(null);
+    const single = !!post && post.extraction.animals.length === 1;
+    const litter = !!post && post.extraction.animals.length > 1;
+    const postDate = post?.extraction.postDate ?? null;
+    const dateFmt = (opts: Intl.DateTimeFormatOptions) => postDate
+        ? new Date(`${postDate}T12:00:00Z`).toLocaleDateString(locale === 'en' ? 'en-US' : locale === 'pt' ? 'pt-BR' : 'es-AR', { ...opts, timeZone: 'UTC' })
+        : null;
+    const ageNote = postDate ? t('animalImport.age_note').replace('{date}', dateFmt({ day: 'numeric', month: 'long' }) ?? '') : undefined;
+
+    useEffect(() => {
+        if (!share) return;
+        // At once: a reload must not read the post again, and the caption must not linger in the address.
+        window.history.replaceState(null, '', '/my-animals/new');
+        if (share.imagesLost) toast.warning(t('animalImport.shared_photos_lost'));
+        let live = true;
+        (async () => {
+            const images = share.withImages
+                ? await takeSharedImages().catch((e: unknown) => { resolveErrorId(e, 'my-animals/new:shared-images'); return []; })
+                : [];
+            if (live && (share.url || share.text || images.length)) setShareStart({ url: share.url, text: share.text, images });
+        })();
+        return () => { live = false; };
+        // Once, from the URL the page opened with.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    /** Each read gets a number; an answer for an earlier read (after «Cambiar») is dropped, never shown over another post. */
+    const readSeq = useRef(0);
+    const onPostRead = (r: PostReadResult) => {
+        const seq = ++readSeq.current;
+        setPost(r);
+        setPostSourceUrl(r.sourceUrl);
+        setMatches(null); setSamePostOk(false); setNameMatchAnswered(false);
+        if (r.extraction.animals.length === 1) {
+            setFormData(fieldsFromImported(r.extraction.animals[0]));
+            setPostSel(new Set(r.extraction.animals[0].photos));
+        }
+        zarazTrack('animal_import_read', { animals: r.extraction.animals.length, from: r.from, hasDate: r.extraction.postDate ? 1 : 0 });
+        findAnimalImportMatches({
+            sourceUrls: [r.sourceUrl, r.linkAsGiven].filter((u): u is string => !!u),
+            animals: r.extraction.animals.map(a => ({ name: a.name, species: a.species })),
+        }).then(m => {
+            if (seq !== readSeq.current) return;
+            if (m.ok) setMatches(m);
+            else toast.error(t('errors.generic'), t('animalImport.matches_failed'), m.errorId);
+        }).catch((e: unknown) => {
+            if (seq !== readSeq.current || handledAsStale(e)) return;
+            toast.error(t('errors.generic'), t('animalImport.matches_failed'), resolveErrorId(e, 'my-animals/new:matches'));
+        });
+    };
+    const onPostReset = () => {
+        readSeq.current++;
+        setPost(null); setPostSourceUrl(''); setMatches(null); setSamePostOk(false); setNameMatchAnswered(false);
+        setPostSel(new Set()); setFormData(EMPTY_ANIMAL_FIELDS);
+    };
+    const nameMatch = single && !nameMatchAnswered ? matches?.sameName[0] ?? null : null;
+    const showSamePost = !!matches && !samePostOk && (matches.samePostMine.length > 0 || matches.samePostOthers.length > 0);
+
+    /** «Sí: sumarle las fotos y los datos» on the one animal of the post. */
+    const mergeSingle = async () => {
+        if (!nameMatch || !post) return;
+        setMerging(true);
+        try {
+            const r = await mergeIntoAnimal(nameMatch, formData, [...postSel].map(i => post.photos[i]), { sourceUrl: postSourceUrl, postDate });
+            const name = nameMatch.name || formData.animalName;
+            if (r.photosFailed > 0) toast.error(t('animalImport.merged').replace('{name}', name), t('animalImport.photos_not_saved').replace('{n}', String(r.photosFailed)), r.errorIds[0]);
+            else toast.success(t('toast.saved_title'), t('animalImport.merged').replace('{name}', name));
+            zarazTrack('animal_import_merged', { photos: postSel.size });
+            router.push(`/my-animals/${encodeURIComponent(nameMatch.id)}`);
+        } catch (e) {
+            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('animalImport.merge_failed').replace('{name}', nameMatch.name || ''), resolveErrorId(e, 'my-animals/new:merge'));
+        } finally {
+            setMerging(false);
+        }
+    };
 
     // Fetch existing animal data in edit mode
     useEffect(() => {
@@ -166,32 +254,25 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const animal = animals.find((a: any) => a.id === editId);
                 if (animal) {
-                    const knownSpecies = ['cat', 'dog', 'bird'];
-                    const speciesVal = (animal.species || 'cat').toLowerCase();
-                    const isCustom = !knownSpecies.includes(speciesVal);
-                    setCustomSpecies(isCustom);
+                    let ageValue = '';
+                    let ageUnit: 'months' | 'years' = 'months';
+                    if (animal.estimatedBirthDate) {
+                        const parsed = deriveAgeFromBirthDate(animal.estimatedBirthDate);
+                        ageValue = String(parsed.value); ageUnit = parsed.unit;
+                    } else if (animal.age) {
+                        const parsed = parseLegacyAge(animal.age);
+                        if (parsed) { ageValue = String(parsed.value); ageUnit = parsed.unit; }
+                    }
                     setFormData({
                         animalName: animal.animalName || '',
                         species: animal.species || 'cat',
                         details: animal.details || '',
-                        comments: animal.comments || '',
                         sex: animal.sex || '',
                         neutered: animal.neutered === 1 ? '1' : animal.neutered === 0 ? '0' : '',
                         color: animal.color || '',
                         microchip: animal.microchip || '',
+                        ageValue, ageUnit,
                     });
-                    // Hydrate age fields from estimatedBirthDate or legacy age text
-                    if (animal.estimatedBirthDate) {
-                        const parsed = deriveAgeFromBirthDate(animal.estimatedBirthDate);
-                        setAgeValue(String(parsed.value));
-                        setAgeUnit(parsed.unit);
-                    } else if (animal.age) {
-                        const parsed = parseLegacyAge(animal.age);
-                        if (parsed) {
-                            setAgeValue(String(parsed.value));
-                            setAgeUnit(parsed.unit);
-                        }
-                    }
                     if (animal.images && animal.images.length > 0) {
                         setExistingImages(animal.images);
                     }
@@ -274,16 +355,15 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
         setLoading(true);
         try {
             // Compute estimated birth date from age input
-            const estimatedBirthDate = ageValue
-                ? computeBirthDate(Number(ageValue), ageUnit)
-                : null;
+            // From a post, the age was true on the post's date (when known).
+            const estimatedBirthDate = birthDateFor(formData, postDate);
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const payload: any = {
                 animalName: formData.animalName,
                 species: formData.species,
                 details: formData.details,
-                comments: formData.comments,
+                comments: '',
                 age: null,
                 estimatedBirthDate,
                 sex: formData.sex || null,
@@ -299,6 +379,7 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                 deliveredToHome: 0,
                 verifiedAddress: null,
                 identityVerified: 0,
+                ...(postSourceUrl ? { sourceUrl: postSourceUrl } : {}),
             };
 
             // In edit mode, include the ID so saveAdoption updates instead of creates
@@ -317,9 +398,20 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                 }
             }
 
-            if (!isEditMode && result?.id) {
-                zarazTrack('animal_listed', { species: formData.species, hasMedia: pendingImages.length > 0 ? 1 : 0 });
+            // The post's photos the rescuer kept.
+            let postPhotosFailed = 0;
+            let postPhotoErrorId: string | undefined;
+            if (single && post && result?.id && postSel.size > 0) {
+                const r = await storePostPhotos(result.id, formData.animalName, [...postSel].map(i => post.photos[i]));
+                postPhotosFailed = r.failed;
+                postPhotoErrorId = r.errorIds[0];
             }
+
+            if (!isEditMode && result?.id) {
+                zarazTrack('animal_listed', { species: formData.species, hasMedia: pendingImages.length + postSel.size > 0 ? 1 : 0 });
+                if (single) zarazTrack('animal_imported', { count: 1, litter: 0, failed: 0 });
+            }
+            if (postPhotosFailed > 0) toast.error(t('errors.generic'), t('animalImport.photos_not_saved').replace('{n}', String(postPhotosFailed)), postPhotoErrorId);
 
             if (proposing && result?.id) {
                 await proposeNew(result.id);
@@ -349,7 +441,7 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
         );
     }
 
-    const photoCount = existingImages.length + pendingImages.length;
+    const photoCount = existingImages.length + pendingImages.length + (single ? postSel.size : 0);
 
     return (
         <div className="min-h-screen bg-stone-50 py-12 px-4">
@@ -375,179 +467,39 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                                 : t('evaluation.propose_new_note').replace('{name}', proposeName ?? '')}
                     </p>
                 )}
+                {/* Not offered while proposing to a request: that flow is about one animal, chosen there. */}
+                {!proposeTo && (
+                    <PostSourceBox
+                        start={shareStart}
+                        onRead={onPostRead}
+                        onSourceOnly={setPostSourceUrl}
+                        onReset={onPostReset}
+                        dateLabel={dateFmt({ day: 'numeric', month: 'short' })}
+                    />
+                )}
+                {showSamePost && (
+                    <div className="mb-4">
+                        <SamePostNotice mine={matches!.samePostMine} others={matches!.samePostOthers} onContinue={() => setSamePostOk(true)} />
+                    </div>
+                )}
+                {!showSamePost && nameMatch && (
+                    <div className="mb-4">
+                        <SameNameNotice match={nameMatch} busy={merging} onYes={() => void mergeSingle()} onNo={() => setNameMatchAnswered(true)} />
+                    </div>
+                )}
+                {litter && post ? (
+                    <LitterReview
+                        animals={post.extraction.animals}
+                        photos={post.photos}
+                        sourceUrl={postSourceUrl}
+                        postDate={postDate}
+                        sameName={matches?.sameName ?? post.extraction.animals.map(() => null)}
+                        ageNote={ageNote}
+                    />
+                ) : (
                 <div className="bg-white p-5 rounded-xl border-2 border-teal-400/50 shadow-lg ring-4 ring-teal-50/50">
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        {/* Animal Name */}
-                        <div>
-                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                {t('adoption.animal_name') || 'Animal Name'} *
-                            </label>
-                            <input
-                                required
-                                className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
-                                value={formData.animalName}
-                                onChange={e => setFormData({ ...formData, animalName: e.target.value })}
-                                placeholder={t('adoption.animal_placeholder') || 'e.g. Luna'}
-                            />
-                        </div>
-
-                        {/* Species */}
-                        <div>
-                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                {t('adoption.species') || 'Species'} *
-                            </label>
-                            {customSpecies ? (
-                                <div className="flex gap-2">
-                                    <input
-                                        required
-                                        autoFocus
-                                        className="flex-1 h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
-                                        value={formData.species}
-                                        onChange={e => setFormData({ ...formData, species: e.target.value })}
-                                        placeholder={t('adoption.species_other_placeholder') || 'Enter species...'}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => { setCustomSpecies(false); setFormData({ ...formData, species: 'cat' }); }}
-                                        className="px-3 h-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-xs font-medium hover:bg-teal-50 transition-colors whitespace-nowrap"
-                                    >
-                                        ↩ {t('adoption.species_presets') || 'Presets'}
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="relative">
-                                    <select
-                                        required
-                                        className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
-                                        value={formData.species.toLowerCase() || 'cat'}
-                                        onChange={e => {
-                                            if (e.target.value === '_other') {
-                                                setCustomSpecies(true);
-                                                setFormData({ ...formData, species: '' });
-                                            } else {
-                                                setFormData({ ...formData, species: e.target.value });
-                                            }
-                                        }}
-                                    >
-                                        <option value="cat">{t('species.cat') || 'Cat'} 🐱</option>
-                                        <option value="dog">{t('species.dog') || 'Dog'} 🐶</option>
-                                        <option value="bird">{t('species.bird') || 'Bird'} 🐦</option>
-                                        <option value="_other">{t('species.other') || 'Other...'}</option>
-                                    </select>
-                                    <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-stone-500">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Age, Sex & Neutered */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div>
-                                <label htmlFor="ageValue" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                    {t('adoption.age') || 'Approximate Age'}
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        id="ageValue"
-                                        type="number"
-                                        min="0"
-                                        max="99"
-                                        step="1"
-                                        inputMode="numeric"
-                                        className="flex-1 h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
-                                        value={ageValue}
-                                        onChange={e => setAgeValue(e.target.value.replace(/\D/g, ''))}
-                                        placeholder={t('adoption.age_placeholder') || 'e.g. 2'}
-                                    />
-                                    <div className="relative">
-                                        <select
-                                            className="h-10 pl-3 pr-8 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
-                                            value={ageUnit}
-                                            onChange={e => setAgeUnit(e.target.value as 'months' | 'years')}
-                                        >
-                                            <option value="months">{t('adoption.age_unit_months') || 'months'}</option>
-                                            <option value="years">{t('adoption.age_unit_years') || 'years'}</option>
-                                        </select>
-                                        <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-stone-500">
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div>
-                                <label htmlFor="sex" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                    {t('adoption.sex') || 'Sex'}
-                                </label>
-                                <select
-                                    id="sex"
-                                    className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
-                                    value={formData.sex}
-                                    onChange={e => setFormData({ ...formData, sex: e.target.value })}
-                                >
-                                    <option value="">{t('adoption.sex_unknown') || '—'}</option>
-                                    <option value="macho">{t('adoption.sex_male') || 'Male ♂'}</option>
-                                    <option value="hembra">{t('adoption.sex_female') || 'Female ♀'}</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label htmlFor="neutered" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                    {t('adoption.neutered') || 'Neutered / Spayed'}
-                                </label>
-                                <select
-                                    id="neutered"
-                                    className="w-full h-10 pl-4 pr-10 rounded-lg border border-teal-200 bg-teal-50 text-teal-950 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none appearance-none text-sm"
-                                    value={formData.neutered}
-                                    onChange={e => setFormData({ ...formData, neutered: e.target.value as '' | '1' | '0' })}
-                                >
-                                    <option value="">{t('adoption.neutered_unknown') || '—'}</option>
-                                    <option value="1">{t('adoption.neutered_yes') || 'Yes ✓'}</option>
-                                    <option value="0">{t('adoption.neutered_no') || 'No'}</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Color & Microchip (side by side) */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="color" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                    {t('adoption.color') || 'Color / Markings'}
-                                </label>
-                                <input
-                                    id="color"
-                                    className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
-                                    value={formData.color}
-                                    onChange={e => setFormData({ ...formData, color: e.target.value })}
-                                    placeholder={t('adoption.color_placeholder') || 'e.g. Black with white spots'}
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="microchip" className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                    {t('adoption.microchip') || 'Microchip N°'}
-                                </label>
-                                <input
-                                    id="microchip"
-                                    className="w-full h-10 px-4 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none text-sm"
-                                    value={formData.microchip}
-                                    onChange={e => setFormData({ ...formData, microchip: e.target.value })}
-                                    placeholder={t('adoption.microchip_placeholder') || 'Optional'}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Details / Description */}
-                        <div>
-                            <label className="block text-xs font-semibold text-teal-800 mb-1.5 uppercase tracking-wider">
-                                {t('common.details') || 'Details'}
-                            </label>
-                            <textarea
-                                className="w-full p-3 rounded-lg border border-teal-200 text-teal-950 placeholder-stone-500 font-medium focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 transition-all outline-none resize-none text-sm"
-                                rows={4}
-                                value={formData.details}
-                                onChange={e => setFormData({ ...formData, details: e.target.value })}
-                                placeholder={t('dashboard.animal_details_placeholder') || 'Age, color, personality, health status, any special needs...'}
-                            />
-                        </div>
+                        <AnimalFields value={formData} onChange={setFormData} nudge={single} ageNote={single ? ageNote : undefined} />
 
                         {/* Photos */}
                         <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
@@ -555,6 +507,11 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                 {t('common.photos_title')}
                             </label>
+
+                            {single && post && (
+                                <PostPhotoGrid photos={post.photos} selected={postSel}
+                                    onToggle={i => setPostSel(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; })} />
+                            )}
 
                             {/* Existing images (from DB, in edit mode) */}
                             {existingImages.length > 0 && (
@@ -692,6 +649,7 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                         </div>
                     </form>
                 </div>
+                )}
             </div>
         </div>
     );

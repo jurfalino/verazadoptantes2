@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import ImportWizard from '@/components/ImportWizard';
+import ShareKindGate from '@/components/import/ShareKindGate';
 
 export const runtime = 'edge';
 
@@ -17,7 +18,9 @@ export default function ImportPage() {
                     <span className="w-8 h-8 rounded-full border-4 border-stone-200 border-t-teal-600 animate-spin" aria-hidden="true" />
                 </div>
             }>
-                <ImportWizard />
+                <ShareKindGate>
+                    <ImportWizard />
+                </ShareKindGate>
             </Suspense>
         </div>
     );

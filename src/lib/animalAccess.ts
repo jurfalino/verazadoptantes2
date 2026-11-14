@@ -49,6 +49,22 @@ export async function getAnimalAccess(animalId: string, viewerEmail: string): Pr
     }
     if (kind === 'missing' || !row) return { kind: 'missing' };
 
+    const { owner, publicUrl } = await ownedElsewhereDetails(db, row, viewerEmail);
+    return { kind: 'not_yours', animal: { name: row.name, species: row.species }, owner, publicUrl };
+}
+
+/**
+ * Who has an animal the viewer can't open, and its public page if it is in the
+ * catalogue — for the «en buenas manos» screen and for «Cargar desde un post»
+ * when another rescuer already loaded that post. Never the owner's email.
+ */
+export async function ownedElsewhereDetails(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db: any,
+    row: { id: string; addedBy: string | null },
+    viewerEmail: string,
+): Promise<{ owner: { displayName: string; orgName?: string } | null; publicUrl: string | null }> {
+    const animalId = row.id;
     const [owner, publicUrl] = await Promise.all([
         buildPublicRescuer(db, row.addedBy)
             .then(r => ({ displayName: r.displayName, orgName: r.orgName }))
@@ -57,7 +73,7 @@ export async function getAnimalAccess(animalId: string, viewerEmail: string): Pr
                 return null;
             }),
         (async () => {
-            const listing = await db.select({ recordType: adoptions.recordType, adopterId: adoptions.adopterId })
+            const listing = await db.select({ recordType: adoptions.recordType, adopterId: adoptions.adopterId, listed: adoptions.listed })
                 .from(adoptions).where(eq(adoptions.id, animalId)).get();
             const photos = (await fetchAnimalImages(db, [animalId])).get(animalId) ?? [];
             if (!isPubliclyListed(listing, photos.length)) return null;
@@ -67,6 +83,5 @@ export async function getAnimalAccess(animalId: string, viewerEmail: string): Pr
             return null;
         }),
     ]);
-
-    return { kind: 'not_yours', animal: { name: row.name, species: row.species }, owner, publicUrl };
+    return { owner, publicUrl };
 }
