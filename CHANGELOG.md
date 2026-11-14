@@ -2,6 +2,25 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.13] - 2026-11-13
+
+### Changed — general forms are people, not an animal card (Jon 2026-11-13)
+- A form sent without choosing an animal («Formulario general») now lives in «Mis adoptantes»: first in
+  «Pendientes de revisar», all of them listed, never paginated. The section opens by itself when one waits.
+  A row — or the bell, the email and «Agregar y sumar» — opens that request alone, with no «Anterior / Siguiente».
+- «Sin animal elegido» is gone from «Mis animales»; its old links open the request in «Mis adoptantes».
+- «Proponer» is now «Sumar a un animal», gender-neutral about the person. It stays internal to the team, and it
+  can be undone — «Cambiar animal» / «Quitar de {animal}» — while nothing happened on the animal's side (no
+  contract link yet). If the animal was adopted since, the request reads «En los candidatos de Luna (ya adoptada)»
+  and «Quitar» still works.
+- Home card: general forms show among the requests waiting; the overflow row is «N más esperan tu respuesta».
+
+### Fixed — independent review of the above
+- «Quitar» can't leave a request stuck as «added» if the app fails halfway: both steps happen together or not at all.
+- «Quitar» / «Cambiar» only work on an animal the person's team can see.
+- «Mis adoptantes» reads only the open general forms, and a link reads only its own request (busy teams stay fast).
+- Portuguese: «{proposer} adicionou · formulário geral».
+
 ## [2.59.12] - 2026-11-13
 
 ### Fixed — independent pre-production review of «Evaluar solicitudes» (Jon 2026-11-13)
