@@ -41,6 +41,10 @@ describe('ApplicationOutcomeLine (a «Solicitud» on the profile)', () => {
         expect(text(render({ kind: 'also_applied' }, null, LUNA))).toBe('También pidió a Luna');
         expect(text(render({ kind: 'adopted' }))).toBe('Adoptó a Luna');
     });
+    it('the animal they were added to is now adopted: «(ya adoptada)» / «(ya adoptado)»', () => {
+        expect(text(render({ kind: 'proposed' }, null, { ...LUNA, adopted: true } as A))).toBe('En los candidatos de Luna (ya adoptada)');
+        expect(text(render({ kind: 'proposed' }, null, { name: 'Toby', sex: 'macho', adopted: true } as A))).toBe('En los candidatos de Toby (ya adoptado)');
+    });
     it('an animal hidden from this viewer (null) is never named nor called «Sin nombre»', () => {
         expect(text(render({ kind: 'closed', reason: 'adopted_other' }, null))).toBe('Cerrada: el animal fue adoptado por otra persona');
         expect(text(render({ kind: 'closed', reason: 'adopted_open_link' }, null))).toBe('Cerrada: el animal fue adoptado');

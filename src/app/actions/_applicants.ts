@@ -392,18 +392,21 @@ async function enrichApplicantRows(db: Db, rows: ApplicationRow[], ctx: EnrichCt
         // «Pidió a …» / «Propuesta para …» / «También pidió a …»: only an animal of the viewer's team is named.
         // `allowUnnamed`: a proposal's animal is the team's own by construction (proposeAnimal gates it) —
         // an unnamed one is still returned (blank name; the panel says «Sin nombre»), never another team's.
-        const teamAnimal = async (animalId: string, what: string, opts: { allowUnnamed?: boolean } = {}): Promise<ApplicantSummary['askedAnimal']> => {
+        // `allowUnnamed` is the proposal's lookup: it also says whether that animal is adopted by now (Jon 2026-11-13:
+        // the person stays added — «Quitar» still works — but the request shows the animal is no longer available).
+        const teamAnimal = async (animalId: string, what: string, opts: { allowUnnamed?: boolean } = {}): Promise<ApplicantSummary['outcomeAnimal']> => {
             try {
-                const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy })
+                const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy, recordType: adoptions.recordType })
                     .from(adoptions)
                     .where(eq(adoptions.id, animalId))
-                    .get() as { id: string; name: string | null; sex: string | null; owner: string | null } | undefined;
+                    .get() as { id: string; name: string | null; sex: string | null; owner: string | null; recordType: string | null } | undefined;
                 if (!a) return null;
+                const adopted = opts.allowUnnamed && a.recordType === RECORD_TYPES.ADOPTION ? { adopted: true } : {};
                 if (opts.allowUnnamed && !a.name?.trim()) {
-                    return a.owner && isInTeamScope(a.owner, normalizeTeamScope(ctx.teamEmails)) ? { id: a.id, name: '', sex: a.sex } : null;
+                    return a.owner && isInTeamScope(a.owner, normalizeTeamScope(ctx.teamEmails)) ? { id: a.id, name: '', sex: a.sex, ...adopted } : null;
                 }
                 const visible = teammateVisibleAnimal({ id: a.id, name: a.name, owner: a.owner }, ctx.teamEmails);
-                return visible ? { id: visible.id, name: visible.name, sex: a.sex } : null;
+                return visible ? { id: visible.id, name: visible.name, sex: a.sex, ...adopted } : null;
             } catch (e) {
                 logger.warn(`${ctx.op}: ${what} lookup fallback`, {
                     applicationId: row.applicationId, animalId, error: e instanceof Error ? e.message : String(e),

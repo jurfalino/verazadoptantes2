@@ -31,6 +31,8 @@ export const pt = {
         closed_animal_deleted_hidden: 'o animal foi excluído',
         status_adopted_hidden: 'Adotou',
         status_proposed_hidden: "Entre os candidatos de outro animal",
+        status_proposed_adopted_f: "Entre os candidatos de {animal} (já adotada)",
+        status_proposed_adopted_m: "Entre os candidatos de {animal} (já adotado)",
         note_replaced: 'O contrato foi substituído em {date}',
         note_expired: 'O contrato venceu em {date}',
         asked_adopted_f: 'Pediu {animal} (já adotada)',

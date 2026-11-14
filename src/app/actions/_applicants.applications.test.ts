@@ -151,6 +151,24 @@ describe('applicants are applications', () => {
         expect(by('app-gen').outcomeAnimal).toBeNull();
     });
 
+    it('the animal a person was added to is now adopted (someone signed its open link): the request says so (Jon 2026-11-13)', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name, sex, added_by, created_at, updated_at) VALUES ('mora', 'Mora', 'hembra', ?, 1000, 1000), ('toby', 'Toby', 'macho', ?, 1000, 1000)`)
+            .run(OWNER, OWNER);
+        sqlite.prepare(`INSERT INTO placements (id, animal_id, adopter_id, record_type, started_at, ended_at) VALUES ('pl-mora', 'mora', 'cami', 'adoption', ?, NULL), ('pl-toby', 'toby', 'cami', 'foster', ?, NULL)`)
+            .run(NOW - DAY, NOW - DAY);
+        form('s-mora', OWNER, 'ana', null, NOW - 3 * DAY);
+        app('app-to-mora', 's-mora', 'mora', { origin: 'proposed' });
+        app('app-mora', 's-mora', null, { state: 'proposed', proposed: 'app-to-mora', closedAt: NOW - DAY });
+        form('s-toby', OWNER, 'beto', null, NOW - 3 * DAY);
+        app('app-to-toby', 's-toby', 'toby', { origin: 'proposed' });
+        app('app-toby', 's-toby', null, { state: 'proposed', proposed: 'app-to-toby', closedAt: NOW - DAY });
+        const list = await loadGeneralApplications(state.db, [OWNER, MATE], OWNER);
+        const by = (id: string) => list.find(a => a.applicationId === id)!;
+        expect(by('app-mora').outcomeAnimal).toEqual({ id: 'mora', name: 'Mora', sex: 'hembra', adopted: true });
+        expect(by('app-mora').proposal?.canUndo).toBe(true); // the person is free again: «Quitar» stays
+        expect(by('app-toby').outcomeAnimal).toEqual({ id: 'toby', name: 'Toby', sex: 'macho' }); // in foster: still available
+    });
+
     it('a proposal to the team\'s own UNNAMED animal still names it (blank → the panel says «Sin nombre»); an unnamed also_applied animal → null', async () => {
         sqlite.prepare(`INSERT INTO animals (id, name, sex, added_by, created_at, updated_at) VALUES ('nube', '', 'hembra', ?, 1000, 1000), ('sin', '', NULL, ?, 1000, 1000)`)
             .run(OWNER, OWNER);

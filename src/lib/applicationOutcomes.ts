@@ -16,7 +16,7 @@ import { teammateVisibleAnimal } from '@/lib/applicantScope';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Db = any;
 
-export type OutcomeAnimal = { name: string; sex: string | null };
+export type OutcomeAnimal = { name: string; sex: string | null; adopted?: boolean };
 export type ApplicationOutcome = { status: ApplicationStatus; animal: OutcomeAnimal | null; outcomeAnimal: OutcomeAnimal | null };
 
 export async function attachApplicationOutcomes<T extends { id: string; recordType?: string | null; sourceUrl?: string | null; animalName?: string | null; sex?: string | null }>(
@@ -28,19 +28,21 @@ export async function attachApplicationOutcomes<T extends { id: string; recordTy
     // Resolved once, and only if a gated animal is needed.
     let team: Promise<readonly string[]> | null = null;
     const animals = new Map<string, Promise<OutcomeAnimal | null>>();
-    const teamAnimal = (animalId: string | null): Promise<OutcomeAnimal | null> => {
+    const teamAnimal = (animalId: string | null, opts: { markAdopted?: boolean } = {}): Promise<OutcomeAnimal | null> => {
         if (!animalId) return Promise.resolve(null);
-        let hit = animals.get(animalId);
+        const key = `${animalId}:${opts.markAdopted ? 1 : 0}`;
+        let hit = animals.get(key);
         if (!hit) {
             hit = (async () => {
-                const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy })
-                    .from(adoptions).where(eq(adoptions.id, animalId)).get() as { id: string; name: string | null; sex: string | null; owner: string | null } | undefined;
+                const a = await db.select({ id: adoptions.id, name: adoptions.animalName, sex: adoptions.sex, owner: adoptions.addedBy, recordType: adoptions.recordType })
+                    .from(adoptions).where(eq(adoptions.id, animalId)).get() as { id: string; name: string | null; sex: string | null; owner: string | null; recordType: string | null } | undefined;
                 if (!a) return null;
                 team ??= ctx.teamEmails();
                 const visible = teammateVisibleAnimal({ id: a.id, name: a.name, owner: a.owner }, await team);
-                return visible ? { name: visible.name, sex: a.sex } : null;
+                if (!visible) return null;
+                return opts.markAdopted && a.recordType === RECORD_TYPES.ADOPTION ? { name: visible.name, sex: a.sex, adopted: true } : { name: visible.name, sex: a.sex };
             })();
-            animals.set(animalId, hit);
+            animals.set(key, hit);
         }
         return hit;
     };
@@ -66,7 +68,8 @@ export async function attachApplicationOutcomes<T extends { id: string; recordTy
             const ownName = r.animalName?.trim();
             const needsAnimal = status.kind === 'closed' || status.kind === 'adopted';
             const animal = ownName ? { name: ownName, sex: r.sex ?? null } : needsAnimal ? await teamAnimal(row.animalId) : null;
-            const outcomeAnimal = await teamAnimal(target?.animalId ?? null);
+            // A proposal's animal adopted since (its open link): the line says «(ya adoptado)», as the request does.
+            const outcomeAnimal = await teamAnimal(target?.animalId ?? null, { markAdopted: row.state === APPLICATION_STATES.PROPOSED });
             return [r.id, { status, animal, outcomeAnimal }];
         } catch (e) {
             logger.warn('applicationOutcomes: D1 fallback hit', { adopterId: ctx.adopterId, recordId: r.id, error: e instanceof Error ? e.message : String(e) });

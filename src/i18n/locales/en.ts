@@ -31,6 +31,8 @@ export const en = {
         closed_animal_deleted_hidden: 'the animal was deleted',
         status_adopted_hidden: 'Adopted',
         status_proposed_hidden: "Among another animal's candidates",
+        status_proposed_adopted_f: "Among {animal}'s candidates (already adopted)",
+        status_proposed_adopted_m: "Among {animal}'s candidates (already adopted)",
         note_replaced: 'Their contract was replaced on {date}',
         note_expired: 'Their contract expired on {date}',
         asked_adopted_f: 'Asked for {animal} (already adopted)',
