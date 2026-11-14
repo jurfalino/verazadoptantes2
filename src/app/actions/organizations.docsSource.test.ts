@@ -3,7 +3,8 @@
  * joining / creating a group that leaves her in ≥ 2 asks which form and contract her
  * links use, and a never-chosen sole-group default is stored explicitly BEFORE the new
  * membership so closing the dialog keeps it. Leaving the group her links used (with a
- * group left) asks again. Real SQL; the session is the only actor.
+ * group left) asks again. R17: no membership change switches her links silently — leaving or
+ * being removed from the unused group of two keeps «Los míos». Real SQL; the session is the only actor.
  *
  * org-1 «Michis» = { OWNER }    org-2 «Perris» = { MATE }    STRANGER: no group
  */
@@ -25,7 +26,8 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
 }));
 
-import { joinOrganization, createOrganization, leaveOrganization } from './organizations';
+import { joinOrganization, createOrganization, leaveOrganization, removeOrganizationMember } from './organizations';
+import { getEffectiveDocsSource } from '@/lib/adoptionDocsRepo';
 import { logAudit } from '@/lib/audit';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
@@ -168,5 +170,59 @@ describe('leaveOrganization', () => {
     it('flags off: never asked', async () => {
         flags({ ENABLE_CUSTOM_ADOPTION_DOCS: false });
         expect(await as(MATE, () => leaveOrganization('org-1'))).toMatchObject({ success: true, askDocsSource: false });
+    });
+});
+
+describe('never switch silently on leave / removal (R17)', () => {
+    /** What her public form and links use right now (the public form's own lookup). */
+    const inEffect = async (email: string) => (await getEffectiveDocsSource(state.db as never, email)).source;
+
+    beforeEach(() => {
+        // MATE never chose and is in both groups → «Los míos» in effect.
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email, role) VALUES ('m-mate-1', 'org-1', ?, 'member')`).run(MATE);
+    });
+
+    it('leaving the unused group 2 → 1 keeps «Los míos» (stored, audited), not asked', async () => {
+        expect(await inEffect(MATE)).toEqual({ type: 'self' });
+        expect(await as(MATE, () => leaveOrganization('org-1'))).toMatchObject({ success: true, deleted: false, askDocsSource: false });
+        expect(source(MATE)).toBe('self');
+        expect(await inEffect(MATE)).toEqual({ type: 'self' });
+        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_leave' } }]]);
+    });
+
+    it('the same when the group she leaves is deleted (she was its last member)', async () => {
+        expect(await as(MATE, () => leaveOrganization('org-2'))).toMatchObject({ success: true, deleted: true, askDocsSource: false });
+        expect(source(MATE)).toBe('self');
+        expect(await inEffect(MATE)).toEqual({ type: 'self' });
+    });
+
+    it('removed by another member 2 → 1: «Los míos» is kept for the REMOVED person (audited on her)', async () => {
+        expect(await as(OWNER, () => removeOrganizationMember('org-1', 'm-mate-1'))).toEqual({ success: true });
+        expect(source(MATE)).toBe('self');
+        expect(source(OWNER)).toBeNull();
+        expect(await inEffect(MATE)).toEqual({ type: 'self' });
+        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_removal' } }]]);
+    });
+
+    it('removed from the sole group her links used 1 → 0: nothing stored', async () => {
+        sqlite.prepare(`INSERT INTO org_members (id, org_id, user_email, role) VALUES ('m-stranger', 'org-1', ?, 'member')`).run(STRANGER);
+        expect(await inEffect(STRANGER)).toEqual({ type: 'org', orgId: 'org-1' });
+        expect(await as(OWNER, () => removeOrganizationMember('org-1', 'm-stranger'))).toEqual({ success: true });
+        expect(source(STRANGER)).toBeNull();
+        expect(keptAudits()).toEqual([]);
+    });
+
+    it('a failed keep never fails the removal: logged with context', async () => {
+        sqlite.exec(`CREATE TRIGGER no_profile_writes_u BEFORE UPDATE ON user_profiles BEGIN SELECT RAISE(ABORT, 'boom'); END;
+                     CREATE TRIGGER no_profile_writes_i BEFORE INSERT ON user_profiles BEGIN SELECT RAISE(ABORT, 'boom'); END;`);
+        expect(await as(OWNER, () => removeOrganizationMember('org-1', 'm-mate-1'))).toEqual({ success: true });
+        expect(sqlite.prepare("SELECT 1 FROM org_members WHERE id = 'm-mate-1'").get()).toBeUndefined();
+        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(expect.stringContaining('removeOrganizationMember'), expect.objectContaining({ user: OWNER, memberId: 'm-mate-1', orgId: 'org-1', source: 'self' }));
+    });
+
+    it('branding off: nothing stored', async () => {
+        flags({ ENABLE_GROUP_BRANDING: false });
+        await as(MATE, () => leaveOrganization('org-1'));
+        expect(source(MATE)).toBeNull();
     });
 });

@@ -274,16 +274,27 @@ export function effectiveDocsSource(raw: string | null | undefined, memberOrgIds
 }
 
 /**
- * «Al cambiar de grupos» (Jon 2026-11-14): joining or creating a group must
- * never switch her links silently. Run BEFORE the new membership is written:
- * a never-chosen (NULL) source whose sole-group default is in effect is
- * stored explicitly as that group, so closing the «¿Qué formulario y contrato
- * usás al compartir?» dialog keeps what she had. Mirrors effectiveDocsSource's
- * default exactly. Returns the value to store, or null when nothing to pin.
+ * «Al cambiar de grupos» (Jon 2026-11-14; controller ruling R17): a change of
+ * groups never switches her links silently. Run BEFORE any membership change
+ * (join, create, leave, removal by someone else): for a never-chosen (NULL)
+ * source whose sole-group default would flip because of the change, store
+ * what was in effect explicitly — 'org:<the sole group>' on a join/create
+ * (closing the dialog keeps it), 'self' when leaving / being removed from the
+ * group she was NOT using leaves her in exactly one. Nothing when the choice
+ * in effect disappears with the change (her sole group left: nothing to keep),
+ * nor on her first group (the sole-group default is how a new member starts).
+ * Returns the value to store, or null.
  */
-export function pinSourceBeforeJoin(raw: string | null | undefined, memberOrgIdsBefore: readonly string[], brandingOn: boolean): string | null {
-    if (raw != null || !brandingOn || memberOrgIdsBefore.length !== 1) return null;
-    return serializeDocsSource({ type: 'org', orgId: memberOrgIdsBefore[0] });
+export function pinSourceBeforeMembershipChange(
+    raw: string | null | undefined, memberOrgIdsBefore: readonly string[], memberOrgIdsAfter: readonly string[], brandingOn: boolean,
+): string | null {
+    if (raw != null || !brandingOn || memberOrgIdsBefore.length === 0) return null;
+    const before = effectiveDocsSource(null, memberOrgIdsBefore, true);
+    const after = effectiveDocsSource(null, memberOrgIdsAfter, true);
+    const same = before.type === after.type && (before.type === 'self' || (after.type === 'org' && before.orgId === after.orgId));
+    if (same) return null;
+    if (before.type === 'org' && !memberOrgIdsAfter.includes(before.orgId)) return null;
+    return serializeDocsSource(before);
 }
 
 export type GroupChange =

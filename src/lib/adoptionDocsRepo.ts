@@ -62,7 +62,7 @@ export async function getUserDocsSourceRaw(db: Db, email: string): Promise<strin
 /**
  * Store `value` as the «Al compartir, usar:» choice ONLY while it is still
  * NULL (never chosen) — a choice made in between is never overwritten. Used
- * to pin the sole-group default before a join/create (pinSourceBeforeJoin).
+ * to keep what was in effect across a group change (pinSourceBeforeMembershipChange).
  * Same case-insensitive user match as getUserDocsSourceRaw. Returns whether a
  * value was written. Throws on a DB error.
  */

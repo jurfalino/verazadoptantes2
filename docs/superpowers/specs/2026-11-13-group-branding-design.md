@@ -65,14 +65,25 @@ Jon picked **B**. A is effectively step one of B (the accent part), so B can be 
 - If the chosen group stops being valid (user left it / group deleted) → behaves as «Los míos» until they choose again — same as the existing setting does today *(builder: confirm current behaviour and keep it)*.
 - «Los míos», or no group → no branding.
 
-### Al cambiar de grupos (Jon, 2026-11-14)
+### Al cambiar de grupos (Jon, 2026-11-14; controller ruling R17)
 
-The sole-group default stops the moment she is in two groups, so a join would otherwise switch her links silently. Instead she is **asked when it changes**, and nothing ever switches silently:
+**Rule: a change of groups never switches her links silently.** She is **asked when she is on screen**, and what she had is **kept when she isn't** (or when she closes the question).
 
-- **Join or create a group, ending in ≥ 2 groups** → after success, a dialog «¿Qué formulario y contrato usás al compartir?» with exactly the «Al compartir, usar:» rows (same component, `DocsSourceOptions`: logos, names, look sub-lines, pills), her current choice pre-selected and marked «(el que usás)», the hint «Podés cambiarlo cuando quieras en Configuración.» and one button, «Listo» (saves through `setAdoptionDocsSource`, only if she changed it). Asked on every such join/create, also when she had already chosen (her choice pre-selected).
-- **Closing without answering keeps what she had.** So, before the new membership is written, `joinOrganization` / `createOrganization` store a never-chosen (`NULL`) source of a sole-group member as `'org:<that group>'` while `ENABLE_GROUP_BRANDING` is on (`pinSourceBeforeJoin`; audited `adoption_docs_source_changed` with `reason: 'kept_on_join'`; only written while still `NULL`). A failed pin is logged and never fails the join.
+The sole-group default (`NULL` + exactly one group → that group) flips whenever her group count crosses one. So before any membership change, the action stores a never-chosen (`NULL`) source as whatever was in effect, if the change would otherwise flip it (`pinSourceBeforeMembershipChange`, only while `ENABLE_GROUP_BRANDING` is on, only written while still `NULL`, audited `adoption_docs_source_changed` with `reason: 'kept_on_join' | 'kept_on_leave' | 'kept_on_removal'`; a failed write is logged and never fails the change):
+
+| Change | Before → after | Stored |
+|---|---|---|
+| Join / create a second group | 1 → 2 | `'org:<her sole group>'` |
+| Leave, or be removed from, the group she was NOT using | 2 → 1 | `'self'` |
+| Leave / be removed from her sole group | 1 → 0 | nothing (nothing left to keep) |
+| Her first group | 0 → 1 | nothing (the default is how a new member starts) |
+| No flip (2 → 3, 3 → 2, …) or an explicit choice | — | nothing |
+
+When she is asked:
+
+- **Join or create a group, ending in ≥ 2 groups** → after success, a dialog «¿Qué formulario y contrato usás al compartir?» with exactly the «Al compartir, usar:» rows (same component, `DocsSourceOptions`: logos, names, look sub-lines, pills), her current choice pre-selected and marked «(el que usás)», the hint «Podés cambiarlo cuando quieras en Configuración.» and one button, «Listo» (saves through `setAdoptionDocsSource`, only if she changed it). Asked on every such join/create, also when she had already chosen (her choice pre-selected). Closing keeps what she had (stored above).
 - **«Salir» of the group her links used, with ≥ 1 group left** → the same dialog with the groups she still has, her new effective choice (normally «Los míos», since the stored group no longer applies) pre-selected. Closing keeps that. No group left → no dialog.
-- **Not asked:** no group; either flag (`ENABLE_GROUP_BRANDING`, `ENABLE_CUSTOM_ADOPTION_DOCS`) off; leaving a group she wasn't using; when someone else removes her from a group (she isn't there to answer — her links fall back as before).
+- **Not asked:** no group; either flag (`ENABLE_GROUP_BRANDING`, `ENABLE_CUSTOM_ADOPTION_DOCS`) off; leaving a group she wasn't using (kept as above); when someone else removes her from a group (`removeOrganizationMember` keeps it for the removed person — she isn't there to answer).
 - The server decides (`shouldAskDocsSource`, returned as `askDocsSource` by the three actions). The invite page carries it to `/organizations?askSource=1`, which opens the dialog once and drops the parameter.
 
 ### Which branding each public page uses

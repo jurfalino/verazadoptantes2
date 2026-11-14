@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     FORM_STEP_IDS, LOCKED_FORM_STEPS, TOGGLEABLE_FORM_STEPS, FORM_STEP_GROUPS,
-    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource, pinSourceBeforeJoin, shouldAskDocsSource,
+    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource, pinSourceBeforeMembershipChange, shouldAskDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
@@ -343,30 +343,42 @@ describe('effectiveDocsSource', () => {
     });
 });
 
-describe('pinSourceBeforeJoin («Al cambiar de grupos»)', () => {
-    it('never chosen + exactly one group + branding on → pins that group', () => {
-        expect(pinSourceBeforeJoin(null, ['A'], true)).toBe('org:A');
-        expect(pinSourceBeforeJoin(undefined, ['A'], true)).toBe('org:A');
+describe('pinSourceBeforeMembershipChange («Al cambiar de grupos»: never switch silently)', () => {
+    const pin = pinSourceBeforeMembershipChange;
+    it('join / create 1 → 2: the sole group is kept', () => {
+        expect(pin(null, ['X'], ['X', 'Y'], true)).toBe('org:X');
+        expect(pin(undefined, ['X'], ['X', 'NEW'], true)).toBe('org:X');
+    });
+    it('leaving (or being removed from) the unused group 2 → 1: «Los míos» is kept', () => {
+        expect(pin(null, ['X', 'Y'], ['X'], true)).toBe('self');
+    });
+    it('leaving the used sole group 1 → 0: nothing to keep', () => {
+        expect(pin(null, ['X'], [], true)).toBeNull();
+    });
+    it('her first group 0 → 1: the default is how a new member starts', () => {
+        expect(pin(null, [], ['Y'], true)).toBeNull();
+    });
+    it('no switch → nothing: 2 → 3, 3 → 2, 0 → 0', () => {
+        expect(pin(null, ['X', 'Y'], ['X', 'Y', 'Z'], true)).toBeNull();
+        expect(pin(null, ['X', 'Y', 'Z'], ['X', 'Y'], true)).toBeNull();
+        expect(pin(null, [], [], true)).toBeNull();
     });
     it('an explicit source is never touched', () => {
-        expect(pinSourceBeforeJoin('self', ['A'], true)).toBeNull();
-        expect(pinSourceBeforeJoin('org:A', ['A'], true)).toBeNull();
-        expect(pinSourceBeforeJoin('org:B', ['A'], true)).toBeNull();
+        for (const raw of ['self', 'org:X', 'org:Y']) {
+            expect(pin(raw, ['X'], ['X', 'Y'], true)).toBeNull();
+            expect(pin(raw, ['X', 'Y'], ['X'], true)).toBeNull();
+        }
     });
-    it('branding off → no default to keep → no pin', () => {
-        expect(pinSourceBeforeJoin(null, ['A'], false)).toBeNull();
+    it('branding off → no sole-group default → nothing', () => {
+        expect(pin(null, ['X'], ['X', 'Y'], false)).toBeNull();
+        expect(pin(null, ['X', 'Y'], ['X'], false)).toBeNull();
     });
-    it('0 or ≥ 2 groups → no pin', () => {
-        expect(pinSourceBeforeJoin(null, [], true)).toBeNull();
-        expect(pinSourceBeforeJoin(null, ['A', 'B'], true)).toBeNull();
-    });
-    it('agrees with effectiveDocsSource: what it pins is what was in effect', () => {
-        for (const ids of [[], ['A'], ['A', 'B']]) {
-            for (const on of [true, false]) {
-                const pinned = pinSourceBeforeJoin(null, ids, on);
-                if (pinned) expect(parseDocsSource(pinned)).toEqual(effectiveDocsSource(null, ids, on));
-                else expect(effectiveDocsSource(null, ids, on)).toEqual({ type: 'self' });
-            }
+    it('what it stores is what was in effect, and keeps it in effect after the change', () => {
+        const cases: Array<[string[], string[]]> = [[['X'], ['X', 'Y']], [['X', 'Y'], ['X']], [['X', 'Y'], ['Y']]];
+        for (const [before, after] of cases) {
+            const pinned = pin(null, before, after, true)!;
+            expect(parseDocsSource(pinned)).toEqual(effectiveDocsSource(null, before, true));
+            expect(effectiveDocsSource(pinned, after, true)).toEqual(effectiveDocsSource(null, before, true));
         }
     });
 });
