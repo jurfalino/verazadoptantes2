@@ -104,10 +104,9 @@ function facebookFullPath(segs: string[]): string | null {
     let ok = false;
     if (kind === 'people') ok = rest.length === 2 && FB_ID.test(rest[1]); // people/<name>/<id>
     else if (kind === 'pages') ok = rest.length >= 1 && rest.length <= 3; // pages/<name>/<id>, pages/category/<cat>/<name-id>
-    else if (kind === 'groups') ok = rest.length === 1; // groups/<name or id>
-    // share/<code> (a page/profile) and share/g/<code> (a group); share/p|r|v/<code> is a shared post, reel or
-    // video — like an Instagram post, not the group's page — so it is refused.
-    else if (kind === 'share') ok = rest.length === 1 || (rest.length === 2 && rest[0].toLowerCase() === 'g');
+    else if (kind === 'groups') ok = rest.length >= 1 && rest.length <= 3; // groups/<g>, groups/<g>/posts/<id>
+    // share/<code> and share/<type letter>/<code> (g group, p post, r reel, v video): the app's «copy link».
+    else if (kind === 'share') ok = rest.length === 1 || (rest.length === 2 && /^[a-z]$/i.test(rest[0]));
     return ok ? `https://facebook.com/${[kind, ...rest].join('/')}` : null;
 }
 

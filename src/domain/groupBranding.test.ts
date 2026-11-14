@@ -57,15 +57,19 @@ describe('normalizeSocialLink', () => {
         expect(normalizeSocialLink('facebook', 'https://www.facebook.com/groups/1234567890/?ref=share')).toEqual(ok('https://facebook.com/groups/1234567890'));
         expect(normalizeSocialLink('facebook', 'https://www.facebook.com/share/1AbCdEf/')).toEqual(ok('https://facebook.com/share/1AbCdEf'));
         expect(normalizeSocialLink('facebook', 'https://www.facebook.com/share/g/1AbCdEf/?mibextid=K35XfP')).toEqual(ok('https://facebook.com/share/g/1AbCdEf'));
+        for (const t of ['p', 'r', 'v'])
+            expect(normalizeSocialLink('facebook', `https://www.facebook.com/share/${t}/1AbCdEf/`)).toEqual(ok(`https://facebook.com/share/${t}/1AbCdEf`));
+        expect(normalizeSocialLink('facebook', 'https://www.facebook.com/groups/refugiogatitos/posts/123456/'))
+            .toEqual(ok('https://facebook.com/groups/refugiogatitos/posts/123456'));
     });
     it('facebook: profile.php?id=N keeps the id', () => {
         expect(normalizeSocialLink('facebook', 'https://www.facebook.com/profile.php?id=100083123456789&mibextid=x'))
             .toEqual(ok('https://facebook.com/profile.php?id=100083123456789'));
         expect(normalizeSocialLink('facebook', 'https://www.facebook.com/profile.php')).toEqual({ ok: false });
     });
-    it('facebook: a post, photo, video or event link is refused, never truncated', () => {
+    it('facebook: a post, photo, video or event first segment (or a malformed path) is refused, never truncated', () => {
         for (const raw of [
-            'https://www.facebook.com/share/p/1AbCdEf/', 'https://www.facebook.com/share/r/1AbCdEf/', 'https://www.facebook.com/share/v/1AbCdEf/',
+            'https://www.facebook.com/share/xy/1AbCdEf/', 'https://www.facebook.com/share/p/1AbCdEf/extra',
             'https://www.facebook.com/watch/?v=123', 'https://www.facebook.com/events/123/', 'https://www.facebook.com/photo/?fbid=1',
             'https://www.facebook.com/story.php?story_fbid=1&id=2', 'https://www.facebook.com/permalink.php?story_fbid=1',
             'https://www.facebook.com/groups/', 'https://www.facebook.com/share/', 'https://www.facebook.com/pages/',
@@ -94,7 +98,8 @@ describe('normalizeSocialLink', () => {
             ['facebook', 'michis.del.tren'], ['facebook', 'https://fb.com/profile.php?id=123'],
             ['facebook', 'https://www.facebook.com/people/Refugio-Gatítos/100083123456789/'], ['facebook', 'https://www.facebook.com/pages/Refugio/123456'],
             ['facebook', 'https://www.facebook.com/groups/refugiogatitos'], ['facebook', 'https://www.facebook.com/share/1AbCdEf/'],
-            ['facebook', 'https://www.facebook.com/share/g/1AbCdEf/'],
+            ['facebook', 'https://www.facebook.com/share/g/1AbCdEf/'], ['facebook', 'https://www.facebook.com/share/p/1AbCdEf/'],
+            ['facebook', 'https://www.facebook.com/groups/refugiogatitos/posts/123456/'],
             ['website', 'michisdeltren.org'], ['website', 'https://a.org/b/'], ['website', 'http://michisdeltren.org/adopta?x=1#y'],
         ];
         for (const [kind, raw] of inputs) {

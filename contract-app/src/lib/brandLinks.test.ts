@@ -64,6 +64,8 @@ describe('stored link shapes round-trip to the public page', () => {
         'https://facebook.com/groups/refugiogatitos',
         'https://facebook.com/share/1AbCdEf',
         'https://facebook.com/share/g/1AbCdEf',
+        'https://facebook.com/share/p/1AbCdEf',
+        'https://facebook.com/groups/refugiogatitos/posts/123456',
         'https://michisdeltren.org/adopta?x=1',
     ]
     it('httpsOnly keeps every stored link as is', () => {
