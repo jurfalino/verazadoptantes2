@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { orderHomeModules, HOME_CARD_SLOTS, homeAnimalRows, homePendingRows, homeAdopterSlots, isPostRecord, postsCardLive } from './homeModules';
+import { orderHomeModules, HOME_CARD_SLOTS, homeAnimalRows, homePendingRows, homeAdopterSlots, isPostRecord, postsCardLive, recentWithoutRequests } from './homeModules';
 
 describe('orderHomeModules', () => {
     it('a brand-new account gets no cards, only «Para empezar» with every step', () => {
@@ -177,4 +177,12 @@ describe('homeAdopterSlots — general forms first, then «¿Es la misma persona
         expect(homeAdopterSlots(0, 6)).toEqual({ requests: 0, pending: 3, more: 3 });
     });
     it('the slot count is a parameter', () => expect(homeAdopterSlots(3, 0, 2)).toEqual({ requests: 1, pending: 0, more: 2 }));
+});
+
+describe('recentWithoutRequests — one person, one row on the home card (UX review S1)', () => {
+    it('drops the recent row of someone already listed as a request, and fills from the next ones', () => {
+        const recent = [{ id: 'ana' }, { id: 'beto' }, { id: 'cami' }, { id: 'dani' }, { id: 'eli' }];
+        expect(recentWithoutRequests(recent, [{ adopterId: 'ana' }, { adopterId: null }], 4).map(r => r.id)).toEqual(['beto', 'cami', 'dani', 'eli']);
+        expect(recentWithoutRequests(recent, [], 4).map(r => r.id)).toEqual(['ana', 'beto', 'cami', 'dani']);
+    });
 });

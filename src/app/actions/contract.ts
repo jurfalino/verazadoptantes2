@@ -140,27 +140,56 @@ export async function createContractInvitation(
         // newest token is honored. We set expires_at to now() rather than
         // deleting so an audit trail survives.
         const now = Math.floor(Date.now() / 1000);
-        await db.update(contractInvitations)
-            .set({ expiresAt: now })
-            .where(and(
-                eq(contractInvitations.animalId, animalId),
-                isNull(contractInvitations.usedAt),
-            ));
-
         const token = crypto.randomUUID();
         const expiresAt = now + INVITATION_TTL_DAYS * 24 * 3600;
         const validLocale = locale === 'es' || locale === 'en' || locale === 'pt' ? locale : null;
+        const retireOthers = and(eq(contractInvitations.animalId, animalId), isNull(contractInvitations.usedAt));
 
-        await db.insert(contractInvitations).values({
-            token,
-            animalId,
-            adopterId,
-            createdBy: userEmail,
-            createdAt: now,
-            usedAt: null,
-            expiresAt,
-            locale: validLocale,
-        });
+        if (applicationId !== undefined) {
+            // Sent from a candidacy: retire + insert are ONE atomic step, and both happen only while the candidacy
+            // still exists. A teammate's «Quitar» (one atomic step too, refused once a link exists) can't interleave:
+            // whichever lands first wins, never both — and a lost race retires nobody's link (review I-1).
+            const { applications } = await import('@/db/schema');
+            const { sql } = await import('drizzle-orm');
+            const { runBatch } = await import('@/lib/dbBatch');
+            const candidacy = and(eq(applications.id, applicationId), eq(applications.animalId, animalId));
+            await runBatch(db, [
+                db.update(contractInvitations).set({ expiresAt: now })
+                    .where(and(retireOthers, sql`EXISTS (SELECT 1 FROM applications WHERE id = ${applicationId} AND animal_id = ${animalId})`)),
+                db.insert(contractInvitations).select(
+                    db.select({
+                        token: sql`${token}`.as('token'),
+                        animalId: sql`${animalId}`.as('animal_id'),
+                        adopterId: sql`${adopterId}`.as('adopter_id'),
+                        createdBy: sql`${userEmail}`.as('created_by'),
+                        createdAt: sql`${now}`.as('created_at'),
+                        usedAt: sql`NULL`.as('used_at'),
+                        expiresAt: sql`${expiresAt}`.as('expires_at'),
+                        locale: sql`${validLocale}`.as('locale'),
+                    }).from(applications).where(candidacy),
+                ),
+            ]);
+            const saved = await db.select({ token: contractInvitations.token }).from(contractInvitations).where(eq(contractInvitations.token, token)).get();
+            if (!saved) {
+                logger.info('createContractInvitation: refused — the candidacy was removed while sending', { animalId, adopterId, applicationId, createdBy: userEmail });
+                return { success: false, error: 'removed' };
+            }
+        } else {
+            await db.update(contractInvitations)
+                .set({ expiresAt: now })
+                .where(retireOthers);
+
+            await db.insert(contractInvitations).values({
+                token,
+                animalId,
+                adopterId,
+                createdBy: userEmail,
+                createdAt: now,
+                usedAt: null,
+                expiresAt,
+                locale: validLocale,
+            });
+        }
 
         const { getContractBaseUrl } = await import('@/lib/contractUrl');
         const base = (await getContractBaseUrl()).replace(/\/+$/, '');

@@ -55,10 +55,12 @@ import { ChevronRight } from 'lucide-react';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
 import { readBoth } from '@/components/pendientes/readBoth';
-import GeneralRequestsGroup, { requestsToEvaluate } from '@/components/pendientes/GeneralRequestsGroup';
+import { readReservedHeight, saveReservedHeight } from '@/lib/pendientesHeight';
+import { REQUEST_LINK_EVENT } from '@/components/pendientes/RequestLinkWatcher';
+import GeneralRequestsGroup from '@/components/pendientes/GeneralRequestsGroup';
+import type { GeneralRequestRow } from '@/lib/applicationCounts';
 import HomeApplicantsPanel from '@/components/home/HomeApplicantsPanel';
-import { getGeneralApplications } from '@/app/actions/applications';
-import type { ApplicantSummary } from '@/app/actions/applicants';
+import { getGeneralRequestRows } from '@/app/actions/applications';
 
 /** The section's anchor: request notifications link to /my-adopters#pendientes. */
 const SECTION_ID = 'pendientes';
@@ -113,11 +115,16 @@ export default function PendingDedup({ home }: {
     const [open, setOpen] = useState(false);
     // «Formularios generales» (Jon 2026-11-13): the requests waiting, listed first and never paginated;
     // `requestOpen` is the one opened alone (a row, or `?solicitud=` from a notice, an email or a redirect).
-    const [requests, setRequests] = useState<ApplicantSummary[]>([]);
+    const [requests, setRequests] = useState<GeneralRequestRow[]>([]);
     const [requestOpen, setRequestOpen] = useState<string | null>(null);
     const autoOpened = useRef(false);
     const scrollToSection = useRef(false);
     const sectionRef = useRef<HTMLElement | null>(null);
+    // The height to hold while loading: last visit's (UX review S5). Read after mount (never in the initializer:
+    // the server render has no storage), measured once per page load when the first read settles.
+    const [reserved, setReserved] = useState<number | null>(null);
+    const measured = useRef(false);
+    useEffect(() => { if (!home) setReserved(readReservedHeight()); }, [home]);
     /** One row open at a time (D21). */
     const [openId, setOpenId] = useState<string | null>(null);
     /** «¿Cuál se conserva?» per row; absent = the feed's defaultKeep. */
@@ -166,16 +173,17 @@ export default function PendingDedup({ home }: {
             return;
         }
         if (loadedByFocus.current === page) { loadedByFocus.current = null; return; }
-        // The general requests, read alongside the pairs: a failure is shown with its id and never hides the pairs.
-        const requestsRead = getGeneralApplications({ openOnly: true })
+        // The general requests, read alongside the pairs as light rows (review I-3): a failure is shown with its id and
+        // never hides the pairs. The heal write runs on the page's first read only.
+        const requestsRead = getGeneralRequestRows({ heal: !autoOpened.current })
             .then((res) => {
-                if (res.ok) return requestsToEvaluate(res.applicants);
+                if (res.ok) return res.requests;
                 toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'), res.errorId);
-                return [] as ApplicantSummary[];
+                return [] as GeneralRequestRow[];
             })
             .catch((e: unknown) => {
                 if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'), resolveErrorId(e, 'PendingDedup:requests'));
-                return [] as ApplicantSummary[];
+                return [] as GeneralRequestRow[];
             });
         const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
         // Settled apart: a failed pairs read still lists the forms and opens a request's link (review M4).
@@ -239,6 +247,29 @@ export default function PendingDedup({ home }: {
         if (row) window.scrollTo({ top: row.getBoundingClientRect().top + window.scrollY - FOCUS_ROW_OFFSET });
         else sectionRef.current.scrollIntoView({ block: 'start' });
     }, [open, pairs, focusId]);
+
+    useEffect(() => {
+        if (home || pairs === null || measured.current) return;
+        measured.current = true;
+        // After the section has laid out (open or not); nothing pending → 0, so next time nothing is held.
+        const frame = requestAnimationFrame(() => saveReservedHeight(sectionRef.current?.offsetHeight ?? 0));
+        return () => cancelAnimationFrame(frame);
+    }, [home, pairs, open]);
+
+    // A request's link followed while already on the page (the bell): open it, and re-read so its row is listed (review I-2).
+    useEffect(() => {
+        if (home) return;
+        const onLink = (e: Event) => {
+            const id = (e as CustomEvent<string>).detail;
+            if (!id) return;
+            setRequestOpen(id);
+            scrollToSection.current = true;
+            setOpen(true);
+            void load();
+        };
+        window.addEventListener(REQUEST_LINK_EVENT, onLink);
+        return () => window.removeEventListener(REQUEST_LINK_EVENT, onLink);
+    }, [home, load]);
 
     // A #pendientes link followed while already on the page.
     useEffect(() => {
@@ -598,8 +629,8 @@ export default function PendingDedup({ home }: {
 
     // Not loaded yet: hold the header's place (it used to pop in seconds after the list and push it
     // down ~90px under a finger). If nothing turns out to be pending, the placeholder goes.
-    if (pairs === null) return (
-        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse">
+    if (pairs === null) return reserved === 0 ? null : (
+        <section aria-hidden="true" data-testid="pending-dedup-loading" className="mb-8 animate-pulse" style={reserved ? { height: reserved } : undefined}>
             <div className="min-h-[44px] flex items-center gap-2"><div className="h-5 w-64 rounded bg-stone-200" /></div>
             <div className="h-4 w-80 max-w-full mt-1 mb-3 ml-6 rounded bg-stone-100" />
         </section>

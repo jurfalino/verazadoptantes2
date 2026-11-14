@@ -22,8 +22,19 @@ import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { firstName } from '@/lib/householdCopy';
 
+/**
+ * The sheet's title and note. «Cambiar animal» says the person LEAVES the animal they're on (UX review S4) —
+ * the first add's words would read as adding them to a second one.
+ */
+export function proposeSheetCopy(change: boolean, name: string, fromAnimal: string, t: (k: string) => string): { title: string; note: string } {
+    const fill = (key: string) => t(key).split('{name}').join(name).split('{animal}').join(fromAnimal);
+    return change
+        ? { title: fill('evaluation.propose_change_title'), note: fill('evaluation.propose_change_note') }
+        : { title: fill('evaluation.propose_title'), note: fill('evaluation.propose_note') };
+}
+
 /** The rows, then «Cargar otro animal»; with none, «Cargar un animal» (Jon 2026-11-13). */
-export function ProposalAnimalList({ animals, anyAnimals, busyId, onPick, personName, applicationId }: {
+export function ProposalAnimalList({ animals, anyAnimals, busyId, onPick, personName, applicationId, change = false }: {
     animals: readonly ProposalAnimal[];
     /** The team has animals that take applications, even if none fits this person. */
     anyAnimals: boolean;
@@ -34,6 +45,8 @@ export function ProposalAnimalList({ animals, anyAnimals, busyId, onPick, person
     personName: string;
     /** «Agregar animal» proposes the new animal to this application on save. */
     applicationId: string;
+    /** «Cambiar animal»: the new animal replaces the one they're on (the add page reads it from the request). */
+    change?: boolean;
 }) {
     const { t } = useLanguage();
     const href = proposeNewAnimalHref(applicationId);
@@ -85,7 +98,7 @@ export function ProposalAnimalList({ animals, anyAnimals, busyId, onPick, person
                     </span>
                     <span className="flex-1 min-w-0">
                         <span className="block text-sm font-semibold text-teal-700">{t('evaluation.propose_load_other')}</span>
-                        <span className="block text-xs text-stone-500">{t('evaluation.propose_load_other_desc').replace('{name}', personName)}</span>
+                        <span className="block text-xs text-stone-500">{t(change ? 'evaluation.propose_change_load_other_desc' : 'evaluation.propose_load_other_desc').replace('{name}', personName)}</span>
                     </span>
                 </Link>
             </li>
@@ -132,6 +145,7 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
     const { t } = useLanguage();
     const toast = useShowToast();
     const name = firstName(personName) || personName;
+    const copy = proposeSheetCopy(change, name, fromAnimal, t);
     const [load, setLoad] = useState<Load>({ state: 'loading' });
     const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -187,8 +201,8 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
     };
 
     return (
-        <Modal title={t('evaluation.propose_title').replace('{name}', name)} onClose={onClose} busy={busyId !== null} testId="propose-sheet">
-            <p className="text-sm text-stone-600" data-testid="propose-note">{t('evaluation.propose_note').split('{name}').join(name)}</p>
+        <Modal title={copy.title} onClose={onClose} busy={busyId !== null} testId="propose-sheet">
+            <p className="text-sm text-stone-600" data-testid="propose-note">{copy.note}</p>
             {load.state === 'loading' && <p className="text-sm text-stone-500" aria-busy="true">{t('common.loading')}</p>}
             {load.state === 'failed' && (
                 <p className="text-sm text-stone-600" data-testid="propose-failed">
@@ -196,7 +210,7 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
                     {load.errorId && <span className="text-xs text-stone-500"> ({t('homeModules.error_code')}: {load.errorId})</span>}
                 </p>
             )}
-            {load.state === 'ok' && <ProposalAnimalList animals={load.animals} anyAnimals={load.anyAnimals} busyId={busyId} onPick={pick} personName={name} applicationId={applicationId} />}
+            {load.state === 'ok' && <ProposalAnimalList animals={load.animals} anyAnimals={load.anyAnimals} busyId={busyId} onPick={pick} personName={name} applicationId={applicationId} change={change} />}
         </Modal>
     );
 }

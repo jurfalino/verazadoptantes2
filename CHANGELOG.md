@@ -2,6 +2,24 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.16] - 2026-11-14
+
+### Fixed — senior EM + UX/UI review of the general forms (Jon 2026-11-13)
+- «Enviar contrato» and a teammate's «Quitar» at the same moment: only one wins. If «Quitar» wins, no contract
+  goes out and no other applicant's link is cancelled.
+- Tapping a bell notice for a general form while already on «Mis adoptantes» opens it.
+- «Pendientes de revisar» reads the general forms in one light query, however many there are; the full detail
+  loads only when one is opened. A form that asked for another team's (or a deleted) animal no longer names it.
+- The home card never shows the same person twice (as a request and as a recent person).
+- The «Escribinos» chat bubble steps aside while a panel or dialog is open, so it never covers its buttons.
+- «Cambiar animal» → «Cargar otro animal» now moves the person to the new animal when it's saved
+  («Agregar y pasar a {nombre}»).
+- The «Cambiar animal» sheet says the person leaves the current animal («¿A qué animal pasás a Ana? Ana sale de
+  los candidatos de Luna…»).
+- «Mis adoptantes» no longer jumps when «Pendientes de revisar» opens: it holds the space it had last visit.
+- As the approved prototype: the request has «Ver candidatos de Luna →»; on the animal's side «Cambiar animal /
+  Quitar de Luna» are quiet links after the answers.
+
 ## [2.59.15] - 2026-11-13
 
 ### Fixed — open findings of the general-forms review (Jon 2026-11-13)

@@ -53,6 +53,30 @@ test.describe.serial('Formularios generales in Mis adoptantes', () => {
         await expect(page.getByTestId('request-panel').getByRole('button', { name: /Siguiente|Next/ })).toHaveCount(0);
     });
 
+    test('a second visit holds the section\'s height while it loads: what is below doesn\'t jump (UX review S5)', async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.goto('/my-adopters');
+        await dismissCountryBanner(page);
+        await expect(page.getByTestId('general-requests-heading')).toBeVisible({ timeout: 60_000 });
+        await page.waitForTimeout(500); // the height is saved once the section has laid out
+        // Sample where the section ends (placeholder, then the real one) from the first paint until it opens.
+        await page.addInitScript(() => {
+            const w = window as unknown as { __bottoms: number[] };
+            w.__bottoms = [];
+            const tick = () => {
+                const el = document.querySelector('#pendientes, [data-testid="pending-dedup-loading"]');
+                if (el) w.__bottoms.push(Math.round(el.getBoundingClientRect().bottom + window.scrollY));
+                if (!document.querySelector('[data-testid="general-requests-heading"]')) requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        });
+        await page.reload();
+        await expect(page.getByTestId('general-requests-heading')).toBeVisible({ timeout: 60_000 });
+        const bottoms = await page.evaluate(() => (window as unknown as { __bottoms: number[] }).__bottoms);
+        expect(bottoms.length).toBeGreaterThan(0);
+        expect(Math.max(...bottoms) - Math.min(...bottoms), `section bottom over time: ${bottoms.slice(0, 5).join(',')}…${bottoms.slice(-3).join(',')}`).toBeLessThan(40);
+    });
+
     test('the request\'s own link opens it alone', async ({ page }) => {
         await page.goto(`/my-adopters?solicitud=${P.app}#pendientes`);
         await dismissCountryBanner(page);

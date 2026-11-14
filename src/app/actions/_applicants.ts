@@ -260,10 +260,10 @@ export async function loadGeneralApplications(
     viewerEmail: string | null | undefined,
     /**
      * What to read (review I4: the whole history grows with every form ever received, and each row costs
-     * several D1 queries): `applicationId` = that one request (a link opens it alone); `openOnly` = the ones
-     * still open («Formularios generales» lists those to evaluate). Neither = every general application.
+     * several D1 queries): `applicationId` = that one request (a link or a row opens it alone). Neither = every
+     * general application. The «Formularios generales» list reads light rows instead (`listGeneralToEvaluate`, I-3).
      */
-    scope: { applicationId?: string; openOnly?: boolean } = {},
+    scope: { applicationId?: string } = {},
 ): Promise<ApplicantSummary[]> {
     const team = generalScopeWhere(teamEmails);
     if (!team) {
@@ -272,9 +272,7 @@ export async function loadGeneralApplications(
     }
     const { applications } = await import('@/db/schema');
     const { and, eq } = await import('drizzle-orm');
-    const where = scope.applicationId ? and(team as never, eq(applications.id, scope.applicationId))
-        : scope.openOnly ? and(team as never, eq(applications.state, APPLICATION_STATES.OPEN))
-            : team;
+    const where = scope.applicationId ? and(team as never, eq(applications.id, scope.applicationId)) : team;
     // One request by id already has its row: the heal (forms missing their application) is for the lists.
     if (!scope.applicationId) await healMissingApplications(db, teamEmails);
     const rows = await selectApplicationRows(db, where);

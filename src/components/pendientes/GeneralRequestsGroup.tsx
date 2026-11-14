@@ -1,38 +1,31 @@
 /**
  * «Formularios generales» — the first group of «Pendientes de revisar» (Jon 2026-11-13: a general form is a
- * person to evaluate, not an animal card). Every request waiting is listed (never paginated with the pairs);
+ * person to evaluate, not an animal card). Every request waiting is listed (never paginated with the pairs),
+ * as the light rows `listGeneralToEvaluate` reads — to evaluate, on a live profile, newest first;
  * a row opens that request alone. Same row look as the pairs (PairRow's face): amber icon, name, a warning
  * line, a muted summary, and an «Evaluar» pill.
  */
-import type { ApplicantSummary } from '@/app/actions/applicants';
+import type { GeneralRequestRow } from '@/lib/applicationCounts';
 import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
 import { timeAgo } from '@/lib/timeAgo';
-import { isToDo } from '@/domain/applications';
 import { T_MUTED } from '@/components/pendientes/ui';
 
 type T = (key: string) => string;
 
-/** The requests that wait on the team: to evaluate, on a live profile (`isToDo`, as the home counts them), newest first. */
-export function requestsToEvaluate(list: readonly ApplicantSummary[]): ApplicantSummary[] {
-    return list
-        .filter(isToDo)
-        .sort((a, b) => (b.appliedAt ?? 0) - (a.appliedAt ?? 0));
-}
-
 const FORM_ICON = 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8';
 
 export default function GeneralRequestsGroup({ requests, onOpen, t, locale }: {
-    requests: readonly ApplicantSummary[];
+    requests: readonly GeneralRequestRow[];
     onOpen: (applicationId: string) => void;
     t: T;
     locale: string;
 }) {
     if (requests.length === 0) return null;
-    const when = (a: ApplicantSummary) => (a.appliedAt ? timeAgo(new Date(a.appliedAt * 1000), locale !== 'en') : '');
-    const line = (a: ApplicantSummary) => (a.askedAnimal
+    const when = (a: GeneralRequestRow) => (a.appliedAt ? timeAgo(new Date(a.appliedAt * 1000), locale !== 'en') : '');
+    const line = (a: GeneralRequestRow) => (a.askedAnimal
         ? `${animalLine(t, 'evaluation.asked_adopted', a.askedAnimal)} · ${when(a)}`
         : t('evaluation.request_line_general_when').replace('{when}', when(a)));
-    const prefers = (a: ApplicantSummary) => {
+    const prefers = (a: GeneralRequestRow) => {
         const parts = [
             a.species && t(`myAnimals.applicants_row_summary_species_${a.species}`),
             a.lifeStage && t(`myAnimals.applicants_row_summary_lifestage_${a.lifeStage}`),
@@ -52,7 +45,7 @@ export default function GeneralRequestsGroup({ requests, onOpen, t, locale }: {
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={FORM_ICON} /></svg>
                     </span>
                     <span className="flex-1 min-w-0">
-                        <span className="block text-[15px] font-bold truncate text-[var(--text-primary)]">{a.adopterName}</span>
+                        <span className="block text-[15px] font-bold truncate text-[var(--text-primary)]">{a.name}</span>
                         <span className="block text-[13px] font-bold text-[var(--status-warning-text)] [overflow-wrap:anywhere]">{line(a)}</span>
                         {prefers(a) && <span className={`block text-[12px] mt-0.5 ${T_MUTED}`}>{prefers(a)}</span>}
                     </span>

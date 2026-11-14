@@ -71,6 +71,15 @@ export function homeAdopterSlots(requests: number, pending: number, slots: numbe
     return { requests: r, pending: p, more: total - r - p };
 }
 
+/**
+ * The «Mis adoptantes» recent rows without the people already listed as a request row (UX review S1): a general
+ * form creates a profile, which is the newest — one person, one row. Read `slots` × 2 recent and keep `slots`.
+ */
+export function recentWithoutRequests<T extends { id: string }>(recent: readonly T[], requests: ReadonlyArray<{ adopterId: string | null }>, slots: number = HOME_CARD_SLOTS): T[] {
+    const asked = new Set(requests.flatMap(r => (r.adopterId ? [r.adopterId] : [])));
+    return recent.filter(r => !asked.has(r.id)).slice(0, slots);
+}
+
 export function homePendingRows<T>(pending: readonly T[], total: number, slots: number = HOME_CARD_SLOTS): { shown: T[]; more: number } {
     const limit = total > slots ? slots - 1 : slots;
     const shown = pending.slice(0, Math.min(limit, total));

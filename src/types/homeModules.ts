@@ -77,7 +77,7 @@ export type HomeAnimalRow = {
  * A general form waiting to be evaluated, as a «Mis adoptantes» row (Jon 2026-11-13: a person, not an animal
  * row): «Formulario general · por evaluar», or «Pidió a … (ya adoptada/adoptado)» when it asked for an adopted animal.
  */
-export type HomeRequestItem = { applicationId: string; name: string; askedAnimal: { name: string; sex: string | null } | null };
+export type HomeRequestItem = { applicationId: string; adopterId: string | null; name: string; askedAnimal: { name: string; sex: string | null } | null };
 
 export type HomeAnimalsData = {
     /** «Disponibles» tab count (available + in foster). */

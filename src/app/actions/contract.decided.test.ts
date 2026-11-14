@@ -29,6 +29,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { createContractInvitation } from './contract';
+import { contractInvitations as contractInvitationsTable } from '@/db/schema';
 
 let sqlite: Sqlite;
 const invitesFor = (adopterId: string) => sqlite.prepare('SELECT * FROM contract_invitations WHERE adopter_id = ?').all(adopterId);
@@ -81,6 +82,25 @@ describe('createContractInvitation on an applicant already decided', () => {
         const res = await createContractInvitation('luna', 'ana', 'es', 'app-quitada');
         expect(res).toMatchObject({ success: false, error: 'removed' });
         expect(snapshot(sqlite)).toEqual(before); // Carla's live link is untouched
+    });
+
+    it('«Quitar» lands while «Enviar contrato» is running (after its first check): nothing sent, Carla\'s link lives (review I-1)', async () => {
+        // A teammate's withdraw lands between this call's checks and its write.
+        const real = (state.db as { update: (t: unknown) => unknown }).update.bind(state.db);
+        let raced = false;
+        state.db = new Proxy(state.db as object, {
+            get(t, p, r) {
+                if (p === 'update') return (table: unknown) => {
+                    if (!raced && table === contractInvitationsTable) { raced = true; sqlite.prepare("DELETE FROM applications WHERE id = 'app-s-luna'").run(); }
+                    return real(table);
+                };
+                return Reflect.get(t, p, r);
+            },
+        });
+        const res = await createContractInvitation('luna', 'ana', 'es', 'app-s-luna');
+        expect(res).toMatchObject({ success: false, error: 'removed' });
+        expect(invitesFor('ana')).toHaveLength(0);
+        expect((invitesFor('carla')[0].expires_at as number)).toBeGreaterThan(Math.floor(Date.now() / 1000));
     });
 
     it('sent from a candidacy that is still there → the contract goes out', async () => {

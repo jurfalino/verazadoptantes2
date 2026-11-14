@@ -349,7 +349,7 @@ describe('signed-out home: the same «Para empezar» card a new rescuer sees (Jo
 describe('«Mis adoptantes» — general forms are people (Jon 2026-11-13)', () => {
     const person = (i: number) => ({ id: `p${i}`, name: `Persona ${i}`, thumbnail: null, avgRating: null, createdAt: 0, viaForm: false, creatorIsSelf: true, creatorName: null, groupName: null });
     const pair = (i: number): HomePendingItem => ({ group: 'pair', names: [`Ana ${i}`, `Ana G. ${i}`], ids: [`n${i}`, `e${i}`], by: null, summary: { same: ['phone'], diff: [], flagged: false } });
-    const req = (i: number, asked = false) => ({ applicationId: `app-${i}`, name: `Pedro ${i}`, askedAnimal: asked ? { name: 'Toby', sex: 'macho' } : null });
+    const req = (i: number, asked = false) => ({ applicationId: `app-${i}`, adopterId: `q${i}`, name: `Pedro ${i}`, askedAnimal: asked ? { name: 'Toby', sex: 'macho' } : null });
     const data = (requests: number, pairs: number): HomeAdoptersData => ({
         total: 10, pendingReview: pairs, pending: Array.from({ length: Math.min(pairs, 4) }, (_, i) => pair(i)), recent: [1, 2, 3, 4].map(person),
         requestsToEvaluate: requests, requests: Array.from({ length: Math.min(requests, 4) }, (_, i) => req(i, i === 1)),

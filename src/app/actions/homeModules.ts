@@ -60,7 +60,8 @@ export async function getHomeModules(): Promise<HomeModulesData | null> {
                 countGeneralToEvaluate(db, team, { heal: false }),
                 listGeneralToEvaluate(db, team, HOME_CARD_SLOTS, { heal: false }),
             ]);
-            return { count, items };
+            // Only what the row shows (and the person, so their recent row isn't listed twice).
+            return { count, items: items.map(r => ({ applicationId: r.applicationId, adopterId: r.adopterId, name: r.name, askedAnimal: r.askedAnimal })) };
         } catch (e) {
             logger.warn('getHomeModules: general requests fallback', { email, error: e instanceof Error ? e.message : String(e) });
             return { count: 0, items: [] };

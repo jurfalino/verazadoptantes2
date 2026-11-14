@@ -505,8 +505,15 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //   changeProposedAnimal(generalApplicationId, animalId)  the same gate plus the «¿Es la misma persona?» lock, then
 //                              the same withdraw and the existing proposeAuthorized (animal in the caller's and the
 //                              form link's team, takes contracts). On refusal it restores the first animal.
-// 196 (2026-11-13, group branding — «Personalizar» on a group card): the three exports of
-// src/app/actions/groupBranding.ts, imported by GroupBrandingSection. MEASURED (npm run build): 191 → 194 on its branch; 193 → 196 after merging staging.
+// 194 (Jon 2026-11-13, senior EM review I-3: «Pendientes de revisar» must not fully load every general form):
+// one export in src/app/actions/applications.ts, imported by PendingDedup. What a stranger can do with it:
+//   getGeneralRequestRows({ heal? })  takes only a boolean; session required (signed out → an empty list). Lists the
+//                              CALLER's team's general forms still to evaluate (generalScopeWhere + isToDo) with the
+//                              name, sent time, species / life stage and an asked animal named only when it is the
+//                              caller's team's own and not deleted — the same rows the home card already shows that
+//                              caller. `heal` runs the existing per-team heal (forms missing their application).
+// 197 (2026-11-13, group branding — «Personalizar» on a group card): the three exports of
+// src/app/actions/groupBranding.ts, imported by GroupBrandingSection. MEASURED (npm run build): 191 → 194 on its branch; 194 → 197 after merging staging (v2.59.16).
 // What a stranger can do with them — all three read the caller from the session (signed out → generic,
 // logged), refuse with `disabled` while ENABLE_GROUP_BRANDING is off, and refuse with `forbidden`
 // unless `orgId` is a string naming a group the caller is a member of (getMemberOrgIds), before
@@ -522,7 +529,7 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              SVG, GIF and HTML are refused. Stored at orgs/<orgId>/<kind>-<uuid> in the
 //                              public bucket (membership checked first, so no stranger picks the key); null
 //                              clears the URL. Audited.
-const EXPECTED_ACTIONS = 196;
+const EXPECTED_ACTIONS = 197;
 
 let manifest;
 try {

@@ -345,4 +345,18 @@ describe('ApplicantDetailPanel — a general form is a person (Jon 2026-11-13)',
         expect(text(html)).toContain(E.added_by_line.replace('{proposer}', 'Jonathan U'));
         expect(text(html)).toContain(E.undo_quit.replace('{animal}', 'Luna'));
     });
+
+    it('the request links to Luna\'s candidates, at this person (prototype «Ver candidatos de Luna →», UX review S6)', () => {
+        const html = render(applicant({ status: { kind: 'proposed' }, outcomeAnimal: { id: 'luna', name: 'Luna', sex: 'hembra' }, proposal: proposal({ canUndo: false }) }), { animal: null, single: true });
+        expect(text(html)).toContain(E.see_candidates.replace('{animal}', 'Luna'));
+        expect(html).toContain('href="/my-animals?view=solicitudes&amp;animal=luna&amp;solicitud=app-cand"');
+    });
+
+    it('on Luna, «Cambiar animal / Quitar» are quiet text links AFTER the answers, not buttons under the name (UX review S6)', () => {
+        const html = render(applicant({ origin: 'proposed', proposal: proposal({ animal: null }) }));
+        const links = html.indexOf('data-testid="applicant-proposal-links"');
+        expect(links).toBeGreaterThan(-1);
+        expect(links).toBeGreaterThan(html.indexOf(es.myAnimals.applicants_panel_section_form));
+        expect(html.slice(links, links + 600)).not.toContain('rounded-xl');
+    });
 });

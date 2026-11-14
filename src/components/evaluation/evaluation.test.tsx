@@ -38,7 +38,7 @@ vi.mock('@/components/ui/Modal', async (orig) => ({
 const { ApplicationAnswersSummary } = await import('./ApplicationAnswersSummary');
 const { DeclineApplicationDialog, DeclineForm, declineMissing, declineOutcome } = await import('./DeclineApplicationDialog');
 const { DuplicateCards } = await import('./ApplicationDuplicate');
-const { ProposalAnimalList, proposeOutcome, proposeNewOutcome } = await import('./ProposeAnimalSheet');
+const { ProposalAnimalList, proposeOutcome, proposeNewOutcome, proposeSheetCopy } = await import('./ProposeAnimalSheet');
 const { OfferSheetBody, offerLinks, offerMessage, offerAnimalOf } = await import('./AdoptionOfferSheet');
 const { WithdrawProposalDialog } = await import('./WithdrawProposalDialog');
 const { default: FormAnswersPanel } = await import('@/components/FormAnswersPanel');
@@ -237,6 +237,20 @@ describe('«Proponer un animal»', () => {
         expect(text(html)).toContain(E.propose_load_other_desc.replace('{name}', 'Ana'));
         expect(html.indexOf('propose-animal-mora')).toBeLessThan(html.indexOf('propose-load-animal'));
         expect(html).toContain('href="/my-animals/new?proponer=app-gen"');
+    });
+
+    it('«Cambiar animal»: «Cargar otro animal» says the person MOVES there (UX review S3/S4)', () => {
+        const html = renderToStaticMarkup(<ProposalAnimalList animals={[animal('mora', 1)]} anyAnimals busyId={null} onPick={() => {}} personName="Ana" applicationId="app-gen" change />);
+        expect(text(html)).toContain(E.propose_change_load_other_desc.replace('{name}', 'Ana'));
+        expect(text(html)).not.toContain(E.propose_load_other_desc.replace('{name}', 'Ana'));
+    });
+
+    it('«Cambiar animal» sheet copy names the animal they leave (UX review S4)', () => {
+        expect(proposeSheetCopy(true, 'Ana', 'Luna', t)).toEqual({
+            title: '¿A qué animal pasás a Ana?',
+            note: 'Ana sale de los candidatos de Luna y entra en los del animal que elijas. Ana no se entera.',
+        });
+        expect(proposeSheetCopy(false, 'Ana', '', t).title).toBe('¿A qué animal sumás a Ana?');
     });
 });
 

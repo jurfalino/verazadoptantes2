@@ -166,7 +166,12 @@ export function formNoticeUrl(n: { submissionId: string; applicationId: string |
     if (!n.animalsOn || !n.applicationId || (n.animalId && !n.animalInTeam)) return form;
     // A general form is a person to evaluate: it opens alone in «Mis adoptantes» (Jon 2026-11-13).
     if (!n.animalId) return requestHref(n.applicationId);
-    return `/my-animals?view=solicitudes&animal=${encodeURIComponent(n.animalId)}&solicitud=${encodeURIComponent(n.applicationId)}`;
+    return animalApplicationHref(n.animalId, n.applicationId);
+}
+
+/** One application on its animal's candidates («Mis animales» → «Con solicitudes por evaluar», the panel at it). */
+export function animalApplicationHref(animalId: string, applicationId: string): string {
+    return `/my-animals?view=solicitudes&animal=${encodeURIComponent(animalId)}&solicitud=${encodeURIComponent(applicationId)}`;
 }
 
 /** «Cargar un animal» from «Proponer un animal» (Jon 2026-11-13): «Agregar animal», proposing to this application on save. */
@@ -228,4 +233,23 @@ export function rankProposalAnimals<T extends { name: string | null; species: st
     return animals
         .map((a) => ({ ...a, matches: matchesPreference(a, pref, nowMs) }))
         .sort((a, b) => Number(b.matches) - Number(a.matches) || (a.name ?? '￿').localeCompare(b.name ?? '￿'));
+}
+
+/**
+ * «Agregar animal» opened from a request (`?proponer=`): what saving does with the new animal (UX review S3).
+ * `add` — the request is still to evaluate: the person joins the new animal's candidates. `change` — the person
+ * is already among another animal's candidates and that can still be undone («Cambiar animal» → «Cargar otro
+ * animal»): they move to the new one. Null — decided, not undoable, or not this viewer's: the plain page.
+ */
+export function newAnimalProposeMode(a: {
+    adopterName: string;
+    status: ApplicationStatus;
+    proposal?: { canUndo: boolean; animal: { name: string; sex: string | null } | null } | null;
+} | null): { kind: 'add'; name: string } | { kind: 'change'; name: string; from: { name: string; sex: string | null } } | null {
+    if (!a) return null;
+    if (a.status.kind === 'to_evaluate') return { kind: 'add', name: a.adopterName };
+    if (a.status.kind === 'proposed' && a.proposal?.canUndo && a.proposal.animal) {
+        return { kind: 'change', name: a.adopterName, from: { name: a.proposal.animal.name, sex: a.proposal.animal.sex } };
+    }
+    return null;
 }
