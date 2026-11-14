@@ -6,6 +6,8 @@ import { contractErrorKey } from './lib/contractErrors'
 import { CONTRACT_CONTENT } from './i18n/contractContent'
 import { isValidCustomContract, customSectionFor, STANDARD_CONTRACT_VERSION, type CustomContract } from './lib/adoptionDocs'
 import RichDocView from './components/RichDocView'
+import { applyBranding, brandingCssVars, parseBranding, type PublicBranding } from './lib/branding'
+import { httpsOnly } from './lib/brandLinks'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -73,6 +75,11 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
     const [contractPdfData, setContractPdfData] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
     const [customContract, setCustomContract] = useState<CustomContract | null>(null)
+    // Group branding: logo + name in the header and the accent on the sign
+    // button only. The page stays white whatever the group's theme (Jon
+    // 2026-11-13), so the root theme is cleared, never set, here.
+    const [branding, setBranding] = useState<PublicBranding | null>(null)
+    useEffect(() => { applyBranding(null) }, [])
 
     const [form, setForm] = useState({
         name: '',
@@ -104,8 +111,9 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                     return
                 }
                 if (token) {
-                    const data = await res.json() as { animal: AnimalData; adopterName: string; locale?: string | null; prefill: { name: string; lastName: string; email: string; phone: string; address: string; dni: string }; customContract?: unknown }
+                    const data = await res.json() as { animal: AnimalData; adopterName: string; locale?: string | null; prefill: { name: string; lastName: string; email: string; phone: string; address: string; dni: string }; customContract?: unknown; branding?: unknown }
                     setAnimal(data.animal)
+                    setBranding(parseBranding(data.branding))
                     setResolvedAnimalId(data.animal.id)
                     setIntendedAdopterName(data.adopterName)
                     setForm(prev => ({ ...prev, ...data.prefill }))
@@ -117,8 +125,9 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                         setLocale(data.locale)
                     }
                 } else {
-                    const json = await res.json() as AnimalData & { customContract?: unknown }
+                    const json = await res.json() as AnimalData & { customContract?: unknown; branding?: unknown }
                     setAnimal(json)
+                    setBranding(parseBranding(json.branding))
                     setCustomContract(acceptCustomContract(json.customContract))
                 }
             } catch (err) {
@@ -311,9 +320,12 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
     // The intro carries the inline locality <input> + styled date spans, so we
     // split it on its placeholders and render each piece.
     const introParts = c.intro.split(/(\{locality\}|\{day\}|\{month\}|\{year\})/)
+    // Always the light-theme shades: the contract is a white page.
+    const accentVars = branding ? brandingCssVars({ ...branding, theme: 'light' }) as React.CSSProperties : undefined
+    const brandLogo = branding ? httpsOnly(branding.logoUrl) : null
 
     return (
-        <div className="min-h-screen bg-stone-200 py-6 px-4 print:bg-white print:py-0">
+        <div className="min-h-screen bg-stone-200 py-6 px-4 print:bg-white print:py-0" style={accentVars}>
             {/* Intended-adopter banner (token / locked-link path only). Tells the
                 signer the link was prepared specifically for them, so they don't
                 wonder whether they should sign on behalf of someone else. */}
@@ -330,6 +342,13 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                     className="max-w-3xl mx-auto bg-white shadow-xl rounded-lg overflow-hidden print:shadow-none print:rounded-none"
                     style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}
                 >
+                    {branding && (
+                        <div className="pb-contract-head" data-testid="contract-brand-head">
+                            {/* alt="": the group's name is right beside it. */}
+                            {brandLogo && <img src={brandLogo} alt="" width={40} height={40} style={{ width: 40, height: 40 }} />}
+                            <div className="pb-contract-head__name">{branding.orgName}</div>
+                        </div>
+                    )}
                     {/* Contract body */}
                     <div className="px-8 sm:px-12 py-10 text-sm text-stone-800 leading-relaxed space-y-6">
 
@@ -472,7 +491,9 @@ export default function ContractPage({ animalId, token }: { animalId?: string; t
                             <button
                                 type="submit"
                                 disabled={submitting}
-                                className="w-full py-3.5 bg-stone-800 text-white font-bold rounded-xl hover:bg-stone-900 disabled:opacity-50 transition-all shadow-sm text-base active:scale-[0.98] cursor-pointer"
+                                className={branding
+                                    ? 'w-full py-3.5 pb-contract-submit font-bold rounded-xl disabled:opacity-50 transition-all shadow-sm text-base active:scale-[0.98] cursor-pointer'
+                                    : 'w-full py-3.5 bg-stone-800 text-white font-bold rounded-xl hover:bg-stone-900 disabled:opacity-50 transition-all shadow-sm text-base active:scale-[0.98] cursor-pointer'}
                                 style={{ fontFamily: 'system-ui, sans-serif' }}
                             >
                                 {submitting ? `📄 ${t('contract.submitting')}` : `✍️ ${t('contract.submit')}`}

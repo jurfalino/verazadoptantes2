@@ -7,6 +7,7 @@
 
 import { getRequestContext } from '@/lib/requestContext';
 import { logger } from '@/lib/logger';
+import { ORG_IMAGE_KINDS, ORG_IMAGE_MAX_DATA_URL, type OrgImageKind } from '@/domain/groupBranding';
 
 import { R2_PUBLIC_URL } from './r2PublicUrl';
 export { R2_PUBLIC_URL };
@@ -252,6 +253,63 @@ export async function storeLargeImageDataUrl(
         return await uploadDataUrlToR2(dataUrl, adopterId, imageId);
     } catch (e) {
         logger.error('[R2] Large image data URL not stored', e, { adopterId, imageId, size: dataUrl.length });
+        return null;
+    }
+}
+
+const ORG_IMAGE_TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+export type OrgImageCheck = { ok: true; mimeType: string; ext: string } | { ok: false; reason: 'size' | 'type' | 'bytes' };
+
+/**
+ * Whether a group logo/banner data URL may go to the (public) bucket: at most
+ * ORG_IMAGE_MAX_DATA_URL long, declared JPEG/PNG/WEBP, and image magic bytes.
+ * Lets the server action tell a refused file apart from an R2 failure.
+ */
+export function checkOrgImageDataUrl(dataUrl: string): OrgImageCheck {
+    if (typeof dataUrl !== 'string' || dataUrl.length > ORG_IMAGE_MAX_DATA_URL) return { ok: false, reason: 'size' };
+    const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,/i);
+    if (!match) return { ok: false, reason: 'type' };
+    const declared = match[1].toLowerCase();
+    const mimeType = declared === 'image/jpg' ? 'image/jpeg' : declared;
+    let header: Uint8Array;
+    try {
+        const head = atob(dataUrl.slice(match[0].length, match[0].length + 16));
+        header = Uint8Array.from(head, c => c.charCodeAt(0));
+    } catch {
+        // Not valid base64 — reported as a refusal; storeOrgImageDataUrl logs it with its context.
+        return { ok: false, reason: 'bytes' };
+    }
+    // isAllowedImageBytes also accepts GIF magic; GIF is not an allowed type here.
+    const isGif = header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46;
+    if (!isAllowedImageBytes(header) || isGif) return { ok: false, reason: 'bytes' };
+    return { ok: true, mimeType, ext: ORG_IMAGE_TYPES[mimeType] };
+}
+
+/**
+ * A group's logo or banner (already resized in the browser) into the public
+ * images bucket at `orgs/<orgId>/<kind>-<uuid>.<ext>`. Returns the public URL,
+ * or null when refused (see checkOrgImageDataUrl) or R2 failed — both logged.
+ * The previous object is left in place.
+ */
+export async function storeOrgImageDataUrl(dataUrl: string, orgId: string, kind: OrgImageKind): Promise<string | null> {
+    if (!(ORG_IMAGE_KINDS as readonly string[]).includes(kind)) {
+        logger.warn('[R2] Org image refused: unknown kind', { orgId, kind: String(kind).slice(0, 16) });
+        return null;
+    }
+    const check = checkOrgImageDataUrl(dataUrl);
+    if (!check.ok) {
+        logger.warn('[R2] Org image refused', { orgId, kind, reason: check.reason, size: typeof dataUrl === 'string' ? dataUrl.length : null });
+        return null;
+    }
+    const key = `orgs/${orgId}/${kind}-${crypto.randomUUID()}.${check.ext}`;
+    try {
+        const binary = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return await uploadToR2(key, bytes, check.mimeType);
+    } catch (e) {
+        logger.error('[R2] Org image not stored', e, { orgId, kind, size: dataUrl.length });
         return null;
     }
 }

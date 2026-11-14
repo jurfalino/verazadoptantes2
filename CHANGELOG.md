@@ -24,6 +24,22 @@ All notable changes to BuenAdoptante are documented here.
 ### Fixed
 - The «en buenas manos» screen (an animal of another rescuer) no longer links to the public page of an animal its
   rescuer took out of the catalogue.
+## [2.59.17] - 2026-11-14
+
+### Added — group branding (behind `ENABLE_GROUP_BRANDING`, off by default)
+- On «Grupos», each group card has «Personalizar»: logo, optional banner, a colour (8 accents) with a light or dark
+  look, and Instagram / Facebook / website links, with a live preview. Any member can edit; changes are audited.
+- The public form, the group and personal animal catalogues, a single animal's page and the contract page wear the
+  group's look. A catalogue link carries its group, so a form opened from it keeps that look when the person is a member.
+- «Al compartir, usar:» shows each group's logo and what it brings (form, contract, look). Someone in exactly one
+  group who never chose gets that group by default. Solo accounts get no branding.
+- Links are cleaned on save: full Facebook page links kept, Instagram post links and bare hosts refused, an
+  `http://` website saved as `https://`.
+
+### Changed
+- The public form waits for its settings (one short «Cargando…») before showing, so it never flashes the wrong look.
+- Migration 0110: organization branding columns; people who explicitly chose «Los míos» are now stored as such.
+  Before turning the flag on in production, re-run the 0110 backfill (see the design doc's «Release steps»).
 
 ## [2.59.16] - 2026-11-14
 

@@ -512,7 +512,25 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              name, sent time, species / life stage and an asked animal named only when it is the
 //                              caller's team's own and not deleted — the same rows the home card already shows that
 //                              caller. `heal` runs the existing per-team heal (forms missing their application).
-// 195 (Jon 2026-11-14, «Cargar un animal desde un post»): one export in src/app/actions/animalImport.ts,
+// 197 (2026-11-13, group branding — «Personalizar» on a group card): the three exports of
+// src/app/actions/groupBranding.ts, imported by GroupBrandingSection. MEASURED (npm run build): 191 → 194 on its branch; 194 → 197 after merging staging (v2.59.16).
+// What a stranger can do with them — all three read the caller from the session (signed out → generic,
+// logged), refuse with `disabled` while ENABLE_GROUP_BRANDING is off, and refuse with `forbidden`
+// unless `orgId` is a string naming a group the caller is a member of (getMemberOrgIds), before
+// anything else is read or written:
+//   getGroupBranding(orgId)    reads only: that group's theme, accent, links, image URLs and who changed
+//                              them last — what any member sees on the card.
+//   saveGroupBranding(orgId, input)  theme and accent must be one of the fixed values; each link goes
+//                              through normalizeSocialLink (instagram/facebook hosts only, website http(s)
+//                              only and stored as https, javascript:/data: refused, length-capped) — a bad value is refused
+//                              with its field named and nothing is stored. Writes only that group's row; audited.
+//   setGroupImage(orgId, kind, dataUrl|null)  kind must be logo|banner; a data URL must be ≤ 750 000 chars,
+//                              declared JPEG/PNG/WEBP AND carry matching magic bytes (checkOrgImageDataUrl) —
+//                              SVG, GIF and HTML are refused. Stored at orgs/<orgId>/<kind>-<uuid> in the
+//                              public bucket (membership checked first, so no stranger picks the key); null
+//                              clears the URL. Audited.
+// 198 (Jon 2026-11-14, «Cargar un animal desde un post»): one export in src/app/actions/animalImport.ts (195 on its
+// branch; 197 → 198 after merging staging v2.59.17),
 // imported by the «Agregar animal» page. What a stranger can do with it:
 //   findAnimalImportMatches({ sourceUrls, animals })  read-only; session required (signed out → getUser throws).
 //                              Input is zod-bounded (≤3 links of ≤2000 chars, ≤12 {name ≤80, species ≤40}). Answers
@@ -528,7 +546,7 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              looking for a home with the same name and species (myAnimalsScope.availableWhere), with
 //                              the same fields as (a).
 //                              Probing for another rescuer's animal needs its exact post link, which is public.
-const EXPECTED_ACTIONS = 195;
+const EXPECTED_ACTIONS = 198;
 
 let manifest;
 try {

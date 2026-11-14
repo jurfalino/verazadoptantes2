@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import AnimalCard, { type AnimalSummary } from './components/AnimalCard'
 import ShowcaseHeader from './components/ShowcaseHeader'
+import { BrandHeader } from './components/BrandHeader'
 import EmptyShowcase from './components/EmptyShowcase'
 import { AlertIcon } from './components/Icons'
 import { useT } from './i18n/LocaleContext'
+import { applyBranding, parseBranding, type PublicBranding } from './lib/branding'
+import { followInstagramUrl } from './lib/brandLinks'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -17,6 +20,8 @@ interface ApiResponse {
     org?: { name: string; slug: string }
     rescuer?: { displayName: string; orgName?: string }
     instagramUrl?: string
+    /** Group branding: absent when the flag is off, null when there is nothing to show. */
+    branding?: unknown
 }
 
 /**
@@ -36,6 +41,10 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [instagramUrl, setInstagramUrl] = useState<string>('')
+    const [branding, setBranding] = useState<PublicBranding | null>(null)
+
+    // Leaving the page never leaves its theme behind.
+    useEffect(() => () => applyBranding(null), [])
 
     useEffect(() => {
         async function load() {
@@ -53,6 +62,10 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
                     return
                 }
                 const body = await res.json() as ApiResponse
+                // `/all` mixes every rescuer: never branded.
+                const b = scope.kind === 'all' ? null : parseBranding(body.branding)
+                applyBranding(b)
+                setBranding(b)
                 setData(body)
                 // Fetch global config for INSTAGRAM_URL (needed for empty state).
                 // Best-effort: if it fails, the empty state just skips the CTA.
@@ -127,15 +140,31 @@ export default function Showcase({ scope }: { scope: ShowcaseScope }) {
         scope.kind === 'org' ? t('showcase.scope_org') :
         t('showcase.scope_user')
 
+    const count = data.animals.length
+    const countLabel =
+        count === 0 ? t('showcase.count_none') :
+        count === 1 ? t('showcase.count_one', { count }) :
+        t('showcase.count_other', { count })
+    // Cards carry the group to the animal page (a hint the server re-checks).
+    // Only when the response speaks branding at all: flag off ⇒ today's links.
+    const groupHint = scope.kind === 'org' && 'branding' in data ? scope.slug : null
+    // The branded header names the group; on a personal catalogue the rescuer
+    // keeps their name in the subtitle.
+    const brandSubtitle = scope.kind === 'user'
+        ? t('showcase.subtitle_user_branded', { name: data.rescuer?.displayName || t('showcase.rescuer_fallback') })
+        : headerSubtitle
+
     return (
         <main className="ps-showcase-page">
-            <ShowcaseHeader title={headerTitle} subtitle={headerSubtitle} count={data.animals.length} />
+            {branding
+                ? <BrandHeader b={branding} subtitle={brandSubtitle} count={countLabel} />
+                : <ShowcaseHeader title={headerTitle} subtitle={headerSubtitle} count={count} />}
             {data.animals.length === 0 ? (
-                <EmptyShowcase instagramUrl={instagramUrl} scopeLabel={scopeLabel} />
+                <EmptyShowcase instagramUrl={followInstagramUrl(branding, instagramUrl)} scopeLabel={scopeLabel} />
             ) : (
                 <div className="ps-showcase-grid">
                     {data.animals.map((a) => (
-                        <AnimalCard key={a.id} animal={a} />
+                        <AnimalCard key={a.id} animal={a} groupHint={groupHint} />
                     ))}
                 </div>
             )}

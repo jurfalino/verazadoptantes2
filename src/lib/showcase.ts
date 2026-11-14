@@ -19,6 +19,9 @@
 
 import { adoptions, adopterImages, users, organizations, orgMembers, userProfiles } from '@/db/schema';
 import { logger } from '@/lib/logger';
+import { getFeatureFlag } from '@/config/features';
+import { getEffectiveDocsSource } from '@/lib/adoptionDocsRepo';
+import { pickBrandingOrgId } from '@/domain/groupBranding';
 import { eq, and, or, isNull, desc, sql } from 'drizzle-orm';
 
 export interface PublicAnimal {
@@ -84,13 +87,17 @@ export function pickPublicAnimal(
 
 /** Build the public rescuer-display block for an animal's `addedBy` email.
  *  Resolves: display name from `user.name` (falls back to email local-part),
- *  first org the rescuer belongs to (name + slug), and the rescuer's own
+ *  the rescuer's group (name + slug) — with ENABLE_GROUP_BRANDING on, their
+ *  effective «Al compartir, usar:» group if they belong to it, else the first
+ *  org they belong to — and the rescuer's own
  *  handle. NEVER includes the email itself.
  */
 export async function buildPublicRescuer(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db: any,
     addedBy: string | null,
+    /** ENABLE_GROUP_BRANDING already read once for this request (list routes: one read, not one per poster). */
+    opts: { brandingOn?: boolean } = {},
 ): Promise<PublicRescuer> {
     if (!addedBy) return { displayName: 'Comunidad' };
 
@@ -123,9 +130,32 @@ export async function buildPublicRescuer(
         displayName = at > 0 ? addedBy.slice(0, at) : addedBy;
     }
 
-    // First org the rescuer belongs to (alphabetical by name for deterministic display)
     let orgName: string | undefined;
     let orgSlug: string | undefined;
+
+    // Group branding on: the poster's effective «Al compartir, usar:» group,
+    // when they still belong to it — the same group their pages are branded
+    // with. Anything else (flag off, «Los míos», a failure) falls through to
+    // the first-membership lookup below, unchanged.
+    try {
+        if (opts.brandingOn ?? await getFeatureFlag('ENABLE_GROUP_BRANDING')) {
+            const { source, memberOrgIds } = await getEffectiveDocsSource(db, addedBy, { brandingOn: true });
+            const effectiveOrgId = pickBrandingOrgId({ hintOrgId: null, memberOrgIds, source });
+            if (effectiveOrgId) {
+                const org = await db.select({ name: organizations.name, slug: organizations.slug })
+                    .from(organizations)
+                    .where(eq(organizations.id, effectiveOrgId))
+                    .get();
+                if (org) { orgName = org.name; orgSlug = org.slug ?? undefined; }
+            }
+        }
+    } catch (e) {
+        // No addedBy/email in the log; the first-membership lookup still runs.
+        logger.warn('buildPublicRescuer: effective group lookup fallback', { error: e instanceof Error ? e.message : String(e) });
+    }
+    if (orgName !== undefined) return { displayName, orgName, orgSlug, userHandle, userId };
+
+    // First org the rescuer belongs to (alphabetical by name for deterministic display)
     try {
         const membership = await db.select({ orgId: orgMembers.orgId })
             .from(orgMembers)

@@ -22,7 +22,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { auditLog, organizations, users } from '@/db/schema';
 import {
-    getMemberOrgIds, getUserDocsSource, getSettingsRow, getContractVersion,
+    getMemberOrgIds, getEffectiveDocsSource, getSettingsRow, getContractVersion,
     saveContract, saveHiddenStepsIfUnchanged, listOwnerVersions, sha256Hex,
 } from '@/lib/adoptionDocsRepo';
 import {
@@ -35,6 +35,8 @@ import {
     mergeSections, mergeHidden, sectionAuthor, stepAuthor, type StepState, type HistoryEntry,
 } from '@/domain/adoptionDocsCollab';
 import { ADOPTION_DOCS_FORM_SAVED, ADOPTION_DOCS_CONTRACT_SAVED } from '@/domain/adoptionDocsActivity';
+import { getOrgBranding } from '@/lib/groupBrandingRepo';
+import { hasBranding } from '@/domain/groupBranding';
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -280,7 +282,7 @@ async function stepAuthors(
  */
 export async function getAdoptionDocsOverview(): Promise<{
     success: boolean;
-    data?: { source: string; self: DocsSummary; orgs: Array<{ id: string; name: string } & DocsSummary> };
+    data?: { source: string; self: DocsSummary; orgs: Array<{ id: string; name: string; branded: boolean; logoUrl: string | null } & DocsSummary> };
     error?: string;
     errorId?: string;
 }> {
@@ -293,33 +295,37 @@ export async function getAdoptionDocsOverview(): Promise<{
         if (!db) throw new Error('Database not available');
 
         const email = actorEmail;
-        const [rawSource, selfRow, memberOrgIds] = await Promise.all([
-            getUserDocsSource(db, email),
+        const [{ source: effectiveSource, memberOrgIds }, selfRow, brandingOn] = await Promise.all([
+            // Same effective source (and case-tolerant membership lookup) the
+            // public form and branding use, so the card and the public pages
+            // always agree — including the sole-group default.
+            getEffectiveDocsSource(db, email),
             getSettingsRow(db, { ownerType: 'user', ownerId: normalizeEmail(email) }),
-            // Same case-tolerant membership lookup the public resolution uses,
-            // so the card and the public form always agree on the groups.
-            getMemberOrgIds(db, email),
+            getFeatureFlag('ENABLE_GROUP_BRANDING'),
         ]);
 
-        // Names by single-row lookups (no inArray on D1). A membership whose
-        // org row is gone is dropped, as before; a failed lookup keeps the
-        // (verified) membership with an empty name rather than hiding it.
-        const named = await Promise.all(memberOrgIds.map(async id => {
+        // Name + branding by single-row lookups (no inArray on D1). A
+        // membership whose org row is gone is dropped, as before; a failed
+        // lookup keeps the (verified) membership with an empty name and no
+        // branding rather than hiding it.
+        type OrgItem = { id: string; name: string; branded: boolean; logoUrl: string | null };
+        const named = await Promise.all(memberOrgIds.map(async (id): Promise<OrgItem | null> => {
             try {
-                const name = await findOrgName(db, id);
-                return name === null ? null : { id, name };
+                const b = await getOrgBranding(db, id);
+                if (!b) return null;
+                return { id, name: b.orgName, branded: brandingOn && hasBranding(b), logoUrl: brandingOn ? b.logoUrl : null };
             } catch (e) {
                 logger.warn('adoptionDocs.getOverview: org name lookup failed', {
                     actorEmail: email, orgId: id, error: e instanceof Error ? e.message : String(e),
                 });
-                return { id, name: '' };
+                return { id, name: '', branded: false, logoUrl: null };
             }
         }));
-        const orgs = named.filter((o): o is { id: string; name: string } => o !== null);
+        const orgs = named.filter((o): o is OrgItem => o !== null);
 
-        // Effective source — same fallback resolveDocsForRescuer applies, so
-        // the settings card never shows an org the caller has since left.
-        const effectiveOwner = resolveDocsOwner(actorEmail, rawSource, memberOrgIds);
+        // An effective org the caller has since left falls back to self
+        // (resolveDocsOwner), so the card never shows a group they're not in.
+        const effectiveOwner = resolveDocsOwner(actorEmail, effectiveSource, memberOrgIds);
         const source = effectiveOwner.ownerType === 'org' ? `org:${effectiveOwner.ownerId}` : 'self';
 
         const [self, orgSummaries] = await Promise.all([
@@ -327,7 +333,7 @@ export async function getAdoptionDocsOverview(): Promise<{
             Promise.all(orgs.map(async org => {
                 const row = await getSettingsRow(db, { ownerType: 'org', ownerId: org.id });
                 const summary = await summarizeSettingsRow(db, row);
-                return { id: org.id, name: org.name, ...summary };
+                return { ...org, ...summary };
             })),
         ]);
 
@@ -371,7 +377,7 @@ export async function setAdoptionDocsSource(source: string): Promise<{ success: 
             .bind(actorEmail).first<{ id: string }>();
         if (!user) throw new Error('User not found');
 
-        const value = serializeDocsSource(parsed); // null for self, 'org:<id>' for org
+        const value = serializeDocsSource(parsed); // 'self' for self, 'org:<id>' for org
         await env.DB.prepare(
             `INSERT INTO user_profiles (user_id, adoption_docs_source) VALUES (?, ?)
              ON CONFLICT(user_id) DO UPDATE SET adoption_docs_source = excluded.adoption_docs_source`

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     FORM_STEP_IDS, LOCKED_FORM_STEPS, TOGGLEABLE_FORM_STEPS, FORM_STEP_GROUPS,
-    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource,
+    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
@@ -48,7 +48,8 @@ describe('docs source', () => {
         expect(parseDocsSource('org:abc')).toEqual({ type: 'org', orgId: 'abc' });
         expect(parseDocsSource('org:')).toEqual({ type: 'self' });
         expect(parseDocsSource('garbage')).toEqual({ type: 'self' });
-        expect(serializeDocsSource({ type: 'self' })).toBeNull();
+        expect(serializeDocsSource({ type: 'self' })).toBe('self'); // explicit «Los míos» ≠ never chosen (null)
+        expect(parseDocsSource(serializeDocsSource({ type: 'self' }))).toEqual({ type: 'self' });
         expect(serializeDocsSource({ type: 'org', orgId: 'abc' })).toBe('org:abc');
     });
     it('resolves to the org only while the user is a member', () => {
@@ -325,5 +326,19 @@ describe('open vs closed per question (release 3)', () => {
     it('a teammate switching a question to free text is described as such', () => {
         expect(settingChange('way:rental:open', true)).toBe('openWording');
         expect(settingChange('way:rental:open', false)).toBe('closedWording');
+    });
+});
+
+describe('effectiveDocsSource', () => {
+    it('never-chosen + exactly one group + default on → that group', () => {
+        expect(effectiveDocsSource(null, ['A'], true)).toEqual({ type: 'org', orgId: 'A' });
+        expect(effectiveDocsSource(undefined, ['A'], true)).toEqual({ type: 'org', orgId: 'A' });
+        expect(effectiveDocsSource(null, ['A'], false)).toEqual({ type: 'self' });
+        expect(effectiveDocsSource(null, ['A', 'B'], true)).toEqual({ type: 'self' });
+        expect(effectiveDocsSource(null, [], true)).toEqual({ type: 'self' });
+    });
+    it('an explicit choice always wins', () => {
+        expect(effectiveDocsSource('self', ['A'], true)).toEqual({ type: 'self' });
+        expect(effectiveDocsSource('org:B', ['A', 'B'], true)).toEqual({ type: 'org', orgId: 'B' });
     });
 });

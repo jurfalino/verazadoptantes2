@@ -19,7 +19,7 @@
   --ps-bg-subtle: #1e293b;
   --ps-card: #1e293b;
   --ps-card-hover: #334155;
-  --ps-card-selected: rgba(99, 102, 241, 0.12);
+  --ps-card-selected: rgba(var(--ps-accent-tint-rgb), 0.12);
 
   /* Text */
   --ps-text: #f1f5f9;
@@ -32,6 +32,13 @@
   --ps-accent-strong: #a5b4fc;
   --ps-accent-glow-rgb: 129, 140, 248;
   --ps-accent-hover: #6366f1;
+  /* Indigo-500 tint used by washes/badges (differs from the glow rgb on purpose). */
+  --ps-accent-tint-rgb: 99, 102, 241;
+  /* Text/check-mark colour on an accent-filled surface. */
+  --ps-on-accent: #0f172a;
+  /* Slate-900 base for photo fades and the sticky CTA bar. */
+  --ps-overlay-rgb: 15, 23, 42;
+  --ps-sticky-bg: rgba(var(--ps-overlay-rgb), 0.92);
 
   /* Glow */
   --ps-glow: 0 0 20px rgba(var(--ps-accent-glow-rgb), 0.15),
@@ -541,7 +548,7 @@ body {
 
 .ps-btn--primary {
   background: var(--ps-accent);
-  color: #0f172a;
+  color: var(--ps-on-accent);
   box-shadow: 0 2px 8px rgba(var(--ps-accent-glow-rgb), 0.3);
 }
 
@@ -813,7 +820,7 @@ body {
 .ps-showcase-card:hover {
   transform: translateY(-3px);
   border-color: var(--ps-accent);
-  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.18);
+  box-shadow: 0 12px 32px rgba(var(--ps-accent-tint-rgb), 0.18);
 }
 
 .ps-showcase-card:hover .ps-showcase-card__photo img {
@@ -853,7 +860,7 @@ body {
 
 .ps-showcase-card__photo {
   aspect-ratio: 4 / 3;
-  background: rgba(99, 102, 241, 0.06);
+  background: rgba(var(--ps-accent-tint-rgb), 0.06);
   overflow: hidden;
   position: relative;
 }
@@ -870,7 +877,7 @@ body {
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(15, 23, 42, 0.35) 100%
+    rgba(var(--ps-overlay-rgb), 0.35) 100%
   );
   pointer-events: none;
 }
@@ -983,7 +990,7 @@ body {
 
 .ps-animal-hero {
   aspect-ratio: 3 / 2;
-  background: rgba(99, 102, 241, 0.06);
+  background: rgba(var(--ps-accent-tint-rgb), 0.06);
   border-radius: 16px;
   overflow: hidden;
   margin-bottom: var(--ps-2);
@@ -1058,9 +1065,9 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
-  background: rgba(99, 102, 241, 0.12);
+  background: rgba(var(--ps-accent-tint-rgb), 0.12);
   color: var(--ps-accent);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(var(--ps-accent-tint-rgb), 0.25);
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
@@ -1163,7 +1170,7 @@ body {
   right: 0;
   z-index: 40;
   padding: var(--ps-2);
-  background: rgba(15, 23, 42, 0.92);
+  background: var(--ps-sticky-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--ps-border);
@@ -1324,9 +1331,9 @@ body {
   aspect-ratio: 4 / 3;
   background: linear-gradient(
     90deg,
-    rgba(99, 102, 241, 0.04) 0%,
-    rgba(99, 102, 241, 0.10) 50%,
-    rgba(99, 102, 241, 0.04) 100%
+    rgba(var(--ps-accent-tint-rgb), 0.04) 0%,
+    rgba(var(--ps-accent-tint-rgb), 0.10) 50%,
+    rgba(var(--ps-accent-tint-rgb), 0.04) 100%
   );
 }
 
@@ -1586,8 +1593,38 @@ body {
 /* The animal a form link was opened for (Jon 2026-11-13) — top of the first step. */
 .ps-form-animal { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: var(--ps-3); background: var(--ps-card); border: 1px solid var(--ps-border); border-radius: 12px; text-align: left; }
 .ps-form-animal__photo { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
-.ps-form-animal__photo--empty { display: flex; align-items: center; justify-content: center; background: rgba(99, 102, 241, .06); color: var(--ps-accent); opacity: .7; }
+.ps-form-animal__photo--empty { display: flex; align-items: center; justify-content: center; background: rgba(var(--ps-accent-tint-rgb), .06); color: var(--ps-accent); opacity: .7; }
 .ps-form-animal__text { min-width: 0; }
 .ps-form-animal__label { font-size: 12px; font-weight: 600; color: var(--ps-text-secondary); }
 .ps-form-animal__name { font-size: 17px; font-weight: 700; color: var(--ps-text); overflow-wrap: anywhere; }
 .ps-form-animal__name-skeleton { width: 112px; height: 20px; margin-top: 4px; border-radius: 6px; background: var(--ps-card-hover); }
+
+
+/* ── Group branding: light theme (set by applyBranding via data-ps-theme) ──
+   Without the attribute nothing here applies, so today's look is untouched. */
+:root[data-ps-theme="light"] {
+  --ps-bg: #f8fafc;
+  --ps-bg-subtle: #f1f5f9;
+  --ps-card: #ffffff;
+  --ps-card-hover: #f1f5f9;
+  --ps-card-selected: rgba(var(--ps-accent-glow-rgb), 0.08);
+  --ps-text: #0f172a;
+  --ps-text-secondary: #475569;
+  --ps-text-muted: #64748b;
+  --ps-success: #059669;
+  --ps-warning: #b45309;
+  --ps-error: #e11d48;
+  --ps-info: #0284c7;
+  --ps-border: rgba(15, 23, 42, 0.12);
+  --ps-border-active: rgba(var(--ps-accent-glow-rgb), 0.55);
+  --ps-glow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --ps-glow-strong: 0 0 0 3px rgba(var(--ps-accent-glow-rgb), 0.18);
+  --ps-sticky-bg: rgba(248, 250, 252, 0.92);
+  color-scheme: light;
+}
+:root[data-ps-theme="light"] .ps-nav { background: rgba(248, 250, 252, 0.92); }
+:root[data-ps-theme="light"] .ps-showcase-card,
+:root[data-ps-theme="light"] .ps-option { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06); }
+:root[data-ps-theme="light"] .ps-showcase-card__photo-fade { opacity: 0; }
+/* The dark theme's white wash is invisible on a light page. */
+:root[data-ps-theme="light"] .ps-btn--ghost:hover:not(:disabled) { background: rgba(15, 23, 42, 0.05); }

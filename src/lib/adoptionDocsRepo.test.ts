@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { sha256Hex, recordSignature } from './adoptionDocsRepo';
+import { sha256Hex, recordSignature, sharedEffectiveDocsSource } from './adoptionDocsRepo';
 import { logger } from './logger';
 
 describe('sha256Hex', () => {
@@ -106,5 +106,20 @@ describe('recordSignature', () => {
         expect(inserts).toHaveLength(1);
         expect(inserts[0]).toMatchObject({ contractVersionId: 'v5', contentHash: null });
         expect(JSON.stringify(warn.mock.calls)).not.toMatch(/@/);
+    });
+});
+
+describe('sharedEffectiveDocsSource', () => {
+    // Final review M1: the public form route resolves docs and branding from ONE lookup.
+    it('is lazy and runs the lookup once however many callers ask; a failure reaches each caller', async () => {
+        let selects = 0;
+        const db = { select: () => { selects++; throw new Error('D1 down'); } } as unknown as Parameters<typeof sharedEffectiveDocsSource>[0];
+        const effective = sharedEffectiveDocsSource(db, 'r@example.com', { brandingOn: true });
+        expect(selects).toBe(0);
+        await expect(effective()).rejects.toThrow('D1 down');
+        const afterFirst = selects;
+        expect(afterFirst).toBeGreaterThan(0);
+        await expect(effective()).rejects.toThrow('D1 down');
+        expect(selects).toBe(afterFirst);
     });
 });

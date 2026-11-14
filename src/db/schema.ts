@@ -1104,6 +1104,17 @@ export const organizations = sqliteTable("organizations", {
     // rows; backfilled in migration 0041. Set by createOrganization / rename
     // via generateUniqueSlug().
     slug: text("slug").unique(),
+    // Group branding (migration 0110; spec 2026-11-13-group-branding-design.md).
+    // All nullable; NULL theme/accent = the default look (dark / violeta).
+    logoUrl: text("logo_url"),
+    bannerUrl: text("banner_url"),
+    brandTheme: text("brand_theme"),
+    brandAccent: text("brand_accent"),
+    instagramUrl: text("instagram_url"),
+    facebookUrl: text("facebook_url"),
+    websiteUrl: text("website_url"),
+    brandingUpdatedAt: integer("branding_updated_at", { mode: "timestamp" }),
+    brandingUpdatedBy: text("branding_updated_by"), // email
 });
 
 export const orgMembers = sqliteTable("org_members", {

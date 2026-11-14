@@ -54,3 +54,30 @@ export function AlertIcon({ size = 56, className }: IconProps) {
         </svg>
     )
 }
+
+/** Instagram — group social link (BrandLinks) */
+export function InstagramIcon({ size = 18, className }: IconProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+            <rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+        </svg>
+    )
+}
+
+/** Facebook — group social link (BrandLinks) */
+export function FacebookIcon({ size = 18, className }: IconProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+            <path d="M15 3h-2.5A4.5 4.5 0 0 0 8 7.5V10H5.5v4H8v7h4v-7h3l1-4h-4V7.5c0-.6.4-1 1-1h2V3z" />
+        </svg>
+    )
+}
+
+/** Globe — group website link (BrandLinks) */
+export function WebIcon({ size = 18, className }: IconProps) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+            <circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+        </svg>
+    )
+}

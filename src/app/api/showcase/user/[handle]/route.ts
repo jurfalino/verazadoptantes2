@@ -7,6 +7,8 @@ import { eq, and } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, availableAnimalsOrder, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal } from '@/lib/showcase';
 import { showableCount } from '@/domain/animalAccess';
+import { getFeatureFlag } from '@/config/features';
+import { resolveBrandingForRescuer } from '@/lib/groupBrandingRepo';
 
 /** GET /api/showcase/user/[handle] — public list of a single rescuer's available animals.
  *  Handle → user_profiles.user_id → user.email → adoptions.addedBy.
@@ -59,9 +61,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ hand
             .filter(({ images }) => showableCount(images) > 0)
             .map(({ row, images }) => pickPublicAnimal(row, images, rescuer));
 
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+        const branding = brandingOn ? await resolveBrandingForRescuer(db, user.email) : null;
+
         return withCors(NextResponse.json({
             rescuer,
             animals,
+            ...(brandingOn ? { branding } : {}),
         }, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=600' } }), origin);
     } catch (e) {
         const errorId = logger.error('GET /api/showcase/user/[handle] failed', e, { handle });

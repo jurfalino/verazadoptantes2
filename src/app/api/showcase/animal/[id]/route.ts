@@ -8,6 +8,8 @@ import { getDb } from '@/lib/db';
 import { availableAnimalsBase, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal } from '@/lib/showcase';
 import { getPublicConfig } from '@/lib/publicConfig';
 import { isPubliclyListed, showableCount } from '@/domain/animalAccess';
+import { getFeatureFlag } from '@/config/features';
+import { resolveBrandingForRescuer } from '@/lib/groupBrandingRepo';
 
 /** GET /api/showcase/animal/[id] — single-animal detail page data.
  *  Used by the Vite /animal/[id] route: hero, gallery, badges, Adoptar CTA.
@@ -60,9 +62,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             instagramUrl = config.INSTAGRAM_URL || '';
         } catch { /* swallow */ }
 
+        // `?g=` is a hint only; the repo checks the owner is a member of that group.
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+        const branding = brandingOn
+            ? await resolveBrandingForRescuer(db, animalRow.addedBy, new URL(request.url).searchParams.get('g'))
+            : null;
+
         return withCors(NextResponse.json({
             animal,
             instagramUrl: instagramUrl || undefined,
+            ...(brandingOn ? { branding } : {}),
         }, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=600' } }), origin);
     } catch (e) {
         const errorId = logger.error('GET /api/showcase/animal/[id] failed', e, { id });

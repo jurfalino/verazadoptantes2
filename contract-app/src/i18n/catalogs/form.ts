@@ -295,6 +295,7 @@ export const form: CatalogSlice = {
         // ── Completion / invalid-link screens ──
         'form.complete_title': '¡Listo!',
         'form.complete_desc': 'Tu solicitud fue enviada exitosamente. El rescatista recibirá tu información y se pondrá en contacto pronto.',
+        'form.follow_title': 'Mientras tanto, seguí a {name}',
         'form.invalid_link_title': 'Enlace inválido',
         'form.invalid_link_desc': 'Este formulario necesita un enlace válido. Pedí uno nuevo al rescatista.',
     },
@@ -585,6 +586,7 @@ export const form: CatalogSlice = {
         // ── Completion / invalid-link screens ──
         'form.complete_title': 'Done!',
         'form.complete_desc': 'Your request was sent successfully. The rescuer will receive your information and get in touch soon.',
+        'form.follow_title': 'In the meantime, follow {name}',
         'form.invalid_link_title': 'Invalid link',
         'form.invalid_link_desc': 'This form needs a valid link. Ask the rescuer for a new one.',
     },
@@ -875,6 +877,7 @@ export const form: CatalogSlice = {
         // ── Completion / invalid-link screens ──
         'form.complete_title': 'Pronto!',
         'form.complete_desc': 'Sua solicitação foi enviada com sucesso. O resgatista receberá suas informações e entrará em contato em breve.',
+        'form.follow_title': 'Enquanto isso, siga {name}',
         'form.invalid_link_title': 'Link inválido',
         'form.invalid_link_desc': 'Este formulário precisa de um link válido. Peça um novo ao resgatista.',
     },

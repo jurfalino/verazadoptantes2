@@ -1,6 +1,7 @@
 import { PawIcon } from './Icons'
 import { firstShowable, isVideo, posterOf } from '../lib/media'
 import { useT, localizedHref } from '../i18n/LocaleContext'
+import { withGroupHint } from '../lib/brandLinks'
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string
 
@@ -43,7 +44,7 @@ function sexLabel(s: string | null | undefined, t: TFn): string {
     return s
 }
 
-export default function AnimalCard({ animal }: { animal: AnimalSummary }) {
+export default function AnimalCard({ animal, groupHint = null }: { animal: AnimalSummary; groupHint?: string | null }) {
     const { t, locale } = useT()
     // Lead with the first item that can be DRAWN: a photo, or a video's
     // poster. A video without one cannot represent the animal in a grid.
@@ -54,7 +55,7 @@ export default function AnimalCard({ animal }: { animal: AnimalSummary }) {
     const subtitle = [speciesLabel(animal.species, t), sexLabel(animal.sex, t)].filter(Boolean).join(' · ')
     const rescuerLabel = animal.rescuer?.orgName || animal.rescuer?.displayName
     return (
-        <a className="ps-showcase-card" href={localizedHref(`/animal/${animal.id}`, locale)}>
+        <a className="ps-showcase-card" href={withGroupHint(localizedHref(`/animal/${animal.id}`, locale), groupHint)}>
             <div className="ps-showcase-card__photo">
                 {hero ? (
                     <>

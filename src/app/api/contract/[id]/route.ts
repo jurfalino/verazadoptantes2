@@ -64,6 +64,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
         const resolved = await resolveDocsForRescuer(db, animal.addedBy);
 
+        // Group branding of the animal's owner (flag off: key omitted).
+        let brandingOn = false;
+        let branding: Awaited<ReturnType<typeof import('@/lib/groupBrandingRepo').resolveBrandingForRescuer>> = null;
+        try {
+            const { getFeatureFlag } = await import('@/config/features');
+            const { resolveBrandingForRescuer } = await import('@/lib/groupBrandingRepo');
+            brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+            branding = brandingOn ? await resolveBrandingForRescuer(db, animal.addedBy) : null;
+        } catch (e) {
+            logger.warn('Contract data: branding skipped', { animalId: id, error: e instanceof Error ? e.message : String(e) });
+        }
+
         // Return only safe public fields (no PII)
         return withCors(NextResponse.json({
             id: animal.id,
@@ -79,6 +91,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             rescuerName: rescuerDisplay,
             images,
             customContract: resolved?.contract ?? null,
+            ...(brandingOn ? { branding } : {}),
         }), origin);
     } catch (error) {
         logger.error('Contract data fetch failed', error);

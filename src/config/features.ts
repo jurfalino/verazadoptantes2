@@ -119,6 +119,11 @@ export const FEATURE_FLAGS = {
     // even when customizations exist. Client-visible (settings card, editor,
     // /organizations button) → also in PUBLIC_FLAG_KEYS. Default off.
     ENABLE_CUSTOM_ADOPTION_DOCS: false,
+    // Group branding (2026-11): logo, cover, colours and socials per group on
+    // the public form + catalogue. Off = every public response and screen is
+    // unchanged. Client-visible (/organizations, /settings) → also in
+    // PUBLIC_FLAG_KEYS. Default off.
+    ENABLE_GROUP_BRANDING: false,
     // "Importar planilla" link on /my-adopters → /import/sheet. Gates only the
     // entry point; the page itself stays reachable by URL. Client-visible →
     // also in PUBLIC_FLAG_KEYS. Default off.
@@ -254,6 +259,7 @@ export async function getAllFeatureFlags(): Promise<Record<FeatureFlag, boolean>
         ENABLE_PWA_INSTALL_PROMPT: false,
         ENABLE_GUEST_NAME_MASK: false,
         ENABLE_CUSTOM_ADOPTION_DOCS: false,
+        ENABLE_GROUP_BRANDING: false,
         ENABLE_SHEET_IMPORT: false,
         ENABLE_ORIGIN_LABELS: false,
         ENABLE_INTERVIEW_GUIDE: false,

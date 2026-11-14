@@ -122,6 +122,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
         const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
         const resolved = await resolveDocsForRescuer(db, animal.addedBy);
 
+        // Group branding of the animal's owner (flag off: key omitted).
+        let brandingOn = false;
+        let branding: Awaited<ReturnType<typeof import('@/lib/groupBrandingRepo').resolveBrandingForRescuer>> = null;
+        try {
+            const { getFeatureFlag } = await import('@/config/features');
+            const { resolveBrandingForRescuer } = await import('@/lib/groupBrandingRepo');
+            brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+            branding = brandingOn ? await resolveBrandingForRescuer(db, animal.addedBy) : null;
+        } catch (e) {
+            logger.warn('Contract by-token: branding skipped', { token: tokenRef(token), animalId: invite.animalId, error: e instanceof Error ? e.message : String(e) });
+        }
+
         // Full access: the profile's contact as before. Otherwise only what the
         // inviting rescuer sees in full; a masked field stays blank to type.
         const prefill: ContractPrefill = buildContractPrefill(adopter, access);
@@ -150,6 +162,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
             // the backstop when the URL carries no ?lang=. Null for legacy rows.
             locale: invite.locale ?? null,
             customContract: resolved?.contract ?? null,
+            ...(brandingOn ? { branding } : {}),
         }), origin);
     } catch (e) {
         const errorId = logger.error('Contract by-token fetch failed', e, { token: tokenRef(token) });

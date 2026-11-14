@@ -17,7 +17,7 @@ import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
 import {
-    normalizeEmail, resolveDocsOwner, parseDocsSource, parseStoredHiddenSteps, isContractVersionOwnedBy,
+    normalizeEmail, resolveDocsOwner, parseDocsSource, effectiveDocsSource, parseStoredHiddenSteps, isContractVersionOwnedBy,
     contractSectionsSchema, normalizeSections, isStandardSections, canonicalSectionsJson,
     planContractSave, UNSIGNED_VERSION_TTL_SECONDS,
     type DocsSource, type DocsOwner, type ContractSections,
@@ -48,14 +48,50 @@ export async function getMemberOrgIds(db: Db, email: string): Promise<string[]> 
     return rows.map((r: { orgId: string }) => r.orgId);
 }
 
-export async function getUserDocsSource(db: Db, email: string): Promise<DocsSource> {
+/** The stored «Al compartir, usar:» value as-is: NULL (never chosen) is not the same as 'self'. */
+export async function getUserDocsSourceRaw(db: Db, email: string): Promise<string | null> {
     const normalized = normalizeEmail(email);
     const row = await db.select({ adoptionDocsSource: userProfiles.adoptionDocsSource })
         .from(userProfiles)
         .innerJoin(users, eq(users.id, userProfiles.userId))
         .where(sql`lower(${users.email}) = ${normalized}`)
         .get();
-    return parseDocsSource(row?.adoptionDocsSource ?? null);
+    return row?.adoptionDocsSource ?? null;
+}
+
+export async function getUserDocsSource(db: Db, email: string): Promise<DocsSource> {
+    return parseDocsSource(await getUserDocsSourceRaw(db, email));
+}
+
+/**
+ * The share source actually in effect for `email` (its form, contract and —
+ * with group branding — its look), plus the groups it belongs to. A user who
+ * never chose and is in exactly one group gets that group, but only while
+ * ENABLE_GROUP_BRANDING is on. The source may still name a group the user has
+ * left: callers apply resolveDocsOwner / pickBrandingOrgId, which fall back.
+ * Throws on a DB error (callers log with their own context).
+ */
+export type EffectiveDocsSource = { source: DocsSource; memberOrgIds: string[] };
+
+/** `brandingOn`: ENABLE_GROUP_BRANDING already read by the caller for this request (skips a second read). */
+export async function getEffectiveDocsSource(db: Db, email: string, opts: { brandingOn?: boolean } = {}): Promise<EffectiveDocsSource> {
+    const [raw, memberOrgIds, soleGroupDefault] = await Promise.all([
+        getUserDocsSourceRaw(db, email),
+        getMemberOrgIds(db, email),
+        opts.brandingOn ?? getFeatureFlag('ENABLE_GROUP_BRANDING'),
+    ]);
+    return { source: effectiveDocsSource(raw, memberOrgIds, soleGroupDefault), memberOrgIds };
+}
+
+/**
+ * One request's effective-source lookup, shared by the docs and the branding
+ * resolution (the public form needs both). Lazy: nothing runs until a caller
+ * asks, so an early return (no rescuer) never leaves a rejected promise
+ * unawaited. A failure rejects every caller, each inside its own try/catch.
+ */
+export function sharedEffectiveDocsSource(db: Db, email: string, opts: { brandingOn?: boolean } = {}): () => Promise<EffectiveDocsSource> {
+    let pending: Promise<EffectiveDocsSource> | null = null;
+    return () => (pending ??= getEffectiveDocsSource(db, email, opts));
 }
 
 export async function getSettingsRow(db: Db, owner: DocsOwner): Promise<typeof adoptionDocSettings.$inferSelect | null> {
@@ -76,7 +112,10 @@ export async function getContractVersion(db: Db, id: string): Promise<typeof con
  * public page must never break because of this lookup. See global constraint:
  * with no settings row, or the flag off, the form/contract stay byte-identical.
  */
-export async function resolveDocsForRescuer(db: Db, rescuerEmail: string | null | undefined): Promise<ResolvedDocs | null> {
+export async function resolveDocsForRescuer(
+    db: Db, rescuerEmail: string | null | undefined,
+    opts: { effective?: () => Promise<EffectiveDocsSource> } = {},
+): Promise<ResolvedDocs | null> {
     const email = rescuerEmail?.trim();
     if (!email || email === 'anonymous') return null;
 
@@ -84,12 +123,12 @@ export async function resolveDocsForRescuer(db: Db, rescuerEmail: string | null 
     // unauthenticated routes. Masked is enough to correlate.
     const who = maskEmail(normalizeEmail(email));
     try {
-        if (!(await getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS'))) return null;
-
-        const [source, memberOrgIds] = await Promise.all([
-            getUserDocsSource(db, email),
-            getMemberOrgIds(db, email),
+        // Same effective source the branding uses, so a page's docs and look always agree.
+        const [enabled, { source, memberOrgIds }] = await Promise.all([
+            getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS'),
+            opts.effective ? opts.effective() : getEffectiveDocsSource(db, email),
         ]);
+        if (!enabled) return null;
         const owner = resolveDocsOwner(email, source, memberOrgIds);
         const settingsRow = await getSettingsRow(db, owner);
         if (!settingsRow) return null;

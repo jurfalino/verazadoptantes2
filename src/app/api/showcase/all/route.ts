@@ -6,6 +6,7 @@ import { adoptions } from '@/db/schema';
 import { getDb } from '@/lib/db';
 import { availableAnimalsBase, availableAnimalsOrder, buildPublicRescuer, fetchAnimalImages, pickPublicAnimal, type PublicAnimal } from '@/lib/showcase';
 import { showableCount } from '@/domain/animalAccess';
+import { getFeatureFlag } from '@/config/features';
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 60;
@@ -49,6 +50,8 @@ export async function GET(request: Request) {
         // Rescuers see the hidden-when-photoless rule called out in the
         // /my-animals share-public-catalog modal.
         const rescuerCache = new Map<string, ReturnType<typeof buildPublicRescuer>>();
+        // Read once for the whole list, not once per poster (getFeatureFlag never throws).
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
         const animals: PublicAnimal[] = [];
         for (const row of rows) {
             const animalImages = imagesByAnimal.get(row.id) || [];
@@ -56,7 +59,7 @@ export async function GET(request: Request) {
             if (showableCount(animalImages) === 0) continue;
             const key = row.addedBy || '';
             if (!rescuerCache.has(key)) {
-                rescuerCache.set(key, buildPublicRescuer(db, row.addedBy));
+                rescuerCache.set(key, buildPublicRescuer(db, row.addedBy, { brandingOn }));
             }
             const rescuer = await rescuerCache.get(key)!;
             animals.push(pickPublicAnimal(row, animalImages, rescuer));

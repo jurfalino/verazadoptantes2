@@ -23,7 +23,7 @@ function AppRoutes() {
     if (path === 'form') {
         return (
             <ErrorBoundary>
-                <PetShieldForm userId={params.get('u')} animalId={params.get('animal')} />
+                <PetShieldForm userId={params.get('u')} animalId={params.get('animal')} groupHint={params.get('g')} />
             </ErrorBoundary>
         )
     }
