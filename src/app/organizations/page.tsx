@@ -393,7 +393,7 @@ function OrgCard({ org, onRefresh, docsEnabled, brandingEnabled, currentEmail }:
     };
 
     return (
-        <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden" data-testid="org-card" data-org-id={org.id}>
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
                 {editing ? (

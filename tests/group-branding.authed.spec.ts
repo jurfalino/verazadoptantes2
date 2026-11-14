@@ -21,11 +21,25 @@ test.afterAll(() => { execD1(RESET); });
 
 const section = (page: Page) => page.locator(`[data-testid="group-branding"][data-org-id="${ORG_ID}"]`);
 
+/**
+ * The toggle renders only once getMyOrganizations AND the one-shot /api/config read both answered; a dev-server
+ * memory restart during either leaves the card without it and no UI sign (final review M3). So: the card first,
+ * then the toggle; card there but no toggle after 10 s → reload once.
+ */
 async function openSection(page: Page) {
     await page.goto('/organizations');
     await dismissCountryBanner(page);
+    const card = page.locator(`[data-testid="org-card"][data-org-id="${ORG_ID}"]`);
+    await expect(card).toBeVisible({ timeout: 30000 });
     const s = section(page);
     const toggle = s.getByTestId('group-branding-toggle');
+    // waitFor, not isVisible: isVisible never waits (its timeout is ignored).
+    const appeared = await toggle.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false);
+    if (!appeared) {
+        await page.reload();
+        await dismissCountryBanner(page);
+        await expect(card).toBeVisible({ timeout: 30000 });
+    }
     await expect(toggle).toBeVisible({ timeout: 30000 });
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await toggle.click();
@@ -68,17 +82,22 @@ test.describe('Personalizar on a group card', () => {
         expect(isDbNull(rows(`SELECT logo_url FROM organizations WHERE id = '${ORG_ID}'`)[0].logo_url)).toBe(true);
     });
 
-    test('Claro + Turquesa + Instagram are saved, shown back normalised, and public', async ({ page, request }) => {
+    test('Claro + Turquesa + links are saved, shown back normalised, and public', async ({ page, request }) => {
         const s = await openSection(page);
         await s.locator('input[name^="group-theme-"][value="light"]').check();
         await s.locator('[data-testid="group-branding-swatch"][data-accent="turquesa"]').click();
         await expect(s.locator('input[data-accent="turquesa"]')).toBeChecked();
         await s.getByTestId('group-branding-instagram').fill('@refugioe2e');
+        // Final review I1/I2: a Facebook /people/ link keeps its full path; an http:// site is stored as https://.
+        await s.getByTestId('group-branding-facebook').fill('https://www.facebook.com/people/Refugio-E2E/100083123456789/?mibextid=x');
+        await s.getByTestId('group-branding-website').fill('http://refugioe2e.org/adopta');
         await s.getByTestId('group-branding-save').click();
 
         await expect(page.getByRole('alert').filter({ hasText: /Guardamos|saved|Salvamos/i })).toBeVisible({ timeout: 30000 });
         // The stored (normalised) link is shown back, and who changed it last.
         await expect(s.getByTestId('group-branding-instagram')).toHaveValue('https://instagram.com/refugioe2e', { timeout: 30000 });
+        await expect(s.getByTestId('group-branding-facebook')).toHaveValue('https://facebook.com/people/Refugio-E2E/100083123456789');
+        await expect(s.getByTestId('group-branding-website')).toHaveValue('https://refugioe2e.org/adopta');
         await expect(s.getByTestId('group-branding-last-edited')).toBeVisible();
 
         const again = await openSection(page);
@@ -89,7 +108,8 @@ test.describe('Personalizar on a group card', () => {
         const res = await request.get('/api/showcase/org/refugio-e2e');
         expect(res.status()).toBe(200);
         expect((await res.json()).branding).toMatchObject({
-            accentId: 'turquesa', theme: 'light', instagramUrl: 'https://instagram.com/refugioe2e', websiteUrl: null,
+            accentId: 'turquesa', theme: 'light', instagramUrl: 'https://instagram.com/refugioe2e',
+            facebookUrl: 'https://facebook.com/people/Refugio-E2E/100083123456789', websiteUrl: 'https://refugioe2e.org/adopta',
         });
     });
 
