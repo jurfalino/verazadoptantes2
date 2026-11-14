@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { withGroupHint, httpsOnly, followInstagramUrl } from './brandLinks'
+import { withGroupHint, httpsOnly, followInstagramUrl, shownPublisher } from './brandLinks'
 
 describe('withGroupHint', () => {
     it('appends g to an existing query', () => {
@@ -71,5 +71,19 @@ describe('stored link shapes round-trip to the public page', () => {
     })
     it("followInstagramUrl uses the group's stored Instagram as is", () => {
         expect(followInstagramUrl({ instagramUrl: stored[0] }, 'https://instagram.com/buenadoptante')).toBe(stored[0])
+    })
+})
+
+describe('shownPublisher', () => {
+    const rescuer = { displayName: 'Ana', orgName: 'Grupo Y', orgSlug: 'grupo-y', userHandle: 'ana' }
+    it('a branded page (hint accepted) names the group whose look it wears, with its back link', () => {
+        expect(shownPublisher(rescuer, { orgName: 'Grupo X', orgSlug: 'grupo-x' })).toEqual({ label: 'Grupo X', orgSlug: 'grupo-x', userHandle: null })
+    })
+    it("unbranded → the poster's group as the API sent it", () => {
+        expect(shownPublisher(rescuer, null)).toEqual({ label: 'Grupo Y', orgSlug: 'grupo-y', userHandle: 'ana' })
+    })
+    it('branding without a slug falls back to the API value; no group → the poster and their handle', () => {
+        expect(shownPublisher(rescuer, { orgName: 'Grupo X', orgSlug: null })).toEqual({ label: 'Grupo Y', orgSlug: 'grupo-y', userHandle: 'ana' })
+        expect(shownPublisher({ displayName: 'Ana', userHandle: 'ana' }, null)).toEqual({ label: 'Ana', orgSlug: null, userHandle: 'ana' })
     })
 })

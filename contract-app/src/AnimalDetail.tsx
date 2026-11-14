@@ -4,7 +4,7 @@ import { useT, localizedHref } from './i18n/LocaleContext'
 import { speciesLabel, sexLabel, ageLabel, isFemale } from './lib/animalLabels'
 import { isVideo, posterOf, posterUrls } from './lib/media'
 import { applyBranding, parseBranding, type PublicBranding } from './lib/branding'
-import { withGroupHint, followInstagramUrl } from './lib/brandLinks'
+import { withGroupHint, followInstagramUrl, shownPublisher } from './lib/brandLinks'
 import { BrandBar } from './components/BrandHeader'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -146,11 +146,13 @@ export default function AnimalDetail({ animalId }: { animalId: string }) {
         : null
     // «Quiero adoptarla» for a female; unknown sex keeps «Quiero adoptarlo».
     const adoptCta = t(isFemale(a.sex) ? 'animal.adopt_cta_f' : 'animal.adopt_cta')
+    // A branded page names the group whose look it wears (final review M4).
+    const publisher = shownPublisher(a.rescuer, branding)
     const rescuerBackHref =
-        a.rescuer.orgSlug ? localizedHref(`/org/${a.rescuer.orgSlug}`, locale) :
-        a.rescuer.userHandle ? localizedHref(`/user/${a.rescuer.userHandle}`, locale) :
+        publisher.orgSlug ? localizedHref(`/org/${publisher.orgSlug}`, locale) :
+        publisher.userHandle ? localizedHref(`/user/${publisher.userHandle}`, locale) :
         null
-    const rescuerLabel = a.rescuer.orgName || a.rescuer.displayName
+    const rescuerLabel = publisher.label
     // Branded page ⇒ the group's Instagram; otherwise the platform's, as today.
     const followUrl = followInstagramUrl(branding, data.instagramUrl)
 
