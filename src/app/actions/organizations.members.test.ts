@@ -174,7 +174,7 @@ describe('joinOrganization — only the group joined is told', () => {
     afterEach(() => { vi.mocked(runAfterResponse).mockImplementation(async () => undefined); });
 
     it("OTHER joins Michis: Michis's members are told, never the joiner nor the joiner's other group", async () => {
-        expect(await as(OTHER, () => joinOrganization('old-link'))).toEqual({ success: true, orgName: 'Michis' });
+        expect(await as(OTHER, () => joinOrganization('old-link'))).toEqual({ success: true, orgName: 'Michis', askDocsSource: true });
         expect(told()).toEqual([MATE, OWNER].sort().map(user_id => ({ user_id, body: 'Olga Ortiz se unió a Michis.', url: '/organizations' })));
     });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     FORM_STEP_IDS, LOCKED_FORM_STEPS, TOGGLEABLE_FORM_STEPS, FORM_STEP_GROUPS,
-    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource,
+    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource, pinSourceBeforeJoin, shouldAskDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
@@ -340,5 +340,65 @@ describe('effectiveDocsSource', () => {
     it('an explicit choice always wins', () => {
         expect(effectiveDocsSource('self', ['A'], true)).toEqual({ type: 'self' });
         expect(effectiveDocsSource('org:B', ['A', 'B'], true)).toEqual({ type: 'org', orgId: 'B' });
+    });
+});
+
+describe('pinSourceBeforeJoin («Al cambiar de grupos»)', () => {
+    it('never chosen + exactly one group + branding on → pins that group', () => {
+        expect(pinSourceBeforeJoin(null, ['A'], true)).toBe('org:A');
+        expect(pinSourceBeforeJoin(undefined, ['A'], true)).toBe('org:A');
+    });
+    it('an explicit source is never touched', () => {
+        expect(pinSourceBeforeJoin('self', ['A'], true)).toBeNull();
+        expect(pinSourceBeforeJoin('org:A', ['A'], true)).toBeNull();
+        expect(pinSourceBeforeJoin('org:B', ['A'], true)).toBeNull();
+    });
+    it('branding off → no default to keep → no pin', () => {
+        expect(pinSourceBeforeJoin(null, ['A'], false)).toBeNull();
+    });
+    it('0 or ≥ 2 groups → no pin', () => {
+        expect(pinSourceBeforeJoin(null, [], true)).toBeNull();
+        expect(pinSourceBeforeJoin(null, ['A', 'B'], true)).toBeNull();
+    });
+    it('agrees with effectiveDocsSource: what it pins is what was in effect', () => {
+        for (const ids of [[], ['A'], ['A', 'B']]) {
+            for (const on of [true, false]) {
+                const pinned = pinSourceBeforeJoin(null, ids, on);
+                if (pinned) expect(parseDocsSource(pinned)).toEqual(effectiveDocsSource(null, ids, on));
+                else expect(effectiveDocsSource(null, ids, on)).toEqual({ type: 'self' });
+            }
+        }
+    });
+});
+
+describe('shouldAskDocsSource («Al cambiar de grupos»)', () => {
+    const on = { brandingOn: true, customDocsOn: true };
+    const groupA = { type: 'org' as const, orgId: 'A' };
+    it('join / create ending in ≥ 2 groups → ask', () => {
+        expect(shouldAskDocsSource({ kind: 'join', orgCountAfter: 2 }, on)).toBe(true);
+        expect(shouldAskDocsSource({ kind: 'create', orgCountAfter: 2 }, on)).toBe(true);
+        expect(shouldAskDocsSource({ kind: 'join', orgCountAfter: 5 }, on)).toBe(true);
+    });
+    it('join / create ending in 1 group → no ask', () => {
+        expect(shouldAskDocsSource({ kind: 'join', orgCountAfter: 1 }, on)).toBe(false);
+        expect(shouldAskDocsSource({ kind: 'create', orgCountAfter: 1 }, on)).toBe(false);
+    });
+    it('leaving the group her links used, with ≥ 1 left → ask', () => {
+        expect(shouldAskDocsSource({ kind: 'leave', orgCountAfter: 1, leftOrgId: 'A', effectiveBefore: groupA }, on)).toBe(true);
+        expect(shouldAskDocsSource({ kind: 'leave', orgCountAfter: 3, leftOrgId: 'A', effectiveBefore: groupA }, on)).toBe(true);
+    });
+    it('leaving the used group with no group left → no ask', () => {
+        expect(shouldAskDocsSource({ kind: 'leave', orgCountAfter: 0, leftOrgId: 'A', effectiveBefore: groupA }, on)).toBe(false);
+    });
+    it('leaving another group → no ask', () => {
+        expect(shouldAskDocsSource({ kind: 'leave', orgCountAfter: 1, leftOrgId: 'B', effectiveBefore: groupA }, on)).toBe(false);
+        expect(shouldAskDocsSource({ kind: 'leave', orgCountAfter: 1, leftOrgId: 'B', effectiveBefore: { type: 'self' } }, on)).toBe(false);
+    });
+    it('either flag off → never ask', () => {
+        for (const flags of [{ brandingOn: false, customDocsOn: true }, { brandingOn: true, customDocsOn: false }, { brandingOn: false, customDocsOn: false }]) {
+            expect(shouldAskDocsSource({ kind: 'join', orgCountAfter: 2 }, flags)).toBe(false);
+            expect(shouldAskDocsSource({ kind: 'create', orgCountAfter: 3 }, flags)).toBe(false);
+            expect(shouldAskDocsSource({ kind: 'leave', orgCountAfter: 1, leftOrgId: 'A', effectiveBefore: groupA }, flags)).toBe(false);
+        }
     });
 });

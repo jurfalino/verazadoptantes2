@@ -273,6 +273,39 @@ export function effectiveDocsSource(raw: string | null | undefined, memberOrgIds
     return parseDocsSource(raw);
 }
 
+/**
+ * «Al cambiar de grupos» (Jon 2026-11-14): joining or creating a group must
+ * never switch her links silently. Run BEFORE the new membership is written:
+ * a never-chosen (NULL) source whose sole-group default is in effect is
+ * stored explicitly as that group, so closing the «¿Qué formulario y contrato
+ * usás al compartir?» dialog keeps what she had. Mirrors effectiveDocsSource's
+ * default exactly. Returns the value to store, or null when nothing to pin.
+ */
+export function pinSourceBeforeJoin(raw: string | null | undefined, memberOrgIdsBefore: readonly string[], brandingOn: boolean): string | null {
+    if (raw != null || !brandingOn || memberOrgIdsBefore.length !== 1) return null;
+    return serializeDocsSource({ type: 'org', orgId: memberOrgIdsBefore[0] });
+}
+
+export type GroupChange =
+    | { kind: 'join' | 'create'; orgCountAfter: number }
+    /** `effectiveBefore`: the source in effect before leaving (effectiveDocsSource). */
+    | { kind: 'leave'; orgCountAfter: number; leftOrgId: string; effectiveBefore: DocsSource };
+
+/**
+ * Whether to ask «¿Qué formulario y contrato usás al compartir?» after a
+ * group change. Join/create: whenever she ends in ≥ 2 groups. Leave: only
+ * when she left the group her links used and still has ≥ 1. Never with
+ * either flag off (the setter refuses without custom docs; without branding
+ * there is no sole-group default to lose).
+ */
+export function shouldAskDocsSource(change: GroupChange, flags: { brandingOn: boolean; customDocsOn: boolean }): boolean {
+    if (!flags.brandingOn || !flags.customDocsOn) return false;
+    if (change.kind === 'leave') {
+        return change.orgCountAfter >= 1 && change.effectiveBefore.type === 'org' && change.effectiveBefore.orgId === change.leftOrgId;
+    }
+    return change.orgCountAfter >= 2;
+}
+
 export type DocsOwner = { ownerType: 'user' | 'org'; ownerId: string };
 
 export function normalizeEmail(e: string): string {

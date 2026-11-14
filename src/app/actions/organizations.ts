@@ -6,6 +6,9 @@ import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { appBaseUrl } from '@/lib/emailConfig';
+import { getFeatureFlag } from '@/config/features';
+import { getMemberOrgIds, getUserDocsSourceRaw, pinDocsSourceIfUnset } from '@/lib/adoptionDocsRepo';
+import { effectiveDocsSource, pinSourceBeforeJoin, shouldAskDocsSource } from '@/domain/adoptionDocs';
 
 /**
  * Case-insensitive name-collision check. Returns true when *another* org
@@ -59,9 +62,63 @@ export interface OrgMember {
     displayName?: string;
 }
 
+// ── «Al cambiar de grupos» (spec 2026-11-13-group-branding-design.md) ──
+
+type DocsFlags = { brandingOn: boolean; customDocsOn: boolean };
+
+/** Her «Al compartir, usar:» state before a group change. Throws on a DB error. */
+async function readDocsBefore(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, user: string) {
+    const [raw, memberOrgIds, brandingOn, customDocsOn] = await Promise.all([
+        getUserDocsSourceRaw(db, user),
+        getMemberOrgIds(db, user),
+        getFeatureFlag('ENABLE_GROUP_BRANDING'),
+        getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS'),
+    ]);
+    return { raw, memberOrgIds, flags: { brandingOn, customDocsOn } as DocsFlags };
+}
+
+/**
+ * Run BEFORE the new membership is written (join / create): a never-chosen
+ * source whose sole-group default is in effect is stored explicitly, so a
+ * second group never switches her links silently (closing the dialog keeps
+ * it). Never fails the join: any error is logged and the join goes on —
+ * returns null then (no dialog).
+ */
+async function keepDocsSourceBeforeJoin(
+    db: NonNullable<Awaited<ReturnType<typeof getDb>>>, user: string, orgId: string, op: string,
+): Promise<{ memberOrgIds: string[]; flags: DocsFlags } | null> {
+    let before: Awaited<ReturnType<typeof readDocsBefore>>;
+    try {
+        before = await readDocsBefore(db, user);
+    } catch (e) {
+        logger.warn(`${op}: docs source read failed, not pinned and not asked`, { user, orgId, error: e instanceof Error ? e.message : String(e) });
+        return null;
+    }
+    const pin = pinSourceBeforeJoin(before.raw, before.memberOrgIds, before.flags.brandingOn);
+    if (pin) {
+        try {
+            if (await pinDocsSourceIfUnset(db, user, pin)) {
+                const { logAudit } = await import('@/lib/audit');
+                await logAudit({ userEmail: user, action: 'adoption_docs_source_changed', details: { source: pin, reason: 'kept_on_join' } });
+                logger.info(`${op}: sole-group docs source kept`, { user, orgId, source: pin });
+            }
+        } catch (e) {
+            logger.warn(`${op}: keeping the docs source failed, joining anyway`, { user, orgId, source: pin, error: e instanceof Error ? e.message : String(e) });
+        }
+    }
+    return { memberOrgIds: before.memberOrgIds, flags: before.flags };
+}
+
+/** Whether to ask after the membership was written: the groups she ends in. */
+function askAfterJoin(before: { memberOrgIds: string[]; flags: DocsFlags } | null, kind: 'join' | 'create', orgId: string): boolean {
+    if (!before) return false;
+    const orgCountAfter = new Set([...before.memberOrgIds, orgId]).size;
+    return shouldAskDocsSource({ kind, orgCountAfter }, before.flags);
+}
+
 // ── Create ───────────────────────────────────────────────────────
 
-export async function createOrganization(name: string): Promise<{ success: boolean; id?: string; error?: string; errorId?: string }> {
+export async function createOrganization(name: string): Promise<{ success: boolean; id?: string; askDocsSource?: boolean; error?: string; errorId?: string }> {
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 100) {
         return { success: false, error: 'Name must be 1–100 characters' };
@@ -99,6 +156,8 @@ export async function createOrganization(name: string): Promise<{ success: boole
             slug,
         });
 
+        const docsBefore = await keepDocsSourceBeforeJoin(db, user, orgId, 'createOrganization');
+
         await db.insert(orgMembers).values({
             id: memberId,
             orgId,
@@ -106,7 +165,7 @@ export async function createOrganization(name: string): Promise<{ success: boole
             role: 'owner',
         });
 
-        return { success: true, id: orgId };
+        return { success: true, id: orgId, askDocsSource: askAfterJoin(docsBefore, 'create', orgId) };
     } catch (error) {
         const errorId = logger.error('createOrganization failed', error, { user, name: trimmed });
         return { success: false, error: 'Failed to create organization', errorId };
@@ -230,7 +289,7 @@ export async function updateOrganizationName(orgId: string, name: string): Promi
 
 // ── Leave / Delete ───────────────────────────────────────────────
 
-export async function leaveOrganization(orgId: string): Promise<{ success: boolean; deleted?: boolean; error?: string; errorId?: string }> {
+export async function leaveOrganization(orgId: string): Promise<{ success: boolean; deleted?: boolean; askDocsSource?: boolean; error?: string; errorId?: string }> {
     const user = await getUser();
     const db = await getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
@@ -249,12 +308,27 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
 
         if (!membership) return { success: false, error: 'Not a member of this organization' };
 
+        // «Al cambiar de grupos»: leaving the group her links used (with a group
+        // left) asks which to use now. Read before the delete; never fails the leave.
+        let askDocsSource = false;
+        try {
+            const before = await readDocsBefore(db, user);
+            askDocsSource = shouldAskDocsSource({
+                kind: 'leave',
+                orgCountAfter: before.memberOrgIds.filter(id => id !== orgId).length,
+                leftOrgId: orgId,
+                effectiveBefore: effectiveDocsSource(before.raw, before.memberOrgIds, before.flags.brandingOn),
+            }, before.flags);
+        } catch (e) {
+            logger.warn('leaveOrganization: docs source read failed, not asked', { user, orgId, error: e instanceof Error ? e.message : String(e) });
+        }
+
         if (members.length <= 1) {
             // Last member → delete org, invites, and membership
             await db.delete(orgInvites).where(eq(orgInvites.orgId, orgId));
             await db.delete(orgMembers).where(eq(orgMembers.orgId, orgId));
             await db.delete(organizations).where(eq(organizations.id, orgId));
-            return { success: true, deleted: true };
+            return { success: true, deleted: true, askDocsSource };
         }
 
         // Remove only this member
@@ -262,7 +336,7 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
             and(eq(orgMembers.orgId, orgId), eq(orgMembers.userEmail, user))
         );
 
-        return { success: true, deleted: false };
+        return { success: true, deleted: false, askDocsSource };
     } catch (error) {
         const errorId = logger.error('leaveOrganization failed', error, { user, orgId });
         return { success: false, error: 'Failed to leave organization', errorId };
@@ -473,7 +547,7 @@ async function isMemberOf(db: any, orgId: string, user: string): Promise<boolean
 
 // ── Join via Invite ──────────────────────────────────────────────
 
-export async function joinOrganization(inviteToken: string): Promise<{ success: boolean; orgName?: string; error?: string; errorId?: string }> {
+export async function joinOrganization(inviteToken: string): Promise<{ success: boolean; orgName?: string; askDocsSource?: boolean; error?: string; errorId?: string }> {
     const user = await getUser();
     const db = await getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
@@ -501,6 +575,8 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
             const org = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, invite.orgId)).get();
             return { success: true, orgName: org?.name || 'Organization' };
         }
+
+        const docsBefore = await keepDocsSourceBeforeJoin(db, user, invite.orgId, 'joinOrganization');
 
         // Join
         await db.insert(orgMembers).values({
@@ -530,7 +606,7 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
             });
         }, { actorEmail: user, orgId: invite.orgId });
 
-        return { success: true, orgName: org?.name || 'Organization' };
+        return { success: true, orgName: org?.name || 'Organization', askDocsSource: askAfterJoin(docsBefore, 'join', invite.orgId) };
     } catch (error) {
         const errorId = logger.error('joinOrganization failed', error, { user, inviteToken });
         return { success: false, error: 'Failed to join organization', errorId };

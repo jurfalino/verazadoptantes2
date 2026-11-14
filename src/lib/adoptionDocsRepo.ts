@@ -59,6 +59,31 @@ export async function getUserDocsSourceRaw(db: Db, email: string): Promise<strin
     return row?.adoptionDocsSource ?? null;
 }
 
+/**
+ * Store `value` as the «Al compartir, usar:» choice ONLY while it is still
+ * NULL (never chosen) — a choice made in between is never overwritten. Used
+ * to pin the sole-group default before a join/create (pinSourceBeforeJoin).
+ * Same case-insensitive user match as getUserDocsSourceRaw. Returns whether a
+ * value was written. Throws on a DB error.
+ */
+export async function pinDocsSourceIfUnset(db: Db, email: string, value: string): Promise<boolean> {
+    const normalized = normalizeEmail(email);
+    const updated = await db.update(userProfiles).set({ adoptionDocsSource: value })
+        .where(and(
+            isNull(userProfiles.adoptionDocsSource),
+            sql`EXISTS (SELECT 1 FROM user u WHERE u.id = user_profiles.user_id AND lower(u.email) = ${normalized})`,
+        ))
+        .returning({ userId: userProfiles.userId });
+    if (updated.length > 0) return true;
+    // No profile row yet (NULL because there is no row): create it with the value.
+    const user = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${normalized}`).get() as { id: string } | undefined;
+    if (!user) return false;
+    const inserted = await db.insert(userProfiles).values({ userId: user.id, adoptionDocsSource: value })
+        .onConflictDoNothing()
+        .returning({ userId: userProfiles.userId });
+    return inserted.length > 0;
+}
+
 export async function getUserDocsSource(db: Db, email: string): Promise<DocsSource> {
     return parseDocsSource(await getUserDocsSourceRaw(db, email));
 }
