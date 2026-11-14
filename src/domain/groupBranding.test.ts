@@ -95,7 +95,7 @@ describe('normalizeSocialLink', () => {
             ['facebook', 'https://www.facebook.com/people/Refugio-Gatítos/100083123456789/'], ['facebook', 'https://www.facebook.com/pages/Refugio/123456'],
             ['facebook', 'https://www.facebook.com/groups/refugiogatitos'], ['facebook', 'https://www.facebook.com/share/1AbCdEf/'],
             ['facebook', 'https://www.facebook.com/share/g/1AbCdEf/'],
-            ['website', 'michisdeltren.org'], ['website', 'https://a.org/b/'],
+            ['website', 'michisdeltren.org'], ['website', 'https://a.org/b/'], ['website', 'http://michisdeltren.org/adopta?x=1#y'],
         ];
         for (const [kind, raw] of inputs) {
             const first = normalizeSocialLink(kind, raw);
@@ -104,6 +104,13 @@ describe('normalizeSocialLink', () => {
             expect(stored.startsWith('https://'), raw).toBe(true);
             expect(normalizeSocialLink(kind, stored), raw).toEqual(ok(stored));
         }
+    });
+    it('website: http:// is stored as https:// (public pages only render https), keeping path and query', () => {
+        expect(normalizeSocialLink('website', 'http://michisdeltren.org')).toEqual(ok('https://michisdeltren.org'));
+        expect(normalizeSocialLink('website', 'HTTP://michisdeltren.org/adopta?x=1')).toEqual(ok('https://michisdeltren.org/adopta?x=1'));
+        expect(normalizeSocialLink('website', 'www.michisdeltren.org/adopta')).toEqual(ok('https://www.michisdeltren.org/adopta'));
+        expect(normalizeSocialLink('website', 'https://michisdeltren.org/')).toEqual(ok('https://michisdeltren.org'));
+        expect(normalizeSocialLink('website', 'ftp://michisdeltren.org')).toEqual({ ok: false });
     });
 });
 

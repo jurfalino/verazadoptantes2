@@ -515,7 +515,7 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              them last — what any member sees on the card.
 //   saveGroupBranding(orgId, input)  theme and accent must be one of the fixed values; each link goes
 //                              through normalizeSocialLink (instagram/facebook hosts only, website http(s)
-//                              only, javascript:/data: refused, length-capped) — a bad value is refused
+//                              only and stored as https, javascript:/data: refused, length-capped) — a bad value is refused
 //                              with its field named and nothing is stored. Writes only that group's row; audited.
 //   setGroupImage(orgId, kind, dataUrl|null)  kind must be logo|banner; a data URL must be ≤ 750 000 chars,
 //                              declared JPEG/PNG/WEBP AND carry matching magic bytes (checkOrgImageDataUrl) —

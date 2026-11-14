@@ -139,7 +139,9 @@ function normalizeWebsite(raw: string): LinkResult {
     if (raw.length > WEBSITE_MAX) return BAD;
     // A scheme other than http(s) (javascript:, data:, ftp:) is refused, not prefixed.
     if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:\/\//i.test(raw)) return BAD;
-    const u = parseUrl(raw);
+    // Public pages only render https links, so http:// is stored as https:// — the dashboard preview (built from
+    // the stored value) and the public pages then agree. A bare domain already gets https:// in parseUrl.
+    const u = parseUrl(raw.replace(/^http:\/\//i, 'https://'));
     if (!u || !u.hostname.includes('.') || u.username || u.password) return BAD;
     const url = u.pathname === '/' && !u.search && !u.hash ? u.origin : u.href;
     return url.length <= WEBSITE_MAX ? { ok: true, url } : BAD;
