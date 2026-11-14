@@ -18,46 +18,16 @@ import { useShowToast } from '@/components/ui/Toast';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { fetchCustomAdoptionDocsFlag } from '@/lib/adoptionDocsFlag';
 import { fetchGroupBrandingFlag } from '@/lib/groupBrandingFlag';
-import { getAdoptionDocsOverview, setAdoptionDocsSource, type DocsSummary } from '@/app/actions/adoptionDocs';
-
-type Overview = { source: string; self: DocsSummary; orgs: Array<{ id: string; name: string; branded?: boolean; logoUrl?: string | null } & DocsSummary> };
+import { getAdoptionDocsOverview, setAdoptionDocsSource } from '@/app/actions/adoptionDocs';
+import { DocsSourceOptions, Pill, type DocsOverview } from '@/components/DocsSourceOptions';
 
 const SOURCE = 'AdoptionDocsSettingsSection';
 const btnCompact = 'inline-flex items-center max-w-full break-words min-h-11 py-2 px-4 rounded-xl text-sm font-bold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 hover:border-teal-400 transition-colors';
 
-function Pill({ customized }: { customized: boolean }) {
-    const { t } = useLanguage();
-    return (
-        <span className={`shrink-0 px-2 py-1 rounded-full leading-none text-[11px] font-semibold border ${customized
-            ? 'bg-teal-50 text-teal-700 border-teal-200'
-            : 'bg-stone-100 text-stone-500 border-stone-200'}`}>
-            {customized ? t('adoptionDocs.pill_custom') : t('adoptionDocs.pill_standard')}
-        </span>
-    );
-}
-
-/** 32px lead for a row: group logo, initials tile (no logo) or a person (own). Decorative: the row text names it. */
-function Thumb({ kind, name, logoUrl, testId }: { kind: 'self' | 'org'; name?: string; logoUrl?: string | null; testId: string }) {
-    const box = 'shrink-0 w-8 h-8 rounded-lg border border-stone-200 bg-stone-100 text-stone-500 flex items-center justify-center overflow-hidden';
-    if (kind === 'org' && logoUrl) {
-        // eslint-disable-next-line @next/next/no-img-element
-        return <span className={box} data-testid={testId}><img src={logoUrl} alt="" className="w-full h-full object-cover" /></span>;
-    }
-    if (kind === 'org') {
-        const initials = (name || '').split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-        return <span className={`${box} text-xs font-bold`} data-testid={testId} aria-hidden="true">{initials || '?'}</span>;
-    }
-    return (
-        <span className={box} data-testid={testId} aria-hidden="true">
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-        </span>
-    );
-}
-
 export default function AdoptionDocsSettingsSection() {
     const { t } = useLanguage();
     const toast = useShowToast();
-    const [overview, setOverview] = useState<Overview | null>(null);
+    const [overview, setOverview] = useState<DocsOverview | null>(null);
     const [source, setSource] = useState('self');
     const [switching, setSwitching] = useState(false);
     const [branding, setBranding] = useState(false);
@@ -121,63 +91,21 @@ export default function AdoptionDocsSettingsSection() {
         }
     };
 
-    const options = [
-        { value: 'self', label: t('adoptionDocs.use_mine'), customized: overview.self.customized, kind: 'self' as const, name: '', logoUrl: null as string | null | undefined, look: 'look_standard' },
-        ...overview.orgs.map(o => ({
-            value: `org:${o.id}`,
-            label: t('adoptionDocs.use_group').replace('{name}', o.name),
-            customized: o.customized,
-            kind: 'org' as const,
-            name: o.name,
-            logoUrl: o.logoUrl,
-            look: o.branded ? 'look_branded' : 'look_unbranded',
-        })),
-    ];
-
     return (
         <section id="adoption-docs" className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 scroll-mt-20" data-testid="adoption-docs-settings">
             <h2 className="text-base font-bold text-stone-900">{t('adoptionDocs.settings_title')}</h2>
             <p className="text-sm text-stone-500 mt-2 mb-4 max-w-prose" data-testid="adoption-docs-hint">{branding ? t('adoptionDocs.settings_hint_branded') : t('adoptionDocs.settings_hint')}</p>
 
             {overview.orgs.length > 0 ? (
-                <fieldset disabled={switching}>
-                    <legend className="text-xs font-semibold uppercase tracking-wide text-stone-500 mb-2">{t('adoptionDocs.use_label')}</legend>
-                    <div>
-                        {options.map(o => (
-                            branding ? (
-                                <label key={o.value} className="flex items-center gap-4 min-h-11 py-2 px-2 rounded-xl cursor-pointer hover:bg-stone-50 transition-colors">
-                                    <input
-                                        type="radio"
-                                        name="adoption-docs-source"
-                                        value={o.value}
-                                        checked={source === o.value}
-                                        onChange={() => choose(o.value)}
-                                        className="w-4 h-4 shrink-0 accent-teal-600"
-                                    />
-                                    <Thumb kind={o.kind} name={o.name} logoUrl={o.logoUrl} testId={`adoption-docs-thumb-${o.value}`} />
-                                    <span className="flex-1 min-w-0">
-                                        <span className="block text-sm font-medium text-stone-800 break-words">{o.label}</span>
-                                        <span className="block text-xs text-stone-500 break-words" data-testid={`adoption-docs-look-${o.value}`}>{t(`adoptionDocs.${o.look}`)}</span>
-                                    </span>
-                                    <Pill customized={o.customized} />
-                                </label>
-                            ) : (
-                                <label key={o.value} className="flex items-center gap-4 min-h-11 px-2 rounded-xl cursor-pointer hover:bg-stone-50 transition-colors">
-                                    <input
-                                        type="radio"
-                                        name="adoption-docs-source"
-                                        value={o.value}
-                                        checked={source === o.value}
-                                        onChange={() => choose(o.value)}
-                                        className="w-4 h-4 accent-teal-600"
-                                    />
-                                    <span className="flex-1 min-w-0 text-sm font-medium text-stone-800 break-words">{o.label}</span>
-                                    <Pill customized={o.customized} />
-                                </label>
-                            )
-                        ))}
-                    </div>
-                </fieldset>
+                <DocsSourceOptions
+                    overview={overview}
+                    value={source}
+                    onChange={choose}
+                    branding={branding}
+                    disabled={switching}
+                    radioName="adoption-docs-source"
+                    legend={<legend className="text-xs font-semibold uppercase tracking-wide text-stone-500 mb-2">{t('adoptionDocs.use_label')}</legend>}
+                />
             ) : (
                 <div className="flex items-center gap-4 min-h-11">
                     <span className="flex-1 text-sm font-medium text-stone-800">{t('adoptionDocs.use_mine')}</span>

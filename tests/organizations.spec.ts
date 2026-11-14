@@ -33,6 +33,15 @@ test.describe('Organizations & Multi-Tenancy', () => {
         // Assert the organization appears in the list
         await expect(pageA.getByRole('heading', { name: orgName })).toBeVisible({ timeout: 30000 });
 
+        // The admin is now in two groups, so «¿Qué formulario y contrato usás al
+        // compartir?» is asked (docs-source-ask.authed.spec.ts covers it). Close it:
+        // the admin's explicit «Los míos» stays as it was.
+        const ask = pageA.getByTestId('docs-source-dialog');
+        await expect(ask).toBeVisible({ timeout: 30000 });
+        await expect(ask.locator('input[value="self"]')).toBeChecked();
+        await ask.getByTestId('docs-source-dialog-close').click();
+        await expect(ask).toBeHidden();
+
         // 2. Generate Invite Link
         // Click the invite button for this specific org card
         // We find the org card by its heading, then locate the invite button within it

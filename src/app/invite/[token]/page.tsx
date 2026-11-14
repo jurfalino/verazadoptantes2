@@ -50,7 +50,8 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
             const result = await joinOrganization(token);
             if (result.success) {
                 toast.success(t('organizations.join_success').replace('{name}', result.orgName || ''));
-                router.push('/organizations');
+                // «Al cambiar de grupos»: /organizations asks which form/contract her links use.
+                router.push(result.askDocsSource ? '/organizations?askSource=1' : '/organizations');
             } else {
                 setError(result.error || 'Error');
                 setJoining(false);

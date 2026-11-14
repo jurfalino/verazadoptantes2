@@ -65,6 +65,16 @@ Jon picked **B**. A is effectively step one of B (the accent part), so B can be 
 - If the chosen group stops being valid (user left it / group deleted) → behaves as «Los míos» until they choose again — same as the existing setting does today *(builder: confirm current behaviour and keep it)*.
 - «Los míos», or no group → no branding.
 
+### Al cambiar de grupos (Jon, 2026-11-14)
+
+The sole-group default stops the moment she is in two groups, so a join would otherwise switch her links silently. Instead she is **asked when it changes**, and nothing ever switches silently:
+
+- **Join or create a group, ending in ≥ 2 groups** → after success, a dialog «¿Qué formulario y contrato usás al compartir?» with exactly the «Al compartir, usar:» rows (same component, `DocsSourceOptions`: logos, names, look sub-lines, pills), her current choice pre-selected and marked «(el que usás)», the hint «Podés cambiarlo cuando quieras en Configuración.» and one button, «Listo» (saves through `setAdoptionDocsSource`, only if she changed it). Asked on every such join/create, also when she had already chosen (her choice pre-selected).
+- **Closing without answering keeps what she had.** So, before the new membership is written, `joinOrganization` / `createOrganization` store a never-chosen (`NULL`) source of a sole-group member as `'org:<that group>'` while `ENABLE_GROUP_BRANDING` is on (`pinSourceBeforeJoin`; audited `adoption_docs_source_changed` with `reason: 'kept_on_join'`; only written while still `NULL`). A failed pin is logged and never fails the join.
+- **«Salir» of the group her links used, with ≥ 1 group left** → the same dialog with the groups she still has, her new effective choice (normally «Los míos», since the stored group no longer applies) pre-selected. Closing keeps that. No group left → no dialog.
+- **Not asked:** no group; either flag (`ENABLE_GROUP_BRANDING`, `ENABLE_CUSTOM_ADOPTION_DOCS`) off; leaving a group she wasn't using; when someone else removes her from a group (she isn't there to answer — her links fall back as before).
+- The server decides (`shouldAskDocsSource`, returned as `askDocsSource` by the three actions). The invite page carries it to `/organizations?askSource=1`, which opens the dialog once and drops the parameter.
+
 ### Which branding each public page uses
 
 | Public page | Branding source |

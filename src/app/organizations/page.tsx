@@ -24,6 +24,7 @@ import { handledAsStale } from '@/lib/errorMessage';
 import { fetchCustomAdoptionDocsFlag } from '@/lib/adoptionDocsFlag';
 import { fetchGroupBrandingFlag } from '@/lib/groupBrandingFlag';
 import GroupBrandingSection from '@/components/GroupBrandingSection';
+import DocsSourceDialog from '@/components/DocsSourceDialog';
 
 
 export default function OrganizationsPage() {
@@ -41,6 +42,17 @@ export default function OrganizationsPage() {
     const [docsEnabled, setDocsEnabled] = useState(false);
     // ENABLE_GROUP_BRANDING: shows the «Personalizar» section on each group card.
     const [brandingEnabled, setBrandingEnabled] = useState(false);
+    // «Al cambiar de grupos»: the server says when to ask which form/contract her links use.
+    const [askDocsSource, setAskDocsSource] = useState(false);
+
+    // A join from the invite page arrives as ?askSource=1: open the dialog once and drop the param.
+    useEffect(() => {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('askSource') !== '1') return;
+        setAskDocsSource(true);
+        url.searchParams.delete('askSource');
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -86,6 +98,7 @@ export default function OrganizationsPage() {
             setNewName('');
             setShowCreateForm(false);
             loadOrgs();
+            if (result.askDocsSource) setAskDocsSource(true);
         } else {
             const msg = result.error === 'org_name_exists'
                 ? t('organizations.error_name_exists')
@@ -196,10 +209,12 @@ export default function OrganizationsPage() {
             ) : (
                 <div className="space-y-4">
                     {orgs.map((org) => (
-                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} docsEnabled={docsEnabled} brandingEnabled={brandingEnabled} currentEmail={session?.user?.email ?? ''} />
+                        <OrgCard key={org.id} org={org} onRefresh={loadOrgs} onAskDocsSource={() => setAskDocsSource(true)} docsEnabled={docsEnabled} brandingEnabled={brandingEnabled} currentEmail={session?.user?.email ?? ''} />
                     ))}
                 </div>
             )}
+
+            {askDocsSource && <DocsSourceDialog onClose={() => setAskDocsSource(false)} />}
         </main>
     );
 }
@@ -251,7 +266,7 @@ function InfoBanner() {
     );
 }
 
-function OrgCard({ org, onRefresh, docsEnabled, brandingEnabled, currentEmail }: { org: Organization; onRefresh: () => void; docsEnabled: boolean; brandingEnabled: boolean; currentEmail: string }) {
+function OrgCard({ org, onRefresh, onAskDocsSource, docsEnabled, brandingEnabled, currentEmail }: { org: Organization; onRefresh: () => void; onAskDocsSource: () => void; docsEnabled: boolean; brandingEnabled: boolean; currentEmail: string }) {
     const { t } = useLanguage();
     const toast = useShowToast();
     const [editing, setEditing] = useState(false);
@@ -387,6 +402,7 @@ function OrgCard({ org, onRefresh, docsEnabled, brandingEnabled, currentEmail }:
         if (result.success) {
             toast.success(result.deleted ? t('organizations.deleted_success') : t('organizations.left_success'));
             onRefresh();
+            if (result.askDocsSource) onAskDocsSource();
         } else {
             toast.error(t('errors.generic') || 'Error', result.error || t('errors.unexpected') || 'Error', result.errorId);
         }

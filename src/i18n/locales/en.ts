@@ -3515,6 +3515,11 @@ export const en = {
         use_group: '{name}\'s',
         pill_custom: 'Customized',
         pill_standard: 'Standard',
+        // «Al cambiar de grupos»: asked when her groups change (DocsSourceDialog).
+        ask_title: 'Which form and contract do you use when sharing?',
+        ask_hint: 'You can change it anytime in Settings.',
+        ask_done: 'Done',
+        in_use: '(the one you use)',
         edit_mine: 'Edit mine',
         edit_group: 'Edit {name}\'s',
         org_button: 'Form and contract',

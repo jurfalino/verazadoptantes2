@@ -3520,6 +3520,11 @@ export const pt = {
         use_group: 'Os de {name}',
         pill_custom: 'Personalizado',
         pill_standard: 'Padrão',
+        // «Al cambiar de grupos»: asked when her groups change (DocsSourceDialog).
+        ask_title: 'Qual formulário e contrato você usa ao compartilhar?',
+        ask_hint: 'Você pode mudar quando quiser em Configurações.',
+        ask_done: 'Pronto',
+        in_use: '(o que você usa)',
         edit_mine: 'Editar os meus',
         edit_group: 'Editar os de {name}',
         org_button: 'Formulário e contrato',
