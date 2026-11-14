@@ -117,6 +117,32 @@ describe('resolveBrandingForRescuer', () => {
         await expect(resolveBrandingForRescuer(fakeDb([], { fail: true }), 'r@example.com')).resolves.toBeNull();
         expect(warn).toHaveBeenCalled();
     });
+
+    // Final review M1: the public form reads the flag and the effective source once per request.
+    it('uses the flag and the shared effective-source lookup the caller passes, reading neither again', async () => {
+        const shared = vi.fn(async () => ({ source: { type: 'org', orgId: 'A' } as const, memberOrgIds: ['A'] }));
+        expect((await resolveBrandingForRescuer(db, 'r@example.com', null, { brandingOn: true, effective: shared }))?.orgSlug).toBe('grupo-a');
+        expect(shared).toHaveBeenCalledTimes(1);
+        expect(flag).not.toHaveBeenCalled();
+        expect(effective).not.toHaveBeenCalled();
+    });
+    it('a passed brandingOn=false → null without any lookup', async () => {
+        const shared = vi.fn();
+        expect(await resolveBrandingForRescuer(db, 'r@example.com', 'grupo-a', { brandingOn: false, effective: shared })).toBeNull();
+        expect(shared).not.toHaveBeenCalled();
+        expect(flag).not.toHaveBeenCalled();
+    });
+    it('a shared lookup that rejects → null + warn, never a throw', async () => {
+        const shared = vi.fn(async () => { throw new Error('D1 down'); });
+        await expect(resolveBrandingForRescuer(db, 'r@example.com', null, { brandingOn: true, effective: shared })).resolves.toBeNull();
+        expect(warn).toHaveBeenCalledTimes(1);
+    });
+    it('without a shared lookup it tells getEffectiveDocsSource the flag is on (no second flag read there)', async () => {
+        effective.mockResolvedValue({ source: { type: 'org', orgId: 'A' }, memberOrgIds: ['A'] });
+        await resolveBrandingForRescuer(db, 'r@example.com');
+        expect(effective).toHaveBeenCalledWith(db, 'r@example.com', { brandingOn: true });
+        expect(flag).toHaveBeenCalledTimes(1);
+    });
 });
 
 describe('resolveBrandingForOrgSlug', () => {
@@ -132,6 +158,11 @@ describe('resolveBrandingForOrgSlug', () => {
     it('a DB failure → null + warn, never a throw', async () => {
         await expect(resolveBrandingForOrgSlug(fakeDb([], { fail: true }), 'grupo-a')).resolves.toBeNull();
         expect(warn).toHaveBeenCalled();
+    });
+    it('a passed brandingOn skips the flag read', async () => {
+        expect((await resolveBrandingForOrgSlug(db, 'grupo-a', { brandingOn: true }))?.orgSlug).toBe('grupo-a');
+        expect(await resolveBrandingForOrgSlug(db, 'grupo-a', { brandingOn: false })).toBeNull();
+        expect(flag).not.toHaveBeenCalled();
     });
 });
 

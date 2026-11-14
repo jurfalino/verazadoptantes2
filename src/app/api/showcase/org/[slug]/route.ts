@@ -33,9 +33,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             return withCors(NextResponse.json({ error: 'Org not found' }, { status: 404 }), origin);
         }
 
+        // Read once for the page and every poster below (getFeatureFlag never throws: a DB error → the default).
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
         let brandingPart: { branding?: Awaited<ReturnType<typeof resolveBrandingForOrgSlug>> } = {};
         try {
-            if (await getFeatureFlag('ENABLE_GROUP_BRANDING')) brandingPart = { branding: await resolveBrandingForOrgSlug(db, org.slug) };
+            if (brandingOn) brandingPart = { branding: await resolveBrandingForOrgSlug(db, org.slug, { brandingOn }) };
         } catch (e) {
             logger.warn('GET /api/showcase/org/[slug]: branding skipped', { slug, error: e instanceof Error ? e.message : String(e) });
         }
@@ -81,7 +83,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
             // A video with no poster is nothing the grid can draw (v2.56.127).
             if (showableCount(animalImages) === 0) continue;
             const key = row.addedBy || '';
-            if (!rescuerCache.has(key)) rescuerCache.set(key, buildPublicRescuer(db, row.addedBy));
+            if (!rescuerCache.has(key)) rescuerCache.set(key, buildPublicRescuer(db, row.addedBy, { brandingOn }));
             const rescuer = await rescuerCache.get(key)!;
             animals.push(pickPublicAnimal(row, animalImages, rescuer));
         }

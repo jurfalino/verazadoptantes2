@@ -96,6 +96,8 @@ export async function buildPublicRescuer(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db: any,
     addedBy: string | null,
+    /** ENABLE_GROUP_BRANDING already read once for this request (list routes: one read, not one per poster). */
+    opts: { brandingOn?: boolean } = {},
 ): Promise<PublicRescuer> {
     if (!addedBy) return { displayName: 'Comunidad' };
 
@@ -136,8 +138,8 @@ export async function buildPublicRescuer(
     // with. Anything else (flag off, «Los míos», a failure) falls through to
     // the first-membership lookup below, unchanged.
     try {
-        if (await getFeatureFlag('ENABLE_GROUP_BRANDING')) {
-            const { source, memberOrgIds } = await getEffectiveDocsSource(db, addedBy);
+        if (opts.brandingOn ?? await getFeatureFlag('ENABLE_GROUP_BRANDING')) {
+            const { source, memberOrgIds } = await getEffectiveDocsSource(db, addedBy, { brandingOn: true });
             const effectiveOrgId = pickBrandingOrgId({ hintOrgId: null, memberOrgIds, source });
             if (effectiveOrgId) {
                 const org = await db.select({ name: organizations.name, slug: organizations.slug })

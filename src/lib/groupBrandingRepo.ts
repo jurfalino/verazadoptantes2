@@ -16,7 +16,7 @@ import { getDb } from '@/lib/db';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
 import { maskEmail } from '@/lib/dates';
-import { getEffectiveDocsSource } from '@/lib/adoptionDocsRepo';
+import { getEffectiveDocsSource, type EffectiveDocsSource } from '@/lib/adoptionDocsRepo';
 import { normalizeEmail } from '@/domain/adoptionDocs';
 import {
     brandingFromOrgRow, hasBranding, pickBrandingOrgId,
@@ -71,6 +71,8 @@ async function findOrgIdBySlug(db: Db, slug: string): Promise<string | null> {
  */
 export async function resolveBrandingForRescuer(
     db: Db, rescuerEmail: string | null | undefined, hintOrgSlug?: string | null,
+    /** Already read for this request by the caller: the flag, and/or the shared effective-source lookup. */
+    opts: { brandingOn?: boolean; effective?: () => Promise<EffectiveDocsSource> } = {},
 ): Promise<PublicBranding | null> {
     const email = rescuerEmail?.trim();
     if (!email || email === 'anonymous') return null;
@@ -78,9 +80,9 @@ export async function resolveBrandingForRescuer(
     const who = maskEmail(normalizeEmail(email));
     const hint = hintOrgSlug?.trim() || null;
     try {
-        if (!(await getFeatureFlag('ENABLE_GROUP_BRANDING'))) return null;
+        if (!(opts.brandingOn ?? await getFeatureFlag('ENABLE_GROUP_BRANDING'))) return null;
         const [{ source, memberOrgIds }, hintOrgId] = await Promise.all([
-            getEffectiveDocsSource(db, email),
+            opts.effective ? opts.effective() : getEffectiveDocsSource(db, email, { brandingOn: true }),
             hint ? findOrgIdBySlug(db, hint.slice(0, 120)) : Promise.resolve(null),
         ]);
         const orgId = pickBrandingOrgId({ hintOrgId, memberOrgIds, source });
@@ -96,11 +98,11 @@ export async function resolveBrandingForRescuer(
 }
 
 /** A group catalogue's branding (regardless of its members' choices). Null for flag off, unknown slug, nothing set, or any error. */
-export async function resolveBrandingForOrgSlug(db: Db, slug: string): Promise<PublicBranding | null> {
+export async function resolveBrandingForOrgSlug(db: Db, slug: string, opts: { brandingOn?: boolean } = {}): Promise<PublicBranding | null> {
     const s = slug?.trim();
     if (!s) return null;
     try {
-        if (!(await getFeatureFlag('ENABLE_GROUP_BRANDING'))) return null;
+        if (!(opts.brandingOn ?? await getFeatureFlag('ENABLE_GROUP_BRANDING'))) return null;
         const row = await db.select(brandingColumns).from(organizations).where(eq(organizations.slug, s)).get();
         if (!row) return null;
         const branding = brandingFromOrgRow(row);

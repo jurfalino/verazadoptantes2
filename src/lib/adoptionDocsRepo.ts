@@ -71,13 +71,27 @@ export async function getUserDocsSource(db: Db, email: string): Promise<DocsSour
  * left: callers apply resolveDocsOwner / pickBrandingOrgId, which fall back.
  * Throws on a DB error (callers log with their own context).
  */
-export async function getEffectiveDocsSource(db: Db, email: string): Promise<{ source: DocsSource; memberOrgIds: string[] }> {
+export type EffectiveDocsSource = { source: DocsSource; memberOrgIds: string[] };
+
+/** `brandingOn`: ENABLE_GROUP_BRANDING already read by the caller for this request (skips a second read). */
+export async function getEffectiveDocsSource(db: Db, email: string, opts: { brandingOn?: boolean } = {}): Promise<EffectiveDocsSource> {
     const [raw, memberOrgIds, soleGroupDefault] = await Promise.all([
         getUserDocsSourceRaw(db, email),
         getMemberOrgIds(db, email),
-        getFeatureFlag('ENABLE_GROUP_BRANDING'),
+        opts.brandingOn ?? getFeatureFlag('ENABLE_GROUP_BRANDING'),
     ]);
     return { source: effectiveDocsSource(raw, memberOrgIds, soleGroupDefault), memberOrgIds };
+}
+
+/**
+ * One request's effective-source lookup, shared by the docs and the branding
+ * resolution (the public form needs both). Lazy: nothing runs until a caller
+ * asks, so an early return (no rescuer) never leaves a rejected promise
+ * unawaited. A failure rejects every caller, each inside its own try/catch.
+ */
+export function sharedEffectiveDocsSource(db: Db, email: string, opts: { brandingOn?: boolean } = {}): () => Promise<EffectiveDocsSource> {
+    let pending: Promise<EffectiveDocsSource> | null = null;
+    return () => (pending ??= getEffectiveDocsSource(db, email, opts));
 }
 
 export async function getSettingsRow(db: Db, owner: DocsOwner): Promise<typeof adoptionDocSettings.$inferSelect | null> {
@@ -98,7 +112,10 @@ export async function getContractVersion(db: Db, id: string): Promise<typeof con
  * public page must never break because of this lookup. See global constraint:
  * with no settings row, or the flag off, the form/contract stay byte-identical.
  */
-export async function resolveDocsForRescuer(db: Db, rescuerEmail: string | null | undefined): Promise<ResolvedDocs | null> {
+export async function resolveDocsForRescuer(
+    db: Db, rescuerEmail: string | null | undefined,
+    opts: { effective?: () => Promise<EffectiveDocsSource> } = {},
+): Promise<ResolvedDocs | null> {
     const email = rescuerEmail?.trim();
     if (!email || email === 'anonymous') return null;
 
@@ -109,7 +126,7 @@ export async function resolveDocsForRescuer(db: Db, rescuerEmail: string | null 
         // Same effective source the branding uses, so a page's docs and look always agree.
         const [enabled, { source, memberOrgIds }] = await Promise.all([
             getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS'),
-            getEffectiveDocsSource(db, email),
+            opts.effective ? opts.effective() : getEffectiveDocsSource(db, email),
         ]);
         if (!enabled) return null;
         const owner = resolveDocsOwner(email, source, memberOrgIds);

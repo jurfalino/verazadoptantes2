@@ -39,9 +39,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
         // defaults ({ hiddenSteps: [] }), which include the new questions.
         // (Applied here, not in resolveDocsForRescuer: the contract routes and
         // the submit route also read it, and must keep "null = standard".)
-        const { resolveDocsForRescuer } = await import('@/lib/adoptionDocsRepo');
+        const { resolveDocsForRescuer, sharedEffectiveDocsSource } = await import('@/lib/adoptionDocsRepo');
         const { getFeatureFlag } = await import('@/config/features');
-        const resolved = await resolveDocsForRescuer(db, user?.email);
+        // Read once per request: the branding flag and the rescuer's effective share source
+        // feed both the docs and the branding resolution below (getFeatureFlag never throws;
+        // the shared lookup is lazy and each resolver awaits it inside its own try/catch).
+        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
+        const effective = sharedEffectiveDocsSource(db, user?.email?.trim() ?? '', { brandingOn });
+        const resolved = await resolveDocsForRescuer(db, user?.email, { effective });
         const formConfig = resolved
             ? { hiddenSteps: resolved.hiddenSteps }
             : (await getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS')) ? { hiddenSteps: [] as string[] } : null;
@@ -90,9 +95,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
         // Group branding (flag off: key omitted, response unchanged). `?g=` is only a
         // hint — the repo checks the rescuer is a member of that group.
         const { resolveBrandingForRescuer } = await import('@/lib/groupBrandingRepo');
-        const brandingOn = await getFeatureFlag('ENABLE_GROUP_BRANDING');
         const branding = brandingOn
-            ? await resolveBrandingForRescuer(db, user?.email, new URL(request.url).searchParams.get('g'))
+            ? await resolveBrandingForRescuer(db, user?.email, new URL(request.url).searchParams.get('g'), { brandingOn, effective })
             : null;
 
         return withCors(NextResponse.json({
