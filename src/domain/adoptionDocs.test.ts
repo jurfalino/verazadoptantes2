@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     FORM_STEP_IDS, LOCKED_FORM_STEPS, TOGGLEABLE_FORM_STEPS, FORM_STEP_GROUPS,
-    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource, pinSourceBeforeMembershipChange, sourceAfterLosingStoredGroup, keepSourceAcrossMembershipChange, shouldAskDocsSource,
+    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource, pinSourceBeforeMembershipChange, sourceAfterLosingStoredGroup, sourceBeforeJoinWithStaleGroup, docsSourceWriteBeforeChange, docsSourceWriteAfterChange, shouldAskDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
@@ -397,17 +397,36 @@ describe('sourceAfterLosingStoredGroup (R18: a left group never comes back silen
     });
 });
 
-describe('keepSourceAcrossMembershipChange', () => {
-    it('NULL → pin (requires still NULL); explicit lost group → self (requires still that group)', () => {
-        expect(keepSourceAcrossMembershipChange(null, ['X'], ['X', 'Y'], true)).toEqual({ expected: null, value: 'org:X' });
-        expect(keepSourceAcrossMembershipChange(null, ['X', 'Y'], ['X'], true)).toEqual({ expected: null, value: 'self' });
-        expect(keepSourceAcrossMembershipChange('org:X', ['X', 'Y'], ['Y'], true)).toEqual({ expected: 'org:X', value: 'self' });
-        expect(keepSourceAcrossMembershipChange('org:X', ['X', 'Y'], ['Y'], false)).toEqual({ expected: 'org:X', value: 'self' });
+describe('sourceBeforeJoinWithStaleGroup (a group she already left never comes back on rejoin)', () => {
+    it('stored group not among her groups → «Los míos»', () => {
+        expect(sourceBeforeJoinWithStaleGroup('org:X', [])).toBe('self');
+        expect(sourceBeforeJoinWithStaleGroup('org:X', ['Y'])).toBe('self');
     });
-    it('nothing otherwise', () => {
-        expect(keepSourceAcrossMembershipChange('self', ['X'], ['X', 'Y'], true)).toBeNull();
-        expect(keepSourceAcrossMembershipChange('org:X', ['X'], ['X', 'Y'], true)).toBeNull();
-        expect(keepSourceAcrossMembershipChange(null, [], ['Y'], true)).toBeNull();
+    it('a current group, «Los míos» or never chosen → nothing', () => {
+        expect(sourceBeforeJoinWithStaleGroup('org:X', ['X'])).toBeNull();
+        expect(sourceBeforeJoinWithStaleGroup('self', [])).toBeNull();
+        expect(sourceBeforeJoinWithStaleGroup(null, ['X'])).toBeNull();
+    });
+});
+
+describe('docsSourceWriteBeforeChange / docsSourceWriteAfterChange', () => {
+    it('before: the NULL pin (kept), compare-and-set on NULL', () => {
+        expect(docsSourceWriteBeforeChange(null, ['X'], ['X', 'Y'], true, true)).toEqual({ expected: null, value: 'org:X', reason: 'kept' });
+        expect(docsSourceWriteBeforeChange(null, ['X', 'Y'], ['X'], true, false)).toEqual({ expected: null, value: 'self', reason: 'kept' });
+    });
+    it('before a join/create only: a stale stored group → «Los míos» (left_group), compare-and-set on it', () => {
+        expect(docsSourceWriteBeforeChange('org:X', [], ['X'], true, true)).toEqual({ expected: 'org:X', value: 'self', reason: 'left_group' });
+        expect(docsSourceWriteBeforeChange('org:X', ['Y'], ['Y', 'X'], false, true)).toEqual({ expected: 'org:X', value: 'self', reason: 'left_group' });
+        expect(docsSourceWriteBeforeChange('org:X', ['Y'], [], true, false)).toBeNull(); // a leave: not this function's job
+    });
+    it('before: the stored group she is about to lose is NOT rewritten yet (that happens after the delete)', () => {
+        expect(docsSourceWriteBeforeChange('org:X', ['X', 'Y'], ['Y'], true, false)).toBeNull();
+    });
+    it('after: the stored group she just lost → «Los míos» (left_group)', () => {
+        expect(docsSourceWriteAfterChange('org:X', ['X', 'Y'], ['Y'])).toEqual({ expected: 'org:X', value: 'self', reason: 'left_group' });
+        expect(docsSourceWriteAfterChange('org:X', ['X'], [])).toEqual({ expected: 'org:X', value: 'self', reason: 'left_group' });
+        expect(docsSourceWriteAfterChange('org:X', ['X', 'Y'], ['X'])).toBeNull();
+        expect(docsSourceWriteAfterChange(null, ['X', 'Y'], ['X'])).toBeNull();
     });
 });
 

@@ -150,7 +150,14 @@ describe('leaveOrganization', () => {
     it('leaving the group her links used, with one left: asked; the stored group becomes «Los míos» (R18, audited)', async () => {
         expect(await as(MATE, () => leaveOrganization('org-1'))).toMatchObject({ success: true, deleted: false, askDocsSource: true });
         expect(source(MATE)).toBe('self');
-        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_leave' } }]]);
+        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'left_group' } }]]);
+    });
+
+    it('R18 runs AFTER the delete: a failed leave leaves her stored group as it was', async () => {
+        sqlite.exec(`CREATE TRIGGER no_member_deletes BEFORE DELETE ON org_members BEGIN SELECT RAISE(ABORT, 'boom'); END;`);
+        expect(await as(MATE, () => leaveOrganization('org-1'))).toMatchObject({ success: false });
+        expect(source(MATE)).toBe('org:org-1');
+        expect(keptAudits()).toEqual([]);
     });
 
     it('leaving another group: not asked, her choice untouched', async () => {
@@ -171,7 +178,23 @@ describe('leaveOrganization', () => {
     it('R18: removed by another member from her stored group → «Los míos» for the REMOVED person', async () => {
         expect(await as(OWNER, () => removeOrganizationMember('org-1', 'm-mate-1'))).toEqual({ success: true });
         expect(source(MATE)).toBe('self');
-        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_removal' } }]]);
+        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'left_group', actorEmail: OWNER } }]]);
+    });
+
+    it('a group she had ALREADY left (stale stored value): rejoining it as her only group stays «Los míos», not asked', async () => {
+        setSource(STRANGER, 'org:org-1'); // e.g. left before R18, or staging data
+        expect(await as(STRANGER, () => joinOrganization('link-1'))).toMatchObject({ success: true, askDocsSource: false });
+        expect(source(STRANGER)).toBe('self');
+        expect((await getEffectiveDocsSource(state.db as never, STRANGER)).source).toEqual({ type: 'self' });
+        expect(keptAudits()).toEqual([[{ userEmail: STRANGER, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'left_group' } }]]);
+    });
+
+    it('a stale stored group, rejoined ending in ≥ 2 groups: asked, with «Los míos» in effect (pre-selected), not the old group', async () => {
+        sqlite.prepare("DELETE FROM org_members WHERE id = 'm-mate-1'").run(); // MATE: Perris only, stored Michis (stale)
+        expect(await as(MATE, () => joinOrganization('link-1'))).toMatchObject({ success: true, askDocsSource: true });
+        expect(source(MATE)).toBe('self');
+        // What the dialog pre-selects (getAdoptionDocsOverview's source) is this effective source.
+        expect((await getEffectiveDocsSource(state.db as never, MATE)).source).toEqual({ type: 'self' });
     });
 
     it('R18: a choice made in between is never overwritten (compare-and-set write)', async () => {
@@ -229,7 +252,7 @@ describe('never switch silently on leave / removal (R17)', () => {
         expect(source(MATE)).toBe('self');
         expect(source(OWNER)).toBeNull();
         expect(await inEffect(MATE)).toEqual({ type: 'self' });
-        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_removal' } }]]);
+        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_removal', actorEmail: OWNER } }]]);
     });
 
     it('removed from the sole group her links used 1 → 0: nothing stored', async () => {

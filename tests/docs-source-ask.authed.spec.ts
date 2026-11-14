@@ -28,7 +28,8 @@ const RESET = [
     `UPDATE user_profiles SET adoption_docs_source = NULL WHERE user_id = '${SOLO.id}'`,
 ];
 const SETUP = [
-    `INSERT OR REPLACE INTO organizations (id, name, created_by, created_at, slug) VALUES ('${ASK_ORG}', 'Refugio Pregunta E2E', '${OWNER}', strftime('%s','now'), 'refugio-pregunta-e2e')`,
+    // A website only, so its public branding is non-null and tells the two groups apart (orgSlug).
+    `INSERT OR REPLACE INTO organizations (id, name, created_by, created_at, slug, website_url) VALUES ('${ASK_ORG}', 'Refugio Pregunta E2E', '${OWNER}', strftime('%s','now'), 'refugio-pregunta-e2e', 'https://example.org')`,
     `INSERT OR REPLACE INTO org_members (id, org_id, user_email, role, joined_at) VALUES ('test-orgm-fixture-brand-ask-o', '${ASK_ORG}', '${OWNER}', 'owner', strftime('%s','now'))`,
     `INSERT OR REPLACE INTO org_invites (id, org_id, created_by) VALUES ('${INVITE}', '${ASK_ORG}', '${OWNER}')`,
 ];
@@ -135,8 +136,8 @@ test.describe('Joining a second group asks which form and contract her links use
         await dialog.getByTestId('docs-source-dialog-done').click();
         await expect(dialog).toBeHidden({ timeout: 30000 });
         await expect.poll(storedSource, { timeout: 30000 }).toBe(`org:${ASK_ORG}`);
-        // Her links no longer carry the first group's look.
-        expect((await publicFormBranding(page))?.orgSlug ?? null).not.toBe('refugio-marca-e2e');
+        // Her links now carry the new group's look.
+        expect((await publicFormBranding(page))?.orgSlug).toBe('refugio-pregunta-e2e');
         await context.close();
     });
 

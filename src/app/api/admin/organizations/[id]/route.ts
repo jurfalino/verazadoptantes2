@@ -4,6 +4,8 @@ import { isAdminAsync } from "@/config/admins";
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/requestContext";
 import { logger } from '@/lib/logger';
+import { getDb } from '@/lib/db';
+import { keepDocsSourceBeforeChange, keepDocsSourceAfterChange, type ChangeContext, type DocsBefore } from '@/lib/docsSourceKeep';
 
 /**
  * GET /api/admin/organizations/[id]
@@ -103,7 +105,28 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         memberId = url.searchParams.get('memberId');
         if (!memberId) return NextResponse.json({ error: "Missing memberId" }, { status: 400 });
 
+        // «Al cambiar de grupos»: the removed person isn't here to be asked, so her
+        // shared links keep what they used (src/lib/docsSourceKeep.ts). Never fails the removal.
+        let kept: { db: NonNullable<Awaited<ReturnType<typeof getDb>>>; keep: ChangeContext; before: DocsBefore | null } | null = null;
+        try {
+            const target = await env.DB.prepare(`SELECT user_email FROM org_members WHERE id = ? AND org_id = ?`)
+                .bind(memberId, orgId).first<{ user_email: string }>();
+            const db = target ? await getDb() : null;
+            if (target && db) {
+                const keep: ChangeContext = {
+                    email: target.user_email, orgId, change: 'removal', op: 'adminRemoveOrgMember',
+                    ctx: { memberId, actorEmail: session.user.email }, actorEmail: session.user.email,
+                };
+                kept = { db, keep, before: await keepDocsSourceBeforeChange(db, keep) };
+            }
+        } catch (e) {
+            logger.warn('adminRemoveOrgMember: docs source not kept, removing anyway', {
+                orgId, memberId, actorEmail: session.user.email, error: e instanceof Error ? e.message : String(e),
+            });
+        }
+
         await env.DB.prepare(`DELETE FROM org_members WHERE id = ? AND org_id = ?`).bind(memberId, orgId).run();
+        if (kept) await keepDocsSourceAfterChange(kept.db, kept.before, kept.keep);
 
         logger.info('Org member removed by admin', { orgId, memberId, actorEmail: session.user.email });
         return NextResponse.json({ success: true });

@@ -69,23 +69,31 @@ Jon picked **B**. A is effectively step one of B (the accent part), so B can be 
 
 **Rule: a change of groups never switches her links silently.** She is **asked when she is on screen**, and what she had is **kept when she isn't** (or when she closes the question).
 
-The sole-group default (`NULL` + exactly one group → that group) flips whenever her group count crosses one, and a stored group she no longer belongs to (read as «Los míos») would come back if she rejoined it. So before any membership change, the action stores what is in effect if the change would otherwise switch it later or now (`keepSourceAcrossMembershipChange` = `pinSourceBeforeMembershipChange` for a `NULL` source, only while `ENABLE_GROUP_BRANDING` is on + `sourceAfterLosingStoredGroup` for an explicit group; compare-and-set: written only while the stored value is still what was read, audited `adoption_docs_source_changed` with `reason: 'kept_on_join' | 'kept_on_leave' | 'kept_on_removal'`; a failed write is logged and never fails the change):
+The sole-group default (`NULL` + exactly one group → that group) flips whenever her group count crosses one, and a stored group she no longer belongs to (read as «Los míos») would come back if she rejoined it. So every path that changes a membership — `joinOrganization`, `createOrganization`, `leaveOrganization` (incl. deleting a group as its last member), `removeOrganizationMember` (for the removed person), and the admin routes that remove a member or delete a whole group (for every member) — runs `src/lib/docsSourceKeep.ts`:
+
+- **Before** the membership row is written / deleted: a `NULL` source is stored as what was in effect when the change would flip it (`pinSourceBeforeMembershipChange`, only while `ENABLE_GROUP_BRANDING` is on; audit reason `kept_on_join` / `kept_on_leave` / `kept_on_removal`); and before a join/create, a stored `'org:X'` she had **already** left becomes `'self'` (`sourceBeforeJoinWithStaleGroup`; reason `left_group`) — rejoining X never brings it back nor pre-selects it.
+- **After** a successful leave / removal / group delete: a stored `'org:X'` for the group she just lost becomes `'self'` (`sourceAfterLosingStoredGroup`, R18; reason `left_group`). A failed delete changes nothing.
+- Every write is compare-and-set on her own row (only while the stored value is still what was read), audited on her as `adoption_docs_source_changed` (`{ source, reason }`, plus `actorEmail` on a removal), and a failure is logged with context and never fails the membership change. Whether to ask is decided on her state before the change.
 
 | Change | Before → after | Stored |
 |---|---|---|
-| Join / create a second group | 1 → 2 | `'org:<her sole group>'` |
-| Leave, or be removed from, the group she was NOT using | 2 → 1 | `'self'` |
-| Leave / be removed from her sole group | 1 → 0 | nothing (nothing left to keep) |
-| Her first group | 0 → 1 | nothing (the default is how a new member starts) |
+| Join / create a second group, never chosen | 1 → 2 | `'org:<her sole group>'` (before) |
+| Leave, or be removed from, the group she was NOT using, never chosen | 2 → 1 | `'self'` (before) |
+| Leave / be removed from her sole group, never chosen | 1 → 0 | nothing (nothing left to keep) |
+| Her first group, never chosen | 0 → 1 | nothing (the default is how a new member starts) |
 | No flip (2 → 3, 3 → 2, …) | — | nothing |
-| Explicit `'org:X'`, and she leaves / is removed from X / X is deleted (R18) | any | `'self'` — otherwise rejoining X later would switch her back silently |
+| Explicit `'org:X'`; she leaves / is removed from X / X is deleted (R18) | any | `'self'` (after the delete) |
+| Explicit `'org:X'` she had already left; she joins or creates any group | any | `'self'` (before) |
 | Any other explicit choice | — | nothing |
+
+**Known limit (rare, accepted):** two membership changes for the same person at the same moment (e.g. she joins a group while someone removes her from another) each decide on the state they read; the compare-and-set never overwrites a newer value, but the second change may then keep nothing, leaving the default to apply. A later group change or the Settings choice settles it. Not addressed in code.
 
 When she is asked:
 
 - **Join or create a group, ending in ≥ 2 groups** → after success, a dialog «¿Qué formulario y contrato usás al compartir?» with exactly the «Al compartir, usar:» rows (same component, `DocsSourceOptions`: logos, names, look sub-lines, pills), her current choice pre-selected and marked «(el que usás)», the hint «Podés cambiarlo cuando quieras en Configuración.» and one button, «Listo» (saves through `setAdoptionDocsSource`, only if she changed it). Asked on every such join/create, also when she had already chosen (her choice pre-selected). Closing keeps what she had (stored above).
-- **«Salir» of the group her links used, with ≥ 1 group left** → the same dialog with the groups she still has, «Los míos» pre-selected (the stored group was just rewritten to `'self'`). Closing keeps «Los míos»; rejoining that group later follows the join rules (asked with ≥ 2 groups; as her only group it stays «Los míos»). No group left → no dialog.
-- **Not asked:** no group; either flag (`ENABLE_GROUP_BRANDING`, `ENABLE_CUSTOM_ADOPTION_DOCS`) off; leaving a group she wasn't using (kept as above); when someone else removes her from a group (`removeOrganizationMember` keeps it for the removed person — she isn't there to answer).
+- **«Salir» of the group her links used, with ≥ 1 group left** → the same dialog with the groups she still has, «Los míos» pre-selected (the stored group becomes `'self'` once she has left). Closing keeps «Los míos»; rejoining that group later follows the join rules (asked with ≥ 2 groups; as her only group it stays «Los míos»). No group left → no dialog.
+- **Not asked:** no group; either flag (`ENABLE_GROUP_BRANDING`, `ENABLE_CUSTOM_ADOPTION_DOCS`) off; leaving a group she wasn't using (kept as above); when someone else — a member or an admin — removes her from a group or deletes it (kept as above: she isn't there to answer).
+- Option order: «Los míos» first, then the groups — exactly the «Al compartir, usar:» list (R19).
 - The server decides (`shouldAskDocsSource`, returned as `askDocsSource` by the three actions). The invite page carries it to `/organizations?askSource=1`, which opens the dialog once and drops the parameter.
 
 ### Which branding each public page uses

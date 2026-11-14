@@ -305,25 +305,56 @@ export function pinSourceBeforeMembershipChange(
  * Independent of the branding flag: the stored choice wins either way.
  */
 export function sourceAfterLosingStoredGroup(raw: string | null | undefined, memberOrgIdsBefore: readonly string[], memberOrgIdsAfter: readonly string[]): string | null {
-    const stored = raw == null ? null : parseDocsSource(raw);
-    if (stored?.type !== 'org' || raw !== serializeDocsSource(stored)) return null;
-    if (!memberOrgIdsBefore.includes(stored.orgId) || memberOrgIdsAfter.includes(stored.orgId)) return null;
+    const stored = storedGroup(raw);
+    if (!stored || !memberOrgIdsBefore.includes(stored) || memberOrgIdsAfter.includes(stored)) return null;
     return serializeDocsSource({ type: 'self' });
 }
 
 /**
- * What to store before a membership change so it never switches her links
- * silently: `expected` is the stored value the write requires (compare-and-set),
- * `value` what to store. Null → nothing to do.
+ * A stored 'org:X' she already left before this change (stale — read as
+ * «Los míos» today) is made explicit as 'self' before she joins or creates a
+ * group: rejoining X must not bring it back silently, nor pre-select X in the
+ * question. Null when the stored group is one of her groups, or not a group.
  */
-export function keepSourceAcrossMembershipChange(
-    raw: string | null | undefined, memberOrgIdsBefore: readonly string[], memberOrgIdsAfter: readonly string[], brandingOn: boolean,
-): { expected: string | null; value: string } | null {
+export function sourceBeforeJoinWithStaleGroup(raw: string | null | undefined, memberOrgIdsBefore: readonly string[]): string | null {
+    const stored = storedGroup(raw);
+    if (!stored || memberOrgIdsBefore.includes(stored)) return null;
+    return serializeDocsSource({ type: 'self' });
+}
+
+/** The group id of a well-formed stored 'org:<id>', else null. */
+function storedGroup(raw: string | null | undefined): string | null {
+    if (raw == null) return null;
+    const s = parseDocsSource(raw);
+    return s.type === 'org' && raw === serializeDocsSource(s) ? s.orgId : null;
+}
+
+/**
+ * A compare-and-set write of the stored source: only while it is still
+ * `expected` (null = never chosen). `reason`: 'kept' = a NULL default stored
+ * as it was (R17); 'left_group' = a stored group she is no longer in becomes
+ * «Los míos» (R18, stale).
+ */
+export type DocsSourceWrite = { expected: string | null; value: string; reason: 'kept' | 'left_group' };
+
+/** Before the membership row is written / deleted: the R17 pin, and (join/create) a stale stored group. */
+export function docsSourceWriteBeforeChange(
+    raw: string | null | undefined, memberOrgIdsBefore: readonly string[], memberOrgIdsAfter: readonly string[],
+    brandingOn: boolean, adding: boolean,
+): DocsSourceWrite | null {
     const pinned = pinSourceBeforeMembershipChange(raw, memberOrgIdsBefore, memberOrgIdsAfter, brandingOn);
-    if (pinned) return { expected: null, value: pinned };
-    const rewritten = sourceAfterLosingStoredGroup(raw, memberOrgIdsBefore, memberOrgIdsAfter);
-    if (rewritten) return { expected: raw as string, value: rewritten };
+    if (pinned) return { expected: null, value: pinned, reason: 'kept' };
+    const stale = adding ? sourceBeforeJoinWithStaleGroup(raw, memberOrgIdsBefore) : null;
+    if (stale) return { expected: raw as string, value: stale, reason: 'left_group' };
     return null;
+}
+
+/** After a successful leave / removal / group delete: the stored group she just lost (R18). */
+export function docsSourceWriteAfterChange(
+    raw: string | null | undefined, memberOrgIdsBefore: readonly string[], memberOrgIdsAfter: readonly string[],
+): DocsSourceWrite | null {
+    const rewritten = sourceAfterLosingStoredGroup(raw, memberOrgIdsBefore, memberOrgIdsAfter);
+    return rewritten ? { expected: raw as string, value: rewritten, reason: 'left_group' } : null;
 }
 
 export type GroupChange =

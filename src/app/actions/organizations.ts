@@ -6,9 +6,8 @@ import { getDb, getUser } from './_db';
 import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { appBaseUrl } from '@/lib/emailConfig';
-import { getFeatureFlag } from '@/config/features';
-import { getMemberOrgIds, getUserDocsSourceRaw, setDocsSourceIfStill } from '@/lib/adoptionDocsRepo';
-import { effectiveDocsSource, keepSourceAcrossMembershipChange, shouldAskDocsSource } from '@/domain/adoptionDocs';
+import { keepDocsSourceBeforeChange, keepDocsSourceAfterChange, type DocsBefore } from '@/lib/docsSourceKeep';
+import { effectiveDocsSource, shouldAskDocsSource } from '@/domain/adoptionDocs';
 
 /**
  * Case-insensitive name-collision check. Returns true when *another* org
@@ -64,66 +63,7 @@ export interface OrgMember {
 
 // ── «Al cambiar de grupos» (spec 2026-11-13-group-branding-design.md) ──
 
-type DocsFlags = { brandingOn: boolean; customDocsOn: boolean };
-
-/** Her «Al compartir, usar:» state before a group change. Throws on a DB error. */
-async function readDocsBefore(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, user: string) {
-    const [raw, memberOrgIds, brandingOn, customDocsOn] = await Promise.all([
-        getUserDocsSourceRaw(db, user),
-        getMemberOrgIds(db, user),
-        getFeatureFlag('ENABLE_GROUP_BRANDING'),
-        getFeatureFlag('ENABLE_CUSTOM_ADOPTION_DOCS'),
-    ]);
-    return { raw, memberOrgIds, flags: { brandingOn, customDocsOn } as DocsFlags };
-}
-
-type DocsBefore = Awaited<ReturnType<typeof readDocsBefore>>;
-type MembershipChange = 'join' | 'create' | 'leave' | 'removal';
-const KEPT_REASON: Record<MembershipChange, string> = {
-    join: 'kept_on_join', create: 'kept_on_join', leave: 'kept_on_leave', removal: 'kept_on_removal',
-};
-
-/**
- * «Al cambiar de grupos» — never switch her links silently (R17). Run BEFORE
- * the membership row is written or deleted: `email` (whoever's groups change —
- * the removed person on a removal, not the actor) gets a never-chosen source
- * stored as what was in effect when the change would otherwise flip the
- * sole-group default, and an explicit 'org:X' rewritten to 'self' when X goes
- * away with the change, so a later rejoin can't switch her back silently (R18)
- * — keepSourceAcrossMembershipChange; compare-and-set; audited
- * `adoption_docs_source_changed` on her. Never fails the
- * change: any error is logged with `ctx` and it goes on — returns null when
- * even the read failed (then nothing is asked either).
- */
-async function keepDocsSourceAcrossChange(
-    db: NonNullable<Awaited<ReturnType<typeof getDb>>>, email: string, orgId: string, change: MembershipChange,
-    op: string, ctx: Record<string, unknown>,
-): Promise<DocsBefore | null> {
-    let before: DocsBefore;
-    try {
-        before = await readDocsBefore(db, email);
-    } catch (e) {
-        logger.warn(`${op}: docs source read failed, not kept and not asked`, { ...ctx, orgId, error: e instanceof Error ? e.message : String(e) });
-        return null;
-    }
-    const after = change === 'join' || change === 'create'
-        ? [...new Set([...before.memberOrgIds, orgId])]
-        : before.memberOrgIds.filter(id => id !== orgId);
-    const keep = keepSourceAcrossMembershipChange(before.raw, before.memberOrgIds, after, before.flags.brandingOn);
-    if (keep) {
-        const pin = keep.value;
-        try {
-            if (await setDocsSourceIfStill(db, email, keep.expected, pin)) {
-                const { logAudit } = await import('@/lib/audit');
-                await logAudit({ userEmail: email, action: 'adoption_docs_source_changed', details: { source: pin, reason: KEPT_REASON[change] } });
-                logger.info(`${op}: docs source kept across the group change`, { ...ctx, orgId, source: pin });
-            }
-        } catch (e) {
-            logger.warn(`${op}: keeping the docs source failed, going on`, { ...ctx, orgId, source: pin, error: e instanceof Error ? e.message : String(e) });
-        }
-    }
-    return before;
-}
+// The keep logic lives in src/lib/docsSourceKeep.ts (shared with the admin routes).
 
 /** Whether to ask after the membership was written: the groups she ends in. */
 function askAfterJoin(before: DocsBefore | null, kind: 'join' | 'create', orgId: string): boolean {
@@ -172,7 +112,7 @@ export async function createOrganization(name: string): Promise<{ success: boole
             slug,
         });
 
-        const docsBefore = await keepDocsSourceAcrossChange(db, user, orgId, 'create', 'createOrganization', { user });
+        const docsBefore = await keepDocsSourceBeforeChange(db, { email: user, orgId, change: 'create', op: 'createOrganization', ctx: { user } });
 
         await db.insert(orgMembers).values({
             id: memberId,
@@ -324,11 +264,12 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
 
         if (!membership) return { success: false, error: 'Not a member of this organization' };
 
-        // «Al cambiar de grupos», before the delete: a silent switch is kept
-        // from happening (leaving the unused group of two keeps «Los míos»), and
-        // leaving the group her links used (with a group left) asks which now.
-        // Never fails the leave.
-        const before = await keepDocsSourceAcrossChange(db, user, orgId, 'leave', 'leaveOrganization', { user });
+        // «Al cambiar de grupos»: no silent switch (leaving the unused group of two
+        // keeps «Los míos»; after the delete, a stored group she left becomes
+        // «Los míos»), and leaving the group her links used (with a group left)
+        // asks which now — decided on her state before the change. Never fails the leave.
+        const keep = { email: user, orgId, change: 'leave' as const, op: 'leaveOrganization', ctx: { user } };
+        const before = await keepDocsSourceBeforeChange(db, keep);
         const askDocsSource = !!before && shouldAskDocsSource({
             kind: 'leave',
             orgCountAfter: before.memberOrgIds.filter(id => id !== orgId).length,
@@ -341,6 +282,7 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
             await db.delete(orgInvites).where(eq(orgInvites.orgId, orgId));
             await db.delete(orgMembers).where(eq(orgMembers.orgId, orgId));
             await db.delete(organizations).where(eq(organizations.id, orgId));
+            await keepDocsSourceAfterChange(db, before, keep);
             return { success: true, deleted: true, askDocsSource };
         }
 
@@ -348,6 +290,7 @@ export async function leaveOrganization(orgId: string): Promise<{ success: boole
         await db.delete(orgMembers).where(
             and(eq(orgMembers.orgId, orgId), eq(orgMembers.userEmail, user))
         );
+        await keepDocsSourceAfterChange(db, before, keep);
 
         return { success: true, deleted: false, askDocsSource };
     } catch (error) {
@@ -405,9 +348,11 @@ export async function removeOrganizationMember(orgId: string, memberId: string):
         // «Al cambiar de grupos»: she isn't on screen to be asked, so her links
         // keep what they used (e.g. «Los míos» when she drops from two groups to
         // one). Done for the REMOVED person; never fails the removal.
-        await keepDocsSourceAcrossChange(db, target.userEmail, orgId, 'removal', 'removeOrganizationMember', { user, memberId });
+        const keep = { email: target.userEmail, orgId, change: 'removal' as const, op: 'removeOrganizationMember', ctx: { user, memberId }, actorEmail: user };
+        const removedBefore = await keepDocsSourceBeforeChange(db, keep);
 
         await db.delete(orgMembers).where(and(eq(orgMembers.id, memberId), eq(orgMembers.orgId, orgId)));
+        await keepDocsSourceAfterChange(db, removedBefore, keep);
         // The removed person saw the invite link on /organizations: replace it, or
         // they could rejoin at once (and, as a member, remove whoever removed them).
         await rotateInviteLink(db, orgId, user);
@@ -594,7 +539,7 @@ export async function joinOrganization(inviteToken: string): Promise<{ success: 
             return { success: true, orgName: org?.name || 'Organization' };
         }
 
-        const docsBefore = await keepDocsSourceAcrossChange(db, user, invite.orgId, 'join', 'joinOrganization', { user });
+        const docsBefore = await keepDocsSourceBeforeChange(db, { email: user, orgId: invite.orgId, change: 'join', op: 'joinOrganization', ctx: { user } });
 
         // Join
         await db.insert(orgMembers).values({

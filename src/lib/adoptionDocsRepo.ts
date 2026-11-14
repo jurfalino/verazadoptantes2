@@ -63,7 +63,7 @@ export async function getUserDocsSourceRaw(db: Db, email: string): Promise<strin
  * Compare-and-set of the «Al compartir, usar:» choice: store `value` only while
  * the stored value is still `expected` (null = never chosen) — a choice made
  * in between is never overwritten. Used to keep what was in effect across a
- * group change (keepSourceAcrossMembershipChange). Same case-insensitive user
+ * group change (src/lib/docsSourceKeep.ts). Same case-insensitive user
  * match as getUserDocsSourceRaw. Returns whether a value was written. Throws
  * on a DB error.
  */
