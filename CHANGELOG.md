@@ -2,6 +2,29 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.18] - 2026-11-14
+
+### Added — «Cargar un animal desde un post» (Jon 2026-11-14)
+- «Agregar animal» opens with «¿Ya lo publicaste? Cargalo desde el post»: paste an Instagram or Facebook link (or
+  upload screenshots) and the form comes back filled in — name, species, age, sex, neutered, colour, a description
+  and the post's photos, all editable. Every «+ Agregar» for animals already leads here.
+- Age, sex and neutered status the post doesn't state are pointed out in amber («El post no dice… Si lo sabés,
+  completalo»), never guessed and never required: the animal saves and goes public with name, species and photo,
+  as today. Age counts from the post's date when the post shows it.
+- A post with several animals (a litter) shows one row each, with the same fields when opened; a photo can belong to
+  more than one animal; one button saves them all.
+- Already here: the same post loaded by your team («Ya cargaste este post · Ver a Rocco»), by another rescuer (who,
+  their public page, «Lo tengo yo: cargarlo igual»), or an animal of your team with the same name and species
+  («¿Es el mismo Rocco?» — «Sí» adds the post's photos and fills only its empty fields).
+- A post that can't be read keeps its link and leaves the form usable; a post about a person offers «Cargarlo como
+  persona».
+- Sharing a post to the app from the phone first asks «¿Qué hay en este post?» — an animal for adoption or a person.
+  A shared contact card still goes straight to the person import.
+
+### Fixed
+- The «en buenas manos» screen (an animal of another rescuer) no longer links to the public page of an animal its
+  rescuer took out of the catalogue.
+
 ## [2.59.16] - 2026-11-14
 
 ### Fixed — senior EM + UX/UI review of the general forms (Jon 2026-11-13)

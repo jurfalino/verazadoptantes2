@@ -16,6 +16,8 @@ test.describe('Import wizard', () => {
             route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'upstream down' }) }));
 
         await page.goto(`/import?shared=true&shared_url=${encodeURIComponent(POST)}&shared_text=${encodeURIComponent('Ojo con este')}`);
+        // A share first asks what the post is (2026-11-14): this one is about a person.
+        await page.getByTestId('share-kind-person').click({ timeout: 30000 });
 
         const field = page.getByPlaceholder(/paste|pegá|URL|text/i);
         await expect(field).toBeVisible({ timeout: 30000 });

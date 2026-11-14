@@ -512,7 +512,23 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //                              name, sent time, species / life stage and an asked animal named only when it is the
 //                              caller's team's own and not deleted — the same rows the home card already shows that
 //                              caller. `heal` runs the existing per-team heal (forms missing their application).
-const EXPECTED_ACTIONS = 194;
+// 195 (Jon 2026-11-14, «Cargar un animal desde un post»): one export in src/app/actions/animalImport.ts,
+// imported by the «Agregar animal» page. What a stranger can do with it:
+//   findAnimalImportMatches({ sourceUrls, animals })  read-only; session required (signed out → getUser throws).
+//                              Input is zod-bounded (≤3 links of ≤2000 chars, ≤12 {name ≤80, species ≤40}). Answers
+//                              (a) the CALLER's team's animals loaded from the same post: id, name, species, sex, lead
+//                              public photo, created time, and the animal's own fields (neutered, colour, microchip,
+//                              details, birth date, post link) — what /my-animals/[id] already shows and edits for
+//                              them; (b) OTHER rescuers'
+//                              animals loaded from the same post: id, name, species, the owner's public display name
+//                              and group, and the public catalogue link only when the animal is publicly listed —
+//                              exactly what /my-animals/[id] «en buenas manos» shows any signed-in visitor (never an
+//                              email); only animals offered for adoption (available / foster / adopted), never an
+//                              animal named in a report; (c) per given name, the caller's team's animal still
+//                              looking for a home with the same name and species (myAnimalsScope.availableWhere), with
+//                              the same fields as (a).
+//                              Probing for another rescuer's animal needs its exact post link, which is public.
+const EXPECTED_ACTIONS = 195;
 
 let manifest;
 try {
