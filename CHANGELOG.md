@@ -2,6 +2,13 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.14] - 2026-11-13
+
+### Fixed
+- 2.59.13 didn't deploy: a mobile test still paged through the removed «Sin animal elegido» card. It now checks
+  the new behaviour at 390px — an old link lands on the request alone in «Mis adoptantes», and 25 general forms
+  all list without overflowing.
+
 ## [2.59.13] - 2026-11-13
 
 ### Changed — general forms are people, not an animal card (Jon 2026-11-13)
