@@ -33,6 +33,10 @@ describe('«Formularios generales» in «Pendientes de revisar» (Jon 2026-11-13
         expect(requestsToEvaluate(list).map(a => a.applicationId)).toEqual(['app-ana', 'app-martin']);
     });
 
+    it('a form with no profile isn\'t listed nor counted — the same rule as the home card (review M7)', () => {
+        expect(requestsToEvaluate([...list, req({ applicationId: 'app-sin-perfil', adopterId: null })]).map(a => a.applicationId)).toEqual(['app-ana', 'app-martin']);
+    });
+
     it('a heading, one row per person with «Evaluar»; a request for an adopted animal says so', () => {
         const html = renderToStaticMarkup(<GeneralRequestsGroup requests={requestsToEvaluate(list)} onOpen={() => {}} t={t} locale="es" />);
         const out = text(html);

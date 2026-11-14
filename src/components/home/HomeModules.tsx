@@ -145,26 +145,19 @@ function TodoRow({ children, href, testId, className = '' }: { children: ReactNo
  * it — amber when something waits (a check-up due, applications to evaluate,
  * the offer to tell the others). With `onOpen` the row opens its panel over
  * the home (HomeDuePanel, HomeApplicantsPanel, the offer sheet) instead of
- * going to the page; it looks the same either way. `formIcon`: the
- * «Sin animal elegido» row, which is no animal.
+ * going to the page; it looks the same either way.
  */
-function AnimalRow({ href, testId, name, photo, species, line, due = false, onOpen, formIcon = false }: {
-    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean; onOpen?: () => void; formIcon?: boolean;
+function AnimalRow({ href, testId, name, photo, species, line, due = false, onOpen }: {
+    href: string; testId: string; name: string; photo: string | null; species: string | null; line: string; due?: boolean; onOpen?: () => void;
 }) {
     const rowClass = `flex items-center gap-3 min-h-11 py-2 group ${SLOT_ROW}`;
     const body = (
         <>
-            {formIcon ? (
-                <span className="w-10 h-10 shrink-0 rounded-lg border bg-amber-50 border-amber-200 text-amber-700 flex items-center justify-center">
-                    <Icon name="form" className="w-5 h-5" />
-                </span>
-            ) : (
-                <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
-                    {photo
-                        ? <img src={photo} alt="" className="w-full h-full object-cover" />
-                        : <img src={`/placeholders/${species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
-                </span>
-            )}
+            <span className="w-10 h-10 shrink-0 rounded-lg bg-stone-200 overflow-hidden flex items-center justify-center">
+                {photo
+                    ? <img src={photo} alt="" className="w-full h-full object-cover" />
+                    : <img src={`/placeholders/${species === 'cat' ? 'cat' : species === 'dog' ? 'dog' : 'paw'}.png`} alt="" className="w-7 h-7 object-contain opacity-60" />}
+            </span>
             <span className="flex-1 min-w-0">
                 <span title={name} className="block text-sm font-semibold text-stone-900 group-hover:text-teal-700 [overflow-wrap:anywhere] md:truncate">{name}</span>
                 <span title={line} className={`block text-xs [overflow-wrap:anywhere] md:truncate ${due ? 'font-semibold text-amber-700' : 'text-stone-500'}`}>{keepNumberWithUnit(line)}</span>
@@ -586,7 +579,7 @@ export default function HomeModules({ contactImportAvailable, googleContactsImpo
     const [failedId, setFailedId] = useState<string | null>(null);
     /** The animal whose «Para hacer ahora» is open over the home. */
     const [duePanel, setDuePanel] = useState<{ id: string; name: string } | null>(null);
-    /** The applications open over the home (one animal's, or «Sin animal elegido»). */
+    /** The panel open over the home: one animal's candidates, or one general form alone. */
     const [applicantsPanel, setApplicantsPanel] = useState<HomeApplicantsTarget | null>(null);
     /** The animal whose offer to tell the other candidates is open over the home. */
     const [offerFor, setOfferFor] = useState<string | null>(null);

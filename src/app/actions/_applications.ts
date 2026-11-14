@@ -332,6 +332,9 @@ function untouchedCandidacyWhere(db: Db, candidacyId: string, animalId: string, 
         eq(applications.state, APPLICATION_STATES.OPEN),
         eq(applications.origin, APPLICATION_ORIGINS.PROPOSED),
         ...(noLink ? [noLink] : []),
+        // A merge may have pointed another application at it (an older direct one `replaced`, a second form
+        // `also_applied`): deleting it would hide that application for good (review M2).
+        sql`NOT EXISTS (SELECT 1 FROM applications AS r WHERE r.replaced_by_application_id = ${candidacyId})`,
     );
 }
 

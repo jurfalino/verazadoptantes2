@@ -94,11 +94,12 @@ export function ProposalAnimalList({ animals, anyAnimals, busyId, onPick, person
 }
 
 /** What the sheet does with proposeAnimal's answer. */
-export function proposeOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>): 'done' | 'already_candidate' | 'same_person' | 'failed' {
+export function proposeOutcome(res: Awaited<ReturnType<typeof proposeAnimal>>, opts: { change?: boolean } = {}): 'done' | 'already_candidate' | 'same_person' | 'failed' | 'failed_reread' {
     if (res.ok || res.error === 'already_decided') return 'done';
     if (res.error === 'already_candidate') return 'already_candidate';
     if (res.error === 'same_person_unanswered') return 'same_person';
-    return 'failed';
+    // «Cambiar animal» moves two rows: after a failure the panel re-reads what is really saved (review M5).
+    return opts.change ? 'failed_reread' : 'failed';
 }
 
 /**
@@ -165,7 +166,7 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
                 onDone();
                 return;
             }
-            const next = proposeOutcome(res);
+            const next = proposeOutcome(res, { change });
             if (next === 'done') { onDone(); return; }
             if (next === 'same_person') { onSamePerson(); return; }
             if (next === 'already_candidate') {
@@ -174,8 +175,12 @@ export function ProposeAnimalSheet({ applicationId, personName, onClose, onDone,
                 return;
             }
             toast.error(t('errors.generic'), t('evaluation.propose_failed'), (!res.ok && res.errorId) || resolveErrorId(new Error(`proposeAnimal: ${res.ok ? 'unknown' : res.error}`), 'ProposeAnimalSheet'));
+            if (next === 'failed_reread') onDone();
         } catch (e) {
-            if (!handledAsStale(e)) toast.error(t('errors.generic'), t('evaluation.propose_failed'), resolveErrorId(e, 'ProposeAnimalSheet'));
+            if (handledAsStale(e)) return;
+            toast.error(t('errors.generic'), t('evaluation.propose_failed'), resolveErrorId(e, 'ProposeAnimalSheet'));
+            // A throw mid-«Cambiar» may have moved either row: re-read rather than show the old animal.
+            if (change) onDone();
         } finally {
             setBusyId(null);
         }

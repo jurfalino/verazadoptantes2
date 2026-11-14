@@ -217,8 +217,11 @@ async function proposalOf(db: Db, row: ApplicationRow): Promise<{ info: Proposal
     const links = !candidacy.animalId ? 0 : (await Promise.all(profiles.map(id => db.select({ n: sql<number>`count(*)` }).from(contractInvitations)
         .where(and(eq(contractInvitations.animalId, candidacy.animalId!), eq(contractInvitations.adopterId, id))).get() as Promise<{ n: number } | undefined>)))
         .reduce((sum, r) => sum + (r?.n ?? 0), 0);
+    // Another application a merge pointed at the candidacy keeps it (review M2): no undo offered.
+    const pointedAt = await db.select({ id: applications.id }).from(applications)
+        .where(eq(applications.replacedByApplicationId, candidacy.id)).get() as { id: string } | undefined;
     return {
-        info: { generalApplicationId, candidacyId: candidacy.id, animal: null, byName: null, canUndo: proposalUndoable({ candidacyState: candidacy.state, invitationsEver: links }) },
+        info: { generalApplicationId, candidacyId: candidacy.id, animal: null, byName: null, canUndo: !pointedAt && proposalUndoable({ candidacyState: candidacy.state, invitationsEver: links }) },
         proposerEmail: closedBy,
     };
 }

@@ -12,7 +12,7 @@ export type MyAnimalsTab = 'available' | 'adopted' | 'todos' | 'pendientes' | 's
 /**
  * ?counts=1 (`all` = the «Todos» tab), plus two counts every tab's list carries in a header:
  * `pending` («Con controles pendientes», x-pending-count) and `solicitudes` («Con solicitudes por
- * evaluar», x-solicitudes-count — its cards, «Sin animal elegido» included).
+ * evaluar», x-solicitudes-count — its animal cards; general forms live in «Mis adoptantes»).
  */
 export type MyAnimalsTabCounts = { available: number; adopted: number; all?: number; pending?: number; solicitudes?: number };
 

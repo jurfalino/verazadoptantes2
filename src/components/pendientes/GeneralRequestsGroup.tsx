@@ -7,14 +7,15 @@
 import type { ApplicantSummary } from '@/app/actions/applicants';
 import { animalLine } from '@/components/evaluation/ApplicationStatusLine';
 import { timeAgo } from '@/lib/timeAgo';
+import { isToDo } from '@/domain/applications';
 import { T_MUTED } from '@/components/pendientes/ui';
 
 type T = (key: string) => string;
 
-/** The requests that wait on the team: to evaluate, newest first. */
+/** The requests that wait on the team: to evaluate, on a live profile (`isToDo`, as the home counts them), newest first. */
 export function requestsToEvaluate(list: readonly ApplicantSummary[]): ApplicantSummary[] {
     return list
-        .filter(a => a.status.kind === 'to_evaluate')
+        .filter(isToDo)
         .sort((a, b) => (b.appliedAt ?? 0) - (a.appliedAt ?? 0));
 }
 

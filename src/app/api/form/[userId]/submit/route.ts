@@ -329,7 +329,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
         logger.info('PetShield form submission stored', { submissionId, rescuerEmail, name, adopterId, shownCount: shownSteps ? shownSteps.length : null });
 
         // Where the notice leads (owner and teammates alike): that application on Mis animales'
-        // «Con solicitudes por evaluar», where the panel opens at it — else the form (formNoticeUrl).
+        // «Con solicitudes por evaluar», where the panel opens at it; a general form, alone in «Mis adoptantes» —
+        // else the form (formNoticeUrl).
         // The application's animal, not the asked one: a form for an adopted animal is general.
         const noticeUrl = await (async () => {
             try {

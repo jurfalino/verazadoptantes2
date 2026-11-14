@@ -169,6 +169,12 @@ describe('«Proponer un animal» outcome', () => {
         expect(proposeOutcome({ ok: false, error: 'same_person_unanswered' })).toBe('same_person');
         expect(proposeOutcome({ ok: false, error: 'failed', errorId: 'e1' })).toBe('failed');
     });
+
+    it('«Cambiar animal» failing (or throwing) re-reads the request, so it never shows an animal it is no longer on (review M5)', () => {
+        expect(proposeOutcome({ ok: false, error: 'failed', errorId: 'e1' }, { change: true })).toBe('failed_reread');
+        expect(proposeOutcome({ ok: false, error: 'already_candidate' }, { change: true })).toBe('already_candidate');
+        expect(proposeOutcome({ ok: true, applicationId: 'a' }, { change: true })).toBe('done');
+    });
 });
 
 describe('the possible duplicate inside the evaluation', () => {

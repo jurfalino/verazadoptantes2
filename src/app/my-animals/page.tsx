@@ -765,7 +765,7 @@ export default function MyAnimalsPage() {
             </div>
             {applicantsPanel && (
                 <HomeApplicantsPanel
-                    key={applicantsPanel.target === 'general' ? GENERAL_ROW_ID : applicantsTargetKey(applicantsPanel.target)}
+                    key={applicantsTargetKey(applicantsPanel.target)}
                     target={applicantsPanel.target}
                     applicationId={applicantsPanel.applicationId}
                     returnLabel

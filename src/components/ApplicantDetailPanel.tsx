@@ -12,7 +12,7 @@
  * as the same side-by-side compare every same-person screen uses, the answers
  * that need a look, and the two ways an evaluation ends — «No avanzar» plus
  * «Enviar contrato» for an animal, «No avanzar» plus «Proponer un animal» for a
- * general application (`animal` null, «Sin animal elegido»). After an outcome
+ * general form (`animal` null, opened alone — `single`). After an outcome
  * the list is re-read (`onOutcome`) and the panel moves to the next one to
  * evaluate, or closes when none is left.
  *
@@ -57,7 +57,7 @@ import { WithdrawProposalDialog } from '@/components/evaluation/WithdrawProposal
 interface Props {
     applicants: ApplicantSummary[];
     initialIndex: number;
-    /** The animal evaluated for; null = «Sin animal elegido» (general applications). */
+    /** The animal evaluated for; null = a general form (formulario general). */
     animal: { id: string; name: string; sex: string | null } | null;
     onClose: () => void;
     /** After an outcome: re-read the list; the panel moves to nextToEvaluateIndex or closes on -1. */
@@ -90,9 +90,11 @@ export function indexAfterOutcome(statuses: readonly ApplicationStatus[], decide
  * happened); `same_person` when «¿Es la misma persona?» still waits for an answer (Jon 2026-11-12); otherwise
  * an error toast (`not_allowed` has its own words).
  */
-export function sendOutcome(result: CreateInvitationResult): 'share' | 'refresh' | 'not_allowed' | 'same_person' | 'failed' {
+export function sendOutcome(result: CreateInvitationResult): 'share' | 'refresh' | 'removed' | 'not_allowed' | 'same_person' | 'failed' {
     if (result.success && result.url) return 'share';
     if (result.error === 'already_decided') return 'refresh';
+    // A teammate's «Quitar» took the person out of this animal's candidates meanwhile: nothing was sent (review I1).
+    if (result.error === 'removed') return 'removed';
     if (result.error === 'same_person_unanswered') return 'same_person';
     return result.error === 'not_allowed' ? 'not_allowed' : 'failed';
 }
@@ -220,13 +222,16 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
         if (!animal || !applicant.adopterId || busy) return;
         setBusy(true);
         try {
-            const result = await createContractInvitation(animal.id, applicant.adopterId, locale);
+            const result = await createContractInvitation(animal.id, applicant.adopterId, locale, applicant.applicationId);
             const next = sendOutcome(result);
             if (next === 'share' && result.url) {
                 zarazTrack('contract_issued', { surface: 'applicant_detail' });
                 setShareUrl(result.url);
                 onContractIssued?.(result.url, applicant);
             } else if (next === 'refresh') {
+                await afterChange('refresh');
+            } else if (next === 'removed') {
+                toast.info(t('evaluation.contract_removed').replace('{person}', personName).replace('{animal}', animal.name));
                 await afterChange('refresh');
             } else if (next === 'same_person') {
                 // Someone withdrew a «No sé» (or a new pair appeared) since this panel read: say so, go to the question.

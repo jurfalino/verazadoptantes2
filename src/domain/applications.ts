@@ -156,8 +156,8 @@ export function submissionApplication(selectedAnimalId: string | null, animal: {
 
 /**
  * Where a form's bell notice leads (spec «Notifications»: its link opens the panel for that
- * application): «Con solicitudes por evaluar» on Mis animales, at that application — `animal=general`
- * for a general one («Sin animal elegido»). The form itself when Mis animales is off, when no
+ * application): «Con solicitudes por evaluar» on Mis animales, at that application — a general form
+ * opens alone in «Mis adoptantes» (`requestHref`). The form itself when Mis animales is off, when no
  * application was written, or when the application's animal is not the link owner's team's (a
  * forged `?animal=`: nobody's to evaluate — `teamApplicationsWhere`).
  */

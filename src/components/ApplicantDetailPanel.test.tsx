@@ -305,6 +305,7 @@ describe('«Enviar contrato» — what the answer leads to (final review I3)', (
     it('a link → share it; already decided (a teammate\'s «No avanzar» while the panel was open) → re-read the list, no error toast', () => {
         expect(sendOutcome({ success: true, url: 'https://c/x', token: 'x' })).toBe('share');
         expect(sendOutcome({ success: false, error: 'already_decided' })).toBe('refresh');
+        expect(sendOutcome({ success: false, error: 'removed' })).toBe('removed');
         expect(sendOutcome({ success: false, error: 'not_allowed', errorId: 'e1' })).toBe('not_allowed');
         expect(sendOutcome({ success: false, error: 'Failed to create invitation (e2)', errorId: 'e2' })).toBe('failed');
     });

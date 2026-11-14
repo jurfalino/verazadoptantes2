@@ -54,6 +54,7 @@ import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { fill, movesToOtherList, otherSide, ownerName, sideById, sideOf, T_MUTED, type KeepSide } from '@/components/pendientes/ui';
 import { trackSamePersonAnswer } from '@/lib/samePersonEvents';
+import { readBoth } from '@/components/pendientes/readBoth';
 import GeneralRequestsGroup, { requestsToEvaluate } from '@/components/pendientes/GeneralRequestsGroup';
 import HomeApplicantsPanel from '@/components/home/HomeApplicantsPanel';
 import { getGeneralApplications } from '@/app/actions/applications';
@@ -176,10 +177,12 @@ export default function PendingDedup({ home }: {
                 if (!handledAsStale(e)) toast.error(t('errors.generic') || 'Error', t('homeModules.load_failed'), resolveErrorId(e, 'PendingDedup:requests'));
                 return [] as ApplicantSummary[];
             });
-        try {
-            const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
-            const [data, waiting] = await Promise.all([getPendingDuplicatesForUser(page, PAGE_SIZE, false, focusPair), requestsRead]);
-            setRequests(waiting);
+        const focusPair = !autoOpened.current ? new URLSearchParams(window.location.search).get('pair') ?? undefined : undefined;
+        // Settled apart: a failed pairs read still lists the forms and opens a request's link (review M4).
+        const { pairs: data, pairsError, requests: waiting } = await readBoth(
+            getPendingDuplicatesForUser(page, PAGE_SIZE, false, focusPair), requestsRead);
+        setRequests(waiting);
+        if (data) {
             if (data.errorId) toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, data.errorId);
             if (data.page && data.page !== page) { loadedByFocus.current = data.page; setPage(data.page); }
             setPairs(data.pairs);
@@ -188,30 +191,30 @@ export default function PendingDedup({ home }: {
             // A reload after an action keeps the row the viewer is working on
             // open while it's still listed (a request just filed moves it to «Enviados»).
             setOpenId(id => (id && data.pairs.some(p => p.candidateId === id) ? id : null));
-            // Decided here, batched with the pairs, so the section never
-            // renders closed first; and only once, so a reload after an
-            // action never reopens a section the user closed.
-            if (!autoOpened.current) {
-                autoOpened.current = true;
-                const linked = window.location.hash === `#${SECTION_ID}`;
-                // The group, not request.direction: a declined row seen by the
-                // decliner also reads direction 'received'.
-                const firstReceived = data.pairs.find(p => p.group === 'received');
-                const focused = data.focusCandidateId;
-                if (focused) setFocusId(focused);
-                if (focused ?? firstReceived) setOpenId((focused ?? firstReceived!.candidateId));
-                const linkedRequest = new URLSearchParams(window.location.search).get('solicitud');
-                if (linkedRequest) setRequestOpen(linkedRequest);
-                // A general form waiting opens the section too (Jon 2026-11-13 + CX: never hidden behind a closed header).
-                if (linked || focused || firstReceived || waiting.length > 0 || linkedRequest) {
-                    setOpen(true);
-                    scrollToSection.current = linked || !!focused || !!linkedRequest;
-                }
-            }
-        } catch (e) {
-            toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, resolveErrorId(e, 'PendingDedup'));
+        } else {
+            if (!handledAsStale(pairsError)) toast.error(t('errors.generic') || 'Error', t('errors.load_duplicates_failed') || undefined, resolveErrorId(pairsError, 'PendingDedup'));
             setPairs([]);
             setTotal(0);
+        }
+        // Decided here, batched with the pairs, so the section never
+        // renders closed first; and only once, so a reload after an
+        // action never reopens a section the user closed.
+        if (!autoOpened.current) {
+            autoOpened.current = true;
+            const linked = window.location.hash === `#${SECTION_ID}`;
+            // The group, not request.direction: a declined row seen by the
+            // decliner also reads direction 'received'.
+            const firstReceived = data?.pairs.find(p => p.group === 'received');
+            const focused = data?.focusCandidateId;
+            if (focused) setFocusId(focused);
+            if (focused ?? firstReceived) setOpenId((focused ?? firstReceived!.candidateId));
+            const linkedRequest = new URLSearchParams(window.location.search).get('solicitud');
+            if (linkedRequest) setRequestOpen(linkedRequest);
+            // A general form waiting opens the section too (Jon 2026-11-13 + CX: never hidden behind a closed header).
+            if (linked || focused || firstReceived || waiting.length > 0 || linkedRequest) {
+                setOpen(true);
+                scrollToSection.current = linked || !!focused || !!linkedRequest;
+            }
         }
     }, [t, toast, page, home]);
 

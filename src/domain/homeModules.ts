@@ -77,14 +77,14 @@ export function homePendingRows<T>(pending: readonly T[], total: number, slots: 
     return { shown, more: Math.max(0, total - shown.length) };
 }
 
-/** The id of the «Sin animal elegido» row (general applications): never an animal id. */
+/** `animal=general` in old «Sin animal elegido» links (notices, emails sent before 2.59.13): /my-animals redirects them to the request in «Mis adoptantes». Never an animal id. */
 export const GENERAL_ROW_ID = 'general';
 
 /**
  * The homepage animals card's rows. What waits on the rescuer comes first,
  * one row each: the offers to tell the other candidates, the animals with a
- * check-up due (most overdue first), the applications to evaluate (the
- * «Sin animal elegido» row, then animals by how many wait). An animal is
+ * check-up due (most overdue first), the applications to evaluate (animals
+ * by how many wait; general forms are rows of «Mis adoptantes»). An animal is
  * listed once, as its first kind (a check-up due wins over its applications —
  * spec «Calls I made»). When they fit, the most recently updated fill the
  * card. Otherwise one fewer is listed and an amber «N más» row takes the

@@ -76,6 +76,17 @@ describe('createContractInvitation on an applicant already decided', () => {
         expect(invitesFor('ana')).toHaveLength(1);
     });
 
+    it('sent from a candidacy that «Quitar» removed meanwhile → removed, nothing written (review I1, Jon 2026-11-13)', async () => {
+        const before = snapshot(sqlite);
+        const res = await createContractInvitation('luna', 'ana', 'es', 'app-quitada');
+        expect(res).toMatchObject({ success: false, error: 'removed' });
+        expect(snapshot(sqlite)).toEqual(before); // Carla's live link is untouched
+    });
+
+    it('sent from a candidacy that is still there → the contract goes out', async () => {
+        expect(await createContractInvitation('luna', 'ana', 'es', 'app-s-luna')).toMatchObject({ success: true });
+    });
+
     it('a profile with no application at all keeps the full-access path', async () => {
         adopter(sqlite, 'dora', 'Dora', OWNER);
         expect(await createContractInvitation('luna', 'dora')).toMatchObject({ success: true });

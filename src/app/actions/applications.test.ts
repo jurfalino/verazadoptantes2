@@ -613,6 +613,20 @@ describe('«Quitar de …» / «Cambiar animal» (Jon 2026-11-13: «Sumar a un a
         expect(await withdrawProposal('app-s-gen')).toEqual({ ok: true });
     });
 
+    it('a merge pointed another application at the candidacy (replaced / also applied) → already_acted, nothing deleted (review M2)', async () => {
+        await proposeAnimal('app-s-gen', 'luna');
+        const [cand] = proposals();
+        form(sqlite, 's-beto-luna', { adopter: 'beto', animal: 'luna' });
+        application(sqlite, 'app-beto-luna', 's-beto-luna', 'luna', { state: 'replaced' });
+        sqlite.prepare('UPDATE applications SET replaced_by_application_id = ? WHERE id = ?').run(cand.id, 'app-beto-luna');
+        // The panel doesn't offer it either.
+        const read = await getGeneralApplications({ applicationId: 'app-s-gen' });
+        expect(read.ok && read.applicants[0].proposal?.canUndo).toBe(false);
+        const before = snapshot(sqlite);
+        expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'already_acted' });
+        expect(snapshot(sqlite)).toEqual(before);
+    });
+
     it('a general form that was never added → not_allowed', async () => {
         expect(await withdrawProposal('app-s-gen')).toEqual({ ok: false, error: 'not_allowed' });
     });

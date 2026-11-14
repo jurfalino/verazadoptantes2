@@ -1,21 +1,18 @@
 'use client';
 
 /**
- * Mis animales on the homepage, a row with applications to evaluate (spec
- * 2026-11-10 «Home — Mis animales», Q5 → B): tapping it opens the applicant
- * panel over the home — that animal's candidates, or the general ones
- * («Sin animal elegido») — at the first one to evaluate, the rest still there
- * to compare (panelOrder: por evaluar first). Built like HomeDuePanel: after an
- * outcome the card reloads (onChanged) and the panel moves to the next one to
- * evaluate, or closes when none is left.
- *
- * Mis animales opens the same panel from its cards and «Sin animal elegido»
- * (`returnLabel`: «← Volver» returns to the page), and at one application from a
- * bell notice's deep link (`applicationId`).
+ * The applicant panel over a page, two ways (spec 2026-11-10; Jon 2026-11-13):
+ * - one animal's candidates (a «Mis animales» row on the home, or its card on /my-animals — `returnLabel`:
+ *   «← Volver» returns to the page), at the first one to evaluate, the rest still there to compare
+ *   (panelOrder: por evaluar first), or at one application from a bell notice's deep link (`applicationId`);
+ * - one general form alone (`{ request }`: «Mis adoptantes», the home's request rows, and `requestHref`).
+ * Built like HomeDuePanel: after an outcome the card reloads (onChanged) and the panel moves to the next one
+ * to evaluate, or closes when none is left.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
+import { useShowToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import ApplicantDetailPanel from '@/components/ApplicantDetailPanel';
 import { getApplicantsForAnimal, type ApplicantSummary } from '@/app/actions/applicants';
@@ -27,15 +24,22 @@ import { applicantsOrThrow, type ApplicantsLoad } from '@/lib/applicantsLoad';
 
 export { applicantsOrThrow };
 
-/** Which list the row opens: one animal's candidates, or the general applications. */
-export type HomeApplicantsTarget = { animal: { id: string; name: string; sex: string | null } } | 'general'
-    /** One general form, opened alone (Jon 2026-11-13): «Mis adoptantes» and its link `requestHref`. */
+/** What the panel opens: one animal's candidates, or one general form alone (Jon 2026-11-13). */
+export type HomeApplicantsTarget = { animal: { id: string; name: string; sex: string | null } }
     | { request: string };
 
 /** A stable React key per target (a new target remounts the panel). */
 export function applicantsTargetKey(target: HomeApplicantsTarget): string {
-    if (target === 'general') return 'general';
     return 'request' in target ? `request:${target.request}` : target.animal.id;
+}
+
+/**
+ * What an empty read says before the panel closes: a list emptied meanwhile closes quietly (the card re-reads);
+ * one request opened from a link that no longer resolves — merged away, deleted, another team's — says so
+ * instead of closing without a word (review M11).
+ */
+export function emptyNotice(request: string | null): string | null {
+    return request ? 'evaluation.request_gone' : null;
 }
 
 type Loaded = { kind: 'loading' } | { kind: 'ok'; list: ApplicantSummary[]; index: number } | { kind: 'error'; errorId: string };
@@ -78,9 +82,10 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged, applic
     testId?: string;
 }) {
     const { t } = useLanguage();
+    const toast = useShowToast();
     const [state, setState] = useState<Loaded>({ kind: 'loading' });
-    const request = typeof target === 'object' && 'request' in target ? target.request : null;
-    const animal = typeof target === 'object' && 'animal' in target ? target.animal : null;
+    const request = 'request' in target ? target.request : null;
+    const animal = 'animal' in target ? target.animal : null;
     const animalId = animal?.id ?? null;
 
     // A refusal reads as an empty list; a failure carries the server's errorId (ApplicantsLoad).
@@ -94,11 +99,16 @@ export default function HomeApplicantsPanel({ target, onClose, onChanged, applic
         let current = true;
         void readPanel(read, request ?? applicationId).then((res) => {
             if (!current) return;
-            if (res.kind === 'empty') { onChanged(); onClose(); return; }
+            if (res.kind === 'empty') {
+                const notice = emptyNotice(request);
+                if (notice) toast.info(t(notice));
+                onChanged(); onClose(); return;
+            }
             if (res.kind === 'stale') { onClose(); return; }
             setState(res);
         });
         return () => { current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t/toast: a language change must not re-read the list
     }, [read, request, applicationId, onClose, onChanged]);
 
     const onOutcome = useCallback(async () => {
