@@ -2,6 +2,18 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.19] - 2026-11-14
+
+### Added — «¿Qué formulario y contrato usás al compartir?» when groups change (Jon 2026-11-14; with `ENABLE_GROUP_BRANDING`)
+- Joining or creating a group that leaves you in two or more asks which form and contract your shared links use —
+  the same list as «Al compartir, usar:», your current choice pre-selected. Closing keeps what you had.
+- Leaving the group your links use asks again with the groups you still have.
+
+### Changed
+- A group change never switches anyone's shared links silently: when you're not on screen (removed by a member or
+  an admin, a group deleted) you keep what you had; leaving the group your links named sets them to «Los míos», so
+  rejoining it later never brings it back unasked. Audited (`kept_on_*` / `left_group`).
+
 ## [2.59.18] - 2026-11-14
 
 ### Added — «Cargar un animal desde un post» (Jon 2026-11-14)
