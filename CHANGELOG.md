@@ -2,6 +2,20 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.15] - 2026-11-13
+
+### Fixed — open findings of the general-forms review (Jon 2026-11-13)
+- «Enviar contrato» for someone a teammate just took out with «Quitar» sends nothing and says
+  «{persona} ya no está entre los candidatos de {animal}: no se envió el contrato.»
+- «Quitar» never removes a person who, after a «misma persona» merge, had also applied to that animal directly;
+  the button isn't offered then.
+- If the «¿Es la misma persona?» pairs fail to load, the general forms (and a request's link) still show.
+- If «Cambiar animal» fails, the request re-reads, so it never shows an animal the person is no longer on.
+- «Mis adoptantes» and the home count the same general forms (forms with no profile don't count in either).
+- A bell or email link to a request that no longer exists says «Esta solicitud ya no existe» instead of closing silently.
+- New end-to-end tests: two pages of pairs keep the general forms first and complete; a contract after «Quitar».
+- Leftovers of the old «Sin animal elegido» card removed (code, unused text, comments).
+
 ## [2.59.14] - 2026-11-13
 
 ### Fixed
