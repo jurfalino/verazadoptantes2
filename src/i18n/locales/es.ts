@@ -3079,14 +3079,23 @@ export const es = {
         offlineMessage: 'Las páginas visitadas recientemente pueden estar disponibles.',
         tryAgain: 'Reintentar',
         sharedContent: 'Contenido compartido recibido',
-        ctaTitle: 'Obtené la App de BuenAdoptante',
-        ctaSubtitle: 'Instalala en segundos — sin tienda de apps',
-        ctaBenefitShare: 'Compartí perfiles de adoptantes desde WhatsApp, Instagram y más',
-        ctaBenefitSpeed: 'Acceso con un toque — sin abrir el navegador',
-        ctaBenefitHomeScreen: 'Siempre en tu pantalla de inicio, como una app nativa',
-        ctaInstallButton: 'Instalar App',
-        ctaIOSHint: 'Tocá',
-        ctaIOSAction: 'y luego "Agregar a inicio"',
+    },
+    installCard: {
+        // The home «Instalá la app» card (option C, Jon 2026-11-12) — src/components/InstallCTA.tsx.
+        title: 'Instalá la app',
+        desc_installable: 'Abrila con un toque y mandá capturas o enlaces desde WhatsApp directo a un perfil.',
+        // iOS can't receive shares — never promise WhatsApp here.
+        desc_ios: 'Abrila con un toque desde tu pantalla de inicio.',
+        install: 'Instalar',
+        not_now: 'Ahora no',
+        install_failed: 'No se pudo abrir la instalación. Probá de nuevo más tarde.',
+        ios_title: 'Agregala a tu pantalla de inicio',
+        // {share} is replaced by the Safari share icon.
+        ios_step1: 'En Safari, tocá {share} abajo, en el centro.',
+        ios_share: 'Compartir',
+        ios_step2: 'Bajá y elegí «Agregar a inicio».',
+        ios_note: 'Queda como un ícono más. En iPhone, compartir desde WhatsApp a la app todavía no funciona.',
+        ios_ok: 'Entendido',
     },
     settings: {
         email_save_failed: 'No se pudo guardar el cambio.',

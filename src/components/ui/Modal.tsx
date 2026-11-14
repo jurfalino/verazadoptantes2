@@ -34,12 +34,27 @@ import { FOCUSABLE, dialogOpener, modalKeyAction, openDialogs, returnFocusTarget
 
 const WIDTH = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg' } as const;
 
-export function Modal({ title, onClose, busy = false, testId, size = 'md', children }: {
+/**
+ * `placement`: 'center' (default) everywhere; 'sheet' rises from the bottom
+ * edge on a phone (square bottom corners, clears the home indicator) and is
+ * the same centred dialog from `sm:` — the home install card's iPhone steps.
+ * Same shell, same behaviour; only where the panel sits changes.
+ */
+const PLACEMENT = {
+    center: { backdrop: 'items-center p-4', panel: 'rounded-2xl p-6' },
+    sheet: {
+        backdrop: 'items-end p-0 sm:items-center sm:p-4',
+        panel: 'rounded-t-2xl rounded-b-none px-6 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:rounded-2xl sm:p-6',
+    },
+} as const;
+
+export function Modal({ title, onClose, busy = false, testId, size = 'md', placement = 'center', children }: {
     title: ReactNode;
     onClose: () => void;
     busy?: boolean;
     testId?: string;
     size?: keyof typeof WIDTH;
+    placement?: keyof typeof PLACEMENT;
     children: ReactNode;
 }) {
     const { t } = useLanguage();
@@ -96,10 +111,10 @@ export function Modal({ title, onClose, busy = false, testId, size = 'md', child
 
     if (!mounted) return null;
     return createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'var(--overlay-bg)' }} role="presentation"
+        <div className={`fixed inset-0 z-[60] flex justify-center ${PLACEMENT[placement].backdrop}`} style={{ background: 'var(--overlay-bg)' }} role="presentation"
             onClick={e => { if (e.target === e.currentTarget && !latest.current.busy) onClose(); }}>
             <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId}
-                className={`w-full ${WIDTH[size]} max-h-[90svh] overflow-y-auto rounded-2xl border p-6 shadow-xl space-y-4`}
+                className={`w-full ${WIDTH[size]} max-h-[90svh] overflow-y-auto border shadow-xl space-y-4 ${PLACEMENT[placement].panel}`}
                 style={{ background: 'var(--surface-card)', borderColor: 'var(--border-default)' }}>
                 <div className="flex items-start justify-between gap-3">
                     <h3 id={titleId} className="min-w-0 text-base font-bold leading-snug [overflow-wrap:anywhere]" style={{ color: 'var(--text-primary)' }}>{title}</h3>
