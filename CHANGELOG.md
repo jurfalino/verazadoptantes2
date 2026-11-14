@@ -2,6 +2,21 @@
 
 All notable changes to BuenAdoptante are documented here.
 
+## [2.59.20] - 2026-11-14
+
+### Changed — home «Instalá la app» card, option C (Jon 2026-11-12)
+- The install card at the bottom of the home is the compact card: phone icon, «Instalá la app», one line,
+  «Instalar» + «Ahora no», and a ✕. Signed in or out; hidden inside the installed app.
+- Android: «Instalar» opens the phone's install prompt. iPhone/iPad: it opens the «Agregar a inicio» steps in a
+  sheet from the bottom.
+- «Ahora no» and ✕ hide it on that device for 30 days.
+
+### Fixed — Mis adoptantes / Mis animales: one loading state, nothing moves when data lands
+- Both pages showed their placeholder, then a bare «Cargando…», then the content somewhere else. Now the header (and
+  on Mis animales the hint, tabs and search) appear at once and only the list shows placeholders the size of the
+  real rows. Switching tabs on Mis animales no longer blanks the page.
+- The «Posibles duplicados» section loads alongside the list and still holds last visit's height.
+
 ## [2.59.19] - 2026-11-14
 
 ### Added — «¿Qué formulario y contrato usás al compartir?» when groups change (Jon 2026-11-14; with `ENABLE_GROUP_BRANDING`)
