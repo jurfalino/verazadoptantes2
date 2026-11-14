@@ -7,8 +7,8 @@ import { logger } from '@/lib/logger';
 import { runAfterResponse } from '@/lib/background';
 import { appBaseUrl } from '@/lib/emailConfig';
 import { getFeatureFlag } from '@/config/features';
-import { getMemberOrgIds, getUserDocsSourceRaw, pinDocsSourceIfUnset } from '@/lib/adoptionDocsRepo';
-import { effectiveDocsSource, pinSourceBeforeMembershipChange, shouldAskDocsSource } from '@/domain/adoptionDocs';
+import { getMemberOrgIds, getUserDocsSourceRaw, setDocsSourceIfStill } from '@/lib/adoptionDocsRepo';
+import { effectiveDocsSource, keepSourceAcrossMembershipChange, shouldAskDocsSource } from '@/domain/adoptionDocs';
 
 /**
  * Case-insensitive name-collision check. Returns true when *another* org
@@ -87,9 +87,11 @@ const KEPT_REASON: Record<MembershipChange, string> = {
  * «Al cambiar de grupos» — never switch her links silently (R17). Run BEFORE
  * the membership row is written or deleted: `email` (whoever's groups change —
  * the removed person on a removal, not the actor) gets a never-chosen source
- * stored as what was in effect, when the change would otherwise flip the
- * sole-group default (pinSourceBeforeMembershipChange; written only while
- * still NULL; audited `adoption_docs_source_changed` on her). Never fails the
+ * stored as what was in effect when the change would otherwise flip the
+ * sole-group default, and an explicit 'org:X' rewritten to 'self' when X goes
+ * away with the change, so a later rejoin can't switch her back silently (R18)
+ * — keepSourceAcrossMembershipChange; compare-and-set; audited
+ * `adoption_docs_source_changed` on her. Never fails the
  * change: any error is logged with `ctx` and it goes on — returns null when
  * even the read failed (then nothing is asked either).
  */
@@ -107,10 +109,11 @@ async function keepDocsSourceAcrossChange(
     const after = change === 'join' || change === 'create'
         ? [...new Set([...before.memberOrgIds, orgId])]
         : before.memberOrgIds.filter(id => id !== orgId);
-    const pin = pinSourceBeforeMembershipChange(before.raw, before.memberOrgIds, after, before.flags.brandingOn);
-    if (pin) {
+    const keep = keepSourceAcrossMembershipChange(before.raw, before.memberOrgIds, after, before.flags.brandingOn);
+    if (keep) {
+        const pin = keep.value;
         try {
-            if (await pinDocsSourceIfUnset(db, email, pin)) {
+            if (await setDocsSourceIfStill(db, email, keep.expected, pin)) {
                 const { logAudit } = await import('@/lib/audit');
                 await logAudit({ userEmail: email, action: 'adoption_docs_source_changed', details: { source: pin, reason: KEPT_REASON[change] } });
                 logger.info(`${op}: docs source kept across the group change`, { ...ctx, orgId, source: pin });

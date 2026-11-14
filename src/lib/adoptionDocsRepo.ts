@@ -60,22 +60,23 @@ export async function getUserDocsSourceRaw(db: Db, email: string): Promise<strin
 }
 
 /**
- * Store `value` as the «Al compartir, usar:» choice ONLY while it is still
- * NULL (never chosen) — a choice made in between is never overwritten. Used
- * to keep what was in effect across a group change (pinSourceBeforeMembershipChange).
- * Same case-insensitive user match as getUserDocsSourceRaw. Returns whether a
- * value was written. Throws on a DB error.
+ * Compare-and-set of the «Al compartir, usar:» choice: store `value` only while
+ * the stored value is still `expected` (null = never chosen) — a choice made
+ * in between is never overwritten. Used to keep what was in effect across a
+ * group change (keepSourceAcrossMembershipChange). Same case-insensitive user
+ * match as getUserDocsSourceRaw. Returns whether a value was written. Throws
+ * on a DB error.
  */
-export async function pinDocsSourceIfUnset(db: Db, email: string, value: string): Promise<boolean> {
+export async function setDocsSourceIfStill(db: Db, email: string, expected: string | null, value: string): Promise<boolean> {
     const normalized = normalizeEmail(email);
     const updated = await db.update(userProfiles).set({ adoptionDocsSource: value })
         .where(and(
-            isNull(userProfiles.adoptionDocsSource),
+            expected === null ? isNull(userProfiles.adoptionDocsSource) : eq(userProfiles.adoptionDocsSource, expected),
             sql`EXISTS (SELECT 1 FROM user u WHERE u.id = user_profiles.user_id AND lower(u.email) = ${normalized})`,
         ))
         .returning({ userId: userProfiles.userId });
-    if (updated.length > 0) return true;
-    // No profile row yet (NULL because there is no row): create it with the value.
+    if (updated.length > 0 || expected !== null) return updated.length > 0;
+    // Never chosen because there is no profile row yet: create it with the value.
     const user = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${normalized}`).get() as { id: string } | undefined;
     if (!user) return false;
     const inserted = await db.insert(userProfiles).values({ userId: user.id, adoptionDocsSource: value })

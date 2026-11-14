@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { execD1Batch, rows, isDbNull } from './db';
+import { execD1Batch, rows } from './db';
 
 /**
  * «Al cambiar de grupos» (spec docs/superpowers/specs/2026-11-13-group-branding-design.md):
@@ -173,12 +173,13 @@ test.describe('Joining a second group asks which form and contract her links use
         await expect(again).toBeVisible({ timeout: 30000 });
         await expect(again.locator(`input[value="org:${ASK_ORG}"]`)).toHaveCount(0);
         await expect(again.locator(`input[value="org:${FIRST}"]`)).toHaveCount(1);
-        // The stored group is gone, so her links fall back to her own: that is what is pre-selected.
+        // The group she used is gone, so her links fall back to her own: that is what is pre-selected.
         await expect(again.locator('input[value="self"]')).toBeChecked();
         await expect(again.getByTestId('adoption-docs-in-use-self')).toBeVisible();
         await again.getByTestId('docs-source-dialog-close').click();
         await expect(again).toBeHidden({ timeout: 30000 });
-        expect(isDbNull(storedSource())).toBe(false);
+        // R18: the stored group she left became «Los míos», so rejoining it later can't switch her back silently.
+        expect(storedSource()).toBe('self');
         await context.close();
     });
 });

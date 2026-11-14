@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     FORM_STEP_IDS, LOCKED_FORM_STEPS, TOGGLEABLE_FORM_STEPS, FORM_STEP_GROUPS,
-    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource, pinSourceBeforeMembershipChange, shouldAskDocsSource,
+    sanitizeHiddenSteps, sanitizeShownSteps, parseDocsSource, serializeDocsSource, effectiveDocsSource, pinSourceBeforeMembershipChange, sourceAfterLosingStoredGroup, keepSourceAcrossMembershipChange, shouldAskDocsSource,
     resolveDocsOwner, normalizeRichDoc, normalizeSections, isStandardSections,
     canonicalSectionsJson, planContractSave, deriveSpecialNeeds, richDocSchema,
     contractSectionsSchema, isContractVersionOwnedBy, parseStoredHiddenSteps, isPhoneRequired, FORM_OPTION_TOKENS,
@@ -380,6 +380,34 @@ describe('pinSourceBeforeMembershipChange («Al cambiar de grupos»: never switc
             expect(parseDocsSource(pinned)).toEqual(effectiveDocsSource(null, before, true));
             expect(effectiveDocsSource(pinned, after, true)).toEqual(effectiveDocsSource(null, before, true));
         }
+    });
+});
+
+describe('sourceAfterLosingStoredGroup (R18: a left group never comes back silently)', () => {
+    it('leaving / removed from / deletion of the stored group → «Los míos»', () => {
+        expect(sourceAfterLosingStoredGroup('org:X', ['X', 'Y'], ['Y'])).toBe('self');
+        expect(sourceAfterLosingStoredGroup('org:X', ['X'], [])).toBe('self');
+    });
+    it('any other change leaves it alone', () => {
+        expect(sourceAfterLosingStoredGroup('org:X', ['X', 'Y'], ['X'])).toBeNull();      // left another group
+        expect(sourceAfterLosingStoredGroup('org:X', ['X'], ['X', 'Y'])).toBeNull();      // joined one
+        expect(sourceAfterLosingStoredGroup('org:X', ['Y'], [])).toBeNull();              // already stale: not this change
+        expect(sourceAfterLosingStoredGroup('self', ['X'], [])).toBeNull();
+        expect(sourceAfterLosingStoredGroup(null, ['X'], [])).toBeNull();
+    });
+});
+
+describe('keepSourceAcrossMembershipChange', () => {
+    it('NULL → pin (requires still NULL); explicit lost group → self (requires still that group)', () => {
+        expect(keepSourceAcrossMembershipChange(null, ['X'], ['X', 'Y'], true)).toEqual({ expected: null, value: 'org:X' });
+        expect(keepSourceAcrossMembershipChange(null, ['X', 'Y'], ['X'], true)).toEqual({ expected: null, value: 'self' });
+        expect(keepSourceAcrossMembershipChange('org:X', ['X', 'Y'], ['Y'], true)).toEqual({ expected: 'org:X', value: 'self' });
+        expect(keepSourceAcrossMembershipChange('org:X', ['X', 'Y'], ['Y'], false)).toEqual({ expected: 'org:X', value: 'self' });
+    });
+    it('nothing otherwise', () => {
+        expect(keepSourceAcrossMembershipChange('self', ['X'], ['X', 'Y'], true)).toBeNull();
+        expect(keepSourceAcrossMembershipChange('org:X', ['X'], ['X', 'Y'], true)).toBeNull();
+        expect(keepSourceAcrossMembershipChange(null, [], ['Y'], true)).toBeNull();
     });
 });
 

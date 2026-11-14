@@ -297,6 +297,35 @@ export function pinSourceBeforeMembershipChange(
     return serializeDocsSource(before);
 }
 
+/**
+ * R18: an explicit 'org:X' whose group X goes away with this change (she
+ * leaves, is removed, or X is deleted) is rewritten to what is in effect
+ * after it — 'self' (resolveDocsOwner already reads a left group as her own).
+ * Otherwise a later rejoin of X would silently switch her links back to it.
+ * Independent of the branding flag: the stored choice wins either way.
+ */
+export function sourceAfterLosingStoredGroup(raw: string | null | undefined, memberOrgIdsBefore: readonly string[], memberOrgIdsAfter: readonly string[]): string | null {
+    const stored = raw == null ? null : parseDocsSource(raw);
+    if (stored?.type !== 'org' || raw !== serializeDocsSource(stored)) return null;
+    if (!memberOrgIdsBefore.includes(stored.orgId) || memberOrgIdsAfter.includes(stored.orgId)) return null;
+    return serializeDocsSource({ type: 'self' });
+}
+
+/**
+ * What to store before a membership change so it never switches her links
+ * silently: `expected` is the stored value the write requires (compare-and-set),
+ * `value` what to store. Null → nothing to do.
+ */
+export function keepSourceAcrossMembershipChange(
+    raw: string | null | undefined, memberOrgIdsBefore: readonly string[], memberOrgIdsAfter: readonly string[], brandingOn: boolean,
+): { expected: string | null; value: string } | null {
+    const pinned = pinSourceBeforeMembershipChange(raw, memberOrgIdsBefore, memberOrgIdsAfter, brandingOn);
+    if (pinned) return { expected: null, value: pinned };
+    const rewritten = sourceAfterLosingStoredGroup(raw, memberOrgIdsBefore, memberOrgIdsAfter);
+    if (rewritten) return { expected: raw as string, value: rewritten };
+    return null;
+}
+
 export type GroupChange =
     | { kind: 'join' | 'create'; orgCountAfter: number }
     /** `effectiveBefore`: the source in effect before leaving (effectiveDocsSource). */

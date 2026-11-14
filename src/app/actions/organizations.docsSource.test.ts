@@ -27,7 +27,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { joinOrganization, createOrganization, leaveOrganization, removeOrganizationMember } from './organizations';
-import { getEffectiveDocsSource } from '@/lib/adoptionDocsRepo';
+import { getEffectiveDocsSource, setDocsSourceIfStill } from '@/lib/adoptionDocsRepo';
 import { logAudit } from '@/lib/audit';
 import { getFeatureFlag } from '@/config/features';
 import { logger } from '@/lib/logger';
@@ -147,13 +147,41 @@ describe('leaveOrganization', () => {
         setSource(MATE, 'org:org-1');
     });
 
-    it('leaving the group her links used, with one left: asked; the stored value is left as it was', async () => {
+    it('leaving the group her links used, with one left: asked; the stored group becomes «Los míos» (R18, audited)', async () => {
         expect(await as(MATE, () => leaveOrganization('org-1'))).toMatchObject({ success: true, deleted: false, askDocsSource: true });
-        expect(source(MATE)).toBe('org:org-1');
+        expect(source(MATE)).toBe('self');
+        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_leave' } }]]);
     });
 
-    it('leaving another group: not asked', async () => {
+    it('leaving another group: not asked, her choice untouched', async () => {
         expect(await as(MATE, () => leaveOrganization('org-2'))).toMatchObject({ success: true, askDocsSource: false });
+        expect(source(MATE)).toBe('org:org-1');
+        expect(keptAudits()).toEqual([]);
+    });
+
+    it('R18: after leaving the stored group, rejoining it as her only group stays «Los míos», not asked', async () => {
+        await as(MATE, () => leaveOrganization('org-1'));
+        await as(MATE, () => leaveOrganization('org-2')); // last member: Perris is deleted, she has no group
+        expect(source(MATE)).toBe('self');
+        expect(await as(MATE, () => joinOrganization('link-1'))).toMatchObject({ success: true, askDocsSource: false });
+        expect(source(MATE)).toBe('self');
+        expect((await getEffectiveDocsSource(state.db as never, MATE)).source).toEqual({ type: 'self' });
+    });
+
+    it('R18: removed by another member from her stored group → «Los míos» for the REMOVED person', async () => {
+        expect(await as(OWNER, () => removeOrganizationMember('org-1', 'm-mate-1'))).toEqual({ success: true });
+        expect(source(MATE)).toBe('self');
+        expect(keptAudits()).toEqual([[{ userEmail: MATE, action: 'adoption_docs_source_changed', details: { source: 'self', reason: 'kept_on_removal' } }]]);
+    });
+
+    it('R18: a choice made in between is never overwritten (compare-and-set write)', async () => {
+        setSource(MATE, 'org:org-2'); // changed after the action read 'org:org-1'
+        expect(await setDocsSourceIfStill(state.db as never, MATE, 'org:org-1', 'self')).toBe(false);
+        expect(source(MATE)).toBe('org:org-2');
+        expect(await setDocsSourceIfStill(state.db as never, MATE, 'org:org-2', 'self')).toBe(true);
+        expect(source(MATE)).toBe('self');
+        expect(await setDocsSourceIfStill(state.db as never, MATE, null, 'org:org-1')).toBe(false); // not NULL any more
+        expect(source(MATE)).toBe('self');
     });
 
     it('leaving her last group (deleting it): not asked', async () => {
