@@ -14,7 +14,7 @@ vi.mock('@/lib/requestContext', () => ({ getRequestContext: () => ({ env: {} }) 
 
 import { loadApplicantsForAnimal } from '@/app/actions/_applicants';
 import { isToDo } from '@/domain/applications';
-import { countToEvaluateByAnimal, countOpenByAnimal, countGeneralToEvaluate, toEvaluateAdopterIds, offerCountsByAnimal } from './applicationCounts';
+import { countToEvaluateByAnimal, countOpenByAnimal, countGeneralToEvaluate, listGeneralToEvaluate, toEvaluateAdopterIds, offerCountsByAnimal } from './applicationCounts';
 
 type Sqlite = { prepare: (s: string) => { run: (...a: unknown[]) => unknown } };
 let sqlite: Sqlite;
@@ -154,6 +154,34 @@ describe('countOpenByAnimal', () => {
 describe('countGeneralToEvaluate', () => {
     it('counts open general applications on a profile (the orphan is no to-do)', async () => {
         expect(await countGeneralToEvaluate(state.db, [OWNER, MATE])).toBe(1);
+    });
+});
+
+describe('listGeneralToEvaluate — the «Formularios generales» rows, one light read (review I-3, M-4)', () => {
+    it('every waiting form (no limit), newest first, with what the row shows; one query, nothing per row', async () => {
+        sqlite.prepare("UPDATE form_submissions SET species = 'dog', life_stage = 'puppy', created_at = ? WHERE id = 'h1'").run(NOW - DAY);
+        sqlite.prepare("UPDATE applications SET created_at = ? WHERE id = 'app-h1'").run(NOW - DAY);
+        form('h3', MATE, 'a2', null); app('h3', null);
+        sqlite.prepare("UPDATE applications SET created_at = ? WHERE id = 'app-h3'").run(NOW - 2 * DAY);
+        const { db, calls } = spied(state.db);
+        const rows = await listGeneralToEvaluate(db, [OWNER, MATE], null, { heal: false });
+        expect(rows.map(r => r.applicationId)).toEqual(['app-h1', 'app-h3']);
+        expect(rows[0]).toMatchObject({ adopterId: 'a1', name: 'a1', appliedAt: NOW - DAY, species: 'dog', lifeStage: 'puppy', askedAnimal: null });
+        expect(calls.select).toBe(1);
+    });
+
+    it('«Pidió a …» only for the team\'s own, live animal — never another team\'s, never a deleted one (M-4)', async () => {
+        sqlite.prepare(`INSERT INTO animals (id, name, sex, added_by, created_at, updated_at) VALUES ('toby', 'Toby', 'macho', ?, 1000, 1000), ('ajeno', 'Ajeno', 'macho', ?, 1000, 1000), ('borrado', 'Borrado', 'hembra', ?, 1000, 1000)`).run(OWNER, ZOE, OWNER);
+        sqlite.prepare("UPDATE animals SET deleted_at = 1000 WHERE id = 'borrado'").run();
+        for (const [f, adopter, asked] of [['k1', 'a3', 'toby'], ['k2', 'a4', 'ajeno'], ['k3', 'a5', 'borrado']] as const) {
+            form(f, OWNER, adopter, null);
+            sqlite.prepare(`INSERT INTO applications (id, submission_id, animal_id, origin, state, asked_animal_id) VALUES (?, ?, NULL, 'adopted_animal', 'open', ?)`).run(`app-${f}`, f, asked);
+        }
+        const rows = await listGeneralToEvaluate(state.db, [OWNER, MATE], null, { heal: false });
+        const asked = (id: string) => rows.find(r => r.applicationId === id)!.askedAnimal;
+        expect(asked('app-k1')).toEqual({ name: 'Toby', sex: 'macho' });
+        expect(asked('app-k2')).toBeNull();
+        expect(asked('app-k3')).toBeNull();
     });
 });
 

@@ -40,7 +40,7 @@ vi.mock('@/lib/logger', () => ({
     generateErrorId: () => 'gen12345',
 }));
 
-import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates, withdrawProposal, changeProposedAnimal, getGeneralApplications } from './applications';
+import { declineApplication, proposeAnimal, getProposalAnimals, getAdoptionOffer, markOfferDone, getApplicationDuplicates, withdrawProposal, changeProposedAnimal, getGeneralApplications, getGeneralRequestRows } from './applications';
 import { deleteUntouchedCandidacy } from './_applications';
 import { loadApplicantsForAnimal } from './_applicants';
 import { applications as applicationsTable, adopterEvents as adopterEventsTable, adoptions as adoptionsView } from '@/db/schema';
@@ -671,9 +671,21 @@ describe('what the panel needs to undo (Jon 2026-11-13)', () => {
         application(sqlite, 'app-s-gen-old', 's-gen-old', null, { state: 'declined' });
         const ids = (r: Awaited<ReturnType<typeof getGeneralApplications>>) => (r.ok ? r.applicants.map(a => a.applicationId).sort() : r);
         expect(ids(await getGeneralApplications())).toEqual(['app-s-gen', 'app-s-gen-old']);
-        expect(ids(await getGeneralApplications({ openOnly: true }))).toEqual(['app-s-gen']);
         expect(ids(await getGeneralApplications({ applicationId: 'app-s-gen-old' }))).toEqual(['app-s-gen-old']);
         expect(ids(await getGeneralApplications({ applicationId: 'nope' }))).toEqual([]);
+    });
+
+    it('getGeneralRequestRows: the open general forms as light rows; signed out or another team → none (review I-3)', async () => {
+        adopter(sqlite, 'dora', 'Dora Díaz', OWNER);
+        form(sqlite, 's-gen-old', { name: 'Dora Díaz', adopter: 'dora' });
+        application(sqlite, 'app-s-gen-old', 's-gen-old', null, { state: 'declined' });
+        const res = await getGeneralRequestRows();
+        expect(res.ok && res.requests.map(r => r.applicationId)).toEqual(['app-s-gen']);
+        expect(res.ok && res.requests[0]).toMatchObject({ adopterId: 'beto', askedAnimal: null });
+        session.user = STRANGER;
+        expect(await getGeneralRequestRows()).toEqual({ ok: true, requests: [] });
+        session.user = null;
+        expect(await getGeneralRequestRows()).toEqual({ ok: true, requests: [] });
     });
 
     it('«Cambiar animal» lists the other animals while the form is added (not refused as decided)', async () => {

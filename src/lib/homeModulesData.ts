@@ -17,7 +17,7 @@ import { adopters, adoptions, adopterEvents, adopterImages } from '@/db/schema';
 import { logger } from '@/lib/logger';
 import { computeAvgRating } from '@/domain/ratings';
 import { RECORD_TYPES } from '@/domain/constants';
-import { homeAnimalRows, HOME_CARD_SLOTS } from '@/domain/homeModules';
+import { homeAnimalRows, HOME_CARD_SLOTS, recentWithoutRequests } from '@/domain/homeModules';
 import { takesContract } from '@/domain/placements';
 import type { HomeAdoptersData, HomeAnimalsData, HomeAnimalRow, HomePendingItem, HomePostsData, HomePersonRow, HomeRequestItem } from '@/types/homeModules';
 
@@ -65,13 +65,15 @@ export async function loadHomeAdopters(db: Db, userEmail: string, memberEmails: 
 
     // The rows the card lists, beside the total and the «pendientes» count.
     const rowsP = (async () => {
-        const [recentRows, viewerOrgs] = await Promise.all([
+        const [recentRows, viewerOrgs, requests] = await Promise.all([
+            // Twice the slots: the people already listed as a request row are left out (UX review S1).
             db.select({ id: adopters.id, name: adopters.name, source: adopters.source, addedBy: adopters.addedBy, createdAt: adopters.createdAt })
-                .from(adopters).where(scope).orderBy(desc(adopters.createdAt)).limit(HOME_CARD_SLOTS).all(),
+                .from(adopters).where(scope).orderBy(desc(adopters.createdAt)).limit(HOME_CARD_SLOTS * 2).all(),
             getOrgsForEmail(userEmail),
+            generalRequests,
         ]);
         type Recent = { id: string; name: string | null; source: string | null; addedBy: string | null; createdAt: unknown };
-        const recent = recentRows as Recent[];
+        const recent = recentWithoutRequests(recentRows as Recent[], requests.items);
         const multiGroup = viewerOrgs.length >= 2;
         const [bits, people] = await Promise.all([
             personBits(db, recent.map(r => r.id), log),

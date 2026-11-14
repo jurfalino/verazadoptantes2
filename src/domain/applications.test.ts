@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     isLiveInvitation, contractNote, applicationStatus, candidatesLostOnDelete, isToEvaluate, isToDo, panelOrder, nextToEvaluateIndex,
-    planAdoptionClose, planMergeDedupe, submissionApplication, lifeStageOf, matchesPreference, rankProposalAnimals, formNoticeUrl,
+    planAdoptionClose, planMergeDedupe, submissionApplication, lifeStageOf, matchesPreference, rankProposalAnimals, formNoticeUrl, newAnimalProposeMode,
     type ApplicationStatus, type ApplicationFacts,
 } from './applications';
 import { takesContract } from './placements';
@@ -254,5 +254,23 @@ describe('a general request is a person: one link, and an undo only while nothin
         expect(proposalUndoable({ candidacyState: 'declined', invitationsEver: 0 })).toBe(false);
         expect(proposalUndoable({ candidacyState: 'adopted', invitationsEver: 0 })).toBe(false);
         expect(proposalUndoable({ candidacyState: 'closed', invitationsEver: 0 })).toBe(false);
+    });
+});
+
+describe('newAnimalProposeMode — «Agregar animal» opened from a request (UX review S3)', () => {
+    const base = { applicationId: 'g1', adopterName: 'Ana Pérez', status: { kind: 'to_evaluate', note: null } as ApplicationStatus, proposal: null };
+    const luna = { id: 'luna', name: 'Luna', sex: 'hembra' };
+    it('to evaluate → add the new animal', () => {
+        expect(newAnimalProposeMode(base)).toEqual({ kind: 'add', name: 'Ana Pérez' });
+    });
+    it('already added and still undoable → the new animal replaces the first («Cambiar animal»)', () => {
+        const proposed = { ...base, status: { kind: 'proposed' } as ApplicationStatus, proposal: { generalApplicationId: 'g1', candidacyId: 'c1', animal: luna, byName: null, canUndo: true } };
+        expect(newAnimalProposeMode(proposed)).toEqual({ kind: 'change', name: 'Ana Pérez', from: { name: 'Luna', sex: 'hembra' } });
+        expect(newAnimalProposeMode({ ...proposed, proposal: { ...proposed.proposal, canUndo: false } })).toBeNull();
+        expect(newAnimalProposeMode({ ...proposed, proposal: { ...proposed.proposal, animal: null } })).toBeNull();
+    });
+    it('decided, or not found → the plain page', () => {
+        expect(newAnimalProposeMode({ ...base, status: { kind: 'declined', at: 1 } as ApplicationStatus })).toBeNull();
+        expect(newAnimalProposeMode(null)).toBeNull();
     });
 });

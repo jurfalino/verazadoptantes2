@@ -15,8 +15,8 @@ import { computeBirthDate, deriveAgeFromBirthDate, parseLegacyAge } from '@/lib/
 import Link from 'next/link';
 import { zarazTrack } from '@/lib/zaraz';
 import { isFemaleAnimal } from '@/domain/animalSex';
-import { generalRequestHref, proposeParam } from '@/domain/applications';
-import { getGeneralApplications, proposeAnimal } from '@/app/actions/applications';
+import { generalRequestHref, newAnimalProposeMode, proposeParam } from '@/domain/applications';
+import { changeProposedAnimal, getGeneralApplications, proposeAnimal } from '@/app/actions/applications';
 import { proposeNewOutcome } from '@/components/evaluation/ProposeAnimalSheet';
 import { firstName } from '@/lib/householdCopy';
 import { handledAsStale } from '@/lib/errorMessage';
@@ -81,11 +81,13 @@ export default function NewAnimalPage() {
 }
 
 /**
- * `proposeTo`: opened from «Proponer un animal» → «Cargar un animal» (Jon
+ * `proposeTo`: opened from «Sumar a un animal» → «Cargar un animal» (Jon
  * 2026-11-13). While that general application is still to evaluate, the page
- * names the person, the button reads «Agregar y proponer a {name}», saving
- * also proposes the new animal, and every way out goes back to the request.
- * Otherwise (decided meanwhile, not the viewer's team) it is the plain page.
+ * names the person, the button reads «Agregar y sumar a {name}», saving
+ * also adds the person to the new animal, and every way out goes back to the request.
+ * Already added and still undoable («Cambiar animal» → «Cargar otro animal», UX review S3): saving MOVES the
+ * person to the new animal («Agregar y pasar a {name}»). Otherwise (decided meanwhile, not the viewer's team)
+ * it is the plain page — `newAnimalProposeMode`.
  */
 function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
     const router = useRouter();
@@ -98,23 +100,24 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
     const toast = useShowToast();
 
     const [loading, setLoading] = useState(false);
-    // The person the new animal is proposed to: read from the request itself, never from the address.
-    // undefined = still reading (the save button waits), null = nothing to propose to (plain page).
-    const [proposeName, setProposeName] = useState<string | null | undefined>(proposeTo ? undefined : null);
+    // What saving does for the request's person: read from the request itself (that one only), never from the
+    // address. undefined = still reading (the save button waits), null = nothing to do (plain page).
+    const [proposeMode, setProposeMode] = useState<ReturnType<typeof newAnimalProposeMode> | undefined>(proposeTo ? undefined : null);
+    const proposeName = proposeMode ? (firstName(proposeMode.name) || proposeMode.name) : proposeMode;
+    const changeFrom = proposeMode?.kind === 'change' ? proposeMode.from : null;
     useEffect(() => {
         if (!proposeTo) return;
         let current = true;
-        getGeneralApplications()
+        getGeneralApplications({ applicationId: proposeTo })
             .then((res) => {
                 if (!current) return;
-                if (!res.ok) { setProposeName(null); toast.error(t('errors.generic'), t('evaluation.action_failed'), res.errorId); return; }
-                const a = res.applicants.find(x => x.applicationId === proposeTo && x.status.kind === 'to_evaluate');
-                setProposeName(a ? (firstName(a.adopterName) || a.adopterName) : null);
+                if (!res.ok) { setProposeMode(null); toast.error(t('errors.generic'), t('evaluation.action_failed'), res.errorId); return; }
+                setProposeMode(newAnimalProposeMode(res.applicants.find(x => x.applicationId === proposeTo) ?? null));
             })
             .catch((e: unknown) => {
                 // The page still adds the animal; it just doesn't propose it.
                 if (!current) return;
-                setProposeName(null);
+                setProposeMode(null);
                 if (!handledAsStale(e)) toast.error(t('errors.generic'), t('evaluation.action_failed'), resolveErrorId(e, 'my-animals/new:propose'));
             });
         return () => { current = false; };
@@ -232,6 +235,23 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
         const who = proposeName ?? '';
         const g = isFemaleAnimal(formData.sex) ? '_f' : '';
         const fill = (key: string) => t(key).replace('{animal}', animal).replace('{name}', who);
+        if (changeFrom) {
+            // «Cambiar animal» → «Cargar otro animal»: the person moves from the first animal to this one.
+            const from = changeFrom.name || t('homeModules.unnamed_animal');
+            const fillChange = (key: string) => fill(key).replace('{from}', from);
+            try {
+                const res = await changeProposedAnimal(proposeTo!, animalId);
+                if (res.ok) toast.success(t('toast.saved_title'), fill('evaluation.propose_new_change_done'));
+                else if (res.error === 'already_acted') toast.info(fillChange(`evaluation.propose_new_change_refused${g}`));
+                else if (res.error === 'same_person_unanswered') toast.info(fill(`evaluation.propose_new_same_person${g}`));
+                else toast.error(t('errors.generic'), fill(`evaluation.propose_new_saved_not_proposed${g}`),
+                    res.errorId || resolveErrorId(new Error(`changeProposedAnimal: ${res.error}`), 'my-animals/new:change'));
+            } catch (e) {
+                if (!handledAsStale(e)) toast.error(t('errors.generic'), fill(`evaluation.propose_new_saved_not_proposed${g}`), resolveErrorId(e, 'my-animals/new:change'));
+            }
+            router.push(generalRequestHref(proposeTo!));
+            return;
+        }
         try {
             const res = await proposeAnimal(proposeTo!, animalId);
             const next = proposeNewOutcome(res);
@@ -350,7 +370,9 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                 {/* The note keeps its place while the request is read, so the form doesn't jump down. */}
                 {(proposing || proposeReading) && (
                     <p data-testid="propose-new-note" aria-busy={proposeReading} className="rounded-xl px-4 py-3 mb-4 bg-teal-50 border border-teal-200 text-sm text-teal-800 [overflow-wrap:anywhere]">
-                        {proposing ? t('evaluation.propose_new_note').replace('{name}', proposeName ?? '') : t('common.loading')}
+                        {!proposing ? t('common.loading')
+                            : changeFrom ? t('evaluation.propose_new_change_note').replace('{name}', proposeName ?? '').replace('{from}', changeFrom.name || t('homeModules.unnamed_animal'))
+                                : t('evaluation.propose_new_note').replace('{name}', proposeName ?? '')}
                     </p>
                 )}
                 <div className="bg-white p-5 rounded-xl border-2 border-teal-400/50 shadow-lg ring-4 ring-teal-50/50">
@@ -662,7 +684,7 @@ function CreateAnimalForm({ proposeTo }: { proposeTo: string | null }) {
                                         : isEditMode
                                             ? '💾 ' + (t('common.save') || 'Save Changes')
                                             : proposing
-                                                ? t('evaluation.propose_new_submit').replace('{name}', proposeName ?? '')
+                                                ? t(changeFrom ? 'evaluation.propose_new_change_submit' : 'evaluation.propose_new_submit').replace('{name}', proposeName ?? '')
                                                 : '🐾 ' + (t('dashboard.add_animal') || 'Add Animal')
                                     }
                                 </button>

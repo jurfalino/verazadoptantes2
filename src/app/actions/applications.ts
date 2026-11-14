@@ -14,6 +14,7 @@
  * module); these are thin orchestrators.
  */
 
+import type { GeneralRequestRow } from '@/lib/applicationCounts';
 import { logger } from '@/lib/logger';
 import { getDb, getUser } from './_db';
 import { APPLICATION_STATES, RECORD_TYPES } from '@/domain/constants';
@@ -48,14 +49,33 @@ async function requireDb() {
 }
 
 /**
- * The viewer's team's general applications (formularios generales), in panel order; empty signed out; a failure
- * carries its errorId. `scope`: one request by id (a link opening it alone), or only the open ones (the
- * «Formularios generales» group) — never the whole history when a page needs less (review I4).
+ * The «Formularios generales» group of «Pendientes de revisar»: the viewer's team's general forms still to
+ * evaluate, as light rows — ONE query whatever their number (review I-3); the panel reads a request in full
+ * when it opens. `heal`: only on the page's first read. Empty signed out; a failure carries its errorId.
  */
-export async function getGeneralApplications(scope?: { applicationId?: string; openOnly?: boolean }): Promise<ApplicantsLoad> {
+export async function getGeneralRequestRows(opts?: { heal?: boolean }): Promise<{ ok: true; requests: GeneralRequestRow[] } | { ok: false; errorId: string }> {
+    let viewer: string | null = null;
+    const heal = !!(opts && typeof opts === 'object' && opts.heal === true);
+    try {
+        viewer = await sessionViewer();
+        if (!viewer) return { ok: true, requests: [] };
+        const db = await requireDb();
+        const [{ getTeamEmails }, { listGeneralToEvaluate }] = await Promise.all([import('@/lib/orgMembership'), import('@/lib/applicationCounts')]);
+        return { ok: true, requests: await listGeneralToEvaluate(db, await getTeamEmails(viewer), null, { heal }) };
+    } catch (e) {
+        const errorId = logger.error('getGeneralRequestRows failed', e, { viewer, heal });
+        return { ok: false, errorId };
+    }
+}
+
+/**
+ * The viewer's team's general applications (formularios generales), in panel order; empty signed out; a failure
+ * carries its errorId. `scope.applicationId`: one request by id (a link or a row opening it alone) — never the
+ * whole history when a page needs less (review I4).
+ */
+export async function getGeneralApplications(scope?: { applicationId?: string }): Promise<ApplicantsLoad> {
     let viewer: string | null = null;
     const applicationId = scope && typeof scope === 'object' && typeof scope.applicationId === 'string' ? scope.applicationId : undefined;
-    const openOnly = !!(scope && typeof scope === 'object' && scope.openOnly === true);
     try {
         viewer = await sessionViewer();
         if (!viewer) return { ok: true, applicants: [] };
@@ -63,9 +83,9 @@ export async function getGeneralApplications(scope?: { applicationId?: string; o
         if (applicationId !== undefined && !isId(applicationId)) return { ok: true, applicants: [] };
         const db = await requireDb();
         const [{ getTeamEmails }, { loadGeneralApplications }] = await Promise.all([import('@/lib/orgMembership'), import('./_applicants')]);
-        return { ok: true, applicants: await loadGeneralApplications(db, await getTeamEmails(viewer), viewer, { applicationId, openOnly }) };
+        return { ok: true, applicants: await loadGeneralApplications(db, await getTeamEmails(viewer), viewer, { applicationId }) };
     } catch (e) {
-        const errorId = logger.error('getGeneralApplications failed', e, { viewer, applicationId: applicationId ?? null, openOnly });
+        const errorId = logger.error('getGeneralApplications failed', e, { viewer, applicationId: applicationId ?? null });
         return { ok: false, errorId };
     }
 }

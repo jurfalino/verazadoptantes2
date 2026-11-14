@@ -21,6 +21,7 @@ test.describe.serial('«Formularios generales»: many pairs, and a contract afte
     const ANIMAL = ID('animal');
     const ANIMAL_NAME = `Quitada ${stamp}`;
     const P = { adopter: ID('qa'), form: ID('qf'), app: ID('qg'), cand: ID('qc'), name: `Quitado${stamp} Ruiz` };
+    const NOTICE = { id: ID('notice'), title: `Nuevo formulario ${stamp}` };
 
     test.beforeAll(() => {
         execD1Batch([
@@ -40,6 +41,8 @@ test.describe.serial('«Formularios generales»: many pairs, and a contract afte
             `INSERT INTO form_submissions (id, user_id, name, email, status, linked_adopter_id, created_at) VALUES ('${P.form}', '${USER}', '${P.name}', '${P.form}@example.com', 'linked', '${P.adopter}', strftime('%s','now','-1 day'))`,
             `INSERT INTO applications (id, submission_id, animal_id, origin, state, created_at) VALUES ('${P.cand}', '${P.form}', '${ANIMAL}', 'proposed', 'open', strftime('%s','now','-1 hours'))`,
             `INSERT INTO applications (id, submission_id, animal_id, origin, state, proposed_application_id, closed_at, closed_by, created_at) VALUES ('${P.app}', '${P.form}', NULL, 'form', 'proposed', '${P.cand}', strftime('%s','now','-1 hours'), '${USER}', strftime('%s','now','-1 day'))`,
+            // A bell notice for the first general form, as the form route writes it (requestHref).
+            `INSERT INTO notifications (id, user_id, type, title, body, url, icon, read, dismissed, created_at) VALUES ('${NOTICE.id}', '${USER}', 'form_submission', '${NOTICE.title}', 'Formulario general', '/my-adopters?solicitud=${forms[0].app}#pendientes', 'x', 0, 0, strftime('%s','now','+1 hour'))`,
         ]);
     });
 
@@ -51,6 +54,7 @@ test.describe.serial('«Formularios generales»: many pairs, and a contract afte
             `DELETE FROM contract_invitations WHERE adopter_id = '${P.adopter}'`,
             ...adopters.flatMap(a => [`DELETE FROM adopter_history WHERE adopter_id = '${a}'`, `DELETE FROM adopters WHERE id = '${a}'`]),
             `DELETE FROM animals WHERE id = '${ANIMAL}'`,
+            `DELETE FROM notifications WHERE id = '${NOTICE.id}'`,
         ]);
     });
 
@@ -77,6 +81,16 @@ test.describe.serial('«Formularios generales»: many pairs, and a contract afte
         await next.click();
         await expect(page.getByText(/^\s*2 \/ \d+\s*$/)).toBeVisible({ timeout: 30_000 });
         await requestsFirstAndComplete(page);
+    });
+
+    test('a bell notice for a general form opens it while already on «Mis adoptantes» (review I-2)', async ({ page }) => {
+        test.setTimeout(180_000);
+        await page.goto('/my-adopters');
+        await dismissCountryBanner(page);
+        await expect(page.getByTestId('general-requests-heading')).toBeVisible({ timeout: 60_000 });
+        await page.getByRole('button', { name: /Notifications|Notificaciones|Notificações/i }).click();
+        await page.getByText(NOTICE.title).click();
+        await expect(page.getByTestId('request-panel')).toContainText(forms[0].name, { timeout: 30_000 });
     });
 
     test('«Enviar contrato» after a teammate\'s «Quitar»: nothing is sent, and it says why', async ({ page }) => {

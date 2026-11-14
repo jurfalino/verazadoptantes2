@@ -505,7 +505,14 @@ const MANIFEST = '.next/server/server-reference-manifest.json';
 //   changeProposedAnimal(generalApplicationId, animalId)  the same gate plus the «¿Es la misma persona?» lock, then
 //                              the same withdraw and the existing proposeAuthorized (animal in the caller's and the
 //                              form link's team, takes contracts). On refusal it restores the first animal.
-const EXPECTED_ACTIONS = 193;
+// 194 (Jon 2026-11-13, senior EM review I-3: «Pendientes de revisar» must not fully load every general form):
+// one export in src/app/actions/applications.ts, imported by PendingDedup. What a stranger can do with it:
+//   getGeneralRequestRows({ heal? })  takes only a boolean; session required (signed out → an empty list). Lists the
+//                              CALLER's team's general forms still to evaluate (generalScopeWhere + isToDo) with the
+//                              name, sent time, species / life stage and an asked animal named only when it is the
+//                              caller's team's own and not deleted — the same rows the home card already shows that
+//                              caller. `heal` runs the existing per-team heal (forms missing their application).
+const EXPECTED_ACTIONS = 194;
 
 let manifest;
 try {

@@ -4,7 +4,7 @@ export const runtime = 'edge';
 import { useLanguage } from '@/context/LanguageContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, FileText, Search } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { RatingBadge } from '@/components/RatingBadge';
@@ -14,6 +14,7 @@ import { RatingExplainer } from '@/components/RatingExplainer';
 import { useShowToast } from '@/components/ui/Toast';
 import { timeAgo, timeAgoSeconds } from '@/lib/timeAgo';
 import { resolveErrorId } from '@/lib/clientErrorReporter';
+import RequestLinkWatcher from '@/components/pendientes/RequestLinkWatcher';
 import PendingDedup from '@/components/PendingDedup';
 import AdopterListToolbar from '@/components/myAdopters/AdopterListToolbar';
 import AdopterFiltersPanel from '@/components/myAdopters/AdopterFiltersPanel';
@@ -659,6 +660,7 @@ export default function MyAdoptersPage() {
                     The section carries its own #pendientes anchor (the per-row
                     "🔍 Posible duplicado" pill and the notifications link there). */}
                 <PendingDedup />
+                <Suspense fallback={null}><RequestLinkWatcher /></Suspense>
 
                 {adopters.length > 0 && (
                     <AdopterListToolbar view={view} onView={setView} pins={pins} counts={counts}

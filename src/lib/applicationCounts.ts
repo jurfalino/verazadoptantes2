@@ -11,7 +11,7 @@
 import { and, count, desc, eq, isNotNull, isNull, or, gt, sql } from 'drizzle-orm';
 import { adopters, animals, applications, formSubmissions, contractInvitations } from '@/db/schema';
 import { APPLICATION_STATES, APPLICATION_CLOSE_REASONS, RECORD_TYPES } from '@/domain/constants';
-import { generalScopeWhere, teamApplicationsWhere } from '@/lib/applicantScope';
+import { generalScopeWhere, teamApplicationsWhere, teammateVisibleAnimal } from '@/lib/applicantScope';
 import { healMissingApplications } from '@/lib/applicationWrites';
 import { normalizeTeamScope } from '@/lib/applicantScope';
 import { perRequest } from '@/lib/requestMemo';
@@ -113,33 +113,61 @@ export async function countGeneralToEvaluate(db: Db, viewerTeam: readonly string
     return row?.n ?? 0;
 }
 
+/** One «Formularios generales» row: what the home card and «Pendientes de revisar» show — never the panel's full read. */
+export type GeneralRequestRow = {
+    applicationId: string;
+    adopterId: string | null;
+    name: string;
+    appliedAt: number | null;
+    species: string | null;
+    lifeStage: string | null;
+    /** The adopted animal the form asked for — the viewer's team's own, live animal only (else null). */
+    askedAnimal: { name: string; sex: string | null } | null;
+};
+
 /**
- * The team's general forms still to evaluate, newest first — the «Mis adoptantes» home rows (Jon 2026-11-13).
- * Same rows as `countGeneralToEvaluate`. The person's name is their profile's, else the form's; a form that
- * asked for an adopted animal carries that animal (D1-safe: one read per such row).
+ * The team's general forms still to evaluate, newest first — the «Mis adoptantes» home rows and the
+ * «Formularios generales» group (Jon 2026-11-13). Same rows as `countGeneralToEvaluate`; `limit` null = all.
+ * ONE query, whatever the number of forms (review I-3). The person's name is their profile's, else the form's.
+ * A form that asked for an adopted animal names it only when it is the viewer's team's own and not deleted,
+ * as the panel does (review M-4).
  */
-export async function listGeneralToEvaluate(db: Db, viewerTeam: readonly string[], limit: number, opts: CountOpts = {}): Promise<Array<{ applicationId: string; name: string; askedAnimal: { name: string; sex: string | null } | null }>> {
+export async function listGeneralToEvaluate(db: Db, viewerTeam: readonly string[], limit: number | null, opts: CountOpts = {}): Promise<GeneralRequestRow[]> {
     const scope = generalScopeWhere(viewerTeam);
     if (!scope) return [];
     if (opts.heal !== false) await healOnce(db, viewerTeam);
-    const rows = await db.select({ id: applications.id, askedAnimalId: applications.askedAnimalId, formName: formSubmissions.name, profileName: adopters.name })
+    const query = db.select({
+        // When the form was sent — the same «hace …» as the panel (ApplicantSummary.appliedAt).
+        id: applications.id, createdAt: formSubmissions.createdAt, adopterId: formSubmissions.linkedAdopterId,
+        formName: formSubmissions.name, profileName: adopters.name, species: formSubmissions.species, lifeStage: formSubmissions.lifeStage,
+        askedId: animals.id, askedName: animals.name, askedSex: animals.sex, askedOwner: animals.addedBy, askedDeletedAt: animals.deletedAt,
+    })
         .from(applications)
         .innerJoin(formSubmissions, eq(formSubmissions.id, applications.submissionId))
         .leftJoin(adopters, eq(adopters.id, formSubmissions.linkedAdopterId))
+        .leftJoin(animals, eq(animals.id, applications.askedAnimalId))
         .where(openOnProfile(scope))
-        .orderBy(desc(applications.createdAt))
-        .limit(limit)
-        .all() as Array<{ id: string; askedAnimalId: string | null; formName: string | null; profileName: string | null }>;
-    return Promise.all(rows.map(async (r) => {
-        const asked = r.askedAnimalId
-            ? await db.select({ name: animals.name, sex: animals.sex }).from(animals).where(eq(animals.id, r.askedAnimalId)).get() as { name: string | null; sex: string | null } | undefined
-            : undefined;
+        .orderBy(desc(applications.createdAt));
+    const rows = await (limit == null ? query : query.limit(limit)).all() as Array<{
+        id: string; createdAt: number | Date | null; adopterId: string | null; formName: string | null; profileName: string | null;
+        species: string | null; lifeStage: string | null;
+        askedId: string | null; askedName: string | null; askedSex: string | null; askedOwner: string | null; askedDeletedAt: unknown;
+    }>;
+    return rows.map((r) => {
+        const visible = r.askedId && r.askedDeletedAt == null
+            ? teammateVisibleAnimal({ id: r.askedId, name: r.askedName, owner: r.askedOwner }, viewerTeam)
+            : null;
+        const createdAt = r.createdAt instanceof Date ? Math.floor(r.createdAt.getTime() / 1000) : r.createdAt;
         return {
             applicationId: r.id,
+            adopterId: r.adopterId,
             name: (r.profileName || r.formName || '').trim(),
-            askedAnimal: asked?.name ? { name: asked.name, sex: asked.sex } : null,
+            appliedAt: createdAt ?? null,
+            species: r.species,
+            lifeStage: r.lifeStage,
+            askedAnimal: visible ? { name: visible.name, sex: r.askedSex } : null,
         };
-    }));
+    });
 }
 
 /**

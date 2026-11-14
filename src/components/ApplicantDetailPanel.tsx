@@ -43,7 +43,7 @@ import LocationMap from '@/components/LocationMap';
 import { AlertPill, PeriodAlertPills } from '@/components/AlertPill';
 import { openFlagKinds, rescuerFlagKinds } from '@/domain/flags';
 import { formatRating } from '@/domain/ratings';
-import { nextToEvaluateIndex, type ApplicationStatus } from '@/domain/applications';
+import { animalApplicationHref, nextToEvaluateIndex, type ApplicationStatus } from '@/domain/applications';
 import { Button, buttonClasses } from '@/components/ui/Button';
 import { handledAsStale } from '@/lib/errorMessage';
 import { firstName } from '@/lib/householdCopy';
@@ -499,23 +499,30 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                     </div>
 
                     <ApplicationStatusLine status={applicant.status} animal={animal} outcomeAnimal={applicant.outcomeAnimal} />
-                    {/* «Sumar a un animal» is internal and reversible (Jon 2026-11-13): on the general form and on the candidacy it made. */}
-                    {applicant.proposal && (applicant.status.kind === 'proposed' || applicant.origin === 'proposed') && (
+                    {/* «Sumar a un animal» is internal and reversible (Jon 2026-11-13). The request (prototype «Propuesta»):
+                        the two actions as buttons, then «Ver candidatos de Luna →». The animal's side has its own links, after the answers. */}
+                    {applicant.proposal && applicant.status.kind === 'proposed' && (
                         <div className="space-y-2 -mt-2" data-testid="applicant-proposal">
-                            {applicant.status.kind === 'proposed' && (
-                                <p className="text-sm text-stone-600">{t('evaluation.proposed_hidden_note').replace('{name}', personFirst)}</p>
-                            )}
-                            {/* A contract link just issued here ends it too (the server refuses after any link; the list isn't re-read so the link stays shown). */}
-                            {applicant.proposal.canUndo && !shareUrl && (
-                                <div className="flex flex-wrap gap-2">
-                                    <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('change')} data-testid="applicant-undo-change">
-                                        {t('evaluation.undo_change')}
-                                    </Button>
-                                    <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('withdraw')} data-testid="applicant-undo-quit">
-                                        {t('evaluation.undo_quit').replace('{animal}', proposalAnimalName)}
-                                    </Button>
-                                </div>
-                            )}
+                            <p className="text-sm text-stone-600">{t('evaluation.proposed_hidden_note').replace('{name}', personFirst)}</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {/* A contract link just issued here ends it too (the server refuses after any link; the list isn't re-read so the link stays shown). */}
+                                {applicant.proposal.canUndo && !shareUrl && (
+                                    <>
+                                        <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('change')} data-testid="applicant-undo-change">
+                                            {t('evaluation.undo_change')}
+                                        </Button>
+                                        <Button type="button" variant="secondary" size="compact" onClick={() => setDialog('withdraw')} data-testid="applicant-undo-quit">
+                                            {t('evaluation.undo_quit').replace('{animal}', proposalAnimalName)}
+                                        </Button>
+                                    </>
+                                )}
+                                {applicant.proposal.animal && (
+                                    <Link href={animalApplicationHref(applicant.proposal.animal.id, applicant.proposal.candidacyId)} data-testid="applicant-see-candidates"
+                                        className="inline-flex items-center min-h-[44px] px-2 text-[13px] font-semibold text-teal-700 hover:text-teal-800">
+                                        {t('evaluation.see_candidates').replace('{animal}', proposalAnimalName)}
+                                    </Link>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -630,6 +637,21 @@ export default function ApplicantDetailPanel({ applicants, initialIndex, animal,
                             </details>
                         )}
                     </section>
+
+                    {/* On the animal's side (prototype «Luna»): undoing the add is secondary to evaluating — quiet text
+                        links after the answers, never buttons competing with «No avanzar / Enviar contrato» (UX review S6). */}
+                    {applicant.origin === 'proposed' && applicant.status.kind !== 'proposed' && applicant.proposal?.canUndo && !shareUrl && (
+                        <div className="flex flex-wrap gap-2" data-testid="applicant-proposal-links">
+                            <button type="button" onClick={() => setDialog('change')} data-testid="applicant-undo-change"
+                                className="inline-flex items-center min-h-[44px] px-2 text-[13px] font-semibold text-teal-700 hover:text-teal-800">
+                                {t('evaluation.undo_change')}
+                            </button>
+                            <button type="button" onClick={() => setDialog('withdraw')} data-testid="applicant-undo-quit"
+                                className="inline-flex items-center min-h-[44px] px-2 text-[13px] font-semibold text-teal-700 hover:text-teal-800">
+                                {t('evaluation.undo_quit').replace('{animal}', proposalAnimalName)}
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Sticky footer — how the evaluation ends; after sending, the contract's share block */}

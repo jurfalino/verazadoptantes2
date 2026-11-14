@@ -26,6 +26,7 @@
  * from the browser — the relay is server-side only.
  */
 
+import { modalOpen } from '@/lib/modalOpen';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -103,6 +104,16 @@ export default function ChatWidget() {
             : t('chat.greeting_anon');
     }, [session?.user?.name, t]);
     const [open, setOpen] = useState(false);
+    // A dialog is open (a Modal, the applicant panel): the bubble steps aside so it never covers its buttons.
+    const [dialogOpen, setDialogOpen] = useState(false);
+    useEffect(() => {
+        let frame = 0;
+        const check = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setDialogOpen(modalOpen(document))); };
+        const observer = new MutationObserver(check);
+        observer.observe(document.body, { childList: true, subtree: true });
+        check();
+        return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+    }, []);
     const [sessionId, setSessionId] = useState<string>('');
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
@@ -348,7 +359,7 @@ export default function ChatWidget() {
     return (
         <>
             {/* Floating button */}
-            {!open && (
+            {!open && !dialogOpen && (
                 <button
                     type="button"
                     onClick={() => setOpen(true)}
