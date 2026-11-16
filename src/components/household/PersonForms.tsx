@@ -37,6 +37,7 @@ import type { HouseholdContactInput, HouseholdMatchCandidate } from '@/app/actio
 import { resolveErrorId } from '@/lib/clientErrorReporter';
 import { handledAsStale } from '@/lib/errorMessage';
 import { householdErrorCopy, fill, joinNames } from '@/lib/householdCopy';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 /**
  * The inputs of the profile's own inline forms (ContactEntriesSection's composer): these fields sit right
@@ -126,8 +127,10 @@ function FormButtons({ busy, onCancel, onSave, canSave = true }: { busy: boolean
 }
 
 /** «⋯ → Editar» on one member card. */
-export function EditMemberForm({ member, relativeName, onDone }: {
+export function EditMemberForm({ member, relativeName, onDone, confirmRename = true }: {
     member: { profileId: string; membershipId: string; name: string; relationship: Relationship; relativeToAdopterId: string | null };
+    /** Ask «¿Cambiar el nombre de este perfil?» before a rename (off for the profile's owner and admins). */
+    confirmRename?: boolean;
     relativeName: string;
     onDone: () => void;
 }) {
@@ -138,9 +141,17 @@ export function EditMemberForm({ member, relativeName, onDone }: {
     const [name, setName] = useState(member.name);
     const [rel, setRel] = useState<Relationship | ''>(member.relationship === 'unknown' ? '' : member.relationship);
     const [busy, setBusy] = useState(false);
+    const [askRename, setAskRename] = useState(false);
     const showRelationship = !!member.relativeToAdopterId;
 
+    function requestSave() {
+        const nameChanged = !!name.trim() && name.trim() !== member.name.trim();
+        if (nameChanged && confirmRename) { setAskRename(true); return; }
+        void save();
+    }
+
     async function save() {
+        setAskRename(false);
         const relNow = rel || 'unknown';
         const nameChanged = !!name.trim() && name.trim() !== member.name.trim();
         const relChanged = showRelationship && relNow !== member.relationship;
@@ -188,7 +199,17 @@ export function EditMemberForm({ member, relativeName, onDone }: {
         <div className="space-y-3" data-testid="hh-edit-form">
             <PersonFields name={name} setName={setName} rel={rel} setRel={setRel} relativeName={relativeName}
                 renameHint showRelationship={showRelationship} />
-            <FormButtons busy={busy} onCancel={onDone} onSave={save} canSave={!!name.trim()} />
+            <FormButtons busy={busy} onCancel={onDone} onSave={requestSave} canSave={!!name.trim()} />
+            <ConfirmDialog
+                open={askRename}
+                title={t('adopter.rename_confirm_title')}
+                message={fill(t('adopter.rename_confirm_body'), { from: member.name.trim() || t('adopter.nameless'), to: name.trim() })}
+                confirmLabel={t('adopter.rename_confirm_action')}
+                destructive={false}
+                onConfirm={() => { void save(); }}
+                onCancel={() => setAskRename(false)}
+                testId="rename-confirm"
+            />
         </div>
     );
 }

@@ -18,6 +18,8 @@ import StrongMatchStrip from "@/components/StrongMatchStrip";
 import { zarazTrack } from "@/lib/zaraz";
 import type { DiscoveryMatch } from "@/app/actions";
 import { Modal, ModalActions, ModalText } from "@/components/ui/Modal";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { fill } from "@/lib/householdCopy";
 import { ContinueMergeDialog } from "@/components/ContinueMergeDialog";
 import { MatchCard } from "@/components/MatchCardParts";
 import { AdopterName } from "@/components/AdopterName";
@@ -835,7 +837,27 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // profiles, Jon 2026-10-27): it goes through changeProfileName — compare-and-set
     // on the name this tab loaded, the old name kept as «Conocido/a como», the
     // owner's team told with «Deshacer». Same conflict UX as every inline field.
+    // Someone outside the owner's team confirms a rename first (it changes another
+    // team's profile); the dialog resolves the pending save. «Guardar la mía igual»
+    // after a conflict is already a deliberate second step: no second dialog.
+    const renameNeedsConfirm = !isPrivileged && !isOrgMateOfOwner && !isAdmin && !isModerator;
+    const [renameConfirm, setRenameConfirm] = useState<{ from: string; to: string } | null>(null);
+    const renameConfirmResolve = useRef<((ok: boolean) => void) | null>(null);
+    const answerRenameConfirm = useCallback((ok: boolean) => {
+        renameConfirmResolve.current?.(ok);
+        renameConfirmResolve.current = null;
+        setRenameConfirm(null);
+    }, []);
     const saveName = useCallback(async (next: string, opts?: { force?: boolean }): Promise<boolean> => {
+        if (renameNeedsConfirm && !opts?.force) {
+            const from = baselineRef.current.name?.trim() || t('adopter.nameless');
+            const confirmed = await new Promise<boolean>(resolve => {
+                renameConfirmResolve.current?.(false);
+                renameConfirmResolve.current = resolve;
+                setRenameConfirm({ from, to: next.trim() });
+            });
+            if (!confirmed) return false;
+        }
         const prevData = dataRef.current;
         const seen = fieldConflictsRef.current.name;
         const expectedName = opts?.force && seen ? (seen.value ?? '') : (baselineRef.current.name ?? '');
@@ -897,7 +919,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         // «Conocido/a como» and the history come from the server.
         router.refresh();
         return true;
-    }, [toast, t, router]);
+    }, [toast, t, router, renameNeedsConfirm]);
 
     const saveField = useCallback(async (field: 'name' | 'familyMembers', next: string, opts?: { force?: boolean }): Promise<boolean> => {
         if (field === 'name') return saveName(next, opts);
@@ -1715,6 +1737,18 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                     onConfirm={() => { void confirmMerge(); }}
                 />
             )}
+
+            {/* Renaming another team's profile: say what changes before it does. */}
+            <ConfirmDialog
+                open={!!renameConfirm}
+                title={t('adopter.rename_confirm_title')}
+                message={renameConfirm ? fill(t('adopter.rename_confirm_body'), renameConfirm) : undefined}
+                confirmLabel={t('adopter.rename_confirm_action')}
+                destructive={false}
+                onConfirm={() => answerRenameConfirm(true)}
+                onCancel={() => answerRenameConfirm(false)}
+                testId="rename-confirm"
+            />
 
         </div>
     );

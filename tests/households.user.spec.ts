@@ -263,6 +263,16 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         const edit = page.getByTestId('hh-edit-form');
         await edit.getByTestId('hh-person-name').fill(`Marta P. ${stamp}`);
         await edit.getByTestId('hh-form-save').click();
+        // Someone else's profile: the rename is confirmed first, naming both names; «Cancelar» changes nothing.
+        const confirm = page.getByTestId('rename-confirm');
+        await expect(confirm).toContainText(MARTA_NAME);
+        await expect(confirm).toContainText(`Marta P. ${stamp}`);
+        await page.getByTestId('rename-confirm-cancel').click();
+        await expect(confirm).toHaveCount(0);
+        await expect(edit).toBeVisible();
+        expect(profileNamed(MARTA_NAME), 'cancel keeps the name').toBeTruthy();
+        await edit.getByTestId('hh-form-save').click();
+        await page.getByTestId('rename-confirm-confirm').click();
         await expect(card(page, `Marta P. ${stamp}`)).toHaveCount(1, { timeout: 30_000 });
 
         // The owner's notice carries the undo.
@@ -282,6 +292,34 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
             await expect.poll(() => String(rows(`SELECT name FROM adopters WHERE id = '${marta}'`)[0]?.name), { timeout: 30_000 }).toBe(MARTA_NAME);
         } finally {
             await ctx.close();
+        }
+    });
+
+    test("4b. renaming someone else's profile from its header asks first; «Cancelar» keeps the name", async ({ page }) => {
+        const id = `test-hh-rename-confirm-${stamp}`;
+        const before = `Lidia Paez ${stamp}`;
+        const after = `Lidia P. ${stamp}`;
+        const nameOf = () => String(rows(`SELECT name FROM adopters WHERE id = '${id}'`)[0]?.name);
+        insertProfile({ id, name: before, owner: ADMIN_EMAIL });
+        try {
+            await page.goto(`/adopter/${id}`);
+            await dismissCountryBanner(page);
+            await page.getByTestId('name-edit-btn').click();
+            await page.getByTestId('name-edit-btn-input').fill(after);
+            await page.getByTestId('name-edit-btn-save').click();
+            const confirm = page.getByTestId('rename-confirm');
+            await expect(confirm).toContainText(before);
+            await expect(confirm).toContainText(after);
+            await page.getByTestId('rename-confirm-cancel').click();
+            await expect(confirm).toHaveCount(0);
+            // Nothing was sent: the name stands and the typed text is still open to save.
+            expect(nameOf()).toBe(before);
+            await expect(page.getByTestId('name-edit-btn-input')).toHaveValue(after);
+            await page.getByTestId('name-edit-btn-save').click();
+            await page.getByTestId('rename-confirm-confirm').click();
+            await expect.poll(nameOf, { timeout: 30_000 }).toBe(after);
+        } finally {
+            cleanupProfiles([id]);
         }
     });
 
