@@ -126,6 +126,8 @@ test('adopter profile in two tabs: the stale tab never reverts the other field',
         await tabB.getByTestId('name-edit-btn').click();
         await tabB.getByTestId('name-edit-btn-input').fill(`Renombrada ${stamp}`);
         await tabB.getByTestId('name-edit-btn-save').click();
+        // Every rename is confirmed, the owner's too.
+        await tabB.getByTestId('rename-confirm-confirm').click();
         await expect(tabB.getByTestId('name-edit-btn-input')).toHaveCount(0, { timeout: 30_000 });
         await expect.poll(() => row().name, { timeout: 15_000 }).toBe(`Renombrada ${stamp}`);
         expect(row().fam).toBe('Hijo y perro');
@@ -137,6 +139,7 @@ test('adopter profile in two tabs: the stale tab never reverts the other field',
         await tabA.getByTestId('name-edit-btn').click();
         await tabA.getByTestId('name-edit-btn-input').fill(`Otra ${stamp}`);
         await tabA.getByTestId('name-edit-btn-save').click();
+        await tabA.getByTestId('rename-confirm-confirm').click();
         await expect(tabA.getByTestId('adopter-name-conflict')).toBeVisible({ timeout: 30_000 });
         expect(row().name).toBe(`Renombrada ${stamp}`);
         await tabA.getByTestId('adopter-name-conflict-keep-mine').click();
@@ -184,12 +187,14 @@ test('household: a new person shows once; a rename a teammate beat is refused, n
         await tabB.getByTestId('household-member-menu-edit').click();
         await tabB.getByTestId('hh-person-name').fill(`Ana María ${stamp}`);
         await tabB.getByTestId('hh-form-save').click();
+        await tabB.getByTestId('rename-confirm-confirm').click();
         await expect.poll(housemateNames, { timeout: 15_000 }).toEqual([`Ana María ${stamp}`]);
 
         await page.getByTestId('household-member-menu').click();
         await page.getByTestId('household-member-menu-edit').click();
         await page.getByTestId('hh-person-name').fill(`Anita ${stamp}`);
         await page.getByTestId('hh-form-save').click();
+        await page.getByTestId('rename-confirm-confirm').click();
         await expect(page.getByText(/changed this while you were editing|cambió esto mientras lo editabas/).first()).toBeVisible({ timeout: 30_000 });
         expect(housemateNames()).toEqual([`Ana María ${stamp}`]);
         await expect(page.getByTestId('household-member')).toHaveCount(1);
@@ -220,6 +225,7 @@ test("household: saving a name fix never reverts a teammate's newer age", async 
         execD1(`UPDATE adopters SET age = 8, age_as_of = '${today}', updated_at = strftime('%s','now') WHERE id = '${tomas}'`);
         await page.getByTestId('hh-person-name').fill('Tomás Lopez');
         await page.getByTestId('hh-form-save').click();
+        await page.getByTestId('rename-confirm-confirm').click();
         await expect.poll(() => String(one(`SELECT name FROM adopters WHERE id = '${tomas}'`).name), { timeout: 15_000 }).toBe('Tomás Lopez');
         // The save is over once the form closed and the rename's history row is in: no age write followed it.
         await expect(page.getByTestId('hh-edit-form')).toHaveCount(0, { timeout: 15_000 });

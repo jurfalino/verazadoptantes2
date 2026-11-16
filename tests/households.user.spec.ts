@@ -295,7 +295,7 @@ test.describe.serial('households as profiles (Task 8), by a non-owner', { tag: '
         }
     });
 
-    test("4b. renaming someone else's profile from its header asks first; «Cancelar» keeps the name", async ({ page }) => {
+    test("4b. renaming from the profile header asks first; «Cancelar» keeps the name", async ({ page }) => {
         const id = `test-hh-rename-confirm-${stamp}`;
         const before = `Lidia Paez ${stamp}`;
         const after = `Lidia P. ${stamp}`;

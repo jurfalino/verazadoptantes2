@@ -127,10 +127,10 @@ function FormButtons({ busy, onCancel, onSave, canSave = true }: { busy: boolean
 }
 
 /** «⋯ → Editar» on one member card. */
-export function EditMemberForm({ member, relativeName, onDone, confirmRename = true }: {
+export function EditMemberForm({ member, relativeName, onDone, ownProfile = false }: {
     member: { profileId: string; membershipId: string; name: string; relationship: Relationship; relativeToAdopterId: string | null };
-    /** Ask «¿Cambiar el nombre de este perfil?» before a rename (off for the profile's owner and admins). */
-    confirmRename?: boolean;
+    /** The viewer owns the profile (or is an admin): the rename confirm doesn't speak of telling the owner. */
+    ownProfile?: boolean;
     relativeName: string;
     onDone: () => void;
 }) {
@@ -146,7 +146,7 @@ export function EditMemberForm({ member, relativeName, onDone, confirmRename = t
 
     function requestSave() {
         const nameChanged = !!name.trim() && name.trim() !== member.name.trim();
-        if (nameChanged && confirmRename) { setAskRename(true); return; }
+        if (nameChanged) { setAskRename(true); return; }
         void save();
     }
 
@@ -203,7 +203,7 @@ export function EditMemberForm({ member, relativeName, onDone, confirmRename = t
             <ConfirmDialog
                 open={askRename}
                 title={t('adopter.rename_confirm_title')}
-                message={fill(t('adopter.rename_confirm_body'), { from: member.name.trim() || t('adopter.nameless'), to: name.trim() })}
+                message={fill(t(ownProfile ? 'adopter.rename_confirm_body_own' : 'adopter.rename_confirm_body'), { from: member.name.trim() || t('adopter.nameless'), to: name.trim() })}
                 confirmLabel={t('adopter.rename_confirm_action')}
                 destructive={false}
                 onConfirm={() => { void save(); }}

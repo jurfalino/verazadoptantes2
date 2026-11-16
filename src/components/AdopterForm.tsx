@@ -837,10 +837,10 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
     // profiles, Jon 2026-10-27): it goes through changeProfileName — compare-and-set
     // on the name this tab loaded, the old name kept as «Conocido/a como», the
     // owner's team told with «Deshacer». Same conflict UX as every inline field.
-    // Someone outside the owner's team confirms a rename first (it changes another
-    // team's profile); the dialog resolves the pending save. «Guardar la mía igual»
-    // after a conflict is already a deliberate second step: no second dialog.
-    const renameNeedsConfirm = !isPrivileged && !isOrgMateOfOwner && !isAdmin && !isModerator;
+    // Every rename is confirmed first, the owner's too; the dialog resolves the pending
+    // save. Someone outside the owner's team is also told the team hears of it.
+    // «Guardar la mía igual» after a conflict is already a deliberate second step: no second dialog.
+    const renameIsOwnTeam = isPrivileged || isOrgMateOfOwner || isAdmin || isModerator;
     const [renameConfirm, setRenameConfirm] = useState<{ from: string; to: string } | null>(null);
     const renameConfirmResolve = useRef<((ok: boolean) => void) | null>(null);
     const answerRenameConfirm = useCallback((ok: boolean) => {
@@ -849,7 +849,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         setRenameConfirm(null);
     }, []);
     const saveName = useCallback(async (next: string, opts?: { force?: boolean }): Promise<boolean> => {
-        if (renameNeedsConfirm && !opts?.force) {
+        if (!opts?.force) {
             const from = baselineRef.current.name?.trim() || t('adopter.nameless');
             const confirmed = await new Promise<boolean>(resolve => {
                 renameConfirmResolve.current?.(false);
@@ -919,7 +919,7 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
         // «Conocido/a como» and the history come from the server.
         router.refresh();
         return true;
-    }, [toast, t, router, renameNeedsConfirm]);
+    }, [toast, t, router]);
 
     const saveField = useCallback(async (field: 'name' | 'familyMembers', next: string, opts?: { force?: boolean }): Promise<boolean> => {
         if (field === 'name') return saveName(next, opts);
@@ -1738,11 +1738,11 @@ export function AdopterForm({ origin = null, interviewEnabled = false, initialDa
                 />
             )}
 
-            {/* Renaming another team's profile: say what changes before it does. */}
+            {/* Every rename: say what changes before it does. */}
             <ConfirmDialog
                 open={!!renameConfirm}
                 title={t('adopter.rename_confirm_title')}
-                message={renameConfirm ? fill(t('adopter.rename_confirm_body'), renameConfirm) : undefined}
+                message={renameConfirm ? fill(t(renameIsOwnTeam ? 'adopter.rename_confirm_body_own' : 'adopter.rename_confirm_body'), renameConfirm) : undefined}
                 confirmLabel={t('adopter.rename_confirm_action')}
                 destructive={false}
                 onConfirm={() => answerRenameConfirm(true)}

@@ -193,7 +193,7 @@ export function MemberCard({ member, hostName, relativeName, signedIn, currentUs
             <li className="py-2" data-testid={testId}>
                 {/* Edited in place, like a contact row: no grey card (it reads as a dark hole in Azul Noche), aligned with the names. */}
                 <div className="pl-10">
-                    <EditMemberForm member={member} relativeName={relativeName} onDone={() => setEditing(false)} confirmRename={!member.ownerIsViewer && !isAdmin} />
+                    <EditMemberForm member={member} relativeName={relativeName} onDone={() => setEditing(false)} ownProfile={member.ownerIsViewer || isAdmin} />
                 </div>
             </li>
         );

@@ -931,6 +931,7 @@ export const es = {
         rename_failed: 'No se pudo cambiar el nombre.',
         rename_confirm_title: '¿Cambiar el nombre de este perfil?',
         rename_confirm_body: 'Vas a cambiar «{from}» por «{to}». Este perfil lo cargó otra persona: el nombre anterior queda como «Conocido/a como» y le avisamos a su equipo, que puede deshacerlo.',
+        rename_confirm_body_own: 'Vas a cambiar «{from}» por «{to}». El nombre anterior queda como «Conocido/a como».',
         rename_confirm_action: 'Cambiar nombre',
         rename_rate_limited: 'Cambiaste muchos nombres en la última hora. Probá de nuevo más tarde.',
         rename_undo: 'Deshacer',

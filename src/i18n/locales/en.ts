@@ -931,6 +931,7 @@ export const en = {
         rename_failed: 'Could not change the name.',
         rename_confirm_title: 'Change this profile’s name?',
         rename_confirm_body: 'You are changing “{from}” to “{to}”. Someone else added this profile: the previous name is kept as “Also known as” and their team is told and can undo it.',
+        rename_confirm_body_own: 'You are changing “{from}” to “{to}”. The previous name is kept as “Also known as”.',
         rename_confirm_action: 'Change name',
         rename_rate_limited: 'You have changed many names in the last hour. Try again later.',
         rename_undo: 'Undo',
